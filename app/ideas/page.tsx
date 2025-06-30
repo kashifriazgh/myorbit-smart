@@ -1,93 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { db } from '../lib/firebase';
-import {
-  collection,
-  addDoc,
-  onSnapshot,
-  serverTimestamp,
-  query,
-  orderBy,
-} from 'firebase/firestore';
-
-type Idea = {
-  id: string;
-  text?: string;
-  createdAt?: Date; // Optional because serverTimestamp may initially be `null`
-};
-
-export default function TestFirestorePage() {
-  const [idea, setIdea] = useState('');
-  const [ideas, setIdeas] = useState<Idea[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const ideasRef = collection(db, 'ideas');
-
-  // Realtime subscription to ideas collection
-  useEffect(() => {
-    const q = query(ideasRef, orderBy('createdAt', 'desc'));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setIdeas(list);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!idea.trim()) return;
-
-    await addDoc(ideasRef, {
-      text: idea.trim(),
-      createdAt: serverTimestamp(),
-    });
-
-    setIdea('');
-  };
+import { Box, Button, Typography } from '@mui/material';
+import { useState } from 'react';
+import IdeaModal from '../components/ideas/IdeasModal';
+export default function IdeasPage() {
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="max-w-xl mx-auto p-4 space-y-6">
-      <h1 className="text-2xl font-bold">💡 Save Your Ideas</h1>
+    <Box maxWidth="600px" mx="auto" p={4}>
+      <Typography variant="h4" gutterBottom>
+        💡 My Ideas
+      </Typography>
 
-      <form onSubmit={handleSubmit} className="space-y-2">
-        <input
-          type="text"
-          value={idea}
-          onChange={(e) => setIdea(e.target.value)}
-          placeholder="Enter your idea..."
-          className="w-full border border-gray-300 rounded px-3 py-2"
-        />
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-        >
-          Save Idea
-        </button>
-      </form>
+      <Button variant="contained" onClick={() => setOpen(true)}>
+        Add New Idea
+      </Button>
 
-      <div className="mt-6">
-        <h2 className="text-xl font-semibold mb-2">📃 Saved Ideas</h2>
-        {loading ? (
-          <p>Loading...</p>
-        ) : ideas.length === 0 ? (
-          <p>No ideas yet.</p>
-        ) : (
-          <ul className="space-y-2">
-            {ideas.map((item) => (
-              <li key={item.id} className="border px-3 py-2 rounded bg-gray-50">
-                {item.text}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
+      {/* TODO: render list of saved ideas here */}
+
+      <IdeaModal open={open} onClose={() => setOpen(false)} />
+    </Box>
   );
 }
