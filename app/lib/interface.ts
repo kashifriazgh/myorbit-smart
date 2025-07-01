@@ -1,17 +1,20 @@
-export interface ThoughtHistory {
+export interface IdeaHistory {
   updatedAt: Date;
   changes: string[];
   by: string; // userId or 'AI'
 }
 
-export interface Thought {
+export interface Idea {
   id?: string;
   // Authorship & Sharing
   authorId: string;
   authorName?: string;
   authorizedUsers?: string[];
+  createdBy?: string;
+  sharedWith?: string[];
+  privacy?: string;
   // Core Content
-  title: string;
+  text: string;
   aiTitle?: string;
   description?: string;
   tags?: string[];
@@ -39,7 +42,7 @@ export interface Thought {
   status?: 'draft' | 'reviewed' | 'published';
   priority?: 1 | 2 | 3 | 4 | 5;
   // Versioning & Log
-  history?: ThoughtHistory[];
+  history?: IdeaHistory[];
   sharedVia?: string[]; // e.g., ['email', 'whatsapp']
 }
 

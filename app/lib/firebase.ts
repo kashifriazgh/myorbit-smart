@@ -13,6 +13,7 @@ const firebaseConfig = {
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export { app }; // ✅ Add this line
 
 export const db = getFirestore(app);
 export const auth = getAuth(app);

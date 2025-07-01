@@ -3,6 +3,7 @@
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import theme from '../lib/theme';
 import React from 'react';
+import { UserProvider } from '../lib/context/userContext'; // ✅ Import the provider
 
 export default function ClientThemeProvider({
   children,
@@ -10,9 +11,13 @@ export default function ClientThemeProvider({
   children: React.ReactNode;
 }) {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      {children}
-    </ThemeProvider>
+    <UserProvider>
+      {' '}
+      {/* ✅ Correct usage */}
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        {children}
+      </ThemeProvider>
+    </UserProvider>
   );
 }

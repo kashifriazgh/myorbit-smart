@@ -23,6 +23,7 @@ import LabelImportantOutlineIcon from '@mui/icons-material/LabelImportantOutline
 import StarRateIcon from '@mui/icons-material/StarRate';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import { useAuth } from '@/app/lib/context/userContext';
 
 type IdeaLevel = 'super' | 'important' | 'general';
 type Privacy = 'private' | 'public';
@@ -49,9 +50,10 @@ export default function IdeaModal({ open, onClose }: Props) {
   const [privacy, setPrivacy] = useState<Privacy>('private');
   const [level, setLevel] = useState<IdeaLevel>('general');
   const [loading, setLoading] = useState(false);
-
   const [openPrivacy, setOpenPrivacy] = useState(false);
   const [openLevel, setOpenLevel] = useState(false);
+
+  const { user } = useAuth();
 
   const handleTagAdd = () => {
     const t = tagInput.trim();
@@ -70,7 +72,11 @@ export default function IdeaModal({ open, onClose }: Props) {
       privacy,
       level,
       createdAt: serverTimestamp(),
+      authorId: user.uid,
+      authorName: user.displayName || '',
+      sharedWith: [], // if planning to support later
     });
+
     setLoading(false);
     onClose();
   };
