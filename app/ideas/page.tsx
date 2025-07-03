@@ -1,6 +1,6 @@
 'use client';
 
-import { Box, Button, TextField, Typography } from '@mui/material';
+import { Box, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
 import IdeaModal from '../components/ideas/IdeasModal';
 import IdeasList from '../components/ideas/IdeasList';
@@ -47,12 +47,6 @@ export default function IdeasPage() {
       <IdeasList />
 
       <IdeaModal open={open} onClose={() => setOpen(false)} />
-      <br />
-      <Button color="secondary">Button</Button>
-      <br />
-      <br />
-      <br />
-      <br />
     </Box>
   );
 }

@@ -17,6 +17,10 @@ export interface Idea {
   privacy?: string;
   // Core Content
   text: string;
+  localCreatedAt?: {
+    seconds: number;
+    nanoseconds: number;
+  };
   aiTitle?: string;
   description?: string;
   tags?: string[];
@@ -52,9 +56,10 @@ export interface Todo {
   id?: string;
   title: string;
   description?: string;
+
   tags?: string[];
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  status: 'todo' | 'in_progress' | 'done' | 'blocked';
+  priority: 'routine' | 'urgent' | 'critical';
+  status: 'in_progress' | 'completed' | 'hold' | 'left-over';
   progressPercent: number; // 0–100
   pinned?: boolean;
   isArchived?: boolean;
@@ -74,6 +79,7 @@ export interface Todo {
   steps?: {
     text: string;
     done: boolean;
+    status: 'in_progress' | 'completed' | 'hold' | 'left-over';
   }[];
   // Extras
   notes?: string;

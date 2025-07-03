@@ -24,6 +24,8 @@ import StarRateIcon from '@mui/icons-material/StarRate';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
+import moment from 'moment-timezone';
+import { Timestamp } from 'firebase/firestore';
 
 type IdeaLevel = 'super' | 'important' | 'general';
 type Privacy = 'private' | 'public';
@@ -66,15 +68,22 @@ export default function IdeaModal({ open, onClose }: Props) {
   const handleSave = async () => {
     if (!ideaText.trim()) return;
     setLoading(true);
+
+    const timezone = moment.tz.guess(); // e.g. "Asia/Karachi"
+
+    const localTime = moment().toDate(); // actual JS Date
+
     await addDoc(collection(db, 'ideas'), {
       text: ideaText.trim(),
       tags,
       privacy,
       level,
-      createdAt: serverTimestamp(),
+      createdAt: serverTimestamp(), // ✅ Keep: Useful for audit/logging and system-wide ordering
+      localCreatedAt: Timestamp.fromDate(localTime), // ✅ Keep: Essential for user-facing time filtering (e.g., "yesterday", "today", etc.)
+      timezone, // ✅ Keep (optional): Only if your app supports users from multiple timezones
       authorId: user.uid,
       authorName: user.displayName || '',
-      sharedWith: [], // if planning to support later
+      sharedWith: [],
     });
 
     setLoading(false);
