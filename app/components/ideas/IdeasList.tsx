@@ -1,5 +1,5 @@
 'use client';
-
+import { AutoAwesome } from '@mui/icons-material';
 import {
   Box,
   Chip,
@@ -13,14 +13,10 @@ import {
   Collapse,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ShareIcon from '@mui/icons-material/Share';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
-import LabelImportantOutlineIcon from '@mui/icons-material/LabelImportantOutline';
-import StarRateIcon from '@mui/icons-material/StarRate';
-import LockIcon from '@mui/icons-material/Lock';
+
 import PublicIcon from '@mui/icons-material/Public';
 import IdeaActionButton from './IdeaLevelButton';
-import LevelModal from './LevelModal';
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -29,26 +25,15 @@ import {
   doc,
   onSnapshot,
   query,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { Idea } from '@/app/lib/interface';
-import PrivacyModal from './PrivacyModal';
-import DeleteConfirmModal from './DeleteConfirmModal';
-
-type IdeaLevel = 'super' | 'important' | 'general';
-type Privacy = 'private' | 'public';
-
-const levelIcons: Record<IdeaLevel, React.ReactNode> = {
-  super: <EmojiEventsIcon />,
-  important: <StarRateIcon />,
-  general: <LabelImportantOutlineIcon />,
-};
-
-const privacyIcons: Record<Privacy, React.ReactNode> = {
-  private: <LockIcon />,
-  public: <PublicIcon />,
-};
+import PrivacyModal from '../global/PrivacyModal';
+import DeleteConfirmModal from '../global/DeleteConfirmModal';
+import LevelModal from '../global/LevelModal';
+import AIEnhanceModal from '../global/AIModal';
 
 export default function IdeasList() {
   const { user } = useAuth();
@@ -61,6 +46,7 @@ export default function IdeasList() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [aiModalOpen, setAIModalOpen] = useState(false);
 
   const [filter, setFilter] = useState<{
     level: string;
@@ -145,6 +131,11 @@ export default function IdeasList() {
     }
   };
 
+  const handleCloseAIModal = () => {
+    setAIModalOpen(false);
+    setActiveIdea(null);
+  };
+
   return (
     <Box mt={4}>
       {/* Filters */}
@@ -216,13 +207,17 @@ export default function IdeasList() {
               onClick={() => handleCardClick(idea.id)}
               p={2}
               mb={2}
-              border="1px solid #ccc"
-              borderRadius={2}
-              bgcolor="#fafafa"
+              border="1px solid #e0e0e0"
+              borderRadius={1} // smaller radius
+              bgcolor="#ffffff" // clean white background
+              boxShadow="0 1px 4px rgba(0,0,0,0.04)" // subtle card shadow
               sx={{
                 cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { backgroundColor: '#f5f5f5' },
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  borderColor: '#d0d0d0',
+                },
               }}
             >
               <Typography variant="body1" gutterBottom>
@@ -241,15 +236,20 @@ export default function IdeasList() {
                 <Divider sx={{ my: 1.5 }} />
 
                 <Box
-                  display="flex"
+                  display="flex justify-end"
                   justifyContent="space-between"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <Box display="flex" alignItems="center" gap={2}>
-                    {idea.level && levelIcons[idea.level as IdeaLevel]}
-                    {idea.privacy && privacyIcons[idea.privacy as Privacy]}
-                  </Box>
                   <Box display="flex" gap={1}>
+                    <IdeaActionButton
+                      icon={<AutoAwesome />}
+                      tooltip="AI Assist"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveIdea(idea);
+                        setAIModalOpen(true);
+                      }}
+                    />
                     <IdeaActionButton
                       icon={<EmojiEventsIcon />}
                       tooltip="Level"
@@ -273,12 +273,6 @@ export default function IdeasList() {
                         e.stopPropagation();
                         handleOpenDeleteModal(idea.id);
                       }}
-                    />
-
-                    <IdeaActionButton
-                      icon={<ShareIcon />}
-                      tooltip="Share"
-                      onClick={(e) => e.stopPropagation()}
                     />
                   </Box>
                 </Box>
@@ -309,6 +303,19 @@ export default function IdeasList() {
                   loading={deleting}
                   itemLabel="idea"
                 />
+
+                {activeIdea && (
+                  <AIEnhanceModal
+                    open={aiModalOpen}
+                    onClose={handleCloseAIModal}
+                    docId={activeIdea.id}
+                    originalText={activeIdea.text}
+                    onApply={async (updatedText) => {
+                      const ref = doc(db, 'ideas', activeIdea.id);
+                      await updateDoc(ref, { text: updatedText });
+                    }}
+                  />
+                )}
               </Collapse>
             </Box>
           );

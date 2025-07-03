@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import { Inter, Roboto } from 'next/font/google';
 import './globals.css';
-import ClientThemeProvider from './components/ClientThemeProvider';
+import ClientThemeProvider from './components/global/ClientThemeProvider';
 import Navbar from './components/global/Navbar';
 import EmotionRegistry from './emotionRegistry';
+import AppBarTop from './components/global/AppBarTop';
 // Google Fonts
 const inter = Inter({
   subsets: ['latin'],
@@ -28,9 +29,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${roboto.variable} antialiased`}>
+      <body
+        className={`pb-30 ${inter.variable} ${roboto.variable} antialiased`}
+      >
         <EmotionRegistry>
           <ClientThemeProvider>
+            <AppBarTop />
             <Navbar />
             {children}
           </ClientThemeProvider>

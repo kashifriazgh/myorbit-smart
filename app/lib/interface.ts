@@ -1,3 +1,5 @@
+import { Timestamp } from 'firebase/firestore';
+
 export interface IdeaHistory {
   updatedAt: Date;
   changes: string[];
@@ -157,4 +159,20 @@ export interface Procedure {
   aiScore?: number; // 0–100
   // UI Helpers (Optional)
   highlightStepId?: string; // to mark currently viewed/selected step
+}
+
+export interface Theme {
+  name: string;
+  primary: string;
+  secondary: string;
+  mode: 'light' | 'dark';
+}
+
+export interface FirestoreUser {
+  uid: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: 'master' | 'editor' | 'viewer';
+  createdAt: Timestamp; // or use `Timestamp` from Firestore
 }

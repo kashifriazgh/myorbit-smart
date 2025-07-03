@@ -1,6 +1,6 @@
 'use client';
 
-import { Box, TextField, Typography } from '@mui/material';
+import { Box, Button, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
 import IdeaModal from '../components/ideas/IdeasModal';
 import IdeasList from '../components/ideas/IdeasList';
@@ -9,7 +9,7 @@ export default function IdeasPage() {
   const [open, setOpen] = useState(false);
 
   return (
-    <Box maxWidth="600px" mx="auto" p={4}>
+    <Box maxWidth="600px" mx="auto" p={1.5}>
       <Typography variant="h4" gutterBottom>
         💡 My Ideas
       </Typography>
@@ -17,17 +17,27 @@ export default function IdeasPage() {
       {/* Interactive TextField to open modal */}
       <TextField
         variant="outlined"
-        placeholder="What's your new idea?"
+        placeholder="💡 What's your next great idea?"
         fullWidth
         onClick={() => setOpen(true)}
         InputProps={{
           readOnly: true,
           sx: {
             cursor: 'pointer',
-            backgroundColor: '#f9f9f9',
-            borderRadius: 2,
+            borderRadius: 1.2,
+            backgroundColor: '#ffffff',
+            border: '1px solid #d0d7ff',
+            boxShadow: '0 1px 4px rgba(0, 102, 255, 0.1)', // 🔵 subtle blue shadow
+            transition: 'all 0.25s ease',
+
             '&:hover': {
-              backgroundColor: '#f1f1f1',
+              boxShadow: '0 2px 8px rgba(0, 102, 255, 0.2)', // 🔵 stronger blue on hover
+              borderColor: '#a0bfff',
+            },
+
+            '&:focus-within': {
+              borderColor: '#3366ff',
+              boxShadow: '0 0 0 2px rgba(51, 102, 255, 0.25)', // 🔵 blue ring
             },
           },
         }}
@@ -37,6 +47,12 @@ export default function IdeasPage() {
       <IdeasList />
 
       <IdeaModal open={open} onClose={() => setOpen(false)} />
+      <br />
+      <Button color="secondary">Button</Button>
+      <br />
+      <br />
+      <br />
+      <br />
     </Box>
   );
 }

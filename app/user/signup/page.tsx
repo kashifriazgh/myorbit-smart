@@ -9,7 +9,10 @@ import {
   Box,
   CircularProgress,
   Alert,
+  IconButton,
+  InputAdornment,
 } from '@mui/material';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import {
   doc,
@@ -26,11 +29,16 @@ import { auth, db } from '@/app/lib/firebase';
 export default function SignupPage() {
   const router = useRouter();
 
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+
   const [isMasterBlocked, setIsMasterBlocked] = useState(false);
   const [isInvitedUser, setIsInvitedUser] = useState(false);
   const [invitedRole, setInvitedRole] = useState<'viewer' | 'editor' | null>(
@@ -38,7 +46,7 @@ export default function SignupPage() {
   );
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
 
-  // 🔍 Check if master already exists and if email is invited
+  // 🔍 Check if master already exists + if this email is invited
   useEffect(() => {
     const checkStatus = async () => {
       try {
@@ -55,22 +63,32 @@ export default function SignupPage() {
           return;
         }
 
-        const invitedRef = doc(db, 'invites', email); // ⬅️ use "invites" collection or users/email
+        const invitedRef = doc(db, 'invites', email);
         const invitedDoc = await getDoc(invitedRef);
+
+        let isInvited = false;
+        let role: 'viewer' | 'editor' | null = null;
+        let inviter: string | null = null;
 
         if (invitedDoc.exists()) {
           const data = invitedDoc.data();
           if (data.status === 'invited') {
-            setIsInvitedUser(true);
-            setInvitedRole(data.role);
-            setInvitedBy(data.invitedBy);
+            isInvited = true;
+            role = data.role;
+            inviter = data.invitedBy || null;
           }
         }
 
-        setIsMasterBlocked(masterExists && !invitedDoc.exists());
+        setIsInvitedUser(isInvited);
+        setInvitedRole(role);
+        setInvitedBy(inviter);
+
+        // ❌ Block if master exists AND user is not invited
+        setIsMasterBlocked(masterExists && !isInvited);
       } catch (err) {
         console.error(err);
         setError('Failed to check user status.');
+        setIsMasterBlocked(true); // safest fallback
       } finally {
         setChecking(false);
       }
@@ -80,8 +98,8 @@ export default function SignupPage() {
   }, [email]);
 
   const handleSignup = async () => {
-    if (!email || !password) {
-      return setError('Email and password are required.');
+    if (!firstName || !lastName || !email || !password) {
+      return setError('All fields are required.');
     }
 
     setLoading(true);
@@ -95,27 +113,23 @@ export default function SignupPage() {
       );
       const user = userCred.user;
 
-      // ⬅️ Check if it's master or sub-user
-      const userData =
-        isInvitedUser && invitedRole
-          ? {
-              uid: user.uid,
-              email: user.email,
-              role: invitedRole,
-              invitedBy,
-              status: 'active',
-              createdAt: Timestamp.now(),
-            }
-          : {
-              uid: user.uid,
-              email: user.email,
-              role: 'master',
-              createdAt: Timestamp.now(),
-            };
+      let role: 'master' | 'editor' | 'viewer' = 'master';
+      if (isInvitedUser && invitedRole) {
+        role = invitedRole;
+      }
+
+      const userData = {
+        uid: user.uid,
+        email: user.email,
+        firstName,
+        lastName,
+        role,
+        createdAt: Timestamp.now(),
+        ...(isInvitedUser && { invitedBy, status: 'active' }),
+      };
 
       await setDoc(doc(db, 'users', user.uid), userData);
 
-      // Optional: update invite status
       if (isInvitedUser) {
         await setDoc(doc(db, 'invites', email), {
           ...userData,
@@ -126,7 +140,7 @@ export default function SignupPage() {
       router.push('/');
     } catch (err) {
       console.error(err);
-      setError(err.message || 'Signup failed.');
+      setError(err?.message || 'Signup failed.');
     } finally {
       setLoading(false);
     }
@@ -141,15 +155,15 @@ export default function SignupPage() {
   }
 
   return (
-    <Box maxWidth={400} mx="auto" mt={10}>
+    <Box maxWidth={400} mx="auto" my={10}>
       <Typography variant="h5" mb={2}>
         Sign Up
       </Typography>
 
       {isMasterBlocked && !isInvitedUser && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          A master user already exists and you&#39;re not invited. Signup is
-          disabled.
+          A master user already exists. Signup is restricted to invited users
+          only.
         </Alert>
       )}
 
@@ -158,6 +172,24 @@ export default function SignupPage() {
           {error}
         </Alert>
       )}
+
+      <TextField
+        fullWidth
+        label="First Name"
+        margin="normal"
+        value={firstName}
+        onChange={(e) => setFirstName(e.target.value)}
+        disabled={loading}
+      />
+
+      <TextField
+        fullWidth
+        label="Last Name"
+        margin="normal"
+        value={lastName}
+        onChange={(e) => setLastName(e.target.value)}
+        disabled={loading}
+      />
 
       <TextField
         fullWidth
@@ -171,18 +203,38 @@ export default function SignupPage() {
       <TextField
         fullWidth
         label="Password"
-        type="password"
+        type={showPassword ? 'text' : 'password'}
         margin="normal"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         disabled={loading}
+        InputProps={{
+          endAdornment: (
+            <InputAdornment position="end">
+              <IconButton
+                onClick={() => setShowPassword(!showPassword)}
+                edge="end"
+                disabled={loading}
+              >
+                {showPassword ? <VisibilityOff /> : <Visibility />}
+              </IconButton>
+            </InputAdornment>
+          ),
+        }}
       />
 
       <Button
         variant="contained"
         fullWidth
         onClick={handleSignup}
-        disabled={loading || (isMasterBlocked && !isInvitedUser)}
+        disabled={
+          loading ||
+          !firstName ||
+          !lastName ||
+          !email ||
+          !password ||
+          (isMasterBlocked && !isInvitedUser)
+        }
         sx={{ mt: 2 }}
       >
         {loading ? 'Signing up...' : 'Sign Up'}
