@@ -13,10 +13,13 @@ import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
+import CircularProgress from '@mui/material/CircularProgress';
 
 export default function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
+  const { theme } = useCustomTheme();
 
   const navItems = [
     { label: 'Ideas', icon: <LightbulbIcon />, path: '/ideas' },
@@ -51,6 +54,19 @@ export default function BottomNav() {
 
   const open = Boolean(anchorEl);
 
+  if (!theme) {
+    return (
+      <CircularProgress
+        sx={{
+          position: 'fixed',
+          bottom: 16,
+          left: '50%',
+          transform: 'translateX(-50%)',
+        }}
+      />
+    );
+  }
+
   return (
     <>
       <BottomNavigation
@@ -62,6 +78,8 @@ export default function BottomNav() {
           bottom: 0,
           zIndex: 10,
           borderTop: '1px solid #ccc',
+          bgcolor: theme.mode === 'dark' ? '#334155' : undefined,
+          color: theme.mode === 'dark' ? '#f8fafc' : undefined,
         }}
       >
         {navItems.map((item) => (

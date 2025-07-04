@@ -14,6 +14,7 @@ import { IDEA_LEVELS } from '@/app/lib/constant';
 import { useState } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface Props {
   open: boolean;
@@ -30,6 +31,7 @@ export default function LevelModal({
 }: Props) {
   const [selected, setSelected] = useState(currentLevel);
   const [saving, setSaving] = useState(false);
+  const { theme } = useCustomTheme();
 
   const handleSave = async () => {
     if (selected === currentLevel) return onClose(); // no change
@@ -55,8 +57,18 @@ export default function LevelModal({
       disableEnforceFocus
       onClick={(e) => e.stopPropagation()} // ⚠️ prevent collapse
     >
-      <DialogTitle>Select Idea Level</DialogTitle>
-      <DialogContent>
+      <DialogTitle
+        sx={
+          theme.mode === 'dark' ? { bgcolor: '#334155', color: '#f8fafc' } : {}
+        }
+      >
+        Select Idea Level
+      </DialogTitle>
+      <DialogContent
+        sx={
+          theme.mode === 'dark' ? { bgcolor: '#334155', color: '#f8fafc' } : {}
+        }
+      >
         <Stack spacing={1} my={2}>
           {IDEA_LEVELS.map((level) => {
             const isCurrent = level.key === currentLevel;

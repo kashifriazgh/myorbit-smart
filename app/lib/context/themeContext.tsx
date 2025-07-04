@@ -8,6 +8,7 @@ import { Theme } from '@/app/lib/interface'; // Your theme type
 
 interface ThemeData {
   theme: Theme;
+  setThemeMode: (mode: 'light' | 'dark') => Promise<void>;
 }
 
 const CustomThemeContext = createContext<ThemeData | null>(null);
@@ -29,6 +30,14 @@ export function CustomThemeProvider({
     return () => unsub();
   }, []);
 
+  const setThemeMode = async (mode: 'light' | 'dark') => {
+    if (!themeData) return;
+    const ref = doc(db, 'theme', 'activeTheme');
+    await import('firebase/firestore').then(({ setDoc }) =>
+      setDoc(ref, { ...themeData, mode }, { merge: true })
+    );
+  };
+
   const muiTheme = createTheme({
     palette: {
       mode: themeData?.mode || 'light',
@@ -38,7 +47,9 @@ export function CustomThemeProvider({
   });
 
   return (
-    <CustomThemeContext.Provider value={{ theme: themeData as Theme }}>
+    <CustomThemeContext.Provider
+      value={{ theme: themeData as Theme, setThemeMode }}
+    >
       <ThemeProvider theme={muiTheme}>{children}</ThemeProvider>
     </CustomThemeContext.Provider>
   );

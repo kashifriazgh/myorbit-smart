@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { User } from 'firebase/auth'; // or your context type
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface Props {
   open: boolean;
@@ -42,6 +43,7 @@ export default function PrivacyModal({
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<{ uid: string; name: string }[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const { theme } = useCustomTheme();
 
   useEffect(() => {
     if (!open || !user) return;
@@ -143,8 +145,18 @@ export default function PrivacyModal({
       disableEnforceFocus
       onClick={(e) => e.stopPropagation()}
     >
-      <DialogTitle>Change Privacy</DialogTitle>
-      <DialogContent>
+      <DialogTitle
+        sx={
+          theme.mode === 'dark' ? { bgcolor: '#334155', color: '#f8fafc' } : {}
+        }
+      >
+        Change Privacy
+      </DialogTitle>
+      <DialogContent
+        sx={
+          theme.mode === 'dark' ? { bgcolor: '#334155', color: '#f8fafc' } : {}
+        }
+      >
         <Stack spacing={2} mt={2}>
           <OptionBox
             label="Private"

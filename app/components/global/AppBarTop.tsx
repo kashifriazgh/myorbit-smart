@@ -21,6 +21,10 @@ import MoreIcon from '@mui/icons-material/MoreVert';
 import Link from 'next/link';
 import LogoutButton from '../user/LogoutButton';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
+import CircularProgress from '@mui/material/CircularProgress';
 // import MenuIcon from '@mui/icons-material/Menu'; // Optional drawer icon
 
 // Styled Components
@@ -71,6 +75,7 @@ export default function AppBarTop() {
   const isMenuOpen = Boolean(anchorEl);
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
   const { user, role, loading } = useAuth();
+  const { theme, setThemeMode } = useCustomTheme();
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
@@ -165,6 +170,18 @@ export default function AppBarTop() {
     </Menu>
   );
 
+  if (!theme) {
+    return (
+      <Box sx={{ flexGrow: 1 }}>
+        <AppBar position="static">
+          <Toolbar sx={{ justifyContent: 'center' }}>
+            <CircularProgress color="inherit" />
+          </Toolbar>
+        </AppBar>
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ flexGrow: 1 }}>
       <AppBar position="static">
@@ -197,6 +214,21 @@ export default function AppBarTop() {
               <Badge badgeContent={7} color="error">
                 <NotificationsIcon />
               </Badge>
+            </IconButton>
+            <IconButton
+              size="large"
+              color="inherit"
+              aria-label="toggle dark mode"
+              onClick={() =>
+                setThemeMode(theme?.mode === 'dark' ? 'light' : 'dark')
+              }
+              sx={{ ml: 1 }}
+            >
+              {theme.mode === 'dark' ? (
+                <Brightness7Icon />
+              ) : (
+                <Brightness4Icon />
+              )}
             </IconButton>
             <IconButton
               size="large"

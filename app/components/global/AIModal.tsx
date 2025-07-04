@@ -16,6 +16,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface Props {
   open: boolean;
@@ -42,6 +43,7 @@ export default function AIEnhanceModal({
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [aiResult, setAiResult] = useState('');
   const [loading, setLoading] = useState(false);
+  const { theme } = useCustomTheme();
 
   useEffect(() => {
     if (!open) {
@@ -127,8 +129,18 @@ export default function AIEnhanceModal({
       fullWidth
       onClick={(e) => e.stopPropagation()}
     >
-      <DialogTitle>AI Assistant</DialogTitle>
-      <DialogContent>
+      <DialogTitle
+        sx={
+          theme.mode === 'dark' ? { bgcolor: '#334155', color: '#f8fafc' } : {}
+        }
+      >
+        AI Assistant
+      </DialogTitle>
+      <DialogContent
+        sx={
+          theme.mode === 'dark' ? { bgcolor: '#334155', color: '#f8fafc' } : {}
+        }
+      >
         <Tabs value={tab} onChange={(e, newVal) => setTab(newVal)}>
           <Tab label="Enhance" />
           <Tab label="Suggestions" />
