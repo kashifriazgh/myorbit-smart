@@ -33,6 +33,8 @@ export default function LevelModal({
   const [saving, setSaving] = useState(false);
   const { theme } = useCustomTheme();
 
+  if (!theme) return null;
+
   const handleSave = async () => {
     if (selected === currentLevel) return onClose(); // no change
 
@@ -84,18 +86,35 @@ export default function LevelModal({
                   borderRadius: 2,
                   cursor: 'pointer',
                   backgroundColor: isSelected
-                    ? '#e0f7fa'
+                    ? theme.mode === 'dark'
+                      ? '#475569'
+                      : '#e0f7fa'
                     : isCurrent
-                    ? '#f5f5f5'
+                    ? theme.mode === 'dark'
+                      ? '#334155'
+                      : '#f5f5f5'
+                    : theme.mode === 'dark'
+                    ? '#1e293b'
                     : '#fafafa',
+                  color: theme.mode === 'dark' ? '#f1f5f9' : 'inherit',
                   '&:hover': {
                     backgroundColor: isSelected
-                      ? '#b2ebf2'
+                      ? theme.mode === 'dark'
+                        ? '#64748b'
+                        : '#b2ebf2'
                       : isCurrent
-                      ? '#eeeeee'
+                      ? theme.mode === 'dark'
+                        ? '#475569'
+                        : '#eeeeee'
+                      : theme.mode === 'dark'
+                      ? '#334155'
                       : '#f0f0f0',
                   },
-                  border: isCurrent ? '1px solid #888' : 'none',
+                  border: isCurrent
+                    ? theme.mode === 'dark'
+                      ? '1px solid #64748b'
+                      : '1px solid #888'
+                    : 'none',
                 }}
               >
                 <Typography fontWeight={isCurrent ? 600 : 500}>

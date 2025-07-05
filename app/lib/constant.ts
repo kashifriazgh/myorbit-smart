@@ -15,3 +15,10 @@ export const IDEA_LEVELS = [
     description: 'Casual idea. Store for later review.',
   },
 ];
+
+// todo priority
+export const PRIORITY_OPTIONS = [
+  { label: 'Routine', value: 'routine' },
+  { label: 'Urgent', value: 'urgent' },
+  { label: 'Critical', value: 'critical' },
+];

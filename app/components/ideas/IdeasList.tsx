@@ -33,6 +33,7 @@ import PrivacyModal from '../global/PrivacyModal';
 import DeleteConfirmModal from '../global/DeleteConfirmModal';
 import LevelModal from '../global/LevelModal';
 import AIEnhanceModal from '../global/AIModal';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 type PrivacyType = 'private' | 'public' | 'specific';
 
@@ -55,6 +56,8 @@ export default function IdeasList() {
     privacy: 'all',
     scope: 'all',
   });
+
+  const { theme } = useCustomTheme();
 
   const fetchIdeas = async () => {
     if (!user) {
@@ -148,6 +151,8 @@ export default function IdeasList() {
     setActiveIdea(null);
   };
 
+  if (!theme) return <CircularProgress />;
+
   return (
     <Box mt={4}>
       <Stack
@@ -219,28 +224,56 @@ export default function IdeasList() {
               }
               p={2}
               mb={2}
-              border="1px solid #e0e0e0"
+              border={
+                theme.mode === 'dark'
+                  ? '1px solid #475569'
+                  : '1px solid #e0e0e0'
+              }
               borderRadius={1}
-              bgcolor="#fff"
-              boxShadow="0 1px 4px rgba(0,0,0,0.04)"
+              bgcolor={theme.mode === 'dark' ? '#334155' : '#fff'}
+              boxShadow={
+                theme.mode === 'dark'
+                  ? '0 1px 4px rgba(0,0,0,0.2)'
+                  : '0 1px 4px rgba(0,0,0,0.04)'
+              }
               sx={{
                 cursor: 'pointer',
+                color: theme.mode === 'dark' ? '#f1f5f9' : 'inherit',
                 '&:hover': {
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                  borderColor: '#d0d0d0',
+                  boxShadow:
+                    theme.mode === 'dark'
+                      ? '0 2px 8px rgba(0,0,0,0.3)'
+                      : '0 2px 8px rgba(0,0,0,0.08)',
+                  borderColor: theme.mode === 'dark' ? '#64748b' : '#d0d0d0',
                 },
               }}
             >
-              <Typography variant="body1">
+              <Typography
+                variant="body1"
+                sx={{ color: theme.mode === 'dark' ? '#f1f5f9' : 'inherit' }}
+              >
                 {idea.text || '(Untitled)'}
               </Typography>
               <Box mt={0.5} display="flex" gap={1} flexWrap="wrap">
                 {idea.tags?.map((tag, i) => (
-                  <Chip key={i} label={`#${tag}`} size="small" />
+                  <Chip
+                    key={i}
+                    label={`#${tag}`}
+                    size="small"
+                    sx={{
+                      bgcolor: theme.mode === 'dark' ? '#475569' : undefined,
+                      color: theme.mode === 'dark' ? '#e2e8f0' : undefined,
+                    }}
+                  />
                 ))}
               </Box>
               <Collapse in={isExpanded} timeout="auto">
-                <Divider sx={{ my: 1.5 }} />
+                <Divider
+                  sx={{
+                    my: 1.5,
+                    borderColor: theme.mode === 'dark' ? '#475569' : undefined,
+                  }}
+                />
                 <Box
                   display="flex"
                   justifyContent="space-between"
@@ -248,7 +281,14 @@ export default function IdeasList() {
                 >
                   <Box display="flex" gap={1}>
                     <IdeaActionButton
-                      icon={<AutoAwesome />}
+                      icon={
+                        <AutoAwesome
+                          sx={{
+                            color:
+                              theme.mode === 'dark' ? '#e2e8f0' : undefined,
+                          }}
+                        />
+                      }
                       tooltip="AI Assist"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -257,7 +297,14 @@ export default function IdeasList() {
                       }}
                     />
                     <IdeaActionButton
-                      icon={<EmojiEventsIcon />}
+                      icon={
+                        <EmojiEventsIcon
+                          sx={{
+                            color:
+                              theme.mode === 'dark' ? '#e2e8f0' : undefined,
+                          }}
+                        />
+                      }
                       tooltip="Level"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -265,7 +312,14 @@ export default function IdeasList() {
                       }}
                     />
                     <IdeaActionButton
-                      icon={<PublicIcon />}
+                      icon={
+                        <PublicIcon
+                          sx={{
+                            color:
+                              theme.mode === 'dark' ? '#e2e8f0' : undefined,
+                          }}
+                        />
+                      }
                       tooltip="Privacy"
                       onClick={(e) => {
                         e.stopPropagation();

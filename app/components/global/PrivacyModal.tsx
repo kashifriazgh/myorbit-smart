@@ -106,6 +106,8 @@ export default function PrivacyModal({
     }
   };
 
+  if (!theme) return null;
+
   const OptionBox = ({
     label,
     value,
@@ -124,8 +126,23 @@ export default function PrivacyModal({
           py: 1,
           borderRadius: 2,
           cursor: 'pointer',
-          backgroundColor: selected ? '#e0f7fa' : '#fafafa',
-          '&:hover': { backgroundColor: selected ? '#b2ebf2' : '#f0f0f0' },
+          backgroundColor: selected
+            ? theme.mode === 'dark'
+              ? '#475569'
+              : '#e0f7fa' // slate-600 : light cyan
+            : theme.mode === 'dark'
+            ? '#1e293b'
+            : '#fafafa', // slate-900 : very light gray
+          color: theme.mode === 'dark' ? '#f1f5f9' : 'inherit', // slate-100 : default
+          '&:hover': {
+            backgroundColor: selected
+              ? theme.mode === 'dark'
+                ? '#64748b'
+                : '#b2ebf2' // slate-500 : darker cyan
+              : theme.mode === 'dark'
+              ? '#334155'
+              : '#f0f0f0', // slate-800 : darker light gray
+          },
         }}
       >
         <Typography fontWeight={selected ? 600 : 500}>{label}</Typography>

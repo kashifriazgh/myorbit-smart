@@ -4,9 +4,13 @@ import { Box, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
 import IdeaModal from '../components/ideas/IdeasModal';
 import IdeasList from '../components/ideas/IdeasList';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 export default function IdeasPage() {
   const [open, setOpen] = useState(false);
+  const { theme } = useCustomTheme();
+
+  if (!theme) return null;
 
   return (
     <Box maxWidth="600px" mx="auto" p={1.5}>
@@ -23,21 +27,28 @@ export default function IdeasPage() {
         InputProps={{
           readOnly: true,
           sx: {
-            cursor: 'pointer',
+            backgroundColor: theme.mode === 'dark' ? '#334155' : '#ffffff',
+            color: theme.mode === 'dark' ? '#f1f5f9' : '#000000',
             borderRadius: 1.2,
-            backgroundColor: '#ffffff',
-            border: '1px solid #d0d7ff',
-            boxShadow: '0 1px 4px rgba(0, 102, 255, 0.1)', // 🔵 subtle blue shadow
+            cursor: 'pointer',
+            boxShadow: '0 1px 4px rgba(0, 102, 255, 0.1)',
             transition: 'all 0.25s ease',
 
             '&:hover': {
-              boxShadow: '0 2px 8px rgba(0, 102, 255, 0.2)', // 🔵 stronger blue on hover
-              borderColor: '#a0bfff',
+              boxShadow: '0 2px 8px rgba(0, 102, 255, 0.2)',
             },
 
             '&:focus-within': {
               borderColor: '#3366ff',
-              boxShadow: '0 0 0 2px rgba(51, 102, 255, 0.25)', // 🔵 blue ring
+              boxShadow: '0 0 0 2px rgba(51, 102, 255, 0.25)',
+            },
+
+            '& fieldset': {
+              borderColor: theme.mode === 'dark' ? '#f8fafc' : '#d0d7ff',
+            },
+
+            '&:hover fieldset': {
+              borderColor: theme.mode === 'dark' ? '#e2e8f0' : '#a0bfff',
             },
           },
         }}

@@ -200,7 +200,8 @@ export default function AIEnhanceModal({
               variant="body2"
               sx={{
                 whiteSpace: 'pre-wrap',
-                background: '#f7f7f7',
+                background: theme?.mode === 'dark' ? '#475569' : '#f7f7f7',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : 'inherit',
                 borderRadius: 2,
                 p: 2,
                 minHeight: 100,
