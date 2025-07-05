@@ -17,8 +17,44 @@ export const IDEA_LEVELS = [
 ];
 
 // todo priority
+
 export const PRIORITY_OPTIONS = [
-  { label: 'Routine', value: 'routine' },
-  { label: 'Urgent', value: 'urgent' },
-  { label: 'Critical', value: 'critical' },
+  {
+    label: 'Routine',
+    value: 'routine',
+    description: 'Can be done anytime',
+  },
+  {
+    label: 'Urgent',
+    value: 'urgent',
+    description: 'Should be done soon',
+  },
+  {
+    label: 'Critical',
+    value: 'critical',
+    description: 'Needs immediate attention',
+  },
+];
+
+export const STATUS_OPTIONS = [
+  {
+    label: 'In Progress',
+    value: 'in_progress',
+    description: 'Work is in progress',
+  },
+  {
+    label: 'Hold',
+    value: 'hold',
+    description: 'Temporarily paused',
+  },
+  {
+    label: 'Completed',
+    value: 'completed',
+    description: 'Task is finished',
+  },
+  {
+    label: 'Left Over',
+    value: 'left-over',
+    description: 'Task was missed or delayed',
+  },
 ];

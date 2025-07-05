@@ -23,7 +23,8 @@ interface Props {
   onClose: () => void;
   docId: string;
   originalText: string;
-  onApply: (updatedText: string) => void; // called after enhancement
+  onApply: (updatedText: string) => void;
+  enableSuggestion?: boolean; // ✅ NEW
 }
 
 const ENHANCE_OPTIONS = [
@@ -35,9 +36,9 @@ const ENHANCE_OPTIONS = [
 export default function AIEnhanceModal({
   open,
   onClose,
-  // docId,
   originalText,
   onApply,
+  enableSuggestion = true, // ✅ default is true
 }: Props) {
   const [tab, setTab] = useState(0);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
@@ -63,6 +64,21 @@ export default function AIEnhanceModal({
   const handleEnhance = async () => {
     if (selectedOptions.length === 0) return;
 
+    const enhanceMap: Record<string, string> = {
+      grammar: 'Fix grammar issues',
+      fine_tune: 'Fine-tune the text for clarity and tone',
+      add_emojis: 'Add relevant emojis for better readability',
+    };
+
+    const instructionText = selectedOptions
+      .map((key) => enhanceMap[key])
+      .join(', ');
+
+    const fullPrompt = `
+Improve the following text with these actions: ${instructionText}.
+Return only the improved version. No explanation needed.
+    `.trim();
+
     setLoading(true);
     try {
       const response = await fetch('/api/ideas/improve-idea', {
@@ -70,7 +86,7 @@ export default function AIEnhanceModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           value: originalText,
-          instructions: selectedOptions, // ✅ send as array
+          instructions: fullPrompt,
         }),
       });
 
@@ -85,15 +101,15 @@ export default function AIEnhanceModal({
   };
 
   const handleSuggest = async () => {
-    //     const suggestionPrompt = `
-    // You are an idea expert. Analyze this idea and provide feedback on:
-    // 1. Productivity of the idea
-    // 2. Accessibility and feasibility
-    // 3. Roadmap to implement it
-    // 4. Any missing aspects or improvements
+    const suggestionPrompt = `
+You are a productivity assistant. Analyze the following task and provide:
+1. Productivity potential
+2. Accessibility or feasibility
+3. A suggested roadmap
+4. Any missing aspects or improvements
 
-    // Idea: "${originalText}"
-    //     `.trim();
+Keep it detailed but clear.
+    `.trim();
 
     setLoading(true);
     try {
@@ -102,7 +118,7 @@ export default function AIEnhanceModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           value: originalText,
-          suggestion: true,
+          instructions: suggestionPrompt,
         }),
       });
 
@@ -143,7 +159,7 @@ export default function AIEnhanceModal({
       >
         <Tabs value={tab} onChange={(e, newVal) => setTab(newVal)}>
           <Tab label="Enhance" />
-          <Tab label="Suggestions" />
+          {enableSuggestion && <Tab label="Suggestions" />}
         </Tabs>
 
         <Box mt={2}>
@@ -175,9 +191,11 @@ export default function AIEnhanceModal({
             </Stack>
           )}
 
-          {tab === 1 && (
+          {tab === 1 && enableSuggestion && (
             <Stack spacing={2}>
-              <Typography>Get detailed suggestions about your idea.</Typography>
+              <Typography>
+                Get detailed suggestions about your content.
+              </Typography>
               <Button
                 variant="outlined"
                 onClick={handleSuggest}

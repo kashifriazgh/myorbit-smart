@@ -23,13 +23,11 @@ import {
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { DateRange } from 'react-date-range';
-import 'react-date-range/dist/styles.css';
-import 'react-date-range/dist/theme/default.css';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
-
 import { PRIORITY_OPTIONS } from '@/app/lib/constant';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 type Props = {
   open: boolean;
@@ -45,14 +43,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   const [subInput, setSubInput] = useState('');
   const [priority, setPriority] = useState('routine');
   const [privacy, setPrivacy] = useState<'private' | 'public'>('private');
-
-  const [range, setRange] = useState([
-    {
-      startDate: new Date(),
-      endDate: new Date(),
-      key: 'selection',
-    },
-  ]);
+  const [dueDate, setDueDate] = useState<Date | null>(new Date());
 
   const [loading, setLoading] = useState(false);
 
@@ -87,10 +78,11 @@ export default function ToDoModal({ open, onClose }: Props) {
       authorName: user!.displayName || '',
       assignedUsers: [],
       sharedWith: [],
-      startDate: Timestamp.fromDate(range[0].startDate || new Date()),
-      dueDate: Timestamp.fromDate(range[0].endDate || new Date()),
+      startDate: Timestamp.fromDate(new Date()),
+      dueDate: Timestamp.fromDate(dueDate || new Date()),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      privacy,
     };
 
     await addDoc(collection(db, 'todos'), docData);
@@ -99,7 +91,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>📝 New To-Do</DialogTitle>
       <DialogContent
         dividers
@@ -109,6 +101,8 @@ export default function ToDoModal({ open, onClose }: Props) {
           <TextField
             label="Title"
             fullWidth
+            multiline
+            maxRows={3}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
@@ -166,14 +160,15 @@ export default function ToDoModal({ open, onClose }: Props) {
 
           <Box>
             <Typography variant="subtitle2" mb={1}>
-              Select Start and Due Date
+              Select Due Date
             </Typography>
-            <DateRange
-              editableDateInputs={true}
-              onChange={(item) => setRange([item.selection])}
-              moveRangeOnFirstSelection={false}
-              ranges={range}
-              color="#2563eb"
+            <DatePicker
+              selected={dueDate}
+              onChange={(date: Date | null) => setDueDate(date)}
+              className="custom-datepicker"
+              dateFormat="MMMM d, yyyy"
+              minDate={new Date()}
+              wrapperClassName="date-picker-wrapper"
             />
           </Box>
         </Stack>

@@ -1,5 +1,4 @@
-// components/ideas/LevelModal.tsx
-
+// components/global/OptionModal.tsx
 import {
   Box,
   Dialog,
@@ -10,126 +9,106 @@ import {
   Divider,
   Button,
 } from '@mui/material';
-import { IDEA_LEVELS } from '@/app/lib/constant';
 import { useState } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
+interface OptionItem {
+  key: string;
+  label: string;
+  description?: string;
+  icon?: React.ReactNode;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
-  currentLevel: string;
   docId: string;
+  collectionName: string;
+  field: string;
+  currentValue: string;
+  options: OptionItem[];
+  onChange?: (newValue: string) => void;
 }
 
-export default function LevelModal({
+export default function OptionModal({
   open,
   onClose,
-  currentLevel,
   docId,
+  collectionName,
+  field,
+  currentValue,
+  options,
+  onChange,
 }: Props) {
-  const [selected, setSelected] = useState(currentLevel);
+  const [selected, setSelected] = useState(currentValue);
   const [saving, setSaving] = useState(false);
   const { theme } = useCustomTheme();
 
   if (!theme) return null;
 
   const handleSave = async () => {
-    if (selected === currentLevel) return onClose(); // no change
-
+    if (selected === currentValue) return onClose();
     setSaving(true);
     try {
-      const ref = doc(db, 'ideas', docId);
-      await updateDoc(ref, { level: selected });
+      const ref = doc(db, collectionName, docId);
+      await updateDoc(ref, { [field]: selected });
+      onChange?.(selected);
       onClose();
     } catch (error) {
-      console.error('Error updating level:', error);
+      console.error(`Error updating ${field}:`, error);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="xs"
-      fullWidth
-      disableEnforceFocus
-      onClick={(e) => e.stopPropagation()} // ⚠️ prevent collapse
-    >
-      <DialogTitle
-        sx={
-          theme.mode === 'dark' ? { bgcolor: '#334155', color: '#f8fafc' } : {}
-        }
-      >
-        Select Idea Level
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>
+        Select {field[0].toUpperCase() + field.slice(1)}
       </DialogTitle>
-      <DialogContent
-        sx={
-          theme.mode === 'dark' ? { bgcolor: '#334155', color: '#f8fafc' } : {}
-        }
-      >
+      <DialogContent>
         <Stack spacing={1} my={2}>
-          {IDEA_LEVELS.map((level) => {
-            const isCurrent = level.key === currentLevel;
-            const isSelected = level.key === selected;
-
+          {options.map((opt) => {
+            const isCurrent = opt.key === currentValue;
+            const isSelected = opt.key === selected;
             return (
               <Box
-                key={level.key}
-                onClick={() => setSelected(level.key)}
+                key={opt.key}
+                onClick={() => setSelected(opt.key)}
                 sx={{
                   px: 2,
                   py: 1,
                   borderRadius: 2,
                   cursor: 'pointer',
                   backgroundColor: isSelected
-                    ? theme.mode === 'dark'
-                      ? '#475569'
-                      : '#e0f7fa'
+                    ? '#e0f7fa'
                     : isCurrent
-                    ? theme.mode === 'dark'
-                      ? '#334155'
-                      : '#f5f5f5'
-                    : theme.mode === 'dark'
-                    ? '#1e293b'
+                    ? '#f5f5f5'
                     : '#fafafa',
-                  color: theme.mode === 'dark' ? '#f1f5f9' : 'inherit',
                   '&:hover': {
-                    backgroundColor: isSelected
-                      ? theme.mode === 'dark'
-                        ? '#64748b'
-                        : '#b2ebf2'
-                      : isCurrent
-                      ? theme.mode === 'dark'
-                        ? '#475569'
-                        : '#eeeeee'
-                      : theme.mode === 'dark'
-                      ? '#334155'
-                      : '#f0f0f0',
+                    backgroundColor: '#e0f2f1',
                   },
-                  border: isCurrent
-                    ? theme.mode === 'dark'
-                      ? '1px solid #64748b'
-                      : '1px solid #888'
-                    : 'none',
+                  border: isCurrent ? '1px solid #888' : 'none',
                 }}
               >
-                <Typography fontWeight={isCurrent ? 600 : 500}>
-                  {level.label}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {level.description}
-                </Typography>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  {opt.icon}
+                  <Typography fontWeight={isCurrent ? 600 : 500}>
+                    {opt.label}
+                  </Typography>
+                </Stack>
+                {opt.description && (
+                  <Typography variant="body2" color="text.secondary">
+                    {opt.description}
+                  </Typography>
+                )}
               </Box>
             );
           })}
         </Stack>
-
         <Divider sx={{ my: 2 }} />
-
         <Box display="flex" justifyContent="flex-end" gap={2}>
           <Button onClick={onClose} disabled={saving}>
             Cancel
@@ -137,7 +116,7 @@ export default function LevelModal({
           <Button
             onClick={handleSave}
             variant="contained"
-            disabled={saving || selected === currentLevel}
+            disabled={saving || selected === currentValue}
           >
             {saving ? 'Saving...' : 'Save'}
           </Button>

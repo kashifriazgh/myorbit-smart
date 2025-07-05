@@ -56,20 +56,12 @@ export interface Todo {
   id?: string;
   title: string;
   description?: string;
-
   tags?: string[];
   priority: 'routine' | 'urgent' | 'critical';
   status: 'in_progress' | 'completed' | 'hold' | 'left-over';
   progressPercent: number; // 0–100
   pinned?: boolean;
   isArchived?: boolean;
-  // Dates
-  startDate?: Date;
-  dueDate?: Date;
-  completedAt?: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-  reminderDate?: Date;
   // Ownership & Sharing
   authorId: string;
   authorName?: string;
@@ -81,6 +73,16 @@ export interface Todo {
     done: boolean;
     status: 'in_progress' | 'completed' | 'hold' | 'left-over';
   }[];
+  privacy?: 'private' | 'public' | 'specific';
+  // Dates
+  startDate?: Date;
+  dueDate?: Timestamp | Date; // 👈 Allow both types
+
+  completedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  reminderDate?: Date;
+
   // Extras
   notes?: string;
   relatedLinks?: string[];

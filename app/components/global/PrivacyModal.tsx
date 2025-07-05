@@ -26,6 +26,7 @@ interface Props {
   sharedWith: string[]; // user ids
   docId: string;
   user: User | null; // 🔧 Add this
+  collectionName: string;
 }
 
 export default function PrivacyModal({
@@ -35,6 +36,7 @@ export default function PrivacyModal({
   sharedWith,
   docId,
   user,
+  collectionName,
 }: Props) {
   const [selectedPrivacy, setSelectedPrivacy] = useState(currentPrivacy);
   const [selectedUsers, setSelectedUsers] = useState<string[]>(
@@ -93,7 +95,7 @@ export default function PrivacyModal({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const ref = doc(db, 'ideas', docId);
+      const ref = doc(db, collectionName, docId);
       await updateDoc(ref, {
         privacy: selectedPrivacy,
         sharedWith: selectedPrivacy === 'specific' ? selectedUsers : [],

@@ -1,23 +1,19 @@
 'use client';
 import {
   Box,
+  Checkbox,
   CircularProgress,
-  Typography,
-  FormControl,
-  InputLabel,
-  Select,
   Stack,
-  Chip,
-  Divider,
-  Collapse,
+  Typography,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
 import { collection, getDocs, Timestamp } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import moment from 'moment-timezone';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { Todo } from '@/app/lib/interface';
-import moment from 'moment-timezone';
+import Link from 'next/link';
 
 export default function TodosList() {
   const { user } = useAuth();
@@ -25,203 +21,174 @@ export default function TodosList() {
 
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const [filter, setFilter] = useState({
-    priority: 'all',
-    status: 'all',
-    scope: 'all',
-  });
+  const PRIORITY_COLORS: Record<string, { bg: string; text: string }> = {
+    routine: { bg: '#10b981', text: '#fff' }, // green - low urgency
+    urgent: { bg: '#f59e0b', text: '#fff' }, // amber - medium urgency
+    critical: { bg: '#ef4444', text: '#fff' }, // red - high urgency
+  };
+
+  const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+    in_progress: { bg: '#3b82f6', text: '#fff' }, // blue
+    hold: { bg: '#fbbf24', text: '#000' }, // yellow
+    completed: { bg: '#22c55e', text: '#fff' }, // green
+    'left-over': { bg: '#6b7280', text: '#fff' }, // gray
+  };
+
+  const getDueDateColor = (dueDate: Date) => {
+    const now = moment();
+    const due = moment(dueDate);
+    const diff = due.diff(now, 'days');
+
+    if (diff < 0) return { bg: '#dc2626', text: '#fff' }; // overdue
+    if (diff === 0) return { bg: '#f97316', text: '#fff' }; // due today
+    if (diff <= 2) return { bg: '#facc15', text: '#000' }; // due soon
+    return { bg: '#e5e7eb', text: '#111827' }; // default
+  };
 
   const fetchTodos = async () => {
     if (!user) return;
-
     setLoading(true);
+
     try {
       const snap = await getDocs(collection(db, 'todos'));
       const now = moment().tz('Asia/Karachi');
-      const startDate = now.clone().subtract(30, 'days').startOf('day');
-      const endDate = now.clone().endOf('day');
-
-      const data: Todo[] = snap.docs
-        .map((doc) => {
-          const d = doc.data() as Todo;
-          return {
-            ...d,
-            id: doc.id,
-          };
-        })
+      const recentTodos = snap.docs
+        .map((doc) => ({ ...doc.data(), id: doc.id } as Todo))
         .filter((todo) => {
-          const isOwn = todo.authorId === user.uid;
-          const isShared =
-            Array.isArray(todo.sharedWith) &&
-            todo.sharedWith.includes(user.uid);
-          const scopeMatch =
-            filter.scope === 'all' ||
-            (filter.scope === 'own' && isOwn) ||
-            (filter.scope === 'shared' && isShared);
-
-          const priorityMatch =
-            filter.priority === 'all' || todo.priority === filter.priority;
-          const statusMatch =
-            filter.status === 'all' || todo.status === filter.status;
-
-          const createdAt = todo.createdAt as unknown as Timestamp;
-          const createdMoment = createdAt?.seconds
-            ? moment.unix(createdAt.seconds).tz('Asia/Karachi')
+          const createdAt = (todo.createdAt as unknown as Timestamp)?.seconds
+            ? moment
+                .unix((todo.createdAt as unknown as Timestamp).seconds)
+                .tz('Asia/Karachi')
             : null;
-
-          const dateMatch = createdMoment
-            ? createdMoment.isBetween(startDate, endDate, null, '[]')
-            : false;
-
-          return scopeMatch && priorityMatch && statusMatch && dateMatch;
+          return (
+            todo.authorId === user.uid &&
+            createdAt?.isAfter(now.clone().subtract(30, 'days'))
+          );
         });
 
-      const sorted = data.sort((a, b) => {
-        const t1 =
-          a.createdAt instanceof Date
-            ? a.createdAt.getTime()
-            : (a.createdAt as Timestamp)?.toMillis?.() || 0;
-
-        const t2 =
-          b.createdAt instanceof Date
-            ? b.createdAt.getTime()
-            : (b.createdAt as Timestamp)?.toMillis?.() || 0;
-
-        return t2 - t1;
-      });
-
-      setTodos(sorted);
-    } catch (error) {
-      console.error('❌ Failed to fetch todos:', error);
+      setTodos(recentTodos);
+    } catch (err) {
+      console.error('❌ Error loading todos:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
   };
 
   useEffect(() => {
     fetchTodos();
-  }, [user, filter]);
+  }, [user]);
 
-  if (!theme) return null;
+  if (loading) {
+    return (
+      <Box textAlign="center" mt={4}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box mt={4}>
-      {/* Filters */}
-      <Stack direction="row" spacing={2} mb={2} flexWrap="wrap">
-        <FormControl size="small">
-          <InputLabel>Priority</InputLabel>
-          <Select
-            native
-            value={filter.priority}
-            onChange={(e) =>
-              setFilter((f) => ({ ...f, priority: e.target.value }))
-            }
-          >
-            <option value="all">All</option>
-            <option value="routine">Routine</option>
-            <option value="urgent">Urgent</option>
-            <option value="critical">Critical</option>
-          </Select>
-        </FormControl>
-        <FormControl size="small">
-          <InputLabel>Status</InputLabel>
-          <Select
-            native
-            value={filter.status}
-            onChange={(e) =>
-              setFilter((f) => ({ ...f, status: e.target.value }))
-            }
-          >
-            <option value="all">All</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="hold">Hold</option>
-            <option value="left-over">Left Over</option>
-          </Select>
-        </FormControl>
-        <FormControl size="small">
-          <InputLabel>Scope</InputLabel>
-          <Select
-            native
-            value={filter.scope}
-            onChange={(e) =>
-              setFilter((f) => ({ ...f, scope: e.target.value }))
-            }
-          >
-            <option value="all">All</option>
-            <option value="own">Own</option>
-            <option value="shared">Shared</option>
-          </Select>
-        </FormControl>
-      </Stack>
-
-      {/* Loader / No Data / List */}
-      {loading ? (
-        <Box display="flex" justifyContent="center" mt={6}>
-          <CircularProgress />
-        </Box>
-      ) : todos.length === 0 ? (
+      {todos.length === 0 ? (
         <Typography>No tasks found.</Typography>
       ) : (
         todos.map((todo) => {
-          const isExpanded = expandedId === todo.id;
+          const selected = selectedIds.includes(todo.id!);
+          const dueDate = (todo.dueDate as unknown as Timestamp)?.toDate?.();
           return (
             <Box
               key={todo.id}
-              p={2}
-              mb={2}
-              onClick={() =>
-                setExpandedId((prev) => (prev === todo.id ? null : todo.id))
-              }
               sx={{
-                border: `1px solid ${
-                  theme.mode === 'dark' ? '#475569' : '#d0d0d0'
-                }`,
+                p: 2,
+                mb: 2,
                 borderRadius: 2,
-                bgcolor: theme.mode === 'dark' ? '#1e293b' : '#fff',
-                boxShadow:
-                  theme.mode === 'dark'
-                    ? '0 1px 4px rgba(0,0,0,0.2)'
-                    : '0 1px 4px rgba(0,0,0,0.05)',
-                cursor: 'pointer',
+                border: `1px solid ${
+                  theme.mode === 'dark' ? '#334155' : '#d4d4d4'
+                }`,
+                bgcolor: selected
+                  ? theme.mode === 'dark'
+                    ? '#1e40af'
+                    : '#dbeafe'
+                  : theme.mode === 'dark'
+                  ? '#1e293b'
+                  : '#fff',
                 color: theme.mode === 'dark' ? '#f1f5f9' : 'inherit',
               }}
             >
-              <Typography fontWeight="bold">{todo.title}</Typography>
-              <Box mt={1} display="flex" gap={1} flexWrap="wrap">
-                <Chip size="small" label={`Priority: ${todo.priority}`} />
-                <Chip size="small" label={`Status: ${todo.status}`} />
-              </Box>
-
-              <Collapse in={isExpanded}>
-                <Divider sx={{ my: 1.5 }} />
-                <Typography variant="body2" gutterBottom>
-                  Progress: {todo.progressPercent}%
-                </Typography>
-
-                {todo.steps && todo.steps.length > 0 && (
-                  <Box>
-                    <Typography fontWeight={600} mb={0.5}>
-                      Sub Tasks:
-                    </Typography>
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {todo.steps.map((s, i) => (
-                        <li key={i}>
-                          {s.text} – {s.status}
-                        </li>
-                      ))}
-                    </ul>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Checkbox
+                  checked={selected}
+                  onChange={() => toggleSelect(todo.id!)}
+                  size="small"
+                />
+                <Link href={`/to-do/${todo.id}`}>
+                  <Typography
+                    fontWeight={600}
+                    sx={{
+                      cursor: 'pointer',
+                      '&:hover': { textDecoration: 'underline' },
+                    }}
+                  >
+                    {todo.title}
+                  </Typography>
+                </Link>
+              </Stack>
+              <Stack
+                direction="row"
+                spacing={1}
+                mt={0.5}
+                ml={4}
+                flexWrap="wrap"
+              >
+                {todo.status && (
+                  <Box
+                    sx={{
+                      px: 1,
+                      py: 0.2,
+                      borderRadius: 1,
+                      fontSize: 11,
+                      bgcolor: STATUS_COLORS[todo.status]?.bg,
+                      color: STATUS_COLORS[todo.status]?.text,
+                    }}
+                  >
+                    {todo.status}
                   </Box>
                 )}
-
-                {todo.notes && (
-                  <Box mt={1}>
-                    <Typography fontWeight={600}>Notes:</Typography>
-                    <Typography variant="body2">{todo.notes}</Typography>
+                {todo.priority && (
+                  <Box
+                    sx={{
+                      px: 1,
+                      py: 0.2,
+                      borderRadius: 1,
+                      fontSize: 11,
+                      bgcolor: PRIORITY_COLORS[todo.priority]?.bg,
+                      color: PRIORITY_COLORS[todo.priority]?.text,
+                    }}
+                  >
+                    {todo.priority}
                   </Box>
                 )}
-              </Collapse>
+                {dueDate && (
+                  <Box
+                    sx={{
+                      px: 1,
+                      py: 0.2,
+                      borderRadius: 1,
+                      fontSize: 11,
+                      ...getDueDateColor(dueDate),
+                    }}
+                  >
+                    Due: {moment(dueDate).format('MMM D, YYYY')}
+                  </Box>
+                )}
+              </Stack>
             </Box>
           );
         })

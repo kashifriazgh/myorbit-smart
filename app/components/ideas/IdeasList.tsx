@@ -16,7 +16,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PublicIcon from '@mui/icons-material/Public';
 import IdeaActionButton from './IdeaLevelButton';
-
+import { IDEA_LEVELS } from '@/app/lib/constant';
 import moment from 'moment-timezone';
 import React, { useEffect, useState } from 'react';
 import {
@@ -165,6 +165,7 @@ export default function IdeasList() {
         <FormControl size="small">
           <InputLabel>Level</InputLabel>
           <Select
+            sx={{ fontSize: '10px' }}
             native
             value={filter.level}
             onChange={(e) =>
@@ -180,6 +181,7 @@ export default function IdeasList() {
         <FormControl size="small">
           <InputLabel>Privacy</InputLabel>
           <Select
+            sx={{ fontSize: '10px' }}
             native
             value={filter.privacy}
             onChange={(e) =>
@@ -194,6 +196,7 @@ export default function IdeasList() {
         <FormControl size="small">
           <InputLabel>Scope</InputLabel>
           <Select
+            sx={{ fontSize: '10px' }}
             native
             value={filter.scope}
             onChange={(e) =>
@@ -340,7 +343,10 @@ export default function IdeasList() {
                 </Box>
 
                 <LevelModal
-                  currentLevel={idea.level}
+                  collectionName="ideas"
+                  field="level"
+                  options={IDEA_LEVELS}
+                  currentValue={idea.level}
                   docId={idea.id}
                   open={levelModalOpen}
                   onClose={() => setLevelModalOpen(false)}
@@ -348,6 +354,7 @@ export default function IdeasList() {
 
                 {activeIdea && (
                   <PrivacyModal
+                    collectionName="ideas"
                     open={privacyModalOpen}
                     onClose={() => setPrivacyModalOpen(false)}
                     currentPrivacy={activeIdea.privacy as PrivacyType}

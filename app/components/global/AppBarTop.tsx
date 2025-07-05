@@ -12,20 +12,19 @@ import {
   Menu,
   Box,
   Divider,
+  CircularProgress,
 } from '@mui/material';
 import { styled, alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import AccountCircle from '@mui/icons-material/AccountCircle';
 import MoreIcon from '@mui/icons-material/MoreVert';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
 import Link from 'next/link';
 import LogoutButton from '../user/LogoutButton';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import Brightness4Icon from '@mui/icons-material/Brightness4';
-import Brightness7Icon from '@mui/icons-material/Brightness7';
-import CircularProgress from '@mui/material/CircularProgress';
-// import MenuIcon from '@mui/icons-material/Menu'; // Optional drawer icon
 
 // Styled Components
 const Search = styled('div')(({ theme }) => ({
@@ -76,6 +75,7 @@ export default function AppBarTop() {
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
   const { user, role, loading } = useAuth();
   const { theme, setThemeMode } = useCustomTheme();
+
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
@@ -155,6 +155,17 @@ export default function AppBarTop() {
         </IconButton>
         <p>Notifications</p>
       </MenuItem>
+
+      {/* ✅ Dark Mode Toggle on Mobile */}
+      <MenuItem
+        onClick={() => setThemeMode(theme?.mode === 'dark' ? 'light' : 'dark')}
+      >
+        <IconButton size="large" color="inherit">
+          {theme?.mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+        </IconButton>
+        <p>{theme?.mode === 'dark' ? 'Light Mode' : 'Dark Mode'}</p>
+      </MenuItem>
+
       <MenuItem onClick={handleProfileMenuOpen}>
         <IconButton
           size="large"
@@ -186,9 +197,6 @@ export default function AppBarTop() {
     <Box sx={{ flexGrow: 1 }}>
       <AppBar position="static">
         <Toolbar>
-          {/* <IconButton size="large" edge="start" color="inherit" aria-label="menu" sx={{ mr: 2 }}>
-            <MenuIcon />
-          </IconButton> */}
           <Typography
             variant="h6"
             noWrap

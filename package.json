@@ -21,6 +21,7 @@
     "next": "15.3.4",
     "react": "^19.0.0",
     "react-date-range": "^2.0.1",
+    "react-datepicker": "^8.4.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
