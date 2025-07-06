@@ -101,32 +101,51 @@ export interface Todo {
 
 export interface JournalEntry {
   id?: string;
+
   // Auth
   authorId: string;
   authorName?: string;
   sharedWith?: string[]; // users who can view/edit
-  // Content
-  date: string; // 'YYYY-MM-DD' (used for grouping & querying)
-  content: string;
-  description?: string;
-  mood?: string;
-  tags?: string[];
 
-  // AI Enhancement
+  // Mood
+  mood?: {
+    type: 'happy' | 'loving' | 'sad' | 'heart-broken' | 'angry';
+    level: number; // 1–10
+  };
+
+  // Core Content
+  title: string;
+  content: string;
+  productivityOfTheDay?: string; // Summary sentence or reflection
+  promptAnswers?: {
+    promptId: string;
+    question: string;
+    answer: string;
+  }[];
+
+  tags?: string[];
+  privacy: 'private' | 'public';
+
+  // AI Enhancement (optional)
   aiSummary?: string;
   aiMoodAnalysis?: 'positive' | 'neutral' | 'negative';
   aiCategory?: string[];
-  aiScore?: number; // 0–100 productivity score
-  // Timestamps
-  createdAt: Date;
-  updatedAt: Date;
+  aiScore?: number; // 0–100
+
   // UX Flags
+  pinned?: boolean;
   isFavorite?: boolean;
   isArchived?: boolean;
-  // Time-based for analysis
-  week: number;
+
+  // Date info for querying & stats
+  date: string; // 'YYYY-MM-DD'
   month: string; // 'YYYY-MM'
+  week: number; // ISO week number
   year: number;
+
+  // Timestamps
+  createdAt: Timestamp | Date;
+  updatedAt: Date;
 }
 
 export interface ProcedureStep {
@@ -183,4 +202,130 @@ export interface FirestoreUser {
   lastName: string;
   role: 'master' | 'editor' | 'viewer';
   createdAt: Timestamp; // or use `Timestamp` from Firestore
+}
+
+// Finance
+export interface BudgetSettings {
+  userId: string;
+  budgetStartDay: number; // 1–31
+  currencySymbol?: string; // optional: 'Rs', '$', etc.
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type CashType = 'in_hand' | 'bank' | 'easypaisa' | 'jazzcash' | 'other';
+export interface TotalCashSnapshot {
+  id?: string;
+  userId: string;
+  inHand: number;
+  bank: number;
+  easypaisa?: number;
+  jazzcash?: number;
+  otherWallets?: {
+    name: string;
+    amount: number;
+  }[];
+  note?: string;
+  effectiveDate: Date | Timestamp;
+  createdAt: Date | Timestamp;
+  updatedAt?: Date | Timestamp;
+}
+
+export interface IncomeSource {
+  id?: string;
+  userId: string;
+  title: string; // e.g., "Salary", "Freelance", "Rent"
+  amount: number;
+  frequency: 'monthly' | 'weekly' | 'daily' | 'one_time';
+  nextExpectedDate?: Date; // optional
+  startDate?: Date;
+  isRecurring: boolean;
+  notes?: string;
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
+}
+export interface Expenditure {
+  id?: string;
+  userId: string;
+  title: string;
+  type: 'fixed' | 'variable';
+  amount: number;
+  dueDate?: Date; // for future bills
+  isRecurring?: boolean;
+  isPaid?: boolean;
+  category?: string; // e.g., food, rent, utility
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+export interface BuyItem {
+  id?: string;
+  userId: string;
+  title: string;
+  estimatedPrice: number;
+  purchasedPrice?: number;
+  isPurchased: boolean;
+  priority?: 'optional' | 'needed' | 'urgent';
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+export interface PriceComparisonEntry {
+  id?: string;
+  userId: string;
+  productName: string;
+  shopEntries: {
+    shopName: string;
+    quotedPrice: number;
+    location?: string;
+    comment?: string;
+    addedAt: Date;
+  }[];
+  bestPriceIndex?: number; // index of lowest price in shopEntries
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+export interface FinanceSummary {
+  id?: string;
+  userId: string;
+  period: {
+    start: Date;
+    end: Date;
+  };
+  totalEarned: number;
+  totalSpent: number;
+  totalSaved: number;
+  donations?: number;
+  extraIncome?: number;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+export interface PlannedVsActualComparison {
+  id?: string;
+  userId: string;
+  month: string; // '2025-07'
+  plannedIncome: number;
+  actualIncome: number;
+  plannedExpenses: number;
+  actualExpenses: number;
+  savingsGoal?: number;
+  actualSavings?: number;
+  overspent?: number;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+export interface AiFinanceInsight {
+  id?: string;
+  userId: string;
+  month: string; // e.g., '2025-07'
+  aiSummary: string; // overall insight
+  spendingSuggestions: string[];
+  riskAlerts?: string[]; // e.g., "You are overspending on food"
+  savingTips?: string[];
+  aiConfidence?: number; // 0–100
+  modelUsed?: 'GPT' | 'Gemini' | string;
+  createdAt: Date | Timestamp;
 }

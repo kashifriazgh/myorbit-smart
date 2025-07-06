@@ -25,6 +25,7 @@ interface Props {
   originalText: string;
   onApply: (updatedText: string) => void;
   enableSuggestion?: boolean; // ✅ NEW
+  suggestionPrompt?: string;
 }
 
 const ENHANCE_OPTIONS = [
@@ -39,18 +40,21 @@ export default function AIEnhanceModal({
   originalText,
   onApply,
   enableSuggestion = true, // ✅ default is true
+  suggestionPrompt,
 }: Props) {
   const [tab, setTab] = useState(0);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [aiResult, setAiResult] = useState('');
   const [loading, setLoading] = useState(false);
   const { theme } = useCustomTheme();
+  const [aiSource, setAiSource] = useState<'enhance' | 'suggest' | null>(null);
 
   useEffect(() => {
     if (!open) {
       setTab(0);
       setSelectedOptions([]);
       setAiResult('');
+      setAiSource(null); // reset source when modal closes
       setLoading(false);
     }
   }, [open]);
@@ -63,6 +67,7 @@ export default function AIEnhanceModal({
 
   const handleEnhance = async () => {
     if (selectedOptions.length === 0) return;
+    setAiSource('enhance');
 
     const enhanceMap: Record<string, string> = {
       grammar: 'Fix grammar issues',
@@ -101,7 +106,9 @@ Return only the improved version. No explanation needed.
   };
 
   const handleSuggest = async () => {
-    const suggestionPrompt = `
+    const suggestionPromptText =
+      suggestionPrompt ||
+      `
 You are a productivity assistant. Analyze the following task and provide:
 1. Productivity potential
 2. Accessibility or feasibility
@@ -109,7 +116,8 @@ You are a productivity assistant. Analyze the following task and provide:
 4. Any missing aspects or improvements
 
 Keep it detailed but clear.
-    `.trim();
+`.trim();
+    setAiSource('suggest');
 
     setLoading(true);
     try {
@@ -118,7 +126,7 @@ Keep it detailed but clear.
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           value: originalText,
-          instructions: suggestionPrompt,
+          instructions: suggestionPromptText,
         }),
       });
 
@@ -232,12 +240,8 @@ Keep it detailed but clear.
 
         <Box display="flex" justifyContent="flex-end" mt={3} gap={2}>
           <Button onClick={onClose}>Close</Button>
-          {tab === 0 && (
-            <Button
-              onClick={handleApply}
-              disabled={!aiResult}
-              variant="contained"
-            >
+          {tab === 0 && aiSource === 'enhance' && aiResult && (
+            <Button onClick={handleApply} variant="contained">
               Apply
             </Button>
           )}

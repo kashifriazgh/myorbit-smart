@@ -24,7 +24,7 @@ export default function BottomNav() {
   const navItems = [
     { label: 'Ideas', icon: <LightbulbIcon />, path: '/ideas' },
     { label: 'To-Do', icon: <ChecklistIcon />, path: '/to-do' },
-    { label: 'Journal', icon: <MenuBookIcon />, path: '/journal' },
+    { label: 'Journal', icon: <MenuBookIcon />, path: '/journals' },
     { label: 'Procedures', icon: <SchemaIcon />, path: '/procedures' },
   ];
 

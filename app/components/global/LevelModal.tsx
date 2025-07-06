@@ -82,14 +82,22 @@ export default function OptionModal({
                   py: 1,
                   borderRadius: 2,
                   cursor: 'pointer',
-                  backgroundColor: isSelected
-                    ? '#e0f7fa'
-                    : isCurrent
-                    ? '#f5f5f5'
-                    : '#fafafa',
+                  backgroundColor:
+                    theme.mode === 'dark'
+                      ? isSelected
+                        ? '#334155' // dark mode + selected
+                        : '#475569' // dark mode default
+                      : isSelected
+                      ? '#e0f7fa'
+                      : isCurrent
+                      ? '#f5f5f5'
+                      : '#fafafa',
+
                   '&:hover': {
-                    backgroundColor: '#e0f2f1',
+                    backgroundColor:
+                      theme.mode === 'dark' ? '#334155' : '#e0f2f1', // hover color
                   },
+
                   border: isCurrent ? '1px solid #888' : 'none',
                 }}
               >
