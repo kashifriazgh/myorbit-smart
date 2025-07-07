@@ -250,26 +250,34 @@ export interface Expenditure {
   title: string;
   type: 'fixed' | 'variable';
   amount: number;
-  dueDate?: Date; // for future bills
+  dueDate?: Date | Timestamp; // for future bills
   isRecurring?: boolean;
   isPaid?: boolean;
   category?: string; // e.g., food, rent, utility
   notes?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
 }
 export interface BuyItem {
   id?: string;
   userId: string;
-  title: string;
-  estimatedPrice: number;
-  purchasedPrice?: number;
-  isPurchased: boolean;
-  priority?: 'optional' | 'needed' | 'urgent';
-  notes?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  title: string; // Title of the shopping plan (e.g., "Eid Shopping")
+  items: {
+    estimatedPrice: number;
+    purchasedPrice?: number;
+    title: string;
+    isPurchased: boolean;
+    priority?: 'optional' | 'needed' | 'urgent';
+    notes?: string;
+  }[];
+  archived: boolean;
+  pinned: boolean;
+  sharedWith: string[];
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
+  budgetLimit: number;
 }
+
 export interface PriceComparisonEntry {
   id?: string;
   userId: string;

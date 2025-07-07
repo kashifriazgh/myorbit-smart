@@ -4,6 +4,7 @@ import React from 'react';
 import TotalCashSnapshotComponent from '../components/finance/TotalCashSnapshot';
 import { useAuth } from '../lib/context/userContext';
 import IncomeSourcesComponent from '../components/finance/IncomeSource';
+import ExpendituresComponent from '../components/finance/Expenditures';
 export default function Finance() {
   const { user } = useAuth();
   if (!user) return null;
@@ -14,6 +15,7 @@ export default function Finance() {
       <TotalCashSnapshotComponent userId={userId} />
 
       <IncomeSourcesComponent userId={userId} />
+      <ExpendituresComponent userId={userId} />
     </>
   );
 }
