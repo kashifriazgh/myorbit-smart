@@ -14,15 +14,7 @@ export function formatCurrency(
 
 // calculate total cash
 import { TotalCashSnapshot } from './interface';
+
 export const calculateTotalCash = (snapshot: TotalCashSnapshot): number => {
-  const baseTotal =
-    (snapshot.inHand || 0) +
-    (snapshot.bank || 0) +
-    (snapshot.easypaisa || 0) +
-    (snapshot.jazzcash || 0);
-
-  const otherTotal =
-    snapshot.otherWallets?.reduce((sum, wallet) => sum + wallet.amount, 0) || 0;
-
-  return baseTotal + otherTotal;
+  return snapshot.source?.amount || 0;
 };

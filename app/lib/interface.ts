@@ -213,51 +213,87 @@ export interface BudgetSettings {
   updatedAt: Date;
 }
 
-export type CashType = 'in_hand' | 'bank' | 'easypaisa' | 'jazzcash' | 'other';
+// Import the shared type if it's defined elsewhere
+
 export interface TotalCashSnapshot {
   id?: string;
   userId: string;
-  inHand: number;
-  bank: number;
-  easypaisa?: number;
-  jazzcash?: number;
-  otherWallets?: {
-    name: string;
-    amount: number;
-  }[];
+
+  // This now strictly requires all source types to be present
+  sources: {
+    in_hand: number;
+    bank: number;
+    easypaisa: number;
+    jazzcash: number;
+    other: number;
+  };
+
+  totalAmount: number; // Sum of all source values
+  freezeAmount: number; // Total frozen amount
+
   note?: string;
-  effectiveDate: Date | Timestamp;
+  effectiveDate?: Date | Timestamp;
+  isFreezed?: boolean;
+
   createdAt: Date | Timestamp;
   updatedAt?: Date | Timestamp;
+}
+export type TransactionType = 'add' | 'deduct' | 'freeze_transfer';
+export type TransactionSource =
+  | 'in_hand'
+  | 'bank'
+  | 'easypaisa'
+  | 'jazzcash'
+  | 'other';
+export type TransactionCategory =
+  | 'income'
+  | 'expenditure'
+  | 'shopping'
+  | 'manual'
+  | 'transfer';
+
+export interface CashTransaction {
+  id?: string;
+  userId: string;
+  amount: number;
+  type: TransactionType; // Whether this added or deducted from main fund
+  source: TransactionSource; // Where the cash came from or went (e.g., bank, in_hand)
+  category: TransactionCategory; // Why this transaction happened (e.g., shopping)
+  note?: string; // Optional custom user note
+  referenceId?: string; // Optional: related document ID (income, expense, etc.)
+  createdAt: Date | Timestamp; // Transaction date
 }
 
 export interface IncomeSource {
   id?: string;
   userId: string;
-  title: string; // e.g., "Salary", "Freelance", "Rent"
-  amount: number;
+  title: string;
+  type: 'one-time' | 'recurring';
   frequency: 'monthly' | 'weekly' | 'daily' | 'one_time';
-  nextExpectedDate?: Date; // optional
-  startDate?: Date;
-  isRecurring: boolean;
+  amount: number;
+  expectedDate?: Date | Timestamp;
+  isReceived?: boolean;
+  category?: string;
   notes?: string;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
+
 export interface Expenditure {
   id?: string;
   userId: string;
   title: string;
-  type: 'fixed' | 'variable';
+  type: 'one-time' | 'recurring';
+  frequency: 'monthly' | 'weekly' | 'daily' | 'one_time';
   amount: number;
-  dueDate?: Date | Timestamp; // for future bills
-  isRecurring?: boolean;
+  dueDate?: Date | Timestamp;
   isPaid?: boolean;
-  category?: string; // e.g., food, rent, utility
+  category?: string;
   notes?: string;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
+
 export interface BuyItem {
   id?: string;
   userId: string;

@@ -7,7 +7,7 @@ import BottomNavigationAction from '@mui/material/BottomNavigationAction';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
-import SchemaIcon from '@mui/icons-material/Schema';
+import PriceCheckIcon from '@mui/icons-material/PriceCheck';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
@@ -25,7 +25,7 @@ export default function BottomNav() {
     { label: 'Ideas', icon: <LightbulbIcon />, path: '/ideas' },
     { label: 'To-Do', icon: <ChecklistIcon />, path: '/to-do' },
     { label: 'Journal', icon: <MenuBookIcon />, path: '/journals' },
-    { label: 'Procedures', icon: <SchemaIcon />, path: '/procedures' },
+    { label: 'Finance', icon: <PriceCheckIcon />, path: '/finance' },
   ];
 
   const [value, setValue] = React.useState(pathname);

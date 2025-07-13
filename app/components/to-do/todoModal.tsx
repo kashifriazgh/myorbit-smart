@@ -37,7 +37,6 @@ type Props = {
 export default function ToDoModal({ open, onClose }: Props) {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
-
   const [title, setTitle] = useState('');
   const [subTasks, setSubTasks] = useState<string[]>([]);
   const [subInput, setSubInput] = useState('');
@@ -90,6 +89,9 @@ export default function ToDoModal({ open, onClose }: Props) {
     onClose();
   };
 
+  if (!theme) {
+    return;
+  }
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>📝 New To-Do</DialogTitle>

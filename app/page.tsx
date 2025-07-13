@@ -1,106 +1,79 @@
-import Image from 'next/image';
+'use client';
+import React from 'react';
 import LogoutButton from './components/user/LogoutButton';
 
-export default function Home() {
+export default function Homepage() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{' '}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <>
+      <div className="mx-auto flex-col flex max-w-2xl my-20 justify-center">
+        <div className="text-4xl text-center">
+          Productivity Monitoring Cell (PMC)
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+        <div className="font-semibold text-lg">Mood</div>
+        <div className="">
+          This will open a series of icons for mood selection. Display after
+          each hour.
+        </div>
+        <hr />
+        <div className="text-2xl text-blue-400">On this day</div>
+        <div className="text-xl">Ideas</div>
+        - Fetch Ideas create , converted to task or goal from this day of prev
+        week, prev month and prev year.
         <br />
-        <LogoutButton />
-      </footer>
-    </div>
+        <br /> - if created, show message On this day of prev month, you got
+        this [fireIcon] idea. Have not you implemented it. If you like, I can
+        create some suggestion with AI
+        <br />
+        <br /> - Fetch ideas from last three days. Offer User to show them.
+        <div className="text-2xl text-blue-400">Daily Journal</div>
+        - Fetch journals from this day of prev week, prev month and prev year.
+        <br />
+        <br />- Concise the activity from that day with AI and ask AI to give
+        number from 1-10 either we should display on timeline or not. Show if
+        greater than 6k.
+        <br />
+        <br />- Fetch journals from last 7 days, concise each day separately and
+        then get conclusion which day was more productive of this week. For this
+        purpose, We will also get data of Tasks or goals you have completed.
+        <br />
+        <br />- Save the weekly productivity in a separate collection to compare
+        which week was more productive.
+        <br />
+        <br />- Get an overview of time (in hours) of creation or completion of
+        tasks, goals, ideas, journals or working with finance to get the most
+        productive or focused time.
+        <div className="text-2xl text-blue-400">Tasks</div>
+        - Fetch all tasks that have due date today and tomorrow (with hours)
+        <br />
+        <br />- Remind Users to complete early before deadline
+        <div className="text-2xl text-blue-400">Finance</div>
+        - Fetch All Expenditures with Due date today and tomorrow specifically
+        and next 7 days generally. Remind Users to be ready. Also show financial
+        effect of this expense on savings or total Cash.
+        <br />
+        <br />- Fetch all Income Sources expected to meet today and tomorrow
+        specifically and from next 7 days in general.If yes, Remind users to be
+        ready. Also show effect of this incoming income on your totalCash (after
+        deducting the expenditures of next 7 days)
+        <br />
+        <br />- If there is no expenditures found from next 14 days and if you
+        found any wish list of shopping, then remind user that you may have this
+        product in your cart.
+        <br />
+        <br />- If there is no expected Income from next 14 days and
+        expenditures or high, then caution user.
+        <br />
+        <br />- Check shopping list created from last 7 days or list that have
+        mission date match today or tomorrow. (Note: create a new field
+        missionDate in things-to-buy)
+        <div className="text-2xl text-blue-400">Misc</div>
+        - Show Streaks . compare current streak with prev streak
+        <br />
+        <br />- Display AI Summary.
+      </div>
+
+      <hr />
+      <LogoutButton />
+    </>
   );
 }

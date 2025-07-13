@@ -58,3 +58,32 @@ export const STATUS_OPTIONS = [
     description: 'Task was missed or delayed',
   },
 ];
+
+// constants.ts
+export const EXPENSE_CATEGORIES = [
+  'Food',
+  'Transport',
+  'Rent',
+  'Utilities',
+  'Healthcare',
+  'Education',
+  'Entertainment',
+  'Subscriptions',
+  'Clothing',
+  'Gifts',
+  'Others',
+];
+
+// income categories
+export const INCOME_CATEGORIES = [
+  'Salary',
+  'Freelancing',
+  'Business',
+  'Rent',
+  'Shop Sales',
+  'Investments',
+  'Gifts & Donations',
+  'Government Support',
+  'Side Hustle',
+  'Other',
+];
