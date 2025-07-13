@@ -16,8 +16,8 @@ import {
 import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
-import { User } from 'firebase/auth'; // or your context type
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { FirestoreUser } from '@/app/lib/interface';
 
 interface Props {
   open: boolean;
@@ -25,7 +25,7 @@ interface Props {
   currentPrivacy: 'private' | 'public' | 'specific';
   sharedWith: string[]; // user ids
   docId: string;
-  user: User | null; // 🔧 Add this
+  user: FirestoreUser | null; // 🔧 Add this
   collectionName: string;
 }
 

@@ -52,6 +52,23 @@ export interface Idea {
   sharedVia?: string[]; // e.g., ['email', 'whatsapp']
 }
 
+export type StepStatus = 'completed' | 'in_progress' | 'hold' | 'left-over';
+
+export interface SubStep {
+  text: string;
+  description: string;
+  done: boolean;
+  status: StepStatus;
+}
+
+export interface ToDoStep {
+  text: string;
+  description: string;
+  done: boolean;
+  status: StepStatus;
+  subSteps?: SubStep[];
+}
+
 export interface Todo {
   id?: string;
   title: string;
@@ -70,8 +87,15 @@ export interface Todo {
   // Checklist (subtasks)
   steps?: {
     text: string;
+    description: string;
     done: boolean;
     status: 'in_progress' | 'completed' | 'hold' | 'left-over';
+    subSteps?: {
+      text: string;
+      description: string;
+      done: boolean;
+      status: 'in_progress' | 'completed' | 'hold' | 'left-over';
+    }[];
   }[];
   privacy?: 'private' | 'public' | 'specific';
   // Dates

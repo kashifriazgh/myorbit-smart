@@ -1,4 +1,3 @@
-// /app/api/idea-improve/route.ts
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
@@ -8,9 +7,15 @@ export async function POST(req: Request) {
     const API_KEY = process.env.GEMINI_API_KEY;
     const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
-    const prompt = instructions?.trim();
+    if (!API_KEY) {
+      console.error('❌ Missing GEMINI_API_KEY in environment');
+      return NextResponse.json(
+        { error: 'Server misconfiguration' },
+        { status: 500 }
+      );
+    }
 
-    if (!prompt || !value) {
+    if (!value || !instructions) {
       return NextResponse.json(
         { error: 'Missing value or instructions' },
         { status: 400 }
@@ -23,19 +28,20 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         contents: [
           {
-            parts: [
-              {
-                text: `
-${prompt}
-
-Text: "${value}"
-              `.trim(),
-              },
-            ],
+            parts: [{ text: `${instructions}\n\nText: "${value}"` }],
           },
         ],
       }),
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Gemini API error:', response.status, errorText);
+      return NextResponse.json(
+        { error: `Gemini error: ${errorText}` },
+        { status: 500 }
+      );
+    }
 
     const data = await response.json();
     const output =
@@ -43,9 +49,9 @@ Text: "${value}"
 
     return NextResponse.json({ result: output });
   } catch (error) {
-    console.error('Gemini AI Error:', error);
+    console.error('🔥 Server Error:', error);
     return NextResponse.json(
-      { error: 'AI processing failed' },
+      { error: 'Unexpected server error' },
       { status: 500 }
     );
   }

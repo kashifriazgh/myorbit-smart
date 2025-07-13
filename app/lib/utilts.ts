@@ -13,8 +13,3 @@ export function formatCurrency(
 }
 
 // calculate total cash
-import { TotalCashSnapshot } from './interface';
-
-export const calculateTotalCash = (snapshot: TotalCashSnapshot): number => {
-  return snapshot.source?.amount || 0;
-};
