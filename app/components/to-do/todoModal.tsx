@@ -102,7 +102,7 @@ export default function ToDoModal({ open, onClose }: Props) {
       pinned: false,
       isArchived: false,
       authorId: user!.uid,
-      authorName: user!.displayName || '',
+      authorName: user!.firstName || '',
       assignedUsers: [],
       sharedWith: [],
       startDate: Timestamp.fromDate(new Date()),

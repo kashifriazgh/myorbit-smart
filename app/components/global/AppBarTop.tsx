@@ -73,7 +73,7 @@ export default function AppBarTop() {
 
   const isMenuOpen = Boolean(anchorEl);
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
-  const { user, role, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { theme, setThemeMode } = useCustomTheme();
 
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -111,12 +111,12 @@ export default function AppBarTop() {
         },
       }}
     >
-      {role === 'master' && (
+      {user?.role === 'master' && (
         <MenuItem onClick={handleMenuClose}>
           <Link href="/user/dashboard">Dashboard</Link>
         </MenuItem>
       )}
-      {role === 'master' && <Divider />}
+      {user?.role === 'master' && <Divider />}
 
       {!loading && user ? (
         <MenuItem onClick={handleMenuClose}>

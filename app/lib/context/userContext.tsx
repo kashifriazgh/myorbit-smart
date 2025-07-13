@@ -1,47 +1,53 @@
 'use client';
 
-import { onAuthStateChanged, getAuth, User } from 'firebase/auth';
+import { onAuthStateChanged, getAuth } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { app, db } from '../firebase'; // ✅ make sure you export db from firebase.ts
-
+import { app, db } from '../firebase';
+import { FirestoreUser } from '../interface';
 const auth = getAuth(app);
 
 interface UserContextType {
-  user: User | null;
+  user: FirestoreUser | null;
   loading: boolean;
-  role: 'master' | 'sub' | null;
 }
 
 const UserContext = createContext<UserContextType>({
   user: null,
   loading: true,
-  role: null,
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirestoreUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<'master' | 'sub' | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        setUser(firebaseUser);
-
-        // ✅ Fetch role from Firestore
         try {
           const ref = doc(db, 'users', firebaseUser.uid);
           const snap = await getDoc(ref);
-          const data = snap.data();
-          setRole(data?.role || null);
+
+          if (snap.exists()) {
+            const data = snap.data();
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              firstName: data.firstName || '',
+              lastName: data.lastName || '',
+              role: data.role || 'viewer',
+              createdAt: data.createdAt,
+            });
+          } else {
+            console.warn('⚠️ No Firestore user document found.');
+            setUser(null);
+          }
         } catch (err) {
-          console.error('Error fetching user role:', err);
-          setRole(null);
+          console.error('❌ Error fetching Firestore user:', err);
+          setUser(null);
         }
       } else {
         setUser(null);
-        setRole(null);
       }
 
       setLoading(false);
@@ -51,11 +57,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <UserContext.Provider value={{ user, loading, role }}>
+    <UserContext.Provider value={{ user, loading }}>
       {children}
     </UserContext.Provider>
   );
 }
 
 export const useAuth = () => useContext(UserContext);
-export { UserContext };

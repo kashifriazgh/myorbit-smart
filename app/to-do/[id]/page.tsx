@@ -22,7 +22,7 @@ import {
   DialogActions,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
-import { doc, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useParams } from 'next/navigation';
 import { ToDoStep, Todo } from '@/app/lib/interface';
@@ -35,7 +35,6 @@ import TodoProgressBar from '@/app/components/to-do/todoDetailPage/TotDoProgress
 import TodoActionButtons from '@/app/components/to-do/todoDetailPage/ToDoActionButtons';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { STATUS_OPTIONS } from '@/app/lib/constant';
-import { User } from 'firebase/auth';
 
 type ConfirmDelete =
   | { type: 'step'; stepIndex: number }
@@ -360,13 +359,7 @@ export default function TodoDetailPage() {
 
       <TodoActionButtons
         todo={todo}
-        user={{
-          ...(user as User),
-          firstName: '',
-          lastName: '',
-          role: 'viewer',
-          createdAt: Timestamp.now(), // placeholder
-        }}
+        user={user!}
         onDeleted={() => {
           // optional
         }}

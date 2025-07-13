@@ -82,7 +82,7 @@ export default function IdeaModal({ open, onClose }: Props) {
       localCreatedAt: Timestamp.fromDate(localTime), // ✅ Keep: Essential for user-facing time filtering (e.g., "yesterday", "today", etc.)
       timezone, // ✅ Keep (optional): Only if your app supports users from multiple timezones
       authorId: user.uid,
-      authorName: user.displayName || '',
+      authorName: user.firstName || '',
       sharedWith: [],
     });
 
