@@ -5,7 +5,7 @@ export async function POST(req: Request) {
     const { value, instructions } = await req.json();
 
     const API_KEY = process.env.GEMINI_API_KEY;
-    const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
     if (!API_KEY) {
       console.error('❌ Missing GEMINI_API_KEY in environment');

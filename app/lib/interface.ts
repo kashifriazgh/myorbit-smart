@@ -74,6 +74,7 @@ export interface Todo {
   title: string;
   description?: string;
   tags?: string[];
+  isImportant?: boolean;
   priority: 'routine' | 'urgent' | 'critical';
   status: 'in_progress' | 'completed' | 'hold' | 'left-over';
   progressPercent: number; // 0–100
@@ -395,5 +396,133 @@ export interface AiFinanceInsight {
   savingTips?: string[];
   aiConfidence?: number; // 0–100
   modelUsed?: 'GPT' | 'Gemini' | string;
+  createdAt: Date | Timestamp;
+}
+
+// pmc - Productivity Monitoring Cell
+export interface PMC {
+  id?: string; // e.g. "uid_2025-07-14"
+  userId: string;
+  date: string; // 'YYYY-MM-DD'
+
+  moodSummary: {
+    averageMoodLevel: number;
+    dominantMood:
+      | 'happy'
+      | 'loving'
+      | 'sad'
+      | 'angry'
+      | 'neutral'
+      | 'heart-broken';
+    lastMoodTimestamp?: Date;
+    moodChangeFromYesterday?: number;
+  };
+
+  priorityAlignment: {
+    totalTasks: number;
+    highPriorityTasks: number;
+    highPriorityTasksCompletedOnTime: number;
+    percentageAligned?: number;
+    appUsageScore?: number;
+  };
+
+  focusMoments: {
+    focusAnswers?: string[];
+    mostActiveHours: string[];
+  };
+
+  satisfactionScore: {
+    questionnaireAnswer?: string;
+    score?: number;
+    trendFromYesterday?: number;
+  };
+
+  productivityScore: {
+    questionnaireAnswer?: string;
+    tasksCompleted: number;
+    goalsCompleted?: number;
+    ideasImplemented?: number;
+    score?: number;
+  };
+
+  streaks: {
+    currentStreak: number;
+    longestStreak: number;
+    lastActive: Date;
+    contributingActions: {
+      ideasCreated: number;
+      tasksCreated: number;
+      journalsWritten: number;
+    };
+  };
+
+  financeOverview: {
+    totalEarned: number;
+    totalSpent: number;
+    netBalance: number;
+    status: 'stable' | 'overspending' | 'saving';
+    breakdown?: {
+      incomeSourcesCount: number;
+      expenditureItemsCount: number;
+      shoppingTotal: number;
+      recurringExpenses: number;
+      oneTimeExpenses: number;
+    };
+    aiInsight?: {
+      summary: string;
+      savingTips?: string[];
+      overspendingAlerts?: string[];
+      confidence?: number;
+    };
+  };
+  mostProductiveDay?: {
+    date: string; // e.g., "2025-07-17"
+    weekday: string; // e.g., "Wednesday"
+    productivityScore: number; // 0–100 scale
+    journalsCount: number;
+    ideasCreated: number;
+    tasksCreated: number;
+    tasksCompleted: number;
+    incomesReceived: number;
+    summaryText?: string; // Human-readable output: "Wednesday was your most productive day. You completed 3 tasks and wrote 4 journal entries."
+    contributingJournals?: {
+      id: string;
+      title?: string;
+    }[];
+    contributingIdeas?: string[]; // Could be idea titles or IDs
+    contributingTasks?: string[]; // Could be task titles or IDs
+    contributingIncomes?: string[]; // Optional: IDs or titles
+    aiInsight?: {
+      text: string; // AI-written feedback or insight
+      encouragement?: string;
+      suggestions?: string[];
+      confidence?: number;
+    };
+  };
+  FocusedTime?: {
+    hourStart: number; // e.g., 21
+    hourEnd: number; // e.g., 22
+    day: string; // e.g., 'Sunday'
+  };
+  aiSummary?: {
+    text: string;
+    suggestions?: string[];
+    encouragement?: string;
+    confidence?: number;
+  };
+
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Firestore: moods/{auto-id}
+export interface MoodEntry {
+  id?: string;
+  userId: string;
+  mood: 'happy' | 'loving' | 'sad' | 'heart-broken' | 'angry';
+  level: number; // 1–10
+  source?: 'manual' | 'ai' | 'journal'; // where this mood entry came from
+  recordedAt: Date | Timestamp; // exact time of entry
   createdAt: Date | Timestamp;
 }

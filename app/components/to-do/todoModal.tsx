@@ -13,6 +13,8 @@ import {
   Divider,
   useMediaQuery,
   useTheme,
+  FormControlLabel,
+  Checkbox, // ✅ Added
 } from '@mui/material';
 import { useState } from 'react';
 import {
@@ -44,6 +46,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   const [privacy, setPrivacy] = useState<'private' | 'public'>('private');
   const [dueDate, setDueDate] = useState<Date | null>(new Date());
   const [loading, setLoading] = useState(false);
+  const [isImportant, setIsImportant] = useState(false); // ✅ New state
 
   const [steps, setSteps] = useState<
     {
@@ -110,6 +113,7 @@ export default function ToDoModal({ open, onClose }: Props) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       privacy,
+      isImportant, // ✅ Include in Firestore data
     };
 
     await addDoc(collection(db, 'todos'), docData);
@@ -139,6 +143,7 @@ export default function ToDoModal({ open, onClose }: Props) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
+
           {!showDescription ? (
             <Typography
               onClick={() => setShowDescription(true)}
@@ -209,6 +214,19 @@ export default function ToDoModal({ open, onClose }: Props) {
             </TextField>
           </Stack>
 
+          {/* ✅ Important Checkbox just below priority/privacy */}
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={isImportant}
+                onChange={(e) => setIsImportant(e.target.checked)}
+                size="small"
+              />
+            }
+            label="Important"
+            sx={{ mt: -1.5 }} // Adjust spacing as needed
+          />
+
           <Box>
             <Typography variant="subtitle2" mb={1}>
               Select Due Date
@@ -224,7 +242,6 @@ export default function ToDoModal({ open, onClose }: Props) {
           </Box>
 
           <Divider />
-
           <Typography fontWeight={600}>Task Steps</Typography>
 
           {steps.map((step, stepIndex) => (
