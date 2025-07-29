@@ -12,8 +12,9 @@ import {
   Menu,
   Box,
   Divider,
-  CircularProgress,
 } from '@mui/material';
+import { Skeleton } from '@mui/material';
+
 import { styled, alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
 import NotificationsIcon from '@mui/icons-material/Notifications';
@@ -74,7 +75,7 @@ export default function AppBarTop() {
   const isMenuOpen = Boolean(anchorEl);
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
   const { user, loading } = useAuth();
-  const { theme, setThemeMode } = useCustomTheme();
+  const { theme, setThemeMode, refreshTheme } = useCustomTheme();
 
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -123,15 +124,15 @@ export default function AppBarTop() {
           <LogoutButton />
         </MenuItem>
       ) : (
-        <>
-          <MenuItem onClick={handleMenuClose}>
+        [
+          <MenuItem key="login" onClick={handleMenuClose}>
             <Link href="/user/login">Login</Link>
-          </MenuItem>
-          <Divider />
-          <MenuItem onClick={handleMenuClose}>
+          </MenuItem>,
+          <Divider key="divider" />,
+          <MenuItem key="signup" onClick={handleMenuClose}>
             <Link href="/user/signup">SignUp</Link>
-          </MenuItem>
-        </>
+          </MenuItem>,
+        ]
       )}
     </Menu>
   );
@@ -158,7 +159,11 @@ export default function AppBarTop() {
 
       {/* ✅ Dark Mode Toggle on Mobile */}
       <MenuItem
-        onClick={() => setThemeMode(theme?.mode === 'dark' ? 'light' : 'dark')}
+        onClick={() => {
+          const newMode = theme?.mode === 'dark' ? 'light' : 'dark';
+          setThemeMode(newMode);
+          refreshTheme(); // 🔄 Refresh here too
+        }}
       >
         <IconButton size="large" color="inherit">
           {theme?.mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
@@ -184,9 +189,22 @@ export default function AppBarTop() {
   if (!theme) {
     return (
       <Box sx={{ flexGrow: 1 }}>
-        <AppBar position="static">
-          <Toolbar sx={{ justifyContent: 'center' }}>
-            <CircularProgress color="inherit" />
+        <AppBar position="static" sx={{ bgcolor: '#f8fafc', color: '#0f172a' }}>
+          <Toolbar sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Skeleton variant="text" width={80} height={32} />
+            <Box sx={{ flexGrow: 1 }}>
+              <Skeleton
+                variant="rectangular"
+                height={36}
+                width="60%"
+                sx={{ borderRadius: 1 }}
+              />
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Skeleton variant="circular" width={32} height={32} />
+              <Skeleton variant="circular" width={32} height={32} />
+              <Skeleton variant="circular" width={32} height={32} />
+            </Box>
           </Toolbar>
         </AppBar>
       </Box>
@@ -227,9 +245,11 @@ export default function AppBarTop() {
               size="large"
               color="inherit"
               aria-label="toggle dark mode"
-              onClick={() =>
-                setThemeMode(theme?.mode === 'dark' ? 'light' : 'dark')
-              }
+              onClick={() => {
+                const newMode = theme?.mode === 'dark' ? 'light' : 'dark';
+                setThemeMode(newMode);
+                refreshTheme(); // 🔄 Refresh after mode change
+              }}
               sx={{ ml: 1 }}
             >
               {theme.mode === 'dark' ? (

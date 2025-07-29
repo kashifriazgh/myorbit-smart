@@ -1,3 +1,4 @@
+import { Theme } from './interface';
 export const THEME_PRESETS = [
   {
     name: 'Ocean',
@@ -20,3 +21,11 @@ export const THEME_PRESETS = [
     secondary: '#F06292',
   },
 ];
+
+// lib/theme-presets.ts
+export const DEFAULT_THEME: Theme = {
+  name: 'Default Light',
+  mode: 'light',
+  primary: '#1976d2',
+  secondary: '#9c27b0',
+};

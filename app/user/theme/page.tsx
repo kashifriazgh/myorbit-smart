@@ -20,7 +20,7 @@ interface ThemePreset {
 }
 
 export default function ThemeSettings() {
-  const { theme } = useCustomTheme();
+  const { theme, refreshTheme } = useCustomTheme(); // ✅ make sure this is available
 
   const [loadingTheme, setLoadingTheme] = useState<string | null>(null);
 
@@ -30,6 +30,7 @@ export default function ThemeSettings() {
     setLoadingTheme(themeToApply.name);
     try {
       await setDoc(doc(db, 'theme', 'activeTheme'), themeToApply);
+      await refreshTheme(); // ✅ refresh theme after saving
     } catch (err) {
       alert('Failed to apply theme: ' + (err as Error).message);
     } finally {

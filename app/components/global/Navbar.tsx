@@ -14,7 +14,7 @@ import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import CircularProgress from '@mui/material/CircularProgress';
+import { Skeleton, Box } from '@mui/material';
 
 export default function BottomNav() {
   const router = useRouter();
@@ -56,14 +56,33 @@ export default function BottomNav() {
 
   if (!theme) {
     return (
-      <CircularProgress
+      <Box
         sx={{
+          width: '100%',
           position: 'fixed',
-          bottom: 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
+          bottom: 0,
+          zIndex: 10,
+          borderTop: '1px solid #ccc',
+          bgcolor: '#f1f5f9',
+          display: 'flex',
+          justifyContent: 'space-around',
+          p: 1,
         }}
-      />
+      >
+        {[...Array(5)].map((_, idx) => (
+          <Box
+            key={idx}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            <Skeleton variant="circular" width={28} height={28} />
+            <Skeleton variant="text" width={40} height={10} />
+          </Box>
+        ))}
+      </Box>
     );
   }
 

@@ -37,7 +37,9 @@ export default function LoginPage() {
     open: false,
   });
 
-  const handleLogin = async () => {
+  const handleLogin = async (e?: React.FormEvent<HTMLFormElement>) => {
+    if (e) e.preventDefault();
+
     if (!email || !password) {
       return setSnack({
         message: 'Please enter email and password.',
@@ -57,9 +59,8 @@ export default function LoginPage() {
         throw new Error('User data not found.');
       }
 
-      // ✅ Replace localStorage with cookie
       Cookies.set('uid', user.uid, { expires: 7 });
-      Cookies.set('role', userDoc.data().role, { expires: 7 }); // ✅ store role
+      Cookies.set('role', userDoc.data().role, { expires: 7 });
 
       setSnack({ message: 'Login successful.', type: 'success', open: true });
 
@@ -84,48 +85,52 @@ export default function LoginPage() {
   };
 
   return (
-    <Box maxWidth={400} mx="auto" mt={10}>
+    <Box maxWidth={400} mx="auto" mt={10} px={2}>
       <Typography variant="h5" mb={2}>
         User Login
       </Typography>
 
-      <TextField
-        fullWidth
-        label="Email"
-        margin="normal"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
+      <form onSubmit={handleLogin}>
+        <TextField
+          fullWidth
+          label="Email"
+          margin="normal"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
 
-      <TextField
-        fullWidth
-        label="Password"
-        margin="normal"
-        type={showPassword ? 'text' : 'password'}
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        InputProps={{
-          endAdornment: (
-            <InputAdornment position="end">
-              <IconButton onClick={() => setShowPassword((p) => !p)} edge="end">
-                {showPassword ? <VisibilityOff /> : <Visibility />}
-              </IconButton>
-            </InputAdornment>
-          ),
-        }}
-      />
+        <TextField
+          fullWidth
+          label="Password"
+          margin="normal"
+          type={showPassword ? 'text' : 'password'}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  onClick={() => setShowPassword((p) => !p)}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
 
-      <Button
-        variant="contained"
-        fullWidth
-        sx={{ mt: 2 }}
-        onClick={handleLogin}
-        disabled={loading}
-      >
-        {loading ? 'Logging in...' : 'Login'}
-      </Button>
+        <Button
+          variant="contained"
+          fullWidth
+          sx={{ mt: 2 }}
+          type="submit"
+          disabled={loading}
+        >
+          {loading ? 'Logging in...' : 'Login'}
+        </Button>
+      </form>
 
-      {/* Snackbar Alert */}
       <Snackbar
         open={snack.open}
         autoHideDuration={4000}
