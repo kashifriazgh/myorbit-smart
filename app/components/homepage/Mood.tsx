@@ -1,4 +1,5 @@
 'use client';
+
 import {
   Box,
   Button,
@@ -16,12 +17,24 @@ import {
 import { useEffect, useState } from 'react';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import CloseIcon from '@mui/icons-material/Close';
-import MoodSelector from '../journal/moodSelector';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
+import MoodEmoji from '../global/mood-emojis/MoodEmoji';
 
 const MOOD_SUBMISSION_KEY = 'lastMoodSubmission';
+
+const moodOptions = [
+  'happy',
+  // 'slightly-happy',
+  'neutral',
+  'sad',
+  // 'dead-sad',
+  'excited',
+  'angry',
+  // 'satisfied',
+  'calm',
+] as const;
 
 export default function Mood() {
   const theme = useTheme();
@@ -101,9 +114,15 @@ export default function Mood() {
           alignItems="center"
           justifyContent="space-between"
         >
-          <Typography variant="h6" fontWeight="bold">
-            🧠 Track Your Mood
+          <Typography
+            variant="h5"
+            fontWeight="bold"
+            align="center"
+            sx={{ width: '100%', fontSize: '1.75rem', mt: 1 }}
+          >
+            How are you feeling this day?
           </Typography>
+
           <Tooltip
             title={showMoodSelector ? 'Hide Mood Picker' : 'Select Mood'}
           >
@@ -113,42 +132,77 @@ export default function Mood() {
           </Tooltip>
         </Stack>
 
-        <Typography variant="body2" color="text.secondary" mt={0.5}>
-          Your emotions matter — check in and reflect.
-        </Typography>
-
         <Collapse in={showMoodSelector} timeout={500} unmountOnExit>
-          <Box mt={3}>
-            <MoodSelector
-              selectedMood={selectedMood}
-              onSelect={setSelectedMood}
-            />
+          <Box mt={3} display="flex" flexDirection="column" alignItems="center">
+            {/* Large emoji preview */}
+            {selectedMood && (
+              <Box mb={2} textAlign="center">
+                <MoodEmoji mood={selectedMood} size={96} level={moodLevel} />
+                <Typography
+                  variant="subtitle1"
+                  mt={1}
+                  textTransform="capitalize"
+                >
+                  I’m feeling {selectedMood.replace('-', ' ')}
+                </Typography>
+              </Box>
+            )}
 
+            {/* Mood emojis row */}
+            <Box
+              display="flex"
+              gap={1}
+              flexWrap="wrap"
+              justifyContent="center"
+              alignItems="center"
+              mb={3}
+            >
+              {moodOptions.map((mood) => (
+                <Box
+                  key={mood}
+                  onClick={() => setSelectedMood(mood)}
+                  sx={{
+                    borderRadius: '50%',
+                    padding: 1,
+                    cursor: 'pointer',
+                    backgroundColor:
+                      selectedMood === mood ? '#fde68a' : 'transparent',
+                    transform:
+                      selectedMood === mood ? 'scale(1.2)' : 'scale(1)',
+                    transition: 'all 0.2s ease-in-out',
+                  }}
+                >
+                  <MoodEmoji mood={mood} size={36} />
+                </Box>
+              ))}
+            </Box>
+
+            {/* Mood intensity slider */}
             {selectedMood && (
               <>
-                <Box mt={3}>
+                <Box width="100%" maxWidth="400px">
                   <Typography variant="subtitle2" gutterBottom>
-                    How strong is your feeling? ({selectedMood})
+                    How strong is your feeling?
                   </Typography>
-
                   <Slider
                     value={moodLevel}
                     onChange={(_, val) => setMoodLevel(val as number)}
                     min={1}
-                    max={10}
+                    max={5}
                     marks
-                    size="small"
+                    step={1}
                     sx={{
                       color:
-                        moodLevel <= 3
+                        moodLevel <= 2
                           ? theme.palette.error.main
-                          : moodLevel >= 8
+                          : moodLevel >= 4
                           ? theme.palette.success.main
                           : theme.palette.warning.main,
                     }}
                   />
                 </Box>
 
+                {/* Submit button */}
                 <Button
                   variant="contained"
                   color="primary"

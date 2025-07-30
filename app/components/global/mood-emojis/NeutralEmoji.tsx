@@ -1,3 +1,7 @@
+'use client';
+
+import { motion } from 'framer-motion';
+
 const NeutralEmoji = ({
   color = '#a3a3a3',
   size = 64,
@@ -5,47 +9,66 @@ const NeutralEmoji = ({
   color?: string;
   size?: number;
 }) => {
-  const eyeSize = size * 0.1;
+  const eyeSize = size * 0.12;
+  const eyeOffsetY = size * 0.28;
+  const eyeOffsetX = size * 0.25;
+  const mouthWidth = size * 0.4;
+  const mouthHeight = 3;
 
   return (
-    <div
-      className="relative rounded-full flex items-center justify-center"
+    <motion.div
+      className="relative rounded-full flex items-center justify-center shadow-inner"
       style={{
         backgroundColor: color,
         width: size,
         height: size,
       }}
+      initial={{ scale: 0.9 }}
+      animate={{ scale: 1 }}
+      transition={{ duration: 0.2 }}
     >
-      {/* Eyes */}
-      <div
+      {/* Left Eye */}
+      <motion.div
         className="absolute bg-black rounded-full"
         style={{
           width: eyeSize,
           height: eyeSize,
-          top: size * 0.3,
-          left: size * 0.25,
+          top: eyeOffsetY,
+          left: eyeOffsetX,
+        }}
+        animate={{ y: [0, -1, 0] }}
+        transition={{
+          duration: 1.2,
+          repeat: Infinity,
+          repeatDelay: 2,
         }}
       />
-      <div
+      {/* Right Eye */}
+      <motion.div
         className="absolute bg-black rounded-full"
         style={{
           width: eyeSize,
           height: eyeSize,
-          top: size * 0.3,
-          right: size * 0.25,
+          top: eyeOffsetY,
+          right: eyeOffsetX,
+        }}
+        animate={{ y: [0, -1, 0] }}
+        transition={{
+          duration: 1.2,
+          repeat: Infinity,
+          repeatDelay: 2,
         }}
       />
-
-      {/* Straight line */}
-      <div
-        className="absolute bg-black"
+      {/* Mouth - Neutral line */}
+      <motion.div
+        className="absolute bg-black rounded"
         style={{
-          width: size * 0.4,
-          height: 3,
+          width: mouthWidth,
+          height: mouthHeight,
           bottom: size * 0.2,
         }}
       />
-    </div>
+    </motion.div>
   );
 };
 

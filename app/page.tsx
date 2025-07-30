@@ -9,38 +9,33 @@ import MostProductiveDay from './components/homepage/MostProductiveDay';
 import ExpectedIncome from './components/homepage/ExpectedIncomes';
 import MostFocusedTime from './components/homepage/MostFocusedTime';
 import DashboardHome from './components/homepage/Opener';
-import MoodEmoji from './components/global/mood-emojis/MoodEmoji';
 
 export default function Homepage() {
   return (
-    <>
-      <div className="p-2 mx-auto flex-col flex max-w-2xl my-20 justify-center">
-        <MoodEmoji mood="happy" />
-        <MoodEmoji mood="sad" color="#fecaca" />
-        <MoodEmoji mood="dead-sad" />
+    <div className="p-2 mx-auto flex-col flex max-w-2xl my-20 justify-center">
+      {/* Dashboard Sections */}
 
-        <DashboardHome />
-        <Mood />
-        <ImportantTasks />
-        <OverdueTasks />
-        <ExpectedExpenses />
-        <ExpectedIncome />
-        <JournalMemory />
-        <MostProductiveDay
-          data={{
-            date: '2025-07-18',
-            tasksCompleted: 14,
-            focusScore: 87,
-          }}
-        />
-        <MostFocusedTime
-          data={{
-            hourStart: 21,
-            hourEnd: 22,
-            day: 'Sunday',
-          }}
-        />
-      </div>
-    </>
+      <DashboardHome />
+      <Mood />
+      <ImportantTasks />
+      <OverdueTasks />
+      <ExpectedExpenses />
+      <ExpectedIncome />
+      <JournalMemory />
+      <MostProductiveDay
+        data={{
+          date: '2025-07-18',
+          tasksCompleted: 14,
+          focusScore: 87,
+        }}
+      />
+      <MostFocusedTime
+        data={{
+          hourStart: 21,
+          hourEnd: 22,
+          day: 'Sunday',
+        }}
+      />
+    </div>
   );
 }
