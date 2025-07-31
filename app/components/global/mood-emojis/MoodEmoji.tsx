@@ -1,5 +1,4 @@
 import HappyEmoji from './HappyEmoji';
-import SlightlyHappyEmoji from './SlightlyHappyEmoji';
 import NeutralEmoji from './NeutralEmoji';
 import SadEmoji from './SadEmoji';
 import ExcitedEmoji from './ExcitedEmoji';
