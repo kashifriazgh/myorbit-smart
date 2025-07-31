@@ -21,27 +21,16 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import MoodEmoji from '../global/mood-emojis/MoodEmoji';
+import { moodOptions, MoodType } from '@/app/lib/interface';
 
 const MOOD_SUBMISSION_KEY = 'lastMoodSubmission';
-
-const moodOptions = [
-  'happy',
-  // 'slightly-happy',
-  'neutral',
-  'sad',
-  // 'dead-sad',
-  'excited',
-  'angry',
-  // 'satisfied',
-  'calm',
-] as const;
 
 export default function Mood() {
   const theme = useTheme();
   const { user } = useAuth();
 
   const [showMoodSelector, setShowMoodSelector] = useState(false);
-  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+  const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [moodLevel, setMoodLevel] = useState<number>(5);
   const [loading, setLoading] = useState(false);
   const [allowedToShow, setAllowedToShow] = useState(false);

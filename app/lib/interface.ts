@@ -526,3 +526,14 @@ export interface MoodEntry {
   recordedAt: Date | Timestamp; // exact time of entry
   createdAt: Date | Timestamp;
 }
+
+export const moodOptions = [
+  'happy',
+  'neutral',
+  'sad',
+  'excited',
+  'angry',
+  'calm',
+] as const;
+
+export type MoodType = (typeof moodOptions)[number];
