@@ -537,3 +537,21 @@ export const moodOptions = [
 ] as const;
 
 export type MoodType = (typeof moodOptions)[number];
+
+export interface initialOnBoarding {
+  userId;
+  fullName?: string;
+  nickName?: string;
+  gender?: string;
+  profession?: string;
+  ageGroup?: string;
+  currency?: string;
+  country?: string;
+  goals?: string[];
+  currentLevel?: string | 'entry level';
+  TopPriorities?: string[]; // e.g. learning, creativity, health
+  shoppingHabits?: string; // e.g weekly , monthly, as needed
+  incomeType?: string; // e.g. monthly, weekly
+  startOfMonth?: Date; // e.g. 01 or 05
+  preferredTheme?: 'light' | 'dark' | 'auto';
+}

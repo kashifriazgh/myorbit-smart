@@ -58,7 +58,16 @@ export default function Mood() {
     }
   }, []);
 
-  const toggleMoodSelector = () => setShowMoodSelector((prev) => !prev);
+  const toggleMoodSelector = () => {
+    setShowMoodSelector((prev) => {
+      if (prev) {
+        // Reset states when closing
+        setSelectedMood(null);
+        setMoodLevel(5);
+      }
+      return !prev;
+    });
+  };
 
   const handleMoodSubmit = async () => {
     if (!selectedMood || !user?.uid) return;
@@ -73,16 +82,21 @@ export default function Mood() {
       createdAt: serverTimestamp(),
     };
 
-    await addDoc(collection(db, 'moods'), moodEntry);
-    localStorage.setItem(MOOD_SUBMISSION_KEY, new Date().toISOString());
+    try {
+      await addDoc(collection(db, 'moods'), moodEntry);
+      localStorage.setItem(MOOD_SUBMISSION_KEY, new Date().toISOString());
 
-    setLoading(false);
-    setSelectedMood(null);
-    setMoodLevel(5);
-    setShowMoodSelector(false);
-    setAllowedToShow(false);
-
-    setTimeout(() => setAllowedToShow(true), 60 * 60 * 1000);
+      // Reset UI state after submit
+      setSelectedMood(null);
+      setMoodLevel(5);
+      setShowMoodSelector(false);
+      setAllowedToShow(false);
+      setTimeout(() => setAllowedToShow(true), 60 * 60 * 1000);
+    } catch (err) {
+      console.error('Failed to submit mood:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!allowedToShow) return null;
@@ -95,7 +109,8 @@ export default function Mood() {
           p: 3,
           borderRadius: 3,
           background: theme.palette.mode === 'dark' ? '#1e293b' : '#f9fafb',
-          borderLeft: `6px solid ${theme.palette.primary.main}`,
+          boxShadow: theme.shadows[3],
+          transition: 'all 0.3s ease-in-out',
         }}
       >
         <Stack
@@ -161,7 +176,7 @@ export default function Mood() {
                     transition: 'all 0.2s ease-in-out',
                   }}
                 >
-                  <MoodEmoji mood={mood} size={36} />
+                  <MoodEmoji mood={mood} size={30} />
                 </Box>
               ))}
             </Box>
