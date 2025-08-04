@@ -1,8 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import BottomNavigation from '@mui/material/BottomNavigation';
 import BottomNavigationAction from '@mui/material/BottomNavigationAction';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
@@ -14,13 +14,15 @@ import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
-import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { Skeleton, Box } from '@mui/material';
 
+import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { useAuth } from '@/app/lib/context/userContext';
+
 export default function BottomNav() {
-  const router = useRouter();
   const pathname = usePathname();
   const { theme } = useCustomTheme();
+  const { user, loading } = useAuth(); // <-- get auth state
 
   const navItems = [
     { label: 'Ideas', icon: <LightbulbIcon />, path: '/ideas' },
@@ -45,14 +47,10 @@ export default function BottomNav() {
     setAnchorEl(null);
   };
 
-  const handleMoreOption = (href: string) => {
-    router.push(href);
-    setAnchorEl(null);
-  };
-
   const open = Boolean(anchorEl);
 
-  if (!theme) {
+  // Show loading skeleton while waiting for auth or theme
+  if (!theme || loading) {
     return (
       <Box
         sx={{
@@ -106,9 +104,8 @@ export default function BottomNav() {
             value={item.path}
             icon={item.icon}
             component={Link}
-            href={item.path}
-            // Make sure MUI's Link works with Next.js
-            // Next 13+ supports `component={Link}` perfectly
+            href={user ? item.path : '#'} // prevent navigation if user not ready
+            disabled={!user}
           />
         ))}
         <BottomNavigationAction
@@ -116,6 +113,7 @@ export default function BottomNav() {
           value="more"
           icon={<MoreHorizIcon />}
           onClick={handleMoreClick}
+          disabled={!user}
         />
       </BottomNavigation>
 
@@ -123,23 +121,17 @@ export default function BottomNav() {
         open={open}
         anchorEl={anchorEl}
         onClose={handleMoreClose}
-        anchorOrigin={{
-          vertical: 'top',
-          horizontal: 'center',
-        }}
-        transformOrigin={{
-          vertical: 'bottom',
-          horizontal: 'center',
-        }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <List sx={{ minWidth: 200 }}>
-          <ListItemButton onClick={() => handleMoreOption('/settings')}>
+          <ListItemButton disabled={!user} component={Link} href="/settings">
             <ListItemText primary="Settings" />
           </ListItemButton>
-          <ListItemButton onClick={() => handleMoreOption('/profile')}>
+          <ListItemButton disabled={!user} component={Link} href="/profile">
             <ListItemText primary="Profile" />
           </ListItemButton>
-          <ListItemButton onClick={() => handleMoreOption('/logout')}>
+          <ListItemButton disabled={!user} component={Link} href="/logout">
             <ListItemText primary="Logout" />
           </ListItemButton>
         </List>
