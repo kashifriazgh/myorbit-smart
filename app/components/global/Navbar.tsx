@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 import BottomNavigation from '@mui/material/BottomNavigation';
 import BottomNavigationAction from '@mui/material/BottomNavigationAction';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
@@ -32,11 +33,8 @@ export default function BottomNav() {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
   const handleChange = (_: React.SyntheticEvent, newValue: string) => {
-    if (newValue === 'more') {
-      return;
-    }
+    if (newValue === 'more') return;
     setValue(newValue);
-    router.push(newValue);
   };
 
   const handleMoreClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -107,6 +105,10 @@ export default function BottomNav() {
             label={item.label}
             value={item.path}
             icon={item.icon}
+            component={Link}
+            href={item.path}
+            // Make sure MUI's Link works with Next.js
+            // Next 13+ supports `component={Link}` perfectly
           />
         ))}
         <BottomNavigationAction

@@ -555,3 +555,21 @@ export interface initialOnBoarding {
   startOfMonth?: Date; // e.g. 01 or 05
   preferredTheme?: 'light' | 'dark' | 'auto';
 }
+
+// Initial On Boarding
+export interface InitialOnBoarding {
+  userId: string; // ✅ Always include type
+  fullName?: string;
+  nickName?: string;
+  gender?: 'male' | 'female' | 'other'; // ✅ Better with defined options
+  profession?: string;
+  ageGroup?: 'teen' | '20s' | '30s' | '40s' | '50+'; // ✅ Use options for better UX
+  currency?: string; // e.g. 'PKR', 'USD'
+  country?: string;
+  goals?: string[]; // e.g. ["Build habits", "Start business"]
+  currentLevel?: 'entry' | 'intermediate' | 'pro'; // ✅ Predefined options
+  topPriorities?: string[]; // ✅ use camelCase
+  shoppingHabits?: 'weekly' | 'monthly' | 'as-needed';
+  incomeType?: 'monthly' | 'weekly' | 'irregular';
+  startOfMonth?: number; // ✅ Better as number (1-31)
+}
