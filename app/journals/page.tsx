@@ -5,6 +5,7 @@ import { useState } from 'react';
 import JournalModal from '../components/journal/journalModal';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import JournalList from '../components/journal/journalList';
+import Link from 'next/link';
 
 export default function JournalsPage() {
   const [open, setOpen] = useState(false);
@@ -17,8 +18,9 @@ export default function JournalsPage() {
       <Typography variant="h4" gutterBottom>
         📔 My Journal
       </Typography>
-
-      {/* Styled input to trigger modal */}
+      <Link href="/finance">Finance</Link> |<Link href="/ideas">Ideas</Link> |
+      <Link href="/to-do">To Dos</Link> |<Link href="/journals">Journals</Link>{' '}
+      |{/* Styled input to trigger modal */}
       <TextField
         variant="outlined"
         placeholder="🖊️ Write about your day..."
@@ -54,10 +56,8 @@ export default function JournalsPage() {
         }}
         sx={{ mb: 3 }}
       />
-
       {/* Journal List will come here later */}
       {/* <JournalsList /> */}
-
       <JournalModal open={open} onClose={() => setOpen(false)} />
       <br />
       <JournalList />

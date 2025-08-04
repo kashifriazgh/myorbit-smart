@@ -5,6 +5,7 @@ import { useState } from 'react';
 import IdeaModal from '../components/ideas/IdeasModal';
 import IdeasList from '../components/ideas/IdeasList';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import Link from 'next/link';
 
 export default function IdeasPage() {
   const [open, setOpen] = useState(false);
@@ -17,7 +18,6 @@ export default function IdeasPage() {
       <Typography variant="h4" gutterBottom>
         💡 My Ideas
       </Typography>
-
       {/* Interactive TextField to open modal */}
       <TextField
         variant="outlined"
@@ -54,9 +54,10 @@ export default function IdeasPage() {
         }}
         sx={{ mb: 3 }}
       />
-
+      <Link href="/finance">Finance</Link> |<Link href="/ideas">Ideas</Link> |
+      <Link href="/to-do">To Dos</Link> |<Link href="/journals">Journals</Link>{' '}
+      |
       <IdeasList />
-
       <IdeaModal open={open} onClose={() => setOpen(false)} />
     </Box>
   );
