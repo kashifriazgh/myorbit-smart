@@ -44,7 +44,6 @@ const AgeGender = () => {
   const [ageGroup, setAgeGroup] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch gender and ageGroup from Firestore
   useEffect(() => {
     const fetchData = async () => {
       if (!user?.uid) return;
@@ -108,40 +107,50 @@ const AgeGender = () => {
   if (loading) return <CircularProgress />;
 
   return (
-    <Stack spacing={6} alignItems="center" width="100%">
+    <Stack className="my-6" spacing={6} alignItems="center" width="100%">
       {/* Gender Selection */}
       <Box width="100%">
         <Typography variant="h6" gutterBottom>
           Select your gender:
         </Typography>
-        <Stack direction="row" spacing={2} flexWrap="wrap">
-          {genderOptions.map((g, i) => (
-            <motion.div
-              key={g}
-              custom={i}
-              initial="hidden"
-              animate="visible"
-              variants={fadeIn}
-            >
-              <Button
-                variant={gender === g ? 'contained' : 'outlined'}
-                color={gender === g ? 'primary' : 'inherit'}
-                onClick={() => updateInitialOnboardingField('gender', g)}
-                sx={{
-                  py: 2,
-                  px: 4,
-                  fontSize: '1.1rem',
-                  borderRadius: 5,
-                  textTransform: 'capitalize',
-                  boxShadow: gender === g ? theme.shadows[3] : 'none',
-                  transition: 'all 0.3s',
-                }}
+
+        <Box
+          sx={{
+            overflowX: 'auto',
+            pb: 1,
+            mb: 3,
+          }}
+        >
+          <Stack direction="row" spacing={2} sx={{ width: 'max-content' }}>
+            {genderOptions.map((g, i) => (
+              <motion.div
+                key={g}
+                custom={i}
+                initial="hidden"
+                animate="visible"
+                variants={fadeIn}
               >
-                {g}
-              </Button>
-            </motion.div>
-          ))}
-        </Stack>
+                <Button
+                  variant={gender === g ? 'contained' : 'outlined'}
+                  color={gender === g ? 'primary' : 'inherit'}
+                  onClick={() => updateInitialOnboardingField('gender', g)}
+                  sx={{
+                    py: 1.5,
+                    px: 3,
+                    fontSize: '1rem',
+                    borderRadius: 5,
+                    textTransform: 'capitalize',
+                    boxShadow: gender === g ? theme.shadows[3] : 'none',
+                    transition: 'all 0.3s',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {g}
+                </Button>
+              </motion.div>
+            ))}
+          </Stack>
+        </Box>
       </Box>
 
       {/* Age Group Selection */}
@@ -149,55 +158,64 @@ const AgeGender = () => {
         <Typography variant="h6" gutterBottom>
           Select your age group:
         </Typography>
-        <Stack direction="row" spacing={2} flexWrap="wrap">
-          {ageGroups.map((age, i) => (
-            <motion.div
-              key={age}
-              custom={i}
-              initial="hidden"
-              animate="visible"
-              variants={fadeIn}
-            >
-              <Box
-                onClick={() => updateInitialOnboardingField('ageGroup', age)}
-                sx={{
-                  cursor: 'pointer',
-                  px: 4,
-                  py: 2,
-                  borderRadius: 4,
-                  minWidth: 100,
-                  textAlign: 'center',
-                  fontSize: '1.1rem',
-                  fontWeight: ageGroup === age ? 600 : 400,
-                  border: `2px solid ${
-                    ageGroup === age
-                      ? theme.palette.primary.main
-                      : theme.palette.divider
-                  }`,
-                  backgroundColor:
-                    ageGroup === age
-                      ? theme.palette.primary.light
-                      : theme.palette.background.paper,
-                  color:
-                    ageGroup === age
-                      ? theme.palette.primary.contrastText
-                      : theme.palette.text.primary,
-                  boxShadow: ageGroup === age ? theme.shadows[4] : 'none',
-                  transition: 'all 0.3s',
-                  '&:hover': {
-                    boxShadow: theme.shadows[2],
+
+        <Box
+          sx={{
+            overflowX: 'auto',
+            pb: 1,
+          }}
+        >
+          <Stack direction="row" spacing={2} sx={{ width: 'max-content' }}>
+            {ageGroups.map((age, i) => (
+              <motion.div
+                key={age}
+                custom={i}
+                initial="hidden"
+                animate="visible"
+                variants={fadeIn}
+              >
+                <Box
+                  onClick={() => updateInitialOnboardingField('ageGroup', age)}
+                  sx={{
+                    cursor: 'pointer',
+                    px: 3,
+                    py: 1.5,
+                    borderRadius: 4,
+                    minWidth: 100,
+                    textAlign: 'center',
+                    fontSize: '1rem',
+                    fontWeight: ageGroup === age ? 600 : 400,
+                    border: `2px solid ${
+                      ageGroup === age
+                        ? theme.palette.primary.main
+                        : theme.palette.divider
+                    }`,
                     backgroundColor:
                       ageGroup === age
                         ? theme.palette.primary.light
-                        : theme.palette.action.hover,
-                  },
-                }}
-              >
-                {age}
-              </Box>
-            </motion.div>
-          ))}
-        </Stack>
+                        : theme.palette.background.paper,
+                    color:
+                      ageGroup === age
+                        ? theme.palette.primary.contrastText
+                        : theme.palette.text.primary,
+                    boxShadow: ageGroup === age ? theme.shadows[4] : 'none',
+                    transition: 'all 0.3s',
+                    whiteSpace: 'nowrap',
+                    '&:hover': {
+                      boxShadow: theme.shadows[2],
+                      backgroundColor:
+                        ageGroup === age
+                          ? theme.palette.primary.light
+                          : theme.palette.action.hover,
+                    },
+                  }}
+                >
+                  {age}
+                </Box>
+              </motion.div>
+            ))}
+          </Stack>
+        </Box>
       </Box>
     </Stack>
   );
