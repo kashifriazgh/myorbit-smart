@@ -9,12 +9,13 @@ import MostProductiveDay from './components/homepage/MostProductiveDay';
 import ExpectedIncome from './components/homepage/ExpectedIncomes';
 import MostFocusedTime from './components/homepage/MostFocusedTime';
 import DashboardHome from './components/homepage/Opener';
+import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingIntializer';
 
 export default function Homepage() {
   return (
     <div className="p-2 mx-auto flex-col flex max-w-2xl my-20 justify-center">
       {/* Dashboard Sections */}
-
+      <OnBoardingInitializer />
       <DashboardHome />
       <Mood />
       <ImportantTasks />

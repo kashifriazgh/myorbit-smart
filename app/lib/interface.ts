@@ -557,19 +557,28 @@ export interface initialOnBoarding {
 }
 
 // Initial On Boarding
+export interface OnBoardingField<T> {
+  filled: boolean;
+  value: T;
+}
+
 export interface InitialOnBoarding {
-  userId: string; // ✅ Always include type
+  userId: string; // Always required
+
+  // This will still come from users collection, so not nested:
   fullName?: string;
-  nickName?: string;
-  gender?: 'male' | 'female' | 'other'; // ✅ Better with defined options
-  profession?: string;
-  ageGroup?: 'teen' | '20s' | '30s' | '40s' | '50+'; // ✅ Use options for better UX
-  currency?: string; // e.g. 'PKR', 'USD'
-  country?: string;
-  goals?: string[]; // e.g. ["Build habits", "Start business"]
-  currentLevel?: 'entry' | 'intermediate' | 'pro'; // ✅ Predefined options
-  topPriorities?: string[]; // ✅ use camelCase
-  shoppingHabits?: 'weekly' | 'monthly' | 'as-needed';
-  incomeType?: 'monthly' | 'weekly' | 'irregular';
-  startOfMonth?: number; // ✅ Better as number (1-31)
+
+  // Fields with progress tracking
+  nickName?: OnBoardingField<string>;
+  gender?: OnBoardingField<'male' | 'female' | 'other'>;
+  profession?: OnBoardingField<string>;
+  ageGroup?: OnBoardingField<'teen' | '20s' | '30s' | '40s' | '50+'>;
+  currency?: OnBoardingField<string>; // e.g. 'PKR', 'USD'
+  country?: OnBoardingField<string>;
+  goals?: OnBoardingField<string[]>; // e.g. ["Build habits", "Start business"]
+  currentLevel?: OnBoardingField<'entry' | 'intermediate' | 'pro'>;
+  topPriorities?: OnBoardingField<string[]>; // e.g. ['learning', 'fitness']
+  shoppingHabits?: OnBoardingField<'weekly' | 'monthly' | 'as-needed'>;
+  incomeType?: OnBoardingField<'monthly' | 'weekly' | 'irregular'>;
+  startOfMonth?: OnBoardingField<number>; // Day of month: 1–31
 }
