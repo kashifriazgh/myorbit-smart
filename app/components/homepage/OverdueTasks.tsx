@@ -22,6 +22,7 @@ import {
   KeyboardArrowLeft,
   KeyboardArrowRight,
 } from '@mui/icons-material';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import {
   collection,
@@ -221,86 +222,96 @@ export default function OverdueTasks() {
         [1, 2, 3].map((i) => <TaskSkeleton key={i} />)
       ) : tasks.length > 0 ? (
         <>
-          <Card className="rounded-xl shadow-sm hover:shadow-md transition mb-4">
-            <CardContent>
-              <Box className="flex justify-between items-start mb-2">
-                <Link href={`/to-do/${activeTask.id}`} passHref>
-                  <Typography
-                    variant="subtitle1"
-                    fontWeight="bold"
-                    sx={{
-                      cursor: 'pointer',
-                      textDecoration: 'underline',
-                      color:
-                        theme.mode === 'dark'
-                          ? '#fca5a5'
-                          : muiTheme.palette.error.main,
-                    }}
-                  >
-                    {activeTask.title}
-                  </Typography>
-                </Link>
-                <Stack direction="row" spacing={1}>
-                  <Tooltip title="Reschedule">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleReschedule(activeTask)}
-                    >
-                      <Event sx={{ color: '#f59e0b' }} />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Mark as Done">
-                    <span>
-                      <IconButton
-                        size="small"
-                        onClick={() => markCompleted(activeTask)}
-                        disabled={completingId === activeTask.id}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeStep}
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -40 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+            >
+              <Card className="rounded-xl shadow-sm hover:shadow-md transition mb-4">
+                <CardContent>
+                  <Box className="flex justify-between items-start mb-2">
+                    <Link href={`/to-do/${activeTask.id}`} passHref>
+                      <Typography
+                        variant="subtitle1"
+                        fontWeight="bold"
                         sx={{
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
                           color:
-                            completingId === activeTask.id
-                              ? 'gray'
-                              : theme.mode === 'dark'
-                              ? '#cbd5e1'
-                              : 'gray',
+                            theme.mode === 'dark'
+                              ? '#fca5a5'
+                              : muiTheme.palette.error.main,
                         }}
                       >
-                        {completingId === activeTask.id ? (
-                          <DoneAll sx={{ color: 'green' }} />
-                        ) : (
-                          <Done />
-                        )}
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </Stack>
-              </Box>
+                        {activeTask.title}
+                      </Typography>
+                    </Link>
+                    <Stack direction="row" spacing={1}>
+                      <Tooltip title="Reschedule">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleReschedule(activeTask)}
+                        >
+                          <Event sx={{ color: '#f59e0b' }} />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Mark as Done">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => markCompleted(activeTask)}
+                            disabled={completingId === activeTask.id}
+                            sx={{
+                              color:
+                                completingId === activeTask.id
+                                  ? 'gray'
+                                  : theme.mode === 'dark'
+                                  ? '#cbd5e1'
+                                  : 'gray',
+                            }}
+                          >
+                            {completingId === activeTask.id ? (
+                              <DoneAll sx={{ color: 'green' }} />
+                            ) : (
+                              <Done />
+                            )}
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Stack>
+                  </Box>
 
-              <Box className="flex flex-wrap gap-2 mt-1">
-                <Box
-                  className="text-xs px-2 py-0.5 rounded"
-                  sx={getColor('status', 'status')}
-                >
-                  {activeTask.status}
-                </Box>
-                <Box
-                  className="text-xs px-2 py-0.5 rounded capitalize"
-                  sx={getColor('status', activeTask.priority)}
-                >
-                  {activeTask.priority}
-                </Box>
-                <Box
-                  className="text-xs px-2 py-0.5 rounded"
-                  sx={getColor('due', 'due')}
-                >
-                  Due:{' '}
-                  {moment(
-                    (activeTask.dueDate as Timestamp)?.toDate?.() ||
-                      activeTask.dueDate
-                  ).format('MMM D')}
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
+                  <Box className="flex flex-wrap gap-2 mt-1">
+                    <Box
+                      className="text-xs px-2 py-0.5 rounded"
+                      sx={getColor('status', 'status')}
+                    >
+                      {activeTask.status}
+                    </Box>
+                    <Box
+                      className="text-xs px-2 py-0.5 rounded capitalize"
+                      sx={getColor('status', activeTask.priority)}
+                    >
+                      {activeTask.priority}
+                    </Box>
+                    <Box
+                      className="text-xs px-2 py-0.5 rounded"
+                      sx={getColor('due', 'due')}
+                    >
+                      Due:{' '}
+                      {moment(
+                        (activeTask.dueDate as Timestamp)?.toDate?.() ||
+                          activeTask.dueDate
+                      ).format('MMM D')}
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </AnimatePresence>
 
           <MobileStepper
             variant="dots"

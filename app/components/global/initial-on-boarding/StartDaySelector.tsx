@@ -31,7 +31,7 @@ const fadeIn = {
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { delay: i * 0.05 },
+    transition: { delay: i * 0.02 },
   }),
 };
 
@@ -113,102 +113,111 @@ export default function StartDaySelector() {
     <Stack className="my-6" spacing={6} alignItems="center" width="100%">
       {/* Start Day of Week */}
       <Box width="100%">
-        <Typography variant="h6" gutterBottom>
+        <Typography variant="h5" gutterBottom fontWeight={600}>
           Select the start day of your week:
         </Typography>
 
-        <Box sx={{ overflowX: 'auto', pb: 1, mb: 3 }}>
-          <Stack direction="row" spacing={2} sx={{ width: 'max-content' }}>
-            {daysOfWeek.map((day, i) => (
-              <motion.div
-                key={day}
-                custom={i}
-                initial="hidden"
-                animate="visible"
-                variants={fadeIn}
-              >
-                <Button
-                  variant={startDayOfWeek === day ? 'contained' : 'outlined'}
-                  color={startDayOfWeek === day ? 'primary' : 'inherit'}
-                  onClick={() => updateField('startDayOfWeek', day)}
-                  sx={{
-                    py: 1.5,
-                    px: 3,
-                    fontSize: '1rem',
-                    borderRadius: 5,
-                    textTransform: 'capitalize',
-                    boxShadow:
-                      startDayOfWeek === day ? theme.shadows[3] : 'none',
-                    transition: 'all 0.3s',
-                    whiteSpace: 'nowrap',
-                  }}
+        <Stack spacing={2}>
+          {[0, 1].map((row) => (
+            <Stack
+              key={row}
+              direction="row"
+              spacing={1}
+              justifyContent="center"
+            >
+              {daysOfWeek.slice(row * 4, row * 4 + 4).map((day, i) => (
+                <motion.div
+                  key={day}
+                  custom={i}
+                  initial="hidden"
+                  animate="visible"
+                  variants={fadeIn}
                 >
-                  {day}
-                </Button>
-              </motion.div>
-            ))}
-          </Stack>
-        </Box>
+                  <Button
+                    size="small"
+                    variant={startDayOfWeek === day ? 'contained' : 'outlined'}
+                    color={startDayOfWeek === day ? 'primary' : 'inherit'}
+                    onClick={() => updateField('startDayOfWeek', day)}
+                    sx={{
+                      px: 2,
+                      py: 1,
+                      fontSize: '0.8rem',
+                      borderRadius: 4,
+                      textTransform: 'capitalize',
+                      boxShadow:
+                        startDayOfWeek === day ? theme.shadows[2] : 'none',
+                      minWidth: 80,
+                    }}
+                  >
+                    {day}
+                  </Button>
+                </motion.div>
+              ))}
+            </Stack>
+          ))}
+        </Stack>
       </Box>
 
       {/* Start Day of Month */}
       <Box width="100%">
-        <Typography variant="h6" gutterBottom>
+        <Typography variant="h5" gutterBottom fontWeight={600}>
           Select the start day of your month:
         </Typography>
 
-        <Box sx={{ overflowX: 'auto', pb: 1 }}>
-          <Stack direction="row" spacing={1} sx={{ width: 'max-content' }}>
-            {daysOfMonth.map((day, i) => (
-              <motion.div
-                key={day}
-                custom={i}
-                initial="hidden"
-                animate="visible"
-                variants={fadeIn}
-              >
-                <Box
-                  onClick={() => updateField('startDayOfMonth', day)}
-                  sx={{
-                    cursor: 'pointer',
-                    px: 2,
-                    py: 1,
-                    borderRadius: 4,
-                    minWidth: 50,
-                    textAlign: 'center',
-                    fontSize: '0.95rem',
-                    fontWeight: startDayOfMonth === day ? 600 : 400,
-                    border: `2px solid ${
-                      startDayOfMonth === day
-                        ? theme.palette.primary.main
-                        : theme.palette.divider
-                    }`,
-                    backgroundColor:
-                      startDayOfMonth === day
-                        ? theme.palette.primary.light
-                        : theme.palette.background.paper,
-                    color:
-                      startDayOfMonth === day
-                        ? theme.palette.primary.contrastText
-                        : theme.palette.text.primary,
-                    boxShadow:
-                      startDayOfMonth === day ? theme.shadows[4] : 'none',
-                    transition: 'all 0.3s',
-                    '&:hover': {
-                      boxShadow: theme.shadows[2],
+        <Stack spacing={2} alignItems="center">
+          {[0, 1, 2, 3, 4, 5].map((row) => (
+            <Stack key={row} direction="row" spacing={1}>
+              {daysOfMonth.slice(row * 6, row * 6 + 6).map((day, i) => (
+                <motion.div
+                  key={day}
+                  custom={i}
+                  initial="hidden"
+                  animate="visible"
+                  variants={fadeIn}
+                >
+                  <Box
+                    onClick={() => updateField('startDayOfMonth', day)}
+                    sx={{
+                      cursor: 'pointer',
+                      px: 2,
+                      py: 1,
+                      borderRadius: 3,
+                      minWidth: 45,
+                      textAlign: 'center',
+                      fontSize: '0.9rem',
+                      fontWeight: startDayOfMonth === day ? 600 : 400,
+                      border: `2px solid ${
+                        startDayOfMonth === day
+                          ? theme.palette.primary.main
+                          : theme.palette.divider
+                      }`,
                       backgroundColor:
                         startDayOfMonth === day
                           ? theme.palette.primary.light
-                          : theme.palette.action.hover,
-                    },
-                  }}
-                >
-                  {day}
-                </Box>
-              </motion.div>
-            ))}
-          </Stack>
-        </Box>
+                          : theme.palette.background.paper,
+                      color:
+                        startDayOfMonth === day
+                          ? theme.palette.primary.contrastText
+                          : theme.palette.text.primary,
+                      boxShadow:
+                        startDayOfMonth === day ? theme.shadows[4] : 'none',
+                      transition: 'all 0.3s',
+                      '&:hover': {
+                        boxShadow: theme.shadows[2],
+                        backgroundColor:
+                          startDayOfMonth === day
+                            ? theme.palette.primary.light
+                            : theme.palette.action.hover,
+                      },
+                    }}
+                  >
+                    {day}
+                  </Box>
+                </motion.div>
+              ))}
+            </Stack>
+          ))}
+        </Stack>
       </Box>
     </Stack>
   );
