@@ -9,7 +9,13 @@ import {
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 
@@ -27,37 +33,58 @@ const IncomeAndShoppingHabits = () => {
   const fetchUser = async () => {
     if (!user) return;
     setLoading(true);
-    const docRef = doc(db, 'users', user.uid);
-    const snap = await getDoc(docRef);
+
+    const ref = doc(db, 'settings', user.uid);
+    const snap = await getDoc(ref);
+
     if (snap.exists()) {
       const data = snap.data();
-      setIncomeType(data.incomeType?.value ?? null);
-      setShoppingHabits(data.shoppingHabits?.value ?? null);
+      const onboarding = data?.initialOnBoarding;
+      setIncomeType(onboarding?.incomeType?.value ?? null);
+      setShoppingHabits(onboarding?.shoppingHabits?.value ?? null);
     }
+
     setLoading(false);
   };
 
-  const handleSelect = async (
-    type: 'incomeType' | 'shoppingHabits',
+  const updateField = async (
+    key: 'incomeType' | 'shoppingHabits',
     value: string
   ) => {
     if (!user) return;
-    const newValue = {
-      value,
-      updatedAt: new Date().toISOString(),
-    };
     setSaving(true);
 
-    await setDoc(
-      doc(db, 'users', user.uid),
-      {
-        [type]: newValue,
+    const ref = doc(db, 'settings', user.uid);
+    const newField = {
+      [`initialOnBoarding.${key}`]: {
+        value,
+        filled: !!value,
+        updatedAt: serverTimestamp(),
       },
-      { merge: true }
-    );
+    };
 
-    if (type === 'incomeType') setIncomeType(value);
-    else setShoppingHabits(value);
+    try {
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          userId: user.uid,
+          initialOnBoarding: {
+            [key]: {
+              value,
+              filled: true,
+              updatedAt: serverTimestamp(),
+            },
+          },
+        });
+      } else {
+        await updateDoc(ref, newField);
+      }
+
+      if (key === 'incomeType') setIncomeType(value);
+      else setShoppingHabits(value);
+    } catch (err) {
+      console.error('Failed to update field:', err);
+    }
 
     setSaving(false);
   };
@@ -76,6 +103,7 @@ const IncomeAndShoppingHabits = () => {
 
   return (
     <Stack spacing={4} mt={4}>
+      {/* Income Type */}
       <Box>
         <Typography variant="subtitle1" fontWeight="bold" mb={1}>
           Income Type
@@ -85,7 +113,7 @@ const IncomeAndShoppingHabits = () => {
             <motion.div
               key={option}
               whileTap={{ scale: 0.95 }}
-              onClick={() => handleSelect('incomeType', option)}
+              onClick={() => updateField('incomeType', option)}
               style={{
                 cursor: 'pointer',
                 padding: '8px 16px',
@@ -111,6 +139,7 @@ const IncomeAndShoppingHabits = () => {
         </Stack>
       </Box>
 
+      {/* Shopping Habits */}
       <Box>
         <Typography variant="subtitle1" fontWeight="bold" mb={1}>
           Shopping Habits
@@ -120,7 +149,7 @@ const IncomeAndShoppingHabits = () => {
             <motion.div
               key={option}
               whileTap={{ scale: 0.95 }}
-              onClick={() => handleSelect('shoppingHabits', option)}
+              onClick={() => updateField('shoppingHabits', option)}
               style={{
                 cursor: 'pointer',
                 padding: '8px 16px',

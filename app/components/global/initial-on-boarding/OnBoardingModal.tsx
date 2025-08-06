@@ -6,19 +6,23 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  Stack,
   Typography,
   useTheme,
   useMediaQuery,
   Box,
+  MobileStepper,
 } from '@mui/material';
+import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
+import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
+import { useState } from 'react';
+
 import FullName from './FullName';
 import AgeGender from './AgeGender';
 import SelectCurrency from './SelectCurrency';
-import { useState } from 'react';
 import ProfessionAndHobbies from './ProfessionAndHobbies';
 import StartDaySelector from './StartDaySelector';
 import IncomeAndShoppingHabits from './IncomeAndShoppingHabits';
+
 const steps = [
   'Full Name',
   'Age & Gender',
@@ -26,7 +30,7 @@ const steps = [
   'Profession & Hobby',
   'Start of Month or Week',
   'Income And Shopping Habits',
-]; // ✅ Added step label
+];
 
 type Props = {
   open: boolean;
@@ -34,16 +38,20 @@ type Props = {
 };
 
 export default function OnBoardingModal({ open, onClose }: Props) {
-  const [step, setStep] = useState(0);
+  const [activeStep, setActiveStep] = useState(0);
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
 
   const handleNext = () => {
-    if (step < steps.length - 1) setStep((prev) => prev + 1);
+    if (activeStep < steps.length - 1) {
+      setActiveStep((prev) => prev + 1);
+    }
   };
 
   const handleBack = () => {
-    if (step > 0) setStep((prev) => prev - 1);
+    if (activeStep > 0) {
+      setActiveStep((prev) => prev - 1);
+    }
   };
 
   const handleSkip = () => {
@@ -52,15 +60,15 @@ export default function OnBoardingModal({ open, onClose }: Props) {
   };
 
   const renderStepContent = () => {
-    switch (step) {
+    switch (activeStep) {
       case 0:
         return <FullName />;
       case 1:
         return <AgeGender />;
       case 2:
-        return <SelectCurrency />; // ✅ New Step Component
+        return <SelectCurrency />;
       case 3:
-        return <ProfessionAndHobbies />; // ✅ New Step Component
+        return <ProfessionAndHobbies />;
       case 4:
         return <StartDaySelector />;
       case 5:
@@ -81,7 +89,7 @@ export default function OnBoardingModal({ open, onClose }: Props) {
         sx: {
           display: 'flex',
           flexDirection: 'column',
-          height: fullScreen ? '100vh' : 'auto',
+          height: fullScreen ? '100vh' : 600, // 🔧 Fixed height on desktop
           maxHeight: fullScreen ? '100vh' : '90vh',
         },
       }}
@@ -91,15 +99,15 @@ export default function OnBoardingModal({ open, onClose }: Props) {
           flexShrink: 0,
           px: 3,
           pt: 3,
-          pb: 2,
+          pb: fullScreen ? 3 : 2, // add more padding on mobile
           fontWeight: 600,
           bgcolor: theme.palette.background.paper,
           zIndex: 1,
         }}
       >
-        Onboarding - Step {step + 1} of {steps.length}: {steps[step]}
+        Onboarding - Step {activeStep + 1} of {steps.length}:{' '}
+        {steps[activeStep]}
       </DialogTitle>
-
       <DialogContent
         dividers
         sx={{
@@ -107,7 +115,7 @@ export default function OnBoardingModal({ open, onClose }: Props) {
           overflowY: 'auto',
           bgcolor: theme.palette.mode === 'dark' ? '#1e293b' : '#f9fafb',
           px: 3,
-          py: 2,
+          py: 6, // 🔧 consistent padding
         }}
       >
         <Box width="100%" maxWidth={500} mx="auto">
@@ -117,29 +125,55 @@ export default function OnBoardingModal({ open, onClose }: Props) {
 
       <DialogActions
         sx={{
-          justifyContent: 'space-between',
+          flexDirection: 'column',
+          alignItems: 'stretch',
+          gap: 1,
           px: 3,
-          py: 2,
+          pt: 2,
+          pb: fullScreen ? `calc(env(safe-area-inset-bottom, 0px) + 32px)` : 5, // Ensures MINIMUM 32px bottom on mobile
           borderTop: '1px solid',
           borderColor: 'divider',
-          flexShrink: 0,
           bgcolor: theme.palette.background.paper,
-          zIndex: 1,
         }}
       >
-        <Stack direction="row" spacing={1}>
-          <Button onClick={handleBack} disabled={step === 0} variant="outlined">
-            Back
-          </Button>
-          <Button
-            onClick={handleNext}
-            disabled={step === steps.length - 1}
-            variant="contained"
-          >
-            Next
-          </Button>
-        </Stack>
-        <Button onClick={handleSkip} color="secondary">
+        {/* Mobile Stepper */}
+        <MobileStepper
+          variant="progress"
+          steps={steps.length}
+          position="static"
+          activeStep={activeStep}
+          nextButton={
+            <Button
+              size="small"
+              onClick={handleNext}
+              disabled={activeStep === steps.length - 1}
+            >
+              Next
+              {theme.direction === 'rtl' ? (
+                <KeyboardArrowLeft />
+              ) : (
+                <KeyboardArrowRight />
+              )}
+            </Button>
+          }
+          backButton={
+            <Button
+              size="small"
+              onClick={handleBack}
+              disabled={activeStep === 0}
+            >
+              {theme.direction === 'rtl' ? (
+                <KeyboardArrowRight />
+              ) : (
+                <KeyboardArrowLeft />
+              )}
+              Back
+            </Button>
+          }
+          sx={{ width: '100%' }}
+        />
+
+        <Button onClick={handleSkip} color="secondary" fullWidth>
           Skip
         </Button>
       </DialogActions>
