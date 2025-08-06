@@ -2,164 +2,206 @@
 
 import {
   Box,
-  Typography,
-  Stack,
   CircularProgress,
+  InputLabel,
   MenuItem,
   Select,
-  InputLabel,
   FormControl,
-  Chip,
+  OutlinedInput,
+  Checkbox,
+  ListItemText,
+  Typography,
 } from '@mui/material';
+import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/app/lib/context/userContext';
 import { db } from '@/app/lib/firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { motion } from 'framer-motion';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
 
 const professions = [
   'Student',
-  'Shop Owner',
-  'Online Seller',
+  'Teacher',
+  'Driver',
+  'Shopkeeper',
+  'Tailor',
   'Electrician',
   'Plumber',
-  'Mechanic',
-  'Clerk',
-  'Receptionist',
-  'Accountant',
-  'Graphic Designer',
-  'Computer Operator',
-  'Teacher',
-  'Nurse',
-  'Housekeeper',
-  'Factory Worker',
-  'Daily Wager',
-  'Freelancer',
-  'Unemployed',
+  'Daily Wage Worker',
+  'Salesperson',
+  'Housewife',
+  'Farmer',
+  'Office Clerk',
+  'Labourer',
+  'Cashier',
 ];
 
 const hobbies = [
-  'Watching TV / Drama',
-  'Cooking',
-  'Reading Books',
+  'Reading',
   'Gardening',
+  'Watching TV',
+  'Cooking',
   'Traveling',
-  'Playing Mobile Games',
-  'Listening to Music',
+  'Cricket',
+  'Football',
+  'Sewing',
+  'Drawing',
+  'Singing',
+  'Fishing',
+  'Walking',
+  'Volunteering',
   'Photography',
-  'Drawing / Art',
-  'Browsing Social Media',
-  'Fitness / Walking / Yoga',
-  'Sewing / Handicrafts',
 ];
 
 const ProfessionAndHobbies = () => {
   const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [profession, setProfession] = useState('');
   const [selectedHobbies, setSelectedHobbies] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
     const fetchData = async () => {
-      const docRef = doc(db, 'onboarding', user.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setProfession(data.profession || '');
-        setSelectedHobbies(data.hobbies || []);
+      if (!user?.uid) return;
+
+      const ref = doc(db, 'settings', user.uid);
+      try {
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data();
+          const p = data?.initialOnBoarding?.profession?.value || '';
+          const h = data?.initialOnBoarding?.hobbies?.value || [];
+          setProfession(p);
+          setSelectedHobbies(h);
+        }
+      } catch (err) {
+        console.error('Failed to fetch onboarding data:', err);
       }
       setLoading(false);
     };
+
     fetchData();
   }, [user]);
 
-  const handleSave = async (field: string, value: string | string[]) => {
-    if (!user) return;
-    const ref = doc(db, 'onboarding', user.uid);
-    await setDoc(
-      ref,
-      {
-        [field]: value,
+  const updateField = async (
+    field: 'profession' | 'hobbies',
+    value: string | string[]
+  ) => {
+    if (!user?.uid) return;
+
+    const ref = doc(db, 'settings', user.uid);
+    const newField = {
+      [`initialOnBoarding.${field}`]: {
+        value,
+        filled: Array.isArray(value) ? value.length > 0 : !!value,
         updatedAt: serverTimestamp(),
       },
-      { merge: true }
-    );
+    };
+
+    try {
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          userId: user.uid,
+          initialOnBoarding: {
+            [field]: {
+              value,
+              filled: Array.isArray(value) ? value.length > 0 : !!value,
+              updatedAt: serverTimestamp(),
+            },
+          },
+        });
+      } else {
+        await updateDoc(ref, newField);
+      }
+    } catch (err) {
+      console.error(`Failed to update ${field}:`, err);
+    }
   };
 
-  const handleProfessionChange = (e) => {
-    const value = e.target.value;
+  const handleProfessionChange = (event) => {
+    const value = event.target.value;
     setProfession(value);
-    handleSave('profession', value);
+    updateField('profession', value);
   };
 
-  const handleHobbiesChange = (e) => {
-    const value = e.target.value;
-    if (value.length > 3) return; // limit to 3 hobbies
-    setSelectedHobbies(value);
-    handleSave('hobbies', value);
+  const handleHobbiesChange = (event) => {
+    const {
+      target: { value },
+    } = event;
+
+    if (value.length <= 3) {
+      setSelectedHobbies(value);
+      updateField('hobbies', value);
+    }
   };
 
-  if (loading) {
+  if (loading || !user) {
     return (
-      <Stack alignItems="center" py={4}>
+      <Box py={6} display="flex" justifyContent="center">
         <CircularProgress />
-      </Stack>
+      </Box>
     );
   }
 
   return (
-    <Box
-      component={motion.div}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
     >
-      <Typography variant="h6" fontWeight="bold" mb={2}>
-        Select Your Profession & Hobbies
-      </Typography>
-
-      <Stack spacing={3}>
-        <FormControl fullWidth>
+      <Box px={2} py={4}>
+        <Typography fontSize="1.2rem" fontWeight={600} mb={2}>
+          Your Profession
+        </Typography>
+        <FormControl fullWidth variant="outlined">
           <InputLabel>Profession</InputLabel>
           <Select
-            label="Profession"
             value={profession}
             onChange={handleProfessionChange}
-            sx={{ fontWeight: 600, fontSize: '1.1rem' }}
+            input={<OutlinedInput label="Profession" />}
           >
-            {professions.map((prof) => (
-              <MenuItem key={prof} value={prof}>
-                {prof}
+            {professions.map((item) => (
+              <MenuItem key={item} value={item}>
+                {item}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
 
-        <FormControl fullWidth>
-          <InputLabel>Hobbies (max 3)</InputLabel>
+        <Typography fontSize="1.2rem" fontWeight={600} mt={4} mb={2}>
+          Your Hobbies (Select max 3)
+        </Typography>
+        <FormControl fullWidth variant="outlined">
+          <InputLabel>Hobbies</InputLabel>
           <Select
             multiple
-            label="Hobbies"
             value={selectedHobbies}
             onChange={handleHobbiesChange}
-            renderValue={(selected) => (
-              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                {(selected as string[]).map((value) => (
-                  <Chip key={value} label={value} />
-                ))}
-              </Box>
-            )}
-            sx={{ fontWeight: 600, fontSize: '1.1rem' }}
+            input={<OutlinedInput label="Hobbies" />}
+            renderValue={(selected) => selected.join(', ')}
           >
-            {hobbies.map((hob) => (
-              <MenuItem key={hob} value={hob}>
-                {hob}
+            {hobbies.map((hobby) => (
+              <MenuItem
+                key={hobby}
+                value={hobby}
+                disabled={
+                  selectedHobbies.length >= 3 &&
+                  !selectedHobbies.includes(hobby)
+                }
+              >
+                <Checkbox checked={selectedHobbies.includes(hobby)} />
+                <ListItemText primary={hobby} />
               </MenuItem>
             ))}
           </Select>
         </FormControl>
-      </Stack>
-    </Box>
+      </Box>
+    </motion.div>
   );
 };
 

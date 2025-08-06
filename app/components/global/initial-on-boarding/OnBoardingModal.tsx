@@ -17,8 +17,16 @@ import AgeGender from './AgeGender';
 import SelectCurrency from './SelectCurrency';
 import { useState } from 'react';
 import ProfessionAndHobbies from './ProfessionAndHobbies';
-
-const steps = ['Full Name', 'Age & Gender', 'Currency', 'Profession & Hobby']; // ✅ Added step label
+import StartDaySelector from './StartDaySelector';
+import IncomeAndShoppingHabits from './IncomeAndShoppingHabits';
+const steps = [
+  'Full Name',
+  'Age & Gender',
+  'Currency & Country',
+  'Profession & Hobby',
+  'Start of Month or Week',
+  'Income And Shopping Habits',
+]; // ✅ Added step label
 
 type Props = {
   open: boolean;
@@ -53,6 +61,10 @@ export default function OnBoardingModal({ open, onClose }: Props) {
         return <SelectCurrency />; // ✅ New Step Component
       case 3:
         return <ProfessionAndHobbies />; // ✅ New Step Component
+      case 4:
+        return <StartDaySelector />;
+      case 5:
+        return <IncomeAndShoppingHabits />;
       default:
         return <Typography>All steps completed.</Typography>;
     }
