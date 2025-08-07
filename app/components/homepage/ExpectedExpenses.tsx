@@ -64,9 +64,12 @@ export default function ExpectedExpenses() {
             (exp.dueDate as Timestamp)?.toDate?.() || exp.dueDate
           );
           return (
-            exp.userId === user.uid && !exp.isPaid && due.isAfter(moment())
+            exp.userId === user.uid &&
+            !exp.isPaid &&
+            due.isSameOrAfter(moment(), 'day')
           );
         })
+
         .sort((a, b) => {
           const aDue = moment(
             (a.dueDate as Timestamp)?.toDate?.() || a.dueDate

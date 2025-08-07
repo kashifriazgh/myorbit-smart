@@ -22,7 +22,6 @@ import {
   KeyboardArrowLeft,
   KeyboardArrowRight,
 } from '@mui/icons-material';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import {
   collection,
@@ -40,15 +39,10 @@ import Link from 'next/link';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
-interface ColorMapEntry {
-  bg: string;
-  color: string;
-}
 export default function OverdueTasks() {
   const { user } = useAuth();
   const customTheme = useCustomTheme();
   const theme = customTheme?.theme;
-
   const muiTheme = useMuiTheme();
 
   const [tasks, setTasks] = useState<Todo[]>([]);
@@ -59,7 +53,7 @@ export default function OverdueTasks() {
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
 
   const [activeStep, setActiveStep] = useState(0);
-  const maxSteps = Math.min(tasks.length, 6); // Show max 6 steps
+  const maxSteps = Math.min(tasks.length, 6);
 
   const fetchTasks = async () => {
     if (!user) return;
@@ -85,7 +79,7 @@ export default function OverdueTasks() {
             moment(a.dueDate as Timestamp).valueOf() -
             moment(b.dueDate as Timestamp).valueOf()
         )
-        .slice(0, 6); // Show only max 6
+        .slice(0, 6);
 
       setTasks(filtered);
     } catch (err) {
@@ -98,19 +92,9 @@ export default function OverdueTasks() {
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
 
-    // 1️⃣ Immediately remove from state
-    setTasks((prev) => {
-      const updated = prev.filter((t) => t.id !== task.id);
-      if (activeStep >= updated.length) {
-        setActiveStep(Math.max(updated.length - 1, 0));
-      }
-      return updated;
-    });
-
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
     try {
       setCompletingId(task.id);
-
-      // 2️⃣ Firestore update in background
       await updateDoc(doc(db, 'todos', task.id), {
         status: 'completed',
         progressPercent: 100,
@@ -153,57 +137,7 @@ export default function OverdueTasks() {
     fetchTasks();
   }, [user]);
 
-  const getColor = (key: string, value: string) => {
-    const isDark = theme.mode === 'dark';
-    const map: Record<string, ColorMapEntry> = {
-      status: {
-        bg: isDark ? '#7f1d1d' : '#fee2e2',
-        color: isDark ? '#fca5a5' : '#b91c1c',
-      },
-      critical: {
-        bg: isDark ? '#7f1d1d' : '#fecaca',
-        color: isDark ? '#fca5a5' : '#dc2626',
-      },
-      urgent: {
-        bg: isDark ? '#78350f' : '#fde68a',
-        color: isDark ? '#fcd34d' : '#92400e',
-      },
-      normal: {
-        bg: isDark ? '#064e3b' : '#d1fae5',
-        color: isDark ? '#86efac' : '#166534',
-      },
-      due: {
-        bg: isDark ? '#78350f' : '#fef9c3',
-        color: isDark ? '#fde68a' : '#92400e',
-      },
-    };
-    return map[value] || map[key];
-  };
-
-  const TaskSkeleton = () => (
-    <Box
-      sx={{
-        p: 2,
-        borderRadius: 2,
-        border: `2px dashed ${muiTheme.palette.divider}`,
-        mb: 2,
-      }}
-    >
-      <Skeleton height={20} width="60%" sx={{ mb: 1 }} />
-      <Skeleton height={16} width="40%" />
-    </Box>
-  );
-
-  const handleNext = () => {
-    setActiveStep((prev) => Math.min(prev + 1, maxSteps - 1));
-  };
-
-  const handleBack = () => {
-    setActiveStep((prev) => Math.max(prev - 1, 0));
-  };
-
   const activeTask = tasks[activeStep];
-  if (!theme) return null;
 
   return (
     <Box mt={4} className="px-4">
@@ -212,106 +146,91 @@ export default function OverdueTasks() {
           fontWeight={700}
           fontSize={17}
           mb={2}
-          color={theme.mode === 'dark' ? '#f87171' : '#b91c1c'}
+          color={theme?.mode === 'dark' ? '#f87171' : '#b91c1c'}
         >
           ⏰ Overdue Tasks – Take Action!
         </Typography>
       )}
 
       {loading ? (
-        [1, 2, 3].map((i) => <TaskSkeleton key={i} />)
+        [1, 2, 3].map((i) => (
+          <Box key={i} className="p-4 border-2 border-dashed rounded mb-2">
+            <Skeleton height={20} width="60%" sx={{ mb: 1 }} />
+            <Skeleton height={16} width="40%" />
+          </Box>
+        ))
       ) : tasks.length > 0 ? (
         <>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeStep}
-              initial={{ opacity: 0, x: 40 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -40 }}
-              transition={{ duration: 0.2, ease: 'easeInOut' }}
-            >
-              <Card className="rounded-xl shadow-sm hover:shadow-md transition mb-4">
-                <CardContent>
-                  <Box className="flex justify-between items-start mb-2">
-                    <Link href={`/to-do/${activeTask.id}`} passHref>
-                      <Typography
-                        variant="subtitle1"
-                        fontWeight="bold"
+          <Card className="rounded-xl shadow-md transition mb-4">
+            <CardContent>
+              <Box className="flex justify-between items-start mb-2">
+                <Link href={`/to-do/${activeTask.id}`} passHref>
+                  <Typography
+                    variant="subtitle1"
+                    fontWeight="bold"
+                    className="underline cursor-pointer"
+                    sx={{
+                      color:
+                        theme?.mode === 'dark'
+                          ? '#fca5a5'
+                          : muiTheme.palette.error.main,
+                    }}
+                  >
+                    {activeTask.title}
+                  </Typography>
+                </Link>
+                <Stack direction="row" spacing={1}>
+                  <Tooltip title="Reschedule">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleReschedule(activeTask)}
+                    >
+                      <Event sx={{ color: '#f59e0b' }} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Mark as Done">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => markCompleted(activeTask)}
+                        disabled={completingId === activeTask.id}
                         sx={{
-                          cursor: 'pointer',
-                          textDecoration: 'underline',
                           color:
-                            theme.mode === 'dark'
-                              ? '#fca5a5'
-                              : muiTheme.palette.error.main,
+                            completingId === activeTask.id
+                              ? 'gray'
+                              : theme?.mode === 'dark'
+                              ? '#cbd5e1'
+                              : 'gray',
                         }}
                       >
-                        {activeTask.title}
-                      </Typography>
-                    </Link>
-                    <Stack direction="row" spacing={1}>
-                      <Tooltip title="Reschedule">
-                        <IconButton
-                          size="small"
-                          onClick={() => handleReschedule(activeTask)}
-                        >
-                          <Event sx={{ color: '#f59e0b' }} />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Mark as Done">
-                        <span>
-                          <IconButton
-                            size="small"
-                            onClick={() => markCompleted(activeTask)}
-                            disabled={completingId === activeTask.id}
-                            sx={{
-                              color:
-                                completingId === activeTask.id
-                                  ? 'gray'
-                                  : theme.mode === 'dark'
-                                  ? '#cbd5e1'
-                                  : 'gray',
-                            }}
-                          >
-                            {completingId === activeTask.id ? (
-                              <DoneAll sx={{ color: 'green' }} />
-                            ) : (
-                              <Done />
-                            )}
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </Stack>
-                  </Box>
+                        {completingId === activeTask.id ? (
+                          <DoneAll sx={{ color: 'green' }} />
+                        ) : (
+                          <Done />
+                        )}
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
+              </Box>
 
-                  <Box className="flex flex-wrap gap-2 mt-1">
-                    <Box
-                      className="text-xs px-2 py-0.5 rounded"
-                      sx={getColor('status', 'status')}
-                    >
-                      {activeTask.status}
-                    </Box>
-                    <Box
-                      className="text-xs px-2 py-0.5 rounded capitalize"
-                      sx={getColor('status', activeTask.priority)}
-                    >
-                      {activeTask.priority}
-                    </Box>
-                    <Box
-                      className="text-xs px-2 py-0.5 rounded"
-                      sx={getColor('due', 'due')}
-                    >
-                      Due:{' '}
-                      {moment(
-                        (activeTask.dueDate as Timestamp)?.toDate?.() ||
-                          activeTask.dueDate
-                      ).format('MMM D')}
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </AnimatePresence>
+              <Box className="flex flex-wrap gap-2 mt-1 text-xs">
+                <span className="px-2 py-0.5 rounded bg-red-100 text-red-700">
+                  {activeTask.status}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 capitalize">
+                  {activeTask.priority}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-800">
+                  Due:{' '}
+                  {moment(
+                    (activeTask.dueDate as Timestamp)?.toDate?.() ||
+                      activeTask.dueDate
+                  ).format('MMM D')}
+                </span>
+              </Box>
+            </CardContent>
+          </Card>
 
           <MobileStepper
             variant="dots"
@@ -321,10 +240,12 @@ export default function OverdueTasks() {
             nextButton={
               <Button
                 size="small"
-                onClick={handleNext}
+                onClick={() =>
+                  setActiveStep((p) => Math.min(p + 1, maxSteps - 1))
+                }
                 disabled={activeStep === maxSteps - 1}
               >
-                Next
+                Next{' '}
                 {muiTheme.direction === 'rtl' ? (
                   <KeyboardArrowLeft />
                 ) : (
@@ -335,14 +256,14 @@ export default function OverdueTasks() {
             backButton={
               <Button
                 size="small"
-                onClick={handleBack}
+                onClick={() => setActiveStep((p) => Math.max(p - 1, 0))}
                 disabled={activeStep === 0}
               >
                 {muiTheme.direction === 'rtl' ? (
                   <KeyboardArrowRight />
                 ) : (
                   <KeyboardArrowLeft />
-                )}
+                )}{' '}
                 Back
               </Button>
             }
@@ -356,6 +277,7 @@ export default function OverdueTasks() {
         )
       )}
 
+      {/* Reschedule Modal */}
       <Modal open={rescheduleOpen} onClose={() => setRescheduleOpen(false)}>
         <Box
           className="absolute bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg"
