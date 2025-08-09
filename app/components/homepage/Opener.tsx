@@ -27,6 +27,15 @@ import Link from 'next/link';
 function CircularProgressWithLabel({ value }: { value: number }) {
   return (
     <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+      {/* Neutral background circle */}
+      <CircularProgress
+        variant="determinate"
+        value={100}
+        size={100}
+        thickness={5}
+        sx={{ color: 'lightgray', position: 'absolute' }}
+      />
+      {/* Actual progress overlay */}
       <CircularProgress
         variant="determinate"
         value={value}
@@ -68,7 +77,7 @@ export default function DashboardHome() {
   const [remainingIncomes, setRemainingIncomes] = useState<string[]>([]);
   const [remainingExpenses, setRemainingExpenses] = useState<string[]>([]);
   const [journalWritten, setJournalWritten] = useState<boolean>(false);
-  const [firstName, setFirstName] = useState('&nbsp;');
+  const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
 
   useEffect(() => {
@@ -176,65 +185,58 @@ export default function DashboardHome() {
 
   return (
     <Box className="p-4 space-y-6">
-      {/* Header */}
-      <Box className="flex justify-between items-center">
-        <div>
-          <Typography variant="body2" color="textSecondary">
-            Welcome Back
-          </Typography>
-          <Typography variant="h6" fontWeight="bold">
-            {firstName}&nbsp;{lastName}
-          </Typography>
-        </div>
-      </Box>
-
-      {/* Plan Status Card */}
       <Card className="bg-[#0A1930] text-white rounded-2xl">
-        <CardContent className="flex items-center justify-between">
-          <Box>
-            <Typography variant="body1">
-              {progress >= 90
-                ? 'Excellent, Today&apos;s plan is almost done'
-                : progress >= 50
-                ? 'Great, you&apos;re halfway through'
-                : 'Keep going, you can do more today!'}
-            </Typography>
+        <CardContent className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          {/* Left Section */}
+          <Box className="flex flex-col justify-between space-y-4">
+            <div>
+              <Typography variant="body2" color="textSecondary">
+                Welcome {firstName} {lastName}
+              </Typography>
+              <Typography variant="h6" fontWeight="bold">
+                {progress >= 90
+                  ? "Excellent, Today's plan is almost done"
+                  : progress >= 50
+                  ? "Great, you're halfway through"
+                  : 'Keep going, you can do more today!'}
+              </Typography>
+            </div>
 
-            <Box mt={3} display="flex" gap={2}>
-              <Button variant="outlined" color="inherit">
-                View Plan
-              </Button>
-              {hasRemaining && (
-                <Link href="/1/plans-remaining">
-                  <Button variant="contained" color="secondary">
-                    See all what is remaining
-                  </Button>
-                </Link>
-              )}
-            </Box>
+            {hasRemaining && (
+              <Link href="/1/plans-remaining" className="mt-auto md:mt-0">
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  className="w-full md:w-auto"
+                >
+                  See all remaining plan
+                </Button>
+              </Link>
+            )}
           </Box>
 
+          {/* Right Section */}
           <Box className="flex flex-col items-center justify-center space-y-3">
             <CircularProgressWithLabel value={progress} />
 
-            <Box className="text-sm font-semibold flex flex-col items-center text-gray-800 dark:text-gray-100">
+            <Box className="text-sm font-semibold flex flex-col items-center text-gray-900 dark:text-gray-100">
               <Box className="flex items-center gap-2">
-                <span className="text-blue-600">
+                <span className="text-blue-500">
                   <Assignment fontSize="small" />
                 </span>
-                {remainingTodos.length}
+                <span>{remainingTodos.length}</span>
                 <span className="text-gray-500">&bull;</span>
 
-                <span className="text-green-600">
+                <span className="text-green-500">
                   <AttachMoney fontSize="small" />
                 </span>
-                {totalPayments}
+                <span>{totalPayments}</span>
                 <span className="text-gray-500">&bull;</span>
 
-                <span className="text-purple-600">
+                <span className="text-purple-500">
                   <Book fontSize="small" />
                 </span>
-                {journalWritten ? '1' : '0'}
+                <span>{journalWritten ? '0' : '1'}</span>
               </Box>
             </Box>
           </Box>
