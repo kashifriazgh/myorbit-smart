@@ -6,13 +6,14 @@ import {
   CircularProgress,
   Collapse,
   IconButton,
-  Paper,
   Slider,
   Stack,
   Tooltip,
   Typography,
   useTheme,
   Fade,
+  Card,
+  CardContent,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
@@ -103,135 +104,151 @@ export default function Mood() {
 
   return (
     <Fade in={true} timeout={800}>
-      <Paper
-        elevation={3}
-        sx={{
-          p: 3,
-          borderRadius: 3,
-          background: theme.palette.mode === 'dark' ? '#1e293b' : '#f9fafb',
-          boxShadow: theme.shadows[3],
-          transition: 'all 0.3s ease-in-out',
-        }}
-      >
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-        >
-          <Typography
-            variant="h5"
-            fontWeight="bold"
-            align="center"
-            sx={{ width: '100%', fontSize: '1.75rem', mt: 1 }}
-          >
-            How are you feeling this day?
-          </Typography>
+      <Box mt={4} className="px-4">
+        <Card className="rounded-xl shadow-md transition mb-4">
+          <CardContent>
+            {/* Header (same width/structure as OverdueTasks header) */}
+            <Box className="flex justify-between items-start mb-2">
+              <Typography
+                variant="h5"
+                fontWeight="700"
+                className="cursor-default"
+                sx={{
+                  color:
+                    theme.palette.mode === 'dark'
+                      ? '#fca5a5'
+                      : theme.palette.primary.main,
+                }}
+              >
+                How are you feeling this day?
+              </Typography>
 
-          <Tooltip
-            title={showMoodSelector ? 'Hide Mood Picker' : 'Select Mood'}
-          >
-            <IconButton onClick={toggleMoodSelector} size="small">
-              {showMoodSelector ? <CloseIcon /> : <EmojiEmotionsIcon />}
-            </IconButton>
-          </Tooltip>
-        </Stack>
-
-        <Collapse in={showMoodSelector} timeout={500} unmountOnExit>
-          <Box mt={3} display="flex" flexDirection="column" alignItems="center">
-            {/* Large emoji preview */}
-            {selectedMood && (
-              <Box mb={2} textAlign="center">
-                <MoodEmoji mood={selectedMood} size={96} level={moodLevel} />
-                <Typography
-                  variant="subtitle1"
-                  mt={1}
-                  textTransform="capitalize"
+              <Stack direction="row" spacing={1}>
+                <Tooltip
+                  title={showMoodSelector ? 'Hide Mood Picker' : 'Select Mood'}
                 >
-                  I’m feeling {selectedMood.replace('-', ' ')}
-                </Typography>
-              </Box>
-            )}
-
-            {/* Mood emojis row */}
-            <Box
-              display="flex"
-              gap={1}
-              flexWrap="wrap"
-              justifyContent="center"
-              alignItems="center"
-              mb={3}
-            >
-              {moodOptions.map((mood) => (
-                <Box
-                  key={mood}
-                  onClick={() => setSelectedMood(mood)}
-                  sx={{
-                    borderRadius: '50%',
-                    padding: 1,
-                    cursor: 'pointer',
-                    backgroundColor:
-                      selectedMood === mood ? '#fde68a' : 'transparent',
-                    transform:
-                      selectedMood === mood ? 'scale(1.2)' : 'scale(1)',
-                    transition: 'all 0.2s ease-in-out',
-                  }}
-                >
-                  <MoodEmoji mood={mood} size={30} />
-                </Box>
-              ))}
+                  <span>
+                    <IconButton onClick={toggleMoodSelector} size="small">
+                      {showMoodSelector ? <CloseIcon /> : <EmojiEmotionsIcon />}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Stack>
             </Box>
 
-            {/* Mood intensity slider */}
-            {selectedMood && (
-              <>
-                <Box width="100%" maxWidth="400px">
-                  <Typography variant="subtitle2" gutterBottom>
-                    How strong is your feeling?
-                  </Typography>
-                  <Slider
-                    value={moodLevel}
-                    onChange={(_, val) => setMoodLevel(val as number)}
-                    min={1}
-                    max={5}
-                    marks
-                    step={1}
-                    sx={{
-                      color:
-                        moodLevel <= 2
-                          ? theme.palette.error.main
-                          : moodLevel >= 4
-                          ? theme.palette.success.main
-                          : theme.palette.warning.main,
-                    }}
-                  />
-                </Box>
-
-                {/* Submit button */}
-                <Button
-                  variant="contained"
-                  color="primary"
-                  fullWidth
-                  onClick={handleMoodSubmit}
-                  disabled={loading}
-                  sx={{
-                    mt: 3,
-                    py: 1.2,
-                    borderRadius: 2,
-                    textTransform: 'none',
-                    fontWeight: 600,
-                  }}
-                >
-                  {loading ? (
-                    <CircularProgress size={22} color="inherit" />
-                  ) : (
-                    'Save Mood Entry'
+            {/* Body */}
+            <Box className="mt-1">
+              <Collapse in={showMoodSelector} timeout={500} unmountOnExit>
+                <Box className="flex flex-col items-center">
+                  {/* Large emoji preview */}
+                  {selectedMood && (
+                    <Box className="mb-4 text-center">
+                      <MoodEmoji
+                        mood={selectedMood}
+                        size={96}
+                        level={moodLevel}
+                      />
+                      <Typography
+                        variant="subtitle1"
+                        mt={1}
+                        textTransform="capitalize"
+                        sx={{
+                          color:
+                            theme.palette.mode === 'dark'
+                              ? '#e2e8f0'
+                              : '#334155',
+                        }}
+                      >
+                        I’m feeling {selectedMood.replace('-', ' ')}
+                      </Typography>
+                    </Box>
                   )}
-                </Button>
-              </>
-            )}
-          </Box>
-        </Collapse>
-      </Paper>
+
+                  {/* Emoji row (wraps like Overdue Task's tags) */}
+                  <Box className="flex flex-wrap gap-2 justify-center items-center mb-4">
+                    {moodOptions.map((mood) => (
+                      <Box
+                        key={mood}
+                        onClick={() => setSelectedMood(mood)}
+                        className={`rounded-full p-1 cursor-pointer transition ${
+                          selectedMood === mood
+                            ? 'bg-yellow-200 scale-110'
+                            : 'bg-transparent'
+                        }`}
+                        sx={{
+                          transform:
+                            selectedMood === mood ? 'scale(1.15)' : 'scale(1)',
+                          transition: 'all 0.15s ease-in-out',
+                        }}
+                      >
+                        <MoodEmoji mood={mood} size={30} />
+                      </Box>
+                    ))}
+                  </Box>
+
+                  {/* Slider + Submit (keeps same max width behaviour as OverdueTasks inputs) */}
+                  {selectedMood && (
+                    <Box className="w-full">
+                      <Box className="mx-auto" sx={{ maxWidth: 640 }}>
+                        <Typography
+                          variant="subtitle2"
+                          gutterBottom
+                          sx={{
+                            color:
+                              theme.palette.mode === 'dark'
+                                ? '#cbd5e1'
+                                : '#334155',
+                          }}
+                        >
+                          How strong is your feeling?
+                        </Typography>
+
+                        <Slider
+                          value={moodLevel}
+                          onChange={(_, val) => setMoodLevel(val as number)}
+                          min={1}
+                          max={5}
+                          marks
+                          step={1}
+                          sx={{
+                            color:
+                              moodLevel <= 2
+                                ? theme.palette.error.main
+                                : moodLevel >= 4
+                                ? theme.palette.success.main
+                                : theme.palette.warning.main,
+                          }}
+                        />
+
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          fullWidth
+                          onClick={handleMoodSubmit}
+                          disabled={loading}
+                          sx={{
+                            mt: 2,
+                            py: 1.1,
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {loading ? (
+                            <CircularProgress size={20} color="inherit" />
+                          ) : (
+                            'Save Mood Entry'
+                          )}
+                        </Button>
+                      </Box>
+                    </Box>
+                  )}
+                </Box>
+              </Collapse>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
     </Fade>
   );
 }

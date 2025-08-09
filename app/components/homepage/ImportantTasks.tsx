@@ -12,11 +12,13 @@ import {
   Button,
   Stack,
   MobileStepper,
+  Skeleton,
+  CircularProgress,
+  Fade,
 } from '@mui/material';
 import {
   CheckCircle,
   RadioButtonUnchecked,
-  TaskAlt,
   Event,
   CheckCircleOutline,
   KeyboardArrowLeft,
@@ -48,6 +50,8 @@ const ImportantTasks = () => {
   const [rescheduleTask, setRescheduleTask] = useState<Todo | null>(null);
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [fadeOutId, setFadeOutId] = useState<string | null>(null);
+  const [reschedulingLoading, setReschedulingLoading] = useState(false);
 
   const PRIORITY_ORDER = { critical: 0, urgent: 1, routine: 2 };
   const PRIORITY_COLOR = {
@@ -107,30 +111,32 @@ const ImportantTasks = () => {
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
 
-    // 👇 1. Optimistically remove from local state
-    setTasks((prev) => {
-      const updated = prev.filter((t) => t.id !== task.id);
-      if (activeStep >= updated.length) {
-        setActiveStep(Math.max(updated.length - 1, 0));
-      }
-      return updated;
-    });
+    setCompletingId(task.id);
 
     try {
-      // 👇 2. Firestore update in background
-      setCompletingId(task.id);
       await updateDoc(doc(db, 'todos', task.id), {
         status: 'completed',
         progressPercent: 100,
         completedAt: new Date(),
         updatedAt: new Date(),
       });
+
+      // Trigger fade out animation
+      setFadeOutId(task.id);
+      setTimeout(() => {
+        setTasks((prev) => {
+          const updated = prev.filter((t) => t.id !== task.id);
+          if (activeStep >= updated.length) {
+            setActiveStep(Math.max(updated.length - 1, 0));
+          }
+          return updated;
+        });
+        setFadeOutId(null);
+      }, 400); // fade duration
     } catch (err) {
       console.error('Failed to complete task:', err);
     } finally {
       setCompletingId(null);
-      // 👇 Optional: Re-sync in background
-      // fetchTasks();
     }
   };
 
@@ -169,20 +175,65 @@ const ImportantTasks = () => {
 
   const updateDueDate = async () => {
     if (!rescheduleTask?.id || !newDueDate) return;
-    await updateDoc(doc(db, 'todos', rescheduleTask.id), {
-      dueDate: Timestamp.fromDate(newDueDate),
-      updatedAt: new Date(),
-    });
-    setRescheduleOpen(false);
-    setRescheduleTask(null);
-    fetchTasks();
+    setReschedulingLoading(true);
+    try {
+      await updateDoc(doc(db, 'todos', rescheduleTask.id), {
+        dueDate: Timestamp.fromDate(newDueDate),
+        updatedAt: new Date(),
+      });
+      setRescheduleOpen(false);
+      setRescheduleTask(null);
+      fetchTasks();
+    } catch (err) {
+      console.error('Failed to reschedule task:', err);
+    } finally {
+      setReschedulingLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchTasks();
   }, [user]);
 
-  if (loading || tasks.length === 0) return null;
+  if (loading) {
+    return (
+      <Box className="p-4">
+        <Typography variant="subtitle1" fontWeight="bold" className="mb-3">
+          🚀 On Going Plans
+        </Typography>
+
+        {/* Skeleton Card */}
+        <Card className="rounded-xl shadow-sm mb-2">
+          <CardContent>
+            <Box className="flex justify-between mb-2">
+              <Box>
+                <Skeleton width={140} height={20} />
+                <Skeleton width={100} height={16} sx={{ mt: 0.5 }} />
+              </Box>
+              <Skeleton width={60} height={20} />
+            </Box>
+
+            <Stack direction="row" spacing={1} mb={2}>
+              <Skeleton width={80} height={16} />
+              <Skeleton width={60} height={16} />
+            </Stack>
+
+            {/* Steps Skeleton */}
+            <Box>
+              {[...Array(3)].map((_, idx) => (
+                <Box key={idx} className="flex items-center gap-2 my-1">
+                  <Skeleton variant="circular" width={24} height={24} />
+                  <Skeleton width="80%" height={16} />
+                </Box>
+              ))}
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
+    );
+  }
+
+  if (tasks.length === 0) return null;
 
   const currentTask = tasks[activeStep];
   if (!currentTask) return null;
@@ -194,81 +245,86 @@ const ImportantTasks = () => {
       </Typography>
 
       {/* Single Task Card Displayed */}
-      <Card className="rounded-xl shadow-sm mb-2 hover:shadow-md transition">
-        <CardContent>
-          <Box className="flex justify-between mb-2">
-            <Typography variant="subtitle1" fontWeight="medium">
-              {currentTask?.title}
-            </Typography>
-            <Stack direction="row" spacing={1}>
-              <Tooltip title="Reschedule">
-                <IconButton
-                  size="small"
-                  onClick={() => handleReschedule(currentTask)}
-                >
-                  <Event fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Mark as done">
-                <IconButton
-                  size="small"
-                  disabled={completingId === currentTask.id}
-                  onClick={() => markCompleted(currentTask)}
-                >
-                  {completingId === currentTask.id ? (
-                    <TaskAlt fontSize="small" className="text-green-600" />
-                  ) : (
-                    <CheckCircleOutline fontSize="small" />
-                  )}
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          </Box>
-
-          {/* Meta Info */}
-          <Stack direction="row" spacing={1} mb={2} pl={1} flexWrap="wrap">
-            <Box className="text-xs text-gray-500">
-              Due: {moment(currentTask.dueDate).format('MMM D')}
+      <Fade in={fadeOutId !== currentTask.id} timeout={400}>
+        <Card className="rounded-xl shadow-sm mb-2 hover:shadow-md transition">
+          <CardContent>
+            <Box className="flex justify-between mb-2">
+              <Typography variant="subtitle1" fontWeight="medium">
+                {currentTask?.title}
+              </Typography>
+              <Stack direction="row" spacing={1}>
+                <Tooltip title="Reschedule">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleReschedule(currentTask)}
+                  >
+                    <Event fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Mark as done">
+                  <IconButton
+                    size="small"
+                    disabled={completingId === currentTask.id}
+                    onClick={() => markCompleted(currentTask)}
+                  >
+                    {completingId === currentTask.id ? (
+                      <CircularProgress size={18} />
+                    ) : (
+                      <CheckCircleOutline fontSize="small" />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Stack>
             </Box>
 
-            <Box
-              className={`text-xs font-bold ${
-                PRIORITY_COLOR[currentTask.priority]
-              }`}
-            >
-              {currentTask.priority.toUpperCase()}
-            </Box>
-            <Box className="text-xs text-sky-600">{currentTask.status}</Box>
-          </Stack>
-
-          {/* Steps */}
-          <Box className="pl-2">
-            {currentTask.steps?.map((step, idx) => (
-              <Box key={idx} className="flex items-start gap-2 my-1">
-                <IconButton
-                  size="small"
-                  onClick={() => toggleStepStatus(currentTask, idx)}
-                >
-                  {step.done ? (
-                    <CheckCircle className="text-green-500" fontSize="small" />
-                  ) : (
-                    <RadioButtonUnchecked
-                      className="text-gray-400"
-                      fontSize="small"
-                    />
-                  )}
-                </IconButton>
-                <Typography
-                  variant="body2"
-                  className={step.done ? 'line-through text-gray-400' : ''}
-                >
-                  {step.text}
-                </Typography>
+            {/* Meta Info */}
+            <Stack direction="row" spacing={1} mb={2} pl={1} flexWrap="wrap">
+              <Box className="text-xs text-gray-500">
+                Due: {moment(currentTask.dueDate).format('MMM D')}
               </Box>
-            ))}
-          </Box>
-        </CardContent>
-      </Card>
+
+              <Box
+                className={`text-xs font-bold ${
+                  PRIORITY_COLOR[currentTask.priority]
+                }`}
+              >
+                {currentTask.priority.toUpperCase()}
+              </Box>
+              <Box className="text-xs text-sky-600">{currentTask.status}</Box>
+            </Stack>
+
+            {/* Steps */}
+            <Box className="pl-2">
+              {currentTask.steps?.map((step, idx) => (
+                <Box key={idx} className="flex items-start gap-2 my-1">
+                  <IconButton
+                    size="small"
+                    onClick={() => toggleStepStatus(currentTask, idx)}
+                  >
+                    {step.done ? (
+                      <CheckCircle
+                        className="text-green-500"
+                        fontSize="small"
+                      />
+                    ) : (
+                      <RadioButtonUnchecked
+                        className="text-gray-400"
+                        fontSize="small"
+                      />
+                    )}
+                  </IconButton>
+                  <Typography
+                    variant="body2"
+                    className={step.done ? 'line-through text-gray-400' : ''}
+                  >
+                    {step.text}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </CardContent>
+        </Card>
+      </Fade>
 
       {/* Stepper Controls */}
       <MobileStepper
@@ -341,9 +397,13 @@ const ImportantTasks = () => {
             <Button
               onClick={updateDueDate}
               variant="contained"
-              disabled={!newDueDate}
+              disabled={!newDueDate || reschedulingLoading}
             >
-              Save
+              {reschedulingLoading ? (
+                <CircularProgress size={18} sx={{ color: 'white' }} />
+              ) : (
+                'Save'
+              )}
             </Button>
           </Stack>
         </Box>

@@ -14,10 +14,11 @@ import {
   Card,
   CardContent,
   MobileStepper,
+  CircularProgress,
+  Fade,
 } from '@mui/material';
 import {
   Done,
-  DoneAll,
   Event,
   KeyboardArrowLeft,
   KeyboardArrowRight,
@@ -48,9 +49,11 @@ export default function OverdueTasks() {
   const [tasks, setTasks] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [fadeOutId, setFadeOutId] = useState<string | null>(null);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleTask, setRescheduleTask] = useState<Todo | null>(null);
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
+  const [reschedulingLoading, setReschedulingLoading] = useState(false);
 
   const [activeStep, setActiveStep] = useState(0);
   const maxSteps = Math.min(tasks.length, 6);
@@ -92,15 +95,28 @@ export default function OverdueTasks() {
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
 
-    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    setCompletingId(task.id);
+
     try {
-      setCompletingId(task.id);
       await updateDoc(doc(db, 'todos', task.id), {
         status: 'completed',
         progressPercent: 100,
         completedAt: new Date(),
         updatedAt: new Date(),
       });
+
+      // Trigger fade out animation
+      setFadeOutId(task.id);
+      setTimeout(() => {
+        setTasks((prev) => {
+          const updated = prev.filter((t) => t.id !== task.id);
+          if (activeStep >= updated.length) {
+            setActiveStep(Math.max(updated.length - 1, 0));
+          }
+          return updated;
+        });
+        setFadeOutId(null);
+      }, 400); // fade duration in ms
     } catch (err) {
       console.error('❌ Error updating task:', err);
     } finally {
@@ -120,6 +136,7 @@ export default function OverdueTasks() {
 
   const updateDueDate = async () => {
     if (!rescheduleTask || !rescheduleTask.id || !newDueDate) return;
+    setReschedulingLoading(true);
     try {
       await updateDoc(doc(db, 'todos', rescheduleTask.id), {
         dueDate: Timestamp.fromDate(newDueDate),
@@ -130,6 +147,8 @@ export default function OverdueTasks() {
       await fetchTasks();
     } catch (err) {
       console.error('❌ Failed to reschedule:', err);
+    } finally {
+      setReschedulingLoading(false);
     }
   };
 
@@ -153,84 +172,113 @@ export default function OverdueTasks() {
       )}
 
       {loading ? (
-        [1, 2, 3].map((i) => (
-          <Box key={i} className="p-4 border-2 border-dashed rounded mb-2">
-            <Skeleton height={20} width="60%" sx={{ mb: 1 }} />
-            <Skeleton height={16} width="40%" />
-          </Box>
-        ))
-      ) : tasks.length > 0 ? (
-        <>
-          <Card className="rounded-xl shadow-md transition mb-4">
+        <Box className="p-4">
+          <Typography variant="subtitle1" fontWeight="bold" className="mb-3">
+            ⏰ Overdue Tasks
+          </Typography>
+
+          {/* Skeleton Card */}
+          <Card className="rounded-xl shadow-sm mb-2">
             <CardContent>
-              <Box className="flex justify-between items-start mb-2">
-                <Link href={`/to-do/${activeTask.id}`} passHref>
-                  <Typography
-                    variant="subtitle1"
-                    fontWeight="bold"
-                    className="underline cursor-pointer"
-                    sx={{
-                      color:
-                        theme?.mode === 'dark'
-                          ? '#fca5a5'
-                          : muiTheme.palette.error.main,
-                    }}
-                  >
-                    {activeTask.title}
-                  </Typography>
-                </Link>
-                <Stack direction="row" spacing={1}>
-                  <Tooltip title="Reschedule">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleReschedule(activeTask)}
-                    >
-                      <Event sx={{ color: '#f59e0b' }} />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Mark as Done">
-                    <span>
-                      <IconButton
-                        size="small"
-                        onClick={() => markCompleted(activeTask)}
-                        disabled={completingId === activeTask.id}
-                        sx={{
-                          color:
-                            completingId === activeTask.id
-                              ? 'gray'
-                              : theme?.mode === 'dark'
-                              ? '#cbd5e1'
-                              : 'gray',
-                        }}
-                      >
-                        {completingId === activeTask.id ? (
-                          <DoneAll sx={{ color: 'green' }} />
-                        ) : (
-                          <Done />
-                        )}
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </Stack>
+              <Box className="flex justify-between mb-2">
+                <Box>
+                  <Skeleton width={140} height={20} />
+                  <Skeleton width={100} height={16} sx={{ mt: 0.5 }} />
+                </Box>
+                <Skeleton width={60} height={20} />
               </Box>
 
-              <Box className="flex flex-wrap gap-2 mt-1 text-xs">
-                <span className="px-2 py-0.5 rounded bg-red-100 text-red-700">
-                  {activeTask.status}
-                </span>
-                <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 capitalize">
-                  {activeTask.priority}
-                </span>
-                <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-800">
-                  Due:{' '}
-                  {moment(
-                    (activeTask.dueDate as Timestamp)?.toDate?.() ||
-                      activeTask.dueDate
-                  ).format('MMM D')}
-                </span>
+              <Stack direction="row" spacing={1} mb={2}>
+                <Skeleton width={80} height={16} />
+                <Skeleton width={60} height={16} />
+              </Stack>
+
+              {/* Steps Skeleton */}
+              <Box>
+                {[...Array(3)].map((_, idx) => (
+                  <Box key={idx} className="flex items-center gap-2 my-1">
+                    <Skeleton variant="circular" width={24} height={24} />
+                    <Skeleton width="80%" height={16} />
+                  </Box>
+                ))}
               </Box>
             </CardContent>
           </Card>
+        </Box>
+      ) : tasks.length > 0 ? (
+        <>
+          <Fade in={fadeOutId !== activeTask.id} timeout={400}>
+            <Card className="rounded-xl shadow-md transition mb-4">
+              <CardContent>
+                <Box className="flex justify-between items-start mb-2">
+                  <Link href={`/to-do/${activeTask.id}`} passHref>
+                    <Typography
+                      variant="subtitle1"
+                      fontWeight="bold"
+                      className="underline cursor-pointer"
+                      sx={{
+                        color:
+                          theme?.mode === 'dark'
+                            ? '#fca5a5'
+                            : muiTheme.palette.error.main,
+                      }}
+                    >
+                      {activeTask.title}
+                    </Typography>
+                  </Link>
+                  <Stack direction="row" spacing={1}>
+                    <Tooltip title="Reschedule">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleReschedule(activeTask)}
+                      >
+                        <Event sx={{ color: '#f59e0b' }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Mark as Done">
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={() => markCompleted(activeTask)}
+                          disabled={completingId === activeTask.id}
+                          sx={{
+                            color:
+                              completingId === activeTask.id
+                                ? 'gray'
+                                : theme?.mode === 'dark'
+                                ? '#cbd5e1'
+                                : 'gray',
+                          }}
+                        >
+                          {completingId === activeTask.id ? (
+                            <CircularProgress size={20} />
+                          ) : (
+                            <Done />
+                          )}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                </Box>
+
+                <Box className="flex flex-wrap gap-2 mt-1 text-xs">
+                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-700">
+                    {activeTask.status}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 capitalize">
+                    {activeTask.priority}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-800">
+                    Due:{' '}
+                    {moment(
+                      (activeTask.dueDate as Timestamp)?.toDate?.() ||
+                        activeTask.dueDate
+                    ).format('MMM D')}
+                  </span>
+                </Box>
+              </CardContent>
+            </Card>
+          </Fade>
 
           <MobileStepper
             variant="dots"
@@ -315,9 +363,13 @@ export default function OverdueTasks() {
               onClick={updateDueDate}
               variant="contained"
               color="primary"
-              disabled={!newDueDate}
+              disabled={!newDueDate || reschedulingLoading}
             >
-              Save
+              {reschedulingLoading ? (
+                <CircularProgress size={20} sx={{ color: 'white' }} />
+              ) : (
+                'Save'
+              )}
             </Button>
           </Stack>
         </Box>

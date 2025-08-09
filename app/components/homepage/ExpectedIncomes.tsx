@@ -12,7 +12,9 @@ import {
   TextField,
   useTheme as useMuiTheme,
   MobileStepper,
+  Skeleton,
 } from '@mui/material';
+
 import { useEffect, useState } from 'react';
 import {
   collection,
@@ -40,12 +42,14 @@ export default function ExpectedIncome() {
   const [items, setItems] = useState<IncomeSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null); // For fade-out
   const [activeStep, setActiveStep] = useState(0);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleItem, setRescheduleItem] = useState<IncomeSource | null>(
     null
   );
   const [newDate, setNewDate] = useState<Date | null>(null);
+  const [reschedulingLoading, setReschedulingLoading] = useState(false); // New loading state for save button
 
   const now = moment().startOf('day');
   const endOfMonth = moment().endOf('month');
@@ -95,20 +99,28 @@ export default function ExpectedIncome() {
   const markAsReceived = async (inc: IncomeSource) => {
     if (!inc.id) return;
 
-    setItems((prev) => {
-      const updated = prev.filter((item) => item.id !== inc.id);
-      if (activeStep >= updated.length) {
-        setActiveStep(Math.max(updated.length - 1, 0));
-      }
-      return updated;
-    });
+    setMarkingId(inc.id);
 
     try {
-      setMarkingId(inc.id);
       await updateDoc(doc(db, 'incomeSources', inc.id), {
         isReceived: true,
         updatedAt: new Date(),
       });
+
+      // Start fade-out transition
+      setRemovingId(inc.id);
+
+      // After fade-out delay, remove the item
+      setTimeout(() => {
+        setItems((prev) => {
+          const updated = prev.filter((item) => item.id !== inc.id);
+          if (activeStep >= updated.length) {
+            setActiveStep(Math.max(updated.length - 1, 0));
+          }
+          return updated;
+        });
+        setRemovingId(null);
+      }, 300); // match transition duration
     } catch (err) {
       console.error('❌ Failed to mark income as received:', err);
     } finally {
@@ -128,6 +140,7 @@ export default function ExpectedIncome() {
 
   const updateExpectedDate = async () => {
     if (!rescheduleItem || !newDate) return;
+    setReschedulingLoading(true);
     try {
       await updateDoc(doc(db, 'incomeSources', rescheduleItem.id), {
         expectedDate: Timestamp.fromDate(newDate),
@@ -138,6 +151,8 @@ export default function ExpectedIncome() {
       fetchIncome();
     } catch (err) {
       console.error('❌ Failed to reschedule income:', err);
+    } finally {
+      setReschedulingLoading(false);
     }
   };
 
@@ -145,10 +160,44 @@ export default function ExpectedIncome() {
     fetchIncome();
   }, [user]);
 
+  if (!theme) return null; // or return a loading skeleton
+
   if (loading) {
     return (
-      <Box textAlign="center" mt={4}>
-        <CircularProgress />
+      <Box mt={3}>
+        <Typography fontWeight={700} fontSize={18} mb={2} color="#10b981">
+          💰 Upcoming Income
+        </Typography>
+
+        {/* Skeleton for card */}
+        <Box
+          sx={{
+            p: 2,
+            mb: 2,
+            borderRadius: 2,
+            background: theme.mode === 'dark' ? '#1f2937' : '#f0fdf4',
+            boxShadow: muiTheme.shadows[1],
+            borderLeft: `4px solid #10b981`,
+          }}
+        >
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+          >
+            <Box>
+              <Skeleton width={120} height={20} />
+              <Skeleton width={80} height={16} sx={{ mt: 0.5 }} />
+            </Box>
+
+            <Skeleton width={60} height={20} />
+          </Stack>
+
+          <Stack direction="row" spacing={1} mt={2}>
+            <Skeleton variant="rectangular" width={120} height={32} />
+            <Skeleton variant="circular" width={32} height={32} />
+          </Stack>
+        </Box>
       </Box>
     );
   }
@@ -177,6 +226,8 @@ export default function ExpectedIncome() {
             color: textColor,
             boxShadow: muiTheme.shadows[1],
             borderLeft: `4px solid ${borderColor}`,
+            opacity: removingId === activeItem.id ? 0 : 1,
+            transition: 'opacity 300ms ease',
           }}
         >
           <Stack
@@ -307,9 +358,13 @@ export default function ExpectedIncome() {
             <Button
               onClick={updateExpectedDate}
               variant="contained"
-              disabled={!newDate}
+              disabled={!newDate || reschedulingLoading}
             >
-              Save
+              {reschedulingLoading ? (
+                <CircularProgress size={20} sx={{ color: 'white' }} />
+              ) : (
+                'Save'
+              )}
             </Button>
           </Stack>
         </Box>

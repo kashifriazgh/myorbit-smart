@@ -1,4 +1,3 @@
-// Updated <ExpectedExpenses /> with Stepper and UI improvements
 'use client';
 
 import {
@@ -13,6 +12,7 @@ import {
   TextField,
   useTheme as useMuiTheme,
   MobileStepper,
+  Skeleton,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import {
@@ -47,6 +47,7 @@ export default function ExpectedExpenses() {
     null
   );
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
+  const [reschedulingLoading, setReschedulingLoading] = useState(false);
 
   const fetchData = async () => {
     if (!user) return;
@@ -92,19 +93,20 @@ export default function ExpectedExpenses() {
 
   const markAsPaid = async (exp: Expenditure) => {
     if (!exp.id) return;
-    setItems((prev) => {
-      const updated = prev.filter((item) => item.id !== exp.id);
-      if (activeStep >= updated.length) {
-        setActiveStep(Math.max(updated.length - 1, 0));
-      }
-      return updated;
-    });
+    setMarkingId(exp.id);
 
     try {
-      setMarkingId(exp.id);
       await updateDoc(doc(db, 'expenditures', exp.id), {
         isPaid: true,
         updatedAt: new Date(),
+      });
+
+      setItems((prev) => {
+        const updated = prev.filter((item) => item.id !== exp.id);
+        if (activeStep >= updated.length) {
+          setActiveStep(Math.max(updated.length - 1, 0));
+        }
+        return updated;
       });
     } catch (err) {
       console.error('❌ Failed to mark expense as paid:', err);
@@ -125,6 +127,7 @@ export default function ExpectedExpenses() {
 
   const updateDueDate = async () => {
     if (!rescheduleItem || !newDueDate) return;
+    setReschedulingLoading(true);
     try {
       await updateDoc(doc(db, 'expenditures', rescheduleItem.id), {
         dueDate: Timestamp.fromDate(newDueDate),
@@ -135,6 +138,8 @@ export default function ExpectedExpenses() {
       fetchData();
     } catch (err) {
       console.error('❌ Failed to reschedule expense:', err);
+    } finally {
+      setReschedulingLoading(false);
     }
   };
 
@@ -142,10 +147,44 @@ export default function ExpectedExpenses() {
     fetchData();
   }, [user]);
 
+  if (!theme) return null; // or return a loading skeleton
+
   if (loading) {
     return (
-      <Box textAlign="center" mt={4}>
-        <CircularProgress />
+      <Box mt={3}>
+        <Typography fontWeight={700} fontSize={18} mb={2} color="#10b981">
+          💸 Upcoming Expenses
+        </Typography>
+
+        {/* Skeleton for card */}
+        <Box
+          sx={{
+            p: 2,
+            mb: 2,
+            borderRadius: 2,
+            background: theme.mode === 'dark' ? '#1f2937' : '#f0fdf4',
+            boxShadow: muiTheme.shadows[1],
+            borderLeft: `4px solid #10b981`,
+          }}
+        >
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+          >
+            <Box>
+              <Skeleton width={120} height={20} />
+              <Skeleton width={80} height={16} sx={{ mt: 0.5 }} />
+            </Box>
+
+            <Skeleton width={60} height={20} />
+          </Stack>
+
+          <Stack direction="row" spacing={1} mt={2}>
+            <Skeleton variant="rectangular" width={120} height={32} />
+            <Skeleton variant="circular" width={32} height={32} />
+          </Stack>
+        </Box>
       </Box>
     );
   }
@@ -212,7 +251,11 @@ export default function ExpectedExpenses() {
               onClick={() => markAsPaid(activeItem)}
               disabled={markingId === activeItem.id}
             >
-              {markingId === activeItem.id ? 'Updating...' : 'Mark as Paid'}
+              {markingId === activeItem.id ? (
+                <CircularProgress size={20} />
+              ) : (
+                'Mark as Paid'
+              )}
             </Button>
 
             <Tooltip title="Reschedule">
@@ -296,9 +339,13 @@ export default function ExpectedExpenses() {
             <Button
               onClick={updateDueDate}
               variant="contained"
-              disabled={!newDueDate}
+              disabled={!newDueDate || reschedulingLoading}
             >
-              Save
+              {reschedulingLoading ? (
+                <CircularProgress size={20} sx={{ color: 'white' }} />
+              ) : (
+                'Save'
+              )}
             </Button>
           </Stack>
         </Box>
