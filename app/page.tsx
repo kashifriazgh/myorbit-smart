@@ -23,13 +23,7 @@ export default function Homepage() {
       <ExpectedIncome />
       <JournalMemory />
 
-      <MostProductiveDay
-        data={{
-          date: '2025-07-18',
-          tasksCompleted: 14,
-          focusScore: 87,
-        }}
-      />
+      <MostProductiveDay />
 
       {/* <MostFocusedTime
         data={{

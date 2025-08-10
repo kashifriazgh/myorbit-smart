@@ -26,6 +26,7 @@ import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import moment from 'moment-timezone';
 import { Timestamp } from 'firebase/firestore';
+import { logFocusTime } from '@/app/lib/utilts';
 
 type IdeaLevel = 'super' | 'important' | 'general';
 type Privacy = 'private' | 'public';
@@ -85,6 +86,7 @@ export default function IdeaModal({ open, onClose }: Props) {
       authorName: user.firstName || '',
       sharedWith: [],
     });
+    logFocusTime(user.uid);
 
     setLoading(false);
     onClose();

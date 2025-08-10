@@ -405,7 +405,12 @@ export interface PMC {
   userId: string;
   date: string; // 'YYYY-MM-DD'
 
-  moodSummary: {
+  // 🔹 New focusTime field (0–23 hours)
+  focusTime?: {
+    [hour: number]: number; // key: hour (0–23), value: count of events
+  };
+
+  moodSummary?: {
     averageMoodLevel: number;
     dominantMood:
       | 'happy'
@@ -418,7 +423,7 @@ export interface PMC {
     moodChangeFromYesterday?: number;
   };
 
-  priorityAlignment: {
+  priorityAlignment?: {
     totalTasks: number;
     highPriorityTasks: number;
     highPriorityTasksCompletedOnTime: number;
@@ -426,7 +431,7 @@ export interface PMC {
     appUsageScore?: number;
   };
 
-  focusMoments: {
+  focusMoments?: {
     focusAnswers?: string[];
     mostActiveHours: string[];
   };
@@ -437,7 +442,7 @@ export interface PMC {
     trendFromYesterday?: number;
   };
 
-  productivityScore: {
+  productivityScore?: {
     questionnaireAnswer?: string;
     tasksCompleted: number;
     goalsCompleted?: number;
@@ -445,7 +450,7 @@ export interface PMC {
     score?: number;
   };
 
-  streaks: {
+  streaks?: {
     currentStreak: number;
     longestStreak: number;
     lastActive: Date;
@@ -456,7 +461,7 @@ export interface PMC {
     };
   };
 
-  financeOverview: {
+  financeOverview?: {
     totalEarned: number;
     totalSpent: number;
     netBalance: number;
@@ -475,6 +480,7 @@ export interface PMC {
       confidence?: number;
     };
   };
+
   mostProductiveDay?: {
     date: string; // e.g., "2025-07-17"
     weekday: string; // e.g., "Wednesday"
@@ -484,26 +490,22 @@ export interface PMC {
     tasksCreated: number;
     tasksCompleted: number;
     incomesReceived: number;
-    summaryText?: string; // Human-readable output: "Wednesday was your most productive day. You completed 3 tasks and wrote 4 journal entries."
+    summaryText?: string;
     contributingJournals?: {
       id: string;
       title?: string;
     }[];
-    contributingIdeas?: string[]; // Could be idea titles or IDs
-    contributingTasks?: string[]; // Could be task titles or IDs
-    contributingIncomes?: string[]; // Optional: IDs or titles
+    contributingIdeas?: string[];
+    contributingTasks?: string[];
+    contributingIncomes?: string[];
     aiInsight?: {
-      text: string; // AI-written feedback or insight
+      text: string;
       encouragement?: string;
       suggestions?: string[];
       confidence?: number;
     };
   };
-  FocusedTime?: {
-    hourStart: number; // e.g., 21
-    hourEnd: number; // e.g., 22
-    day: string; // e.g., 'Sunday'
-  };
+
   aiSummary?: {
     text: string;
     suggestions?: string[];

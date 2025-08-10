@@ -51,3 +51,36 @@ export const weekdayMap = [
   'Friday',
   'Saturday',
 ];
+
+// log focus time
+import { doc, runTransaction } from 'firebase/firestore';
+import { db } from './firebase';
+import moment from 'moment-timezone';
+
+export const logFocusTime = async (userId: string) => {
+  const now = moment().tz('Asia/Karachi');
+  const minute = now.minute();
+  let hour = now.hour();
+  if (minute >= 40) hour = (hour + 1) % 24;
+
+  const docRef = doc(db, 'pmc', userId);
+
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(docRef);
+
+    if (!snap.exists()) {
+      const focusTimeInit: Record<number, number> = {};
+      for (let i = 0; i < 24; i++) {
+        focusTimeInit[i] = 0;
+      }
+      focusTimeInit[hour] = 1; // First increment
+      transaction.set(docRef, { focusTime: focusTimeInit });
+    } else {
+      const data = snap.data();
+      const currentCount = data.focusTime?.[hour] || 0;
+      transaction.update(docRef, {
+        [`focusTime.${hour}`]: currentCount + 1,
+      });
+    }
+  });
+};

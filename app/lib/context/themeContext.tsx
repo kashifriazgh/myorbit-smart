@@ -13,7 +13,6 @@ interface ThemeData {
 }
 
 const CustomThemeContext = createContext<ThemeData | null>(null);
-
 const THEME_CACHE_KEY = 'cachedTheme';
 
 export function CustomThemeProvider({
@@ -22,8 +21,9 @@ export function CustomThemeProvider({
   children: React.ReactNode;
 }) {
   const [themeData, setThemeData] = useState<Theme | null>(null);
+  const [hasUserInteracted, setHasUserInteracted] = useState(false);
 
-  // Load from localStorage on first mount
+  // Load from localStorage & subscribe to Firestore
   useEffect(() => {
     const cached = localStorage.getItem(THEME_CACHE_KEY);
     if (cached) {
@@ -31,11 +31,10 @@ export function CustomThemeProvider({
         const parsed: Theme = JSON.parse(cached);
         setThemeData(parsed);
       } catch (err) {
-        console.warn('Failed to parse cached theme' + err);
+        console.warn('Failed to parse cached theme', err);
       }
     }
 
-    // Subscribe to Firebase for theme updates
     const ref = doc(db, 'theme', 'activeTheme');
     const unsub = onSnapshot(ref, (docSnap) => {
       if (docSnap.exists()) {
@@ -55,8 +54,6 @@ export function CustomThemeProvider({
     await import('firebase/firestore').then(({ setDoc }) =>
       setDoc(ref, newTheme, { merge: true })
     );
-
-    // Update cache and state
     localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(newTheme));
     setThemeData(newTheme);
   };
@@ -71,6 +68,79 @@ export function CustomThemeProvider({
     }
   };
 
+  // 🔹 Listen to system dark mode changes (Battery Saver triggers this)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applySystemTheme = (isDark: boolean) => {
+      if (!hasUserInteracted) {
+        setThemeMode(isDark ? 'dark' : 'light');
+      }
+    };
+
+    // ✅ Initial check
+    applySystemTheme(media.matches);
+
+    // ✅ Change listener
+    const listener = (e: MediaQueryListEvent) => {
+      applySystemTheme(e.matches);
+    };
+
+    if (media.addEventListener) {
+      media.addEventListener('change', listener);
+    } else {
+      media.addListener(listener);
+    }
+
+    return () => {
+      if (media.removeEventListener) {
+        media.removeEventListener('change', listener);
+      } else {
+        media.removeListener(listener);
+      }
+    };
+  }, [hasUserInteracted]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applySystemTheme = (isDark: boolean) => {
+      if (!hasUserInteracted) {
+        setThemeMode(isDark ? 'dark' : 'light');
+      }
+    };
+
+    // ✅ Initial check
+    applySystemTheme(media.matches);
+
+    // ✅ Change listener
+    const listener = (e: MediaQueryListEvent) => {
+      applySystemTheme(e.matches);
+    };
+
+    if (media.addEventListener) {
+      media.addEventListener('change', listener);
+    } else {
+      media.addListener(listener);
+    }
+
+    return () => {
+      if (media.removeEventListener) {
+        media.removeEventListener('change', listener);
+      } else {
+        media.removeListener(listener);
+      }
+    };
+  }, [hasUserInteracted]);
+
+  const setThemeModeWithOverride = async (mode: 'light' | 'dark') => {
+    setHasUserInteracted(true); // ✅ stop listening to system changes after first manual change
+    await setThemeMode(mode);
+  };
   const muiTheme = createTheme({
     palette: {
       mode: themeData?.mode || 'light',
@@ -83,7 +153,7 @@ export function CustomThemeProvider({
     <CustomThemeContext.Provider
       value={{
         theme: themeData as Theme,
-        setThemeMode,
+        setThemeMode: setThemeModeWithOverride, // use the new one
         refreshTheme,
       }}
     >

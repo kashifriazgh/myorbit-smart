@@ -23,6 +23,7 @@ import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import MoodEmoji from '../global/mood-emojis/MoodEmoji';
 import { moodOptions, MoodType } from '@/app/lib/interface';
+import { logFocusTime } from '@/app/lib/utilts';
 
 const MOOD_SUBMISSION_KEY = 'lastMoodSubmission';
 
@@ -84,10 +85,16 @@ export default function Mood() {
     };
 
     try {
+      // 1️⃣ Save mood entry
       await addDoc(collection(db, 'moods'), moodEntry);
+
+      // 2️⃣ Log the focus time
+      await logFocusTime(user.uid);
+
+      // 3️⃣ Store last submission locally
       localStorage.setItem(MOOD_SUBMISSION_KEY, new Date().toISOString());
 
-      // Reset UI state after submit
+      // 4️⃣ Reset UI state after submit
       setSelectedMood(null);
       setMoodLevel(5);
       setShowMoodSelector(false);
