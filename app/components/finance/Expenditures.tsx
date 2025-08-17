@@ -436,6 +436,7 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                     )}
                   </Button>
                 )}
+
                 <Dialog open={!!deleteId} onClose={() => setDeleteId(null)}>
                   <DialogTitle>Confirm Deletion</DialogTitle>
                   <DialogContent>

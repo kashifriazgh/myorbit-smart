@@ -9,6 +9,7 @@ import {
   CustomThemeProvider,
   useCustomTheme,
 } from '@/app/lib/context/themeContext';
+import { TodoProvider } from '../../lib/context/todoContext';
 
 export default function ClientThemeProvider({
   children,
@@ -18,9 +19,11 @@ export default function ClientThemeProvider({
   return (
     <UserProvider>
       <CustomThemeProvider>
-        <CssBaseline />
-        <ThemeBodyEffect />
-        {children}
+        <TodoProvider>
+          <CssBaseline />
+          <ThemeBodyEffect />
+          {children}
+        </TodoProvider>
       </CustomThemeProvider>
     </UserProvider>
   );

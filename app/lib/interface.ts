@@ -244,17 +244,17 @@ export interface TotalCashSnapshot {
   id?: string;
   userId: string;
 
-  // This now strictly requires all source types to be present
+  // dynamic mapping of sources
   sources: {
     in_hand: number;
-    bank: number;
     easypaisa: number;
     jazzcash: number;
     other: number;
+    bank: { [bankName: string]: number }; // 👈 nested object for banks
   };
 
-  totalAmount: number; // Sum of all source values
-  freezeAmount: number; // Total frozen amount
+  totalAmount: number;
+  freezeAmount: number;
 
   note?: string;
   effectiveDate?: Date | Timestamp;
@@ -263,7 +263,19 @@ export interface TotalCashSnapshot {
   createdAt: Date | Timestamp;
   updatedAt?: Date | Timestamp;
 }
-export type TransactionType = 'add' | 'deduct' | 'freeze_transfer';
+
+export interface Bank {
+  id?: string;
+  userId: string;
+  name: string;
+  createdAt: Date | Timestamp;
+}
+export type TransactionType =
+  | 'add'
+  | 'deduct'
+  | 'freeze_transfer'
+  | 'borrow'
+  | 'lend';
 export type TransactionSource =
   | 'in_hand'
   | 'bank'
@@ -275,20 +287,33 @@ export type TransactionCategory =
   | 'expenditure'
   | 'shopping'
   | 'manual'
-  | 'transfer';
+  | 'transfer'
+  | 'loan';
 
 export interface CashTransaction {
   id?: string;
   userId: string;
   amount: number;
-  type: TransactionType; // Whether this added or deducted from main fund
-  source: TransactionSource; // Where the cash came from or went (e.g., bank, in_hand)
-  category: TransactionCategory; // Why this transaction happened (e.g., shopping)
-  note?: string; // Optional custom user note
-  referenceId?: string; // Optional: related document ID (income, expense, etc.)
-  createdAt: Date | Timestamp; // Transaction date
+  type: TransactionType;
+  source: TransactionSource;
+  category: TransactionCategory;
+  note?: string;
+  referenceId?: string;
+  bankId?: string;
+  BankName?: string;
+  createdAt: Date | Timestamp;
 }
-
+export interface LoanRecord {
+  id?: string;
+  userId: string;
+  amount: number;
+  type: 'borrow' | 'lend'; // perspective of the user
+  counterparty: string; // name/identifier of the person
+  dueDate?: Date | Timestamp;
+  note?: string;
+  isSettled: boolean;
+  createdAt: Date | Timestamp;
+}
 export interface IncomeSource {
   id?: string;
   userId: string;

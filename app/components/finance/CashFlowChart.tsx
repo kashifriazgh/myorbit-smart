@@ -106,8 +106,13 @@ export default function CashFlowChart() {
         if (!isAfter(date, cutoff)) return;
         const label = getBucketLabel(date, range);
         grouped[label] = grouped[label] || { earned: 0, spent: 0 };
-        if (txn.type === 'add') grouped[label].earned += txn.amount;
-        else grouped[label].spent += txn.amount;
+
+        if (txn.type === 'add') {
+          grouped[label].earned += txn.amount;
+        } else if (txn.type === 'deduct') {
+          grouped[label].spent += txn.amount;
+        }
+        // ✅ skip freeze_transfer completely
       });
 
       const sorted = Object.keys(grouped).sort(

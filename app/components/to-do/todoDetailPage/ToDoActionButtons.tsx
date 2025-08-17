@@ -9,6 +9,7 @@ import { db } from '@/app/lib/firebase';
 import DeleteConfirmModal from '@/app/components/global/DeleteConfirmModal';
 import PrivacyModal from '@/app/components/global/PrivacyModal';
 import TodoEnhancementPanel from '@/app/components/to-do/TodoEnhancementPanel';
+import { AutoAwesome } from '@mui/icons-material';
 
 interface TodoActionButtonsProps {
   todo: Todo;
@@ -34,7 +35,7 @@ export default function TodoActionButtons({
   return (
     <>
       <IconButton onClick={() => setEnhanceOpen(true)}>
-        <PublicIcon />
+        <AutoAwesome />
       </IconButton>
 
       <IconButton onClick={() => setPrivacyOpen(true)}>

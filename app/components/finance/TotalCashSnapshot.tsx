@@ -1,25 +1,6 @@
-// 💼 TotalCashSnapshotComponent.tsx
-
 'use client';
 
-import {
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  TextField,
-  Typography,
-  CircularProgress,
-  IconButton,
-  Collapse,
-  Checkbox,
-} from '@mui/material';
+import { Box, Typography, CircularProgress, IconButton } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useEffect, useState } from 'react';
 import { db } from '@/app/lib/firebase';
@@ -30,44 +11,35 @@ import {
   getDoc,
   setDoc,
   serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import {
   TotalCashSnapshot,
-  CashTransaction,
   TransactionSource,
+  Bank,
+  CashTransaction,
 } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';
-
-const SOURCE_OPTIONS: TransactionSource[] = [
-  'bank',
-  'in_hand',
-  'easypaisa',
-  'jazzcash',
-  'other',
-];
+import AccountBreakdown from './TotalCashSnapshot/AccountBreakdown';
+import FreezeTransfer from './TotalCashSnapshot/FreezeTransfer';
+import AddMoney from './TotalCashSnapshot/AddMoney';
+import DeductMoney from './TotalCashSnapshot/DeductMoney';
+import LoanDialog from './TotalCashSnapshot/LoanRecord';
 
 export default function TotalCashSnapshotComponent({
   userId,
 }: {
   userId: string;
+  banks?: Bank[];
 }) {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
   const [snapshot, setSnapshot] = useState<TotalCashSnapshot | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [showFreezeModal, setShowFreezeModal] = useState(false);
-  const [newAmount, setNewAmount] = useState<number | ''>('');
-  const [newMode, setNewMode] = useState<TransactionSource>('in_hand');
-  const [isFreezed, setIsFreezed] = useState(false);
-  const [showBreakdown, setShowBreakdown] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showFreeze, setShowFreeze] = useState(true);
-
-  const [freezeAmount, setFreezeAmount] = useState<number | ''>('');
-  const [freezeFrom, setFreezeFrom] = useState<TransactionSource>('in_hand');
+  const [showFreeze, setShowFreeze] = useState(false);
 
   const currency = 'PKR';
 
@@ -78,13 +50,28 @@ export default function TotalCashSnapshotComponent({
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as TotalCashSnapshot;
-        setSnapshot(data);
+
+        // 🔥 normalize bank field
+        let normalizedBank: Record<string, number> = {};
+        if (typeof data.sources.bank === 'number') {
+          normalizedBank = { Default: data.sources.bank }; // migrate old number into object
+        } else {
+          normalizedBank = data.sources.bank || {};
+        }
+
+        setSnapshot({
+          ...data,
+          sources: {
+            ...data.sources,
+            bank: normalizedBank,
+          },
+        });
       } else {
         const initial: TotalCashSnapshot = {
           userId,
           sources: {
             in_hand: 0,
-            bank: 0,
+            bank: {}, // 👈 always object now
             easypaisa: 0,
             jazzcash: 0,
             other: 0,
@@ -102,72 +89,173 @@ export default function TotalCashSnapshotComponent({
     fetchSnapshot();
   }, [userId]);
 
-  const handleSave = async () => {
-    if (!newAmount || newAmount <= 0 || !newMode) return;
+  const handleAddMoney = async (
+    amount: number,
+    source: TransactionSource,
+    isFreezed: boolean,
+    bankId?: string,
+    bankName?: string
+  ) => {
     setSaving(true);
-    const now = new Date();
 
-    const txn: CashTransaction = {
+    const txn: Omit<CashTransaction, 'id'> = {
       userId,
-      amount: Number(newAmount),
-
-      type: 'freeze_transfer', // ✅ NEW keyword instead of 'deduct'
-      source: newMode,
+      amount,
+      type: isFreezed ? 'freeze_transfer' : 'add',
+      source: isFreezed ? 'other' : source, // Use 'other' for freeze transfers
       category: 'manual',
       note: isFreezed ? 'Freezed addition' : 'Manual addition',
-      createdAt: now,
+      createdAt: serverTimestamp() as Timestamp,
     };
 
-    await addDoc(collection(db, 'cashTransactions'), {
-      ...txn,
-      createdAt: serverTimestamp(),
-    });
+    if (bankId && !isFreezed) txn.bankId = bankId;
+    if (bankName && !isFreezed) txn.BankName = bankName;
+
+    await addDoc(collection(db, 'cashTransactions'), txn);
 
     const docRef = doc(db, 'totalCashSnapshots', userId);
 
-    const updatedSources = snapshot?.sources || {
-      in_hand: 0,
-      bank: 0,
-      easypaisa: 0,
-      jazzcash: 0,
-      other: 0,
+    const updatedSources: TotalCashSnapshot['sources'] = {
+      in_hand: snapshot?.sources.in_hand ?? 0,
+      bank: snapshot?.sources.bank ?? {},
+      easypaisa: snapshot?.sources.easypaisa ?? 0,
+      jazzcash: snapshot?.sources.jazzcash ?? 0,
+      other: snapshot?.sources.other ?? 0,
     };
 
-    updatedSources[newMode] += Number(newAmount);
+    // ✅ Only update sources if NOT freezed
+    if (!isFreezed) {
+      if (source === 'bank' && bankId) {
+        updatedSources.bank[bankId] =
+          (updatedSources.bank[bankId] ?? 0) + amount;
+      } else if (source !== 'bank') {
+        updatedSources[source] = (updatedSources[source] ?? 0) + amount;
+      }
+    }
 
     const updatedSnapshot: TotalCashSnapshot = {
       ...snapshot!,
       sources: updatedSources,
       freezeAmount: isFreezed
-        ? (snapshot?.freezeAmount || 0) + Number(newAmount)
+        ? (snapshot?.freezeAmount || 0) + amount
         : snapshot?.freezeAmount || 0,
-      totalAmount: (snapshot?.totalAmount || 0) + Number(newAmount),
+      totalAmount: (snapshot?.totalAmount || 0) + amount,
       updatedAt: new Date(),
     };
 
-    await setDoc(docRef, {
-      ...updatedSnapshot,
-      updatedAt: serverTimestamp(),
-    });
-
+    await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
     setSnapshot(updatedSnapshot);
-    setShowModal(false);
-    setNewAmount('');
-    setNewMode('in_hand');
-    setIsFreezed(false);
     setSaving(false);
   };
 
-  const handleFreezeTransfer = async () => {
-    if (!freezeAmount || freezeAmount <= 0 || !freezeFrom) return;
+  const handleDeductMoney = async (
+    amount: number,
+    source: TransactionSource,
+    bankId?: string,
+    bankName?: string,
+    fromFreeze: boolean = false
+  ) => {
+    setSaving(true);
 
-    setSaving(true); // ✅ Start loader
-    const amount = Number(freezeAmount);
+    const docRef = doc(db, 'totalCashSnapshots', userId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      setSaving(false);
+      return;
+    }
 
-    const sourceBalance = snapshot?.sources?.[freezeFrom] || 0;
+    const data = docSnap.data() as TotalCashSnapshot;
+
+    const updatedSources: TotalCashSnapshot['sources'] = {
+      in_hand: data.sources.in_hand ?? 0,
+      bank: data.sources.bank ?? {},
+      easypaisa: data.sources.easypaisa ?? 0,
+      jazzcash: data.sources.jazzcash ?? 0,
+      other: data.sources.other ?? 0,
+    };
+
+    let newFreeze = data.freezeAmount ?? 0;
+    let newTotal = data.totalAmount ?? 0;
+
+    if (fromFreeze) {
+      // ✅ Deduct directly from freezeAmount
+      if (amount > newFreeze) {
+        alert(`Not enough balance in Freezed funds`);
+        setSaving(false);
+        return;
+      }
+      newFreeze -= amount;
+      newTotal -= amount;
+    } else {
+      // ✅ Deduct from normal sources
+      if (source === 'bank' && bankId) {
+        const current = updatedSources.bank[bankId] ?? 0;
+        if (amount > current) {
+          alert(`Not enough balance in Bank: ${bankName}`);
+          setSaving(false);
+          return;
+        }
+        updatedSources.bank[bankId] = current - amount;
+      } else if (source !== 'bank') {
+        const current = (updatedSources[source] as number) ?? 0;
+        if (amount > current) {
+          alert(`Not enough balance in ${source}`);
+          setSaving(false);
+          return;
+        }
+        updatedSources[source] = current - amount;
+      }
+      newTotal -= amount;
+    }
+
+    const updatedSnapshot: TotalCashSnapshot = {
+      ...data,
+      sources: updatedSources,
+      freezeAmount: newFreeze,
+      totalAmount: newTotal,
+      updatedAt: new Date(),
+    };
+
+    await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+
+    // ✅ Store full transaction record
+    await addDoc(collection(db, 'cashTransactions'), {
+      userId,
+      amount,
+      type: 'deduct',
+      source,
+      fromFreeze,
+      category: fromFreeze ? 'freeze' : 'manual',
+      note: fromFreeze ? 'Deducted from Freezed' : 'Manual deduction',
+      bankId: bankId || null,
+      BankName: bankName || null,
+      createdAt: serverTimestamp(),
+    });
+
+    setSnapshot(updatedSnapshot);
+    setSaving(false);
+  };
+
+  const handleFreezeTransfer = async (
+    amount: number,
+    fromSource: TransactionSource,
+    bankId?: string,
+    bankName?: string
+  ) => {
+    setSaving(true);
+
+    let sourceBalance = 0;
+    if (fromSource === 'bank' && bankName) {
+      sourceBalance = snapshot?.sources.bank?.[bankName] ?? 0;
+    } else {
+      sourceBalance = (snapshot?.sources[fromSource] as number) ?? 0;
+    }
+
     if (amount > sourceBalance) {
-      alert(`Not enough balance in ${freezeFrom}`);
-      setSaving(false); // ❗Don't forget to reset if early return
+      alert(
+        `Not enough balance in ${fromSource}${bankName ? ` (${bankName})` : ''}`
+      );
+      setSaving(false);
       return;
     }
 
@@ -179,8 +267,21 @@ export default function TotalCashSnapshotComponent({
     }
 
     const data = docSnap.data() as TotalCashSnapshot;
-    const updatedSources = { ...data.sources };
-    updatedSources[freezeFrom] -= amount;
+
+    const updatedSources: TotalCashSnapshot['sources'] = {
+      in_hand: data.sources.in_hand ?? 0,
+      bank: data.sources.bank ?? {},
+      easypaisa: data.sources.easypaisa ?? 0,
+      jazzcash: data.sources.jazzcash ?? 0,
+      other: data.sources.other ?? 0,
+    };
+
+    if (fromSource === 'bank' && bankName) {
+      updatedSources.bank[bankName] =
+        (updatedSources.bank[bankName] ?? 0) - amount;
+    } else if (fromSource !== 'bank') {
+      updatedSources[fromSource] = (updatedSources[fromSource] ?? 0) - amount;
+    }
 
     const updatedSnapshot: TotalCashSnapshot = {
       ...data,
@@ -189,26 +290,21 @@ export default function TotalCashSnapshotComponent({
       updatedAt: new Date(),
     };
 
-    await setDoc(docRef, {
-      ...updatedSnapshot,
-      updatedAt: serverTimestamp(),
-    });
-
+    await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
     await addDoc(collection(db, 'cashTransactions'), {
       userId,
       amount,
       type: 'freeze_transfer',
-      source: freezeFrom,
+      source: fromSource,
       category: 'freeze',
       note: 'Transferred to Freezed',
+      bankId: bankId || null,
+      BankName: bankName || null,
       createdAt: serverTimestamp(),
     });
 
     setSnapshot(updatedSnapshot);
-    setFreezeAmount('');
-    setFreezeFrom('in_hand');
-    setShowFreezeModal(false);
-    setSaving(false); // ✅ End loader
+    setSaving(false);
   };
 
   const freezeDisplay = snapshot?.freezeAmount || 0;
@@ -246,147 +342,22 @@ export default function TotalCashSnapshotComponent({
         {formatCurrency(available, currency)}
       </Typography>
 
-      <Button onClick={() => setShowBreakdown((p) => !p)} size="small">
-        {showBreakdown ? 'Hide' : 'Show'} Account Breakdown
-      </Button>
+      <AccountBreakdown
+        snapshot={snapshot}
+        currency={currency}
+        isDark={isDark}
+      />
 
-      <Collapse in={showBreakdown}>
-        <Box
-          mt={2}
-          borderRadius={2}
-          p={1}
-          bgcolor={isDark ? '#1f2937' : '#f9f9f9'}
-        >
-          {Object.entries(snapshot.sources || {}).map(([name, amt]) => (
-            <Box
-              key={name}
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              py={0.5}
-              px={1}
-              sx={{
-                fontSize: '0.82rem',
-                borderBottom: '1px solid',
-                borderColor: isDark ? '#374151' : '#e0e0e0',
-                '&:last-child': { borderBottom: 'none' },
-              }}
-            >
-              <Typography
-                fontSize="0.82rem"
-                fontWeight={500}
-                color="text.secondary"
-              >
-                {name}
-              </Typography>
-              <Typography fontSize="0.82rem" fontWeight={600}>
-                {formatCurrency(amt, currency)}
-              </Typography>
-            </Box>
-          ))}
-        </Box>
-      </Collapse>
-
-      <Box mt={2} display="flex" gap={1}>
-        <Button variant="contained" onClick={() => setShowModal(true)}>
-          + Add Money
-        </Button>
-        <Button variant="outlined" onClick={() => setShowFreezeModal(true)}>
-          Transfer to Freezed
-        </Button>
+      <Box mt={2} display="flex" gap={1} flexWrap="wrap">
+        <AddMoney onSave={handleAddMoney} saving={saving} />
+        <DeductMoney
+          snapshot={snapshot}
+          onDeduct={handleDeductMoney}
+          saving={saving}
+        />
+        <FreezeTransfer onFreeze={handleFreezeTransfer} saving={saving} />
+        <LoanDialog />
       </Box>
-
-      {/* Add Money Modal */}
-      <Dialog open={showModal} onClose={() => setShowModal(false)}>
-        <DialogTitle>Add Money</DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            label="Amount"
-            type="number"
-            value={newAmount}
-            onChange={(e) =>
-              setNewAmount(e.target.value === '' ? '' : Number(e.target.value))
-            }
-            margin="normal"
-          />
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Source</InputLabel>
-            <Select
-              value={newMode}
-              onChange={(e) => setNewMode(e.target.value as TransactionSource)}
-              label="Source"
-            >
-              {SOURCE_OPTIONS.map((mode) => (
-                <MenuItem key={mode} value={mode}>
-                  {mode}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <Box display="flex" alignItems="center" mt={2}>
-            <Checkbox
-              size="small"
-              checked={isFreezed}
-              onChange={(e) => setIsFreezed(e.target.checked)}
-            />
-            <Typography fontSize={13} component="span">
-              Add to Freezed balance
-            </Typography>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowModal(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Transfer to Freezed Modal */}
-      <Dialog open={showFreezeModal} onClose={() => setShowFreezeModal(false)}>
-        <DialogTitle>Transfer to Freezed</DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            label="Amount to Freeze"
-            type="number"
-            value={freezeAmount}
-            onChange={(e) =>
-              setFreezeAmount(
-                e.target.value === '' ? '' : Number(e.target.value)
-              )
-            }
-            margin="normal"
-          />
-          <FormControl fullWidth margin="normal">
-            <InputLabel>From Source</InputLabel>
-            <Select
-              value={freezeFrom}
-              onChange={(e) =>
-                setFreezeFrom(e.target.value as TransactionSource)
-              }
-              label="From Source"
-            >
-              {SOURCE_OPTIONS.map((mode) => (
-                <MenuItem key={mode} value={mode}>
-                  {mode}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowFreezeModal(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleFreezeTransfer}
-            disabled={saving}
-          >
-            {saving ? <CircularProgress size={20} /> : 'Confirm Transfer'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }

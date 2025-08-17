@@ -1,5 +1,5 @@
 'use client';
-import { Typography, Divider } from '@mui/material';
+import { Typography } from '@mui/material';
 
 interface TodoHeaderProps {
   title: string;
@@ -13,7 +13,6 @@ export default function TodoHeader({ title, description }: TodoHeaderProps) {
         {title}
       </Typography>
       {description && <Typography mb={1}>{description}</Typography>}
-      <Divider sx={{ my: 2 }} />
     </>
   );
 }

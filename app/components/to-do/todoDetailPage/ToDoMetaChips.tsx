@@ -19,7 +19,7 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
     <>
       <Stack direction="row" spacing={1} mt={1} flexWrap="wrap" useFlexGap>
         <Chip
-          label={`Priority: ${todo.priority}`}
+          label={` ${todo.priority}`}
           onClick={() => setPriorityOpen(true)}
           sx={{
             bgcolor: {
@@ -31,7 +31,7 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
           }}
         />
         <Chip
-          label={`Status: ${todo.status}`}
+          label={`${todo.status}`}
           onClick={() => setStatusOpen(true)}
           sx={{
             bgcolor: {
@@ -45,7 +45,7 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
         />
         {todo.dueDate && (
           <Chip
-            label={`Due: ${
+            label={`Due by: ${
               todo.dueDate instanceof Date
                 ? moment(todo.dueDate).format('MMM D, YYYY')
                 : moment(todo.dueDate.toDate()).format('MMM D, YYYY')

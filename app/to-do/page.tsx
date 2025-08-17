@@ -5,7 +5,6 @@ import { useState } from 'react';
 import ToDoModal from '../components/to-do/todoModal';
 import TodosList from '../components/to-do/todoList';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import Link from 'next/link';
 
 export default function TodosPage() {
   const [open, setOpen] = useState(false);
@@ -54,9 +53,7 @@ export default function TodosPage() {
         }}
         sx={{ mb: 3 }}
       />
-      <Link href="/finance">Finance</Link> |<Link href="/ideas">Ideas</Link> |
-      <Link href="/to-do">To Dos</Link> |<Link href="/journals">Journals</Link>{' '}
-      |
+
       <TodosList />
       <ToDoModal open={open} onClose={() => setOpen(false)} />
     </Box>

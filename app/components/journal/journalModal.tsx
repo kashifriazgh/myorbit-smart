@@ -8,20 +8,23 @@ import {
   Button,
   Stack,
   Typography,
+  Box,
+  Collapse,
   Slider,
   Chip,
-  Box,
 } from '@mui/material';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { db } from '@/app/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
 import moment from 'moment';
 import { useMediaQuery, useTheme } from '@mui/material';
 import MoodSelector from './moodSelector';
+import SaveIcon from '@mui/icons-material/Save';
 
 type Props = {
   open: boolean;
@@ -35,11 +38,8 @@ export default function JournalModal({ open, onClose }: Props) {
   const [mood, setMood] = useState<string | null>(null);
   const [moodLevel, setMoodLevel] = useState<number>(5);
   const [title, setTitle] = useState('');
+  const [showTitleInput, setShowTitleInput] = useState(false);
   const [body, setBody] = useState('');
-  const [prompt, setPrompt] = useState<{ id: string; question: string } | null>(
-    null
-  );
-  const [promptAnswer, setPromptAnswer] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,17 +48,10 @@ export default function JournalModal({ open, onClose }: Props) {
   const fullScreen = useMediaQuery(muiTheme.breakpoints.down('sm'));
 
   const currentDate = moment().format('D MMMM YY, dddd h:mm A');
-
-  // 🧠 Example prompt (in real case, fetch randomly from Firestore)
-  useEffect(() => {
-    setPrompt({
-      id: 'demo',
-      question: 'What’s one thing you’re grateful for today?',
-    });
-  }, []);
+  const defaultTitle = moment().format('dddd, DD MMMM YYYY'); // e.g., Monday, 11 August 2025
 
   const handleSave = async () => {
-    if (!title.trim()) return;
+    const finalTitle = title.trim() || defaultTitle;
 
     setLoading(true);
     const journal = {
@@ -66,18 +59,8 @@ export default function JournalModal({ open, onClose }: Props) {
       authorName: user?.firstName || '',
       createdAt: serverTimestamp(),
       mood: mood ? { type: mood, level: moodLevel } : null,
-      title: title.trim(),
+      title: finalTitle,
       content: body.trim(),
-      promptAnswers:
-        prompt && promptAnswer.trim()
-          ? [
-              {
-                promptId: prompt.id,
-                question: prompt.question,
-                answer: promptAnswer.trim(),
-              },
-            ]
-          : [],
       tags,
       privacy: 'private',
     };
@@ -104,7 +87,7 @@ export default function JournalModal({ open, onClose }: Props) {
       onClose={onClose}
       maxWidth="md"
       fullWidth
-      fullScreen={fullScreen} // 👈 makes it full on small screens
+      fullScreen={fullScreen}
     >
       <DialogTitle>📔 Today&#39;s Reflection</DialogTitle>
       <DialogContent
@@ -133,13 +116,27 @@ export default function JournalModal({ open, onClose }: Props) {
             </Box>
           )}
 
-          <TextField
-            label="Title of the Day or Activity"
-            fullWidth
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
+          {/* Collapsible Title */}
+          {!showTitleInput ? (
+            <Button
+              variant="outlined"
+              onClick={() => setShowTitleInput(true)}
+              startIcon={<AddIcon />}
+            >
+              Add Title +
+            </Button>
+          ) : (
+            <Collapse in={showTitleInput}>
+              <TextField
+                label="Title of the Day or Activity"
+                fullWidth
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </Collapse>
+          )}
 
+          {/* Body */}
           <TextField
             label="What happened today?"
             fullWidth
@@ -148,24 +145,6 @@ export default function JournalModal({ open, onClose }: Props) {
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
-
-          {/* Optional Prompt */}
-          {prompt && (
-            <Box>
-              <Button onClick={() => setPromptAnswer('')}>
-                🧠 {prompt.question}
-              </Button>
-              {promptAnswer !== undefined && (
-                <TextField
-                  fullWidth
-                  multiline
-                  label="Your thoughts..."
-                  value={promptAnswer}
-                  onChange={(e) => setPromptAnswer(e.target.value)}
-                />
-              )}
-            </Box>
-          )}
 
           {/* Tags */}
           <Stack direction="row" spacing={1} alignItems="center">
@@ -194,9 +173,27 @@ export default function JournalModal({ open, onClose }: Props) {
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSave} disabled={loading}>
-          {loading ? 'Saving...' : 'Save'}
+        <Button onClick={onClose} color="inherit">
+          Cancel
+        </Button>
+        <Button
+          variant="contained"
+          onClick={handleSave}
+          disabled={loading}
+          startIcon={<SaveIcon />}
+          sx={{
+            borderRadius: '30px',
+            textTransform: 'none',
+            px: 3,
+            py: 1,
+            fontWeight: 'bold',
+            background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+            ':hover': {
+              background: 'linear-gradient(90deg, #4f46e5, #7c3aed)',
+            },
+          }}
+        >
+          {loading ? 'Saving...' : 'Save Entry'}
         </Button>
       </DialogActions>
     </Dialog>

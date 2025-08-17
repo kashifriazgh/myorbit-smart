@@ -25,26 +25,18 @@ import {
   KeyboardArrowRight,
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import moment from 'moment';
-import {
-  collection,
-  getDocs,
-  updateDoc,
-  doc,
-  Timestamp,
-} from 'firebase/firestore';
+import { updateDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
-import { useAuth } from '@/app/lib/context/userContext';
+import { useTodoContext } from '@/app/lib/context/todoContext';
 import { Todo } from '@/app/lib/interface';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
 const ImportantTasks = () => {
   const theme = useTheme();
-  const { user } = useAuth();
-  const [tasks, setTasks] = useState<Todo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { todos, loading, updateStepStatus } = useTodoContext();
   const [activeStep, setActiveStep] = useState(0);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleTask, setRescheduleTask] = useState<Todo | null>(null);
@@ -60,107 +52,53 @@ const ImportantTasks = () => {
     routine: 'text-green-600',
   };
 
-  const fetchTasks = async () => {
-    if (!user) return;
-    setLoading(true);
-
-    try {
-      const snap = await getDocs(collection(db, 'todos'));
-
+  // Filter and sort todos for display
+  const filteredTasks = todos
+    .filter((t) => {
+      const due = moment(t.dueDate);
       const today = moment().startOf('day');
       const rangeEnd = moment().add(2, 'days').endOf('day');
-
-      const rawTodos = snap.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          ...(data as Todo),
-          id: doc.id,
-          dueDate:
-            data.dueDate instanceof Timestamp
-              ? data.dueDate.toDate()
-              : new Date(data.dueDate),
-        };
-      }) as Todo[];
-
-      const filtered = rawTodos
-        .filter((t) => {
-          const due = moment(t.dueDate);
-          return (
-            t.authorId === user.uid &&
-            t.status !== 'completed' &&
-            due.isBetween(today, rangeEnd, 'day', '[]')
-          );
-        })
-        .sort((a, b) => {
-          const dueA = moment(a.dueDate);
-          const dueB = moment(b.dueDate);
-          return (
-            PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
-            dueA.diff(dueB)
-          );
-        });
-
-      setTasks(filtered.slice(0, 6)); // ✅ sets full Todo[]
-    } catch (err) {
-      console.error('Error fetching tasks:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return (
+        t.status !== 'completed' && due.isBetween(today, rangeEnd, 'day', '[]')
+      );
+    })
+    .sort((a, b) => {
+      const dueA = moment(a.dueDate);
+      const dueB = moment(b.dueDate);
+      return (
+        PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+        dueA.diff(dueB)
+      );
+    });
 
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
-
     setCompletingId(task.id);
-
     try {
       await updateDoc(doc(db, 'todos', task.id), {
         status: 'completed',
-        progressPercent: 100,
-        completedAt: new Date(),
         updatedAt: new Date(),
       });
-
-      // Trigger fade out animation
       setFadeOutId(task.id);
       setTimeout(() => {
-        setTasks((prev) => {
-          const updated = prev.filter((t) => t.id !== task.id);
-          if (activeStep >= updated.length) {
-            setActiveStep(Math.max(updated.length - 1, 0));
-          }
-          return updated;
-        });
         setFadeOutId(null);
-      }, 400); // fade duration
+        setCompletingId(null);
+      }, 400);
     } catch (err) {
-      console.error('Failed to complete task:', err);
-    } finally {
+      console.error('Failed to mark as completed:', err);
       setCompletingId(null);
     }
   };
 
-  const updateTaskInState = (updatedTask: Todo) => {
-    setTasks((prev) =>
-      prev.map((task) => (task.id === updatedTask.id ? updatedTask : task))
-    );
-  };
-
   const toggleStepStatus = async (task: Todo, stepIndex: number) => {
-    if (!task.id || !task.steps) return;
-    const updatedSteps = [...task.steps];
-    updatedSteps[stepIndex].done = !updatedSteps[stepIndex].done;
-    const updatedTask = { ...task, steps: updatedSteps };
-    updateTaskInState(updatedTask);
+    if (!task.id) return;
 
-    try {
-      await updateDoc(doc(db, 'todos', task.id), {
-        steps: updatedSteps,
-        updatedAt: new Date(),
-      });
-    } catch (err) {
-      console.error('Failed to update steps:', err);
-    }
+    const currentStep = task.steps?.[stepIndex];
+    if (!currentStep) return;
+
+    const newStatus =
+      currentStep.status === 'completed' ? 'pending' : 'completed';
+    await updateStepStatus(task.id, stepIndex, newStatus);
   };
 
   const handleReschedule = (task: Todo) => {
@@ -183,17 +121,12 @@ const ImportantTasks = () => {
       });
       setRescheduleOpen(false);
       setRescheduleTask(null);
-      fetchTasks();
     } catch (err) {
       console.error('Failed to reschedule task:', err);
     } finally {
       setReschedulingLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchTasks();
-  }, [user]);
 
   if (loading) {
     return (
@@ -233,9 +166,9 @@ const ImportantTasks = () => {
     );
   }
 
-  if (tasks.length === 0) return null;
+  if (filteredTasks.length === 0) return null;
 
-  const currentTask = tasks[activeStep];
+  const currentTask = filteredTasks[activeStep];
   if (!currentTask) return null;
 
   return (
@@ -301,7 +234,7 @@ const ImportantTasks = () => {
                     size="small"
                     onClick={() => toggleStepStatus(currentTask, idx)}
                   >
-                    {step.done ? (
+                    {step.status === 'completed' ? (
                       <CheckCircle
                         className="text-green-500"
                         fontSize="small"
@@ -315,7 +248,11 @@ const ImportantTasks = () => {
                   </IconButton>
                   <Typography
                     variant="body2"
-                    className={step.done ? 'line-through text-gray-400' : ''}
+                    className={
+                      step.status === 'completed'
+                        ? 'line-through text-gray-400'
+                        : ''
+                    }
                   >
                     {step.text}
                   </Typography>
@@ -329,14 +266,14 @@ const ImportantTasks = () => {
       {/* Stepper Controls */}
       <MobileStepper
         variant="progress"
-        steps={tasks.length}
+        steps={filteredTasks.length}
         position="static"
         activeStep={activeStep}
         nextButton={
           <Button
             size="small"
             onClick={() => setActiveStep((prev) => prev + 1)}
-            disabled={activeStep === tasks.length - 1}
+            disabled={activeStep === filteredTasks.length - 1}
           >
             Next
             {theme.direction === 'rtl' ? (
