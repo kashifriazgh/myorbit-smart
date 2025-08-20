@@ -34,20 +34,25 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import {
   IncomeSource,
-  CashTransaction,
   TransactionSource,
+  Bank,
+  TotalCashSnapshot,
 } from '@/app/lib/interface';
 import { INCOME_CATEGORIES } from '@/app/lib/constant';
 import ChartViewByCategory from './ChartViewByCategories';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { useAuth } from '@/app/lib/context/userContext';
 
 export default function IncomeSourceComponent({ userId }: { userId: string }) {
   const { theme } = useCustomTheme();
+  const { user } = useAuth();
   const muiTheme = useTheme();
 
   const [sources, setSources] = useState<
@@ -84,6 +89,12 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
   ];
   const [incomeSourceForMainFund, setIncomeSourceForMainFund] =
     useState<TransactionSource>('in_hand');
+
+  // bank-specific state
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [selectedBank, setSelectedBank] = useState('');
+  const [newBankName, setNewBankName] = useState('');
+
   const [availableFunds, setAvailableFunds] = useState(0);
   const [sourceBalanceWarning, setSourceBalanceWarning] = useState(false);
 
@@ -99,43 +110,87 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
             id: d.id,
             createdAt: (data.createdAt as Timestamp)?.toDate() ?? new Date(),
             updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(),
-            expectedDate:
-              expected instanceof Timestamp
+            expectedDate: expected
+              ? expected instanceof Timestamp
                 ? expected.toDate()
-                : expected || undefined,
+                : expected
+              : undefined,
           };
         })
-        .filter((e) => e.userId === userId)
-        .sort(
-          (a, b) =>
-            (a.expectedDate?.getTime() ?? 0) - (b.expectedDate?.getTime() ?? 0)
-        );
+        .filter((d) => d.userId === userId);
       setSources(docs);
       setLoading(false);
     }
+
+    async function fetchBanks() {
+      if (!user) return;
+      const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
+      const snap = await getDocs(q);
+      const fetched: Bank[] = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<Bank, 'id'>),
+      }));
+      setBanks(fetched);
+    }
+
     fetchSources();
-  }, [userId]);
+    fetchBanks();
+  }, [userId, user]);
+
+  const handleAddBank = async () => {
+    if (!user || !newBankName.trim()) return;
+    const docRef = await addDoc(collection(db, 'banks'), {
+      userId: user.uid,
+      name: newBankName.trim(),
+      createdAt: Timestamp.now(),
+    });
+    const newBank: Bank = {
+      id: docRef.id,
+      userId: user.uid,
+      name: newBankName.trim(),
+      createdAt: Timestamp.now(),
+    };
+    setBanks((prev) => [...prev, newBank]);
+    setSelectedBank(newBank.id!);
+    setNewBankName('');
+  };
 
   // Filtered sources for display
-  const displayedSources = sources.filter(
-    (src) => !src.isReceived || src.type === 'recurring'
+  const displayedSources = sources
+    .filter((src) => {
+      if (src.type === 'recurring') return true; // always show recurring
+      if (src.type === 'one-time' && !src.isReceived) return true; // show unreceived one-time
+      return false;
+    })
+    .sort((a, b) => {
+      const dateA =
+        a.expectedDate instanceof Date ? a.expectedDate.getTime() : 0;
+      const dateB =
+        b.expectedDate instanceof Date ? b.expectedDate.getTime() : 0;
+      return dateA - dateB;
+    });
+
+  const totalAmount = displayedSources.reduce(
+    (sum, src) => sum + src.amount,
+    0
   );
 
-  // Total only for displayed items
-  const totalAmount = displayedSources.reduce((sum, e) => sum + e.amount, 0);
-
   const categoryChartData = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const item of displayedSources) {
-      const cat = item.category || 'Uncategorized';
-      map[cat] = (map[cat] || 0) + item.amount;
-    }
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
+    const categoryMap = new Map<string, number>();
+    displayedSources.forEach((src) => {
+      const cat = src.category || 'Uncategorized';
+      categoryMap.set(cat, (categoryMap.get(cat) || 0) + src.amount);
+    });
+    return Array.from(categoryMap.entries()).map(([name, value]) => ({
+      name,
+      value,
+    }));
   }, [displayedSources]);
 
   const onClickMark = async (src: IncomeSource) => {
     setSelectedIncome(src);
     setIncomeSourceForMainFund('in_hand');
+    setSelectedBank(''); // Reset bank selection
 
     try {
       const docRef = doc(db, 'totalCashSnapshots', userId);
@@ -168,51 +223,77 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
       });
 
       if (updateMainFund) {
-        // Add cash transaction
-        const txn: CashTransaction = {
+        // Get bank info if source is bank
+        let bankId: string | undefined;
+        let bankName: string | undefined;
+
+        if (incomeSourceForMainFund === 'bank' && selectedBank) {
+          const bank = banks.find((b) => b.id === selectedBank);
+          bankId = bank?.id;
+          bankName = bank?.name;
+
+          // Debug logging
+          console.log('Selected bank ID:', selectedBank);
+          console.log('Found bank object:', bank);
+          console.log('Bank name to use:', bankName);
+        }
+
+        // Save transaction to cashTransactions
+        await addDoc(collection(db, 'cashTransactions'), {
           userId,
           amount: src.amount,
           type: 'add',
           source: incomeSourceForMainFund,
           category: 'income',
-          note: `Income: ${src.title}`,
-          createdAt: new Date(),
-        };
-        await addDoc(collection(db, 'cashTransactions'), {
-          ...txn,
+          note: `Income received: ${src.title}`,
+          bankId: bankId || null,
+          BankName: bankName || null,
           createdAt: serverTimestamp(),
         });
 
-        // Update totalCashSnapshots
+        // Update totalCashSnapshot
         const docRef = doc(db, 'totalCashSnapshots', userId);
         const docSnap = await getDoc(docRef);
-        let updatedSources = {
-          in_hand: 0,
-          bank: 0,
-          easypaisa: 0,
-          jazzcash: 0,
-          other: 0,
-        };
-        let prevFreeze = 0;
-        let prevTotal = 0;
         if (docSnap.exists()) {
-          const data = docSnap.data();
-          updatedSources = { ...updatedSources, ...data.sources };
-          prevTotal = data.totalAmount || 0;
-          prevFreeze = data.freezeAmount || 0;
+          const data = docSnap.data() as TotalCashSnapshot;
+          const updatedSources = { ...data.sources };
+
+          if (incomeSourceForMainFund === 'bank' && bankName) {
+            console.log('Updating bank source:', bankName);
+            console.log('Current bank sources:', data.sources.bank);
+            console.log(
+              'Current amount for this bank:',
+              data.sources.bank[bankName] || 0
+            );
+            console.log('Adding amount:', src.amount);
+
+            updatedSources.bank[bankName] =
+              (updatedSources.bank[bankName] || 0) + src.amount;
+
+            console.log(
+              'New amount for this bank:',
+              updatedSources.bank[bankName]
+            );
+          } else if (incomeSourceForMainFund !== 'bank') {
+            updatedSources[incomeSourceForMainFund] =
+              (updatedSources[incomeSourceForMainFund] as number) + src.amount;
+          }
+
+          const updatedSnapshot: TotalCashSnapshot = {
+            ...data,
+            sources: updatedSources,
+            totalAmount: data.totalAmount + src.amount,
+            updatedAt: new Date(),
+          };
+
+          console.log('Final updated sources:', updatedSources);
+          console.log('Final updated snapshot:', updatedSnapshot);
+
+          await setDoc(docRef, {
+            ...updatedSnapshot,
+            updatedAt: serverTimestamp(),
+          });
         }
-        updatedSources[incomeSourceForMainFund] += src.amount;
-        const updatedSnapshot = {
-          userId,
-          sources: updatedSources,
-          freezeAmount: prevFreeze,
-          totalAmount: prevTotal + src.amount,
-          updatedAt: new Date(),
-        };
-        await setDoc(docRef, {
-          ...updatedSnapshot,
-          updatedAt: serverTimestamp(),
-        });
       }
 
       // Update local state with smooth hiding
@@ -447,22 +528,31 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
               onChange={async (e) => {
                 const mode = e.target.value as TransactionSource;
                 setIncomeSourceForMainFund(mode);
-                try {
-                  const docRef = doc(db, 'totalCashSnapshots', userId);
-                  const docSnap = await getDoc(docRef);
-                  if (docSnap.exists()) {
-                    const sources = docSnap.data()?.sources || {};
-                    const available = sources[mode] || 0;
-                    setAvailableFunds(available);
-                    setSourceBalanceWarning(available < 0);
-                  } else {
+                setSelectedBank(''); // Reset bank selection when source changes
+
+                // For non-bank sources, check available funds immediately
+                if (mode !== 'bank') {
+                  try {
+                    const docRef = doc(db, 'totalCashSnapshots', userId);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                      const data = docSnap.data() as TotalCashSnapshot;
+                      const available = data.sources[mode] || 0;
+                      setAvailableFunds(available);
+                      setSourceBalanceWarning(available < 0);
+                    } else {
+                      setAvailableFunds(0);
+                      setSourceBalanceWarning(true);
+                    }
+                  } catch (err) {
+                    console.error('Error getting balance:', err);
                     setAvailableFunds(0);
                     setSourceBalanceWarning(true);
                   }
-                } catch (err) {
-                  console.error('Error getting balance:', err);
+                } else {
+                  // For bank sources, wait for bank selection
                   setAvailableFunds(0);
-                  setSourceBalanceWarning(true);
+                  setSourceBalanceWarning(false);
                 }
               }}
               label="Source in Fund"
@@ -473,9 +563,80 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                 </MenuItem>
               ))}
             </Select>
+
+            {/* Extra bank select if source = bank */}
+            {incomeSourceForMainFund === 'bank' && (
+              <>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 1, mb: 1 }}
+                >
+                  Please select a bank to add the income to:
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Bank</InputLabel>
+                    <Select
+                      value={selectedBank}
+                      onChange={async (e) => {
+                        const bankId = e.target.value as string;
+                        setSelectedBank(bankId);
+
+                        // Update available funds when bank changes
+                        try {
+                          const docRef = doc(db, 'totalCashSnapshots', userId);
+                          const docSnap = await getDoc(docRef);
+                          if (docSnap.exists()) {
+                            const data = docSnap.data() as TotalCashSnapshot;
+                            const bank = banks.find((b) => b.id === bankId);
+                            const available =
+                              data.sources.bank[bank?.name || ''] || 0;
+                            setAvailableFunds(available);
+                            setSourceBalanceWarning(available < 0);
+                          }
+                        } catch (err) {
+                          console.error('Error getting balance:', err);
+                        }
+                      }}
+                      label="Bank"
+                    >
+                      {banks.map((bank) => (
+                        <MenuItem key={bank.id} value={bank.id}>
+                          {bank.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    label="New Bank"
+                    size="small"
+                    value={newBankName}
+                    onChange={(e) => setNewBankName(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleAddBank();
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleAddBank}
+                    disabled={!newBankName.trim()}
+                  >
+                    Add Bank
+                  </Button>
+                </Stack>
+              </>
+            )}
+
             <Typography mt={1} fontSize={14}>
-              Available in <strong>{incomeSourceForMainFund}</strong>: Rs{' '}
-              {availableFunds.toLocaleString()}
+              Available in <strong>{incomeSourceForMainFund}</strong>
+              {incomeSourceForMainFund === 'bank' &&
+                selectedBank &&
+                ` (${banks.find((b) => b.id === selectedBank)?.name})`}
+              : Rs {availableFunds.toLocaleString()}
             </Typography>
 
             {sourceBalanceWarning && (
@@ -492,7 +653,10 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
           <Button
             variant="contained"
             onClick={handleConfirmYes}
-            disabled={actionLoading}
+            disabled={
+              actionLoading ||
+              (incomeSourceForMainFund === 'bank' && !selectedBank)
+            }
           >
             {actionLoading ? <CircularProgress size={18} /> : 'Yes'}
           </Button>

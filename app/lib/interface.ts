@@ -609,3 +609,44 @@ export interface InitialOnBoarding {
   incomeType?: OnBoardingField<'monthly' | 'weekly' | 'irregular'>;
   startOfMonth?: OnBoardingField<number>; // Day of month: 1–31
 }
+
+export interface StreakProps {
+  id?: string; // Firestore doc ID
+  userId: string; // linked to auth user
+  title: string; // e.g. "Morning Walk"
+  description?: string; // optional details
+  category?: string; // Health, Study, Spiritual, etc.
+  habitType: 'daily' | 'weekly';
+  target?: string; // e.g. "30 mins" / "10 pages"
+  startDate: Timestamp;
+  reminderTime?: string; // e.g. "06:00" in 24h format
+  privacy: 'private' | 'public';
+
+  lastChecked?: Timestamp; // last time user marked it done
+  attendance: { date: string; day: string }[];
+  streaksCount: number;
+
+  reminder: {
+    time: string;
+  };
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+  currentProgress?: string;
+}
+
+// Time Table
+export interface TimeTableStep {
+  field1: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface TimeTableProps {
+  id?: string;
+  userId: string;
+  title: string;
+  description?: string;
+  steps: TimeTableStep[];
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}

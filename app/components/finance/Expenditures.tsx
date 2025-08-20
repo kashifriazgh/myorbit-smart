@@ -17,7 +17,10 @@ import {
   useTheme,
   CircularProgress,
   Stack,
+  Collapse,
+  LinearProgress,
 } from '@mui/material';
+import { ExpandLess, ExpandMore } from '@mui/icons-material';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -33,15 +36,19 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { Expenditure } from '@/app/lib/interface';
+import { Expenditure, Bank, TotalCashSnapshot } from '@/app/lib/interface';
 import { EXPENSE_CATEGORIES } from '@/app/lib/constant';
 import ExpenditureChart from './ChartViewByCategories';
+import { useAuth } from '@/app/lib/context/userContext';
 
 export default function ExpendituresComponent({ userId }: { userId: string }) {
   const { theme } = useCustomTheme();
+  const { user } = useAuth();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
 
@@ -58,8 +65,8 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
   const [isPaid, setIsPaid] = useState(false);
   const [category, setCategory] = useState('');
   const [notes, setNotes] = useState('');
-  const [dueDate, setDueDate] = useState<Date | null>(null);
-  // State additions
+  const [dueDate, setDueDate] = useState<Date | null>(new Date()); // default date set
+
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [updatingPaidId, setUpdatingPaidId] = useState<string | null>(null);
@@ -71,9 +78,18 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
   const [deductionSource, setDeductionSource] = useState<
     'in_hand' | 'bank' | 'easypaisa' | 'jazzcash' | 'other'
   >('in_hand');
+
+  // bank-specific state
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [selectedBank, setSelectedBank] = useState('');
+  const [newBankName, setNewBankName] = useState('');
+
   const [actionLoading, setActionLoading] = useState(false);
   const [availableFunds, setAvailableFunds] = useState(0);
   const [insufficientFunds, setInsufficientFunds] = useState(false);
+
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [amountUpdatingId, setAmountUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchExpenditures = async () => {
@@ -92,17 +108,36 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
           };
         })
         .filter((e) => e.userId === userId)
+        .filter((e) => {
+          // filtering rule
+          if (e.type === 'recurring') return true; // always show recurring
+          if (e.type === 'one-time' && !e.isPaid) return true; // show unpaid one-time
+          return false;
+        })
         .sort((a, b) => {
           const dateA = a.dueDate?.getTime() ?? 0;
           const dateB = b.dueDate?.getTime() ?? 0;
           return dateA - dateB;
-        }); // <-- Sort added here
+        });
 
       setExpenditures(docs);
       setLoading(false);
     };
+
+    const fetchBanks = async () => {
+      if (!user) return;
+      const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
+      const snap = await getDocs(q);
+      const fetched: Bank[] = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<Bank, 'id'>),
+      }));
+      setBanks(fetched);
+    };
+
     fetchExpenditures();
-  }, [userId]);
+    fetchBanks();
+  }, [userId, user]);
 
   const totalAmount = expenditures.reduce((sum, e) => sum + e.amount, 0);
 
@@ -110,12 +145,7 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
     'one-time': [],
     recurring: [],
   };
-
-  expenditures.forEach((e) => {
-    if (e.type === 'one-time' || e.type === 'recurring') {
-      groupedByType[e.type].push(e);
-    }
-  });
+  expenditures.forEach((e) => groupedByType[e.type].push(e));
 
   const handleSave = async () => {
     if (!title || !amount) return;
@@ -130,22 +160,16 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
       category,
       isPaid,
       notes,
-      dueDate: dueDate ?? undefined,
+      dueDate: dueDate ?? new Date(),
       createdAt: now,
       updatedAt: now,
     };
 
-    const docData = {
+    const ref = await addDoc(collection(db, 'expenditures'), {
       ...newExp,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    };
-
-    if (dueDate) {
-      docData.dueDate = dueDate;
-    }
-
-    const ref = await addDoc(collection(db, 'expenditures'), docData);
+    });
 
     setExpenditures((prev) => [...prev, { ...newExp, id: ref.id }]);
     setSaving(false);
@@ -157,7 +181,7 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
     setCategory('');
     setIsPaid(false);
     setNotes('');
-    setDueDate(null);
+    setDueDate(new Date());
   };
 
   const handleDelete = async () => {
@@ -168,113 +192,192 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
     setDeleting(false);
     setDeleteId(null);
   };
+
+  const handleAddBank = async () => {
+    if (!user || !newBankName.trim()) return;
+    const docRef = await addDoc(collection(db, 'banks'), {
+      userId: user.uid,
+      name: newBankName.trim(),
+      createdAt: Timestamp.now(),
+    });
+    const newBank: Bank = {
+      id: docRef.id,
+      userId: user.uid,
+      name: newBankName.trim(),
+      createdAt: Timestamp.now(),
+    };
+    setBanks((prev) => [...prev, newBank]);
+    setSelectedBank(newBank.id!);
+    setNewBankName('');
+  };
+
   const handleOpenConfirmDialog = async (exp: Expenditure) => {
     setSelectedExpenditure(exp);
-    setDeductionSource('in_hand'); // default
-    setUpdatingPaidId(exp.id);
+    setConfirmDialogOpen(true);
 
+    // Check available funds based on current deduction source
+    await checkAvailableFunds(exp.amount);
+  };
+
+  const checkAvailableFunds = async (amount: number) => {
     try {
       const docRef = doc(db, 'totalCashSnapshots', userId);
       const docSnap = await getDoc(docRef);
-
       if (docSnap.exists()) {
-        const sources = docSnap.data()?.sources || {};
-        const available = sources['in_hand'] || 0;
-        setAvailableFunds(available);
-        setInsufficientFunds(exp.amount > available);
-      } else {
-        setAvailableFunds(0);
-        setInsufficientFunds(true); // No snapshot = assume zero
-      }
-    } catch (error) {
-      console.error('Error fetching cash snapshot:', error);
-    }
+        const data = docSnap.data() as TotalCashSnapshot;
+        let available = 0;
 
-    setConfirmDialogOpen(true);
+        if (deductionSource === 'bank' && selectedBank) {
+          available = data.sources.bank[selectedBank] || 0;
+        } else if (deductionSource !== 'bank') {
+          available = data.sources[deductionSource] || 0;
+        }
+
+        setAvailableFunds(available);
+        setInsufficientFunds(amount > available);
+      }
+    } catch (err) {
+      console.error('Error getting balance:', err);
+      setAvailableFunds(0);
+      setInsufficientFunds(true);
+    }
   };
 
-  const handleConfirmPaid = async () => {
+  const handleConfirmPaid = async (updateFunds: boolean) => {
     if (!selectedExpenditure) return;
     setActionLoading(true);
+    setUpdatingPaidId(selectedExpenditure.id!);
     try {
-      const amount = selectedExpenditure.amount;
-      const mode = deductionSource;
-
-      // 1. Mark as Paid
-      await updateDoc(doc(db, 'expenditures', selectedExpenditure.id!), {
+      // Update expenditure status
+      const expRef = doc(db, 'expenditures', selectedExpenditure.id!);
+      await updateDoc(expRef, {
         isPaid: true,
         updatedAt: serverTimestamp(),
       });
 
-      // 2. Add cash transaction
-      await addDoc(collection(db, 'cashTransactions'), {
-        userId,
-        amount,
-        type: 'deduct',
-        source: mode,
-        category: 'expense',
-        note: `Expense: ${selectedExpenditure.title}`,
-        createdAt: serverTimestamp(),
-      });
+      if (updateFunds) {
+        // Get bank info if source is bank
+        let bankId: string | undefined;
+        let bankName: string | undefined;
 
-      // 3. Update totalCashSnapshots
-      const docRef = doc(db, 'totalCashSnapshots', userId);
-      const docSnap = await getDoc(docRef);
+        if (deductionSource === 'bank' && selectedBank) {
+          const bank = banks.find((b) => b.id === selectedBank);
+          bankId = bank?.id;
+          bankName = bank?.name;
 
-      let updatedSources = {
-        in_hand: 0,
-        bank: 0,
-        easypaisa: 0,
-        jazzcash: 0,
-        other: 0,
-      };
-      let prevFreeze = 0;
-      let prevTotal = 0;
+          // Debug logging
+          console.log('Selected bank ID:', selectedBank);
+          console.log('Found bank object:', bank);
+          console.log('Bank name to use:', bankName);
+        }
 
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        updatedSources = { ...updatedSources, ...data.sources };
-        prevTotal = data.totalAmount || 0;
-        prevFreeze = data.freezeAmount || 0;
+        // Save transaction to cashTransactions
+        await addDoc(collection(db, 'cashTransactions'), {
+          userId,
+          amount: selectedExpenditure.amount,
+          type: 'deduct',
+          source: deductionSource,
+          category: 'expenditure',
+          note: `Payment for: ${selectedExpenditure.title}`,
+          bankId: bankId || null,
+          BankName: bankName || null,
+          createdAt: serverTimestamp(),
+        });
+
+        // Update totalCashSnapshot
+        const docRef = doc(db, 'totalCashSnapshots', userId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data() as TotalCashSnapshot;
+          const updatedSources = { ...data.sources };
+
+          if (deductionSource === 'bank' && bankName) {
+            console.log('Updating bank source:', bankName);
+            console.log('Current bank sources:', data.sources.bank);
+            console.log(
+              'Current amount for this bank:',
+              data.sources.bank[bankName] || 0
+            );
+            console.log('Deducting amount:', selectedExpenditure.amount);
+
+            updatedSources.bank[bankName] =
+              (updatedSources.bank[bankName] || 0) - selectedExpenditure.amount;
+
+            console.log(
+              'New amount for this bank:',
+              updatedSources.bank[bankName]
+            );
+          } else if (deductionSource !== 'bank') {
+            updatedSources[deductionSource] =
+              (updatedSources[deductionSource] as number) -
+              selectedExpenditure.amount;
+          }
+
+          const updatedSnapshot: TotalCashSnapshot = {
+            ...data,
+            sources: updatedSources,
+            totalAmount: data.totalAmount - selectedExpenditure.amount,
+            updatedAt: new Date(),
+          };
+
+          console.log('Final updated sources:', updatedSources);
+          console.log('Final updated snapshot:', updatedSnapshot);
+
+          await setDoc(docRef, {
+            ...updatedSnapshot,
+            updatedAt: serverTimestamp(),
+          });
+        }
+        setUpdatingPaidId(null);
       }
 
-      updatedSources[mode] -= amount;
+      // Update local state with smooth hiding
+      if (selectedExpenditure.type === 'one-time') {
+        setExpenditures((prev) =>
+          prev.map((item) =>
+            item.id === selectedExpenditure.id
+              ? { ...item, isPaid: true }
+              : item
+          )
+        );
+        setTimeout(() => {
+          setExpenditures((prev) =>
+            prev.filter(
+              (item) =>
+                !(
+                  item.id === selectedExpenditure.id && item.type === 'one-time'
+                )
+            )
+          );
+        }, 300);
+      } else {
+        setExpenditures((prev) =>
+          prev.map((item) =>
+            item.id === selectedExpenditure.id
+              ? { ...item, isPaid: true }
+              : item
+          )
+        );
+      }
 
-      const updatedSnapshot = {
-        userId,
-        sources: updatedSources,
-        freezeAmount: prevFreeze,
-        totalAmount: prevTotal - amount,
-        updatedAt: new Date(),
-      };
-
-      await setDoc(docRef, {
-        ...updatedSnapshot,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Local state update
-      setExpenditures((prev) =>
-        prev.map((item) =>
-          item.id === selectedExpenditure.id ? { ...item, isPaid: true } : item
-        )
-      );
-    } catch (error) {
-      console.error('Error confirming payment:', error);
-    } finally {
-      setActionLoading(false);
       setConfirmDialogOpen(false);
       setSelectedExpenditure(null);
-      setUpdatingPaidId(null);
+      setDeductionSource('in_hand');
+      setSelectedBank('');
+      setInsufficientFunds(false);
+    } catch (error) {
+      console.error('Error updating expenditure:', error);
+      alert('Error updating expenditure. Please try again.');
+    } finally {
+      setActionLoading(false);
     }
   };
 
   const handleAmountUpdate = async (id: string, newAmount: number) => {
+    setAmountUpdatingId(id);
     const ref = doc(db, 'expenditures', id);
-    await updateDoc(ref, {
-      amount: newAmount,
-      updatedAt: serverTimestamp(),
-    });
+    await updateDoc(ref, { amount: newAmount, updatedAt: serverTimestamp() });
+    setAmountUpdatingId(null);
   };
 
   if (!theme || loading) {
@@ -288,12 +391,10 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
   const isDark = theme.mode === 'dark';
   const getCategoryWiseData = () => {
     const result: Record<string, number> = {};
-
     expenditures.forEach((exp) => {
       const cat = exp.category || 'Uncategorized';
       result[cat] = (result[cat] || 0) + exp.amount;
     });
-
     return Object.entries(result).map(([name, value]) => ({ name, value }));
   };
   const categoryWiseData = getCategoryWiseData();
@@ -310,23 +411,21 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
         bgcolor: isDark ? muiTheme.palette.background.paper : '#fff',
       }}
     >
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={2}
-      >
-        <Typography variant="h5" fontWeight="bold">
-          Expenditures
-        </Typography>
-        <Button variant="contained" onClick={() => setOpenModal(true)}>
-          + Add Expense
-        </Button>
-      </Box>
+      <Typography variant="h5" fontWeight="bold" mb={2}>
+        Expenditures
+      </Typography>
 
       <ExpenditureChart data={categoryWiseData} />
 
-      <Typography variant="body2" color="text.secondary" mb={2}>
+      <Button
+        variant="contained"
+        onClick={() => setOpenModal(true)}
+        sx={{ mt: 2 }}
+      >
+        + Add Expense
+      </Button>
+
+      <Typography variant="body2" color="text.secondary" mt={2} mb={2}>
         Total ({expenditures.length}) – Rs {totalAmount.toLocaleString()}
       </Typography>
 
@@ -338,7 +437,6 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                 ? 'One-Time Expenses'
                 : 'Recurring Expenses'}
             </Typography>
-
             {groupedByType[group].map((exp) => (
               <Box
                 key={exp.id}
@@ -357,59 +455,70 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                   spacing={1}
                 >
                   <Typography fontWeight="bold">{exp.title}</Typography>
-                  <TextField
-                    type="number"
-                    variant="standard"
-                    value={exp.amount}
-                    size="small"
-                    onChange={(e) => {
-                      const newAmount = Number(e.target.value);
-                      setExpenditures((prev) =>
-                        prev.map((item) =>
-                          item.id === exp.id
-                            ? { ...item, amount: newAmount }
-                            : item
-                        )
-                      );
-                    }}
-                    onBlur={() =>
-                      exp.id && handleAmountUpdate(exp.id, exp.amount)
-                    }
-                    inputProps={{
-                      style: {
-                        maxWidth: 80,
-                        textAlign: 'right',
-                        fontWeight: 'bold',
-                        color: '#16a34a',
-                      },
-                    }}
-                  />
+                  <Box sx={{ minWidth: 100 }}>
+                    <TextField
+                      type="number"
+                      variant="standard"
+                      value={exp.amount}
+                      size="small"
+                      onChange={(e) => {
+                        const newAmount = Number(e.target.value);
+                        setExpenditures((prev) =>
+                          prev.map((item) =>
+                            item.id === exp.id
+                              ? { ...item, amount: newAmount }
+                              : item
+                          )
+                        );
+                      }}
+                      onBlur={() =>
+                        exp.id && handleAmountUpdate(exp.id, exp.amount)
+                      }
+                      inputProps={{
+                        style: {
+                          maxWidth: 80,
+                          textAlign: 'right',
+                          fontWeight: 'bold',
+                          color: '#16a34a',
+                        },
+                      }}
+                    />
+                    {amountUpdatingId === exp.id && (
+                      <LinearProgress sx={{ mt: 0.5 }} />
+                    )}
+                  </Box>
                 </Stack>
-
                 <Typography variant="body2" mt={0.5}>
                   {exp.category && `Category: ${exp.category}`} ·{' '}
                   {exp.frequency}
                 </Typography>
-
                 {exp.dueDate && (
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="error" fontWeight="bold">
                     Due Date:{' '}
                     {exp.dueDate instanceof Date
                       ? exp.dueDate.toLocaleDateString()
                       : ''}
                   </Typography>
                 )}
-
                 <Typography variant="body2" mt={0.5}>
                   {exp.isPaid ? '✅ Paid' : '❌ Not Paid'}
                 </Typography>
-
                 {exp.notes && (
-                  <Typography variant="body2" mt={1} color="text.secondary">
-                    📝 {exp.notes}
-                  </Typography>
+                  <>
+                    <Button
+                      size="small"
+                      onClick={() => setNotesOpen(!notesOpen)}
+                      startIcon={notesOpen ? <ExpandLess /> : <ExpandMore />}
+                    >
+                      Notes
+                    </Button>
+                    <Collapse in={notesOpen}>
+                      <Typography variant="body2" mt={1} color="text.secondary">
+                        📝 {exp.notes}
+                      </Typography>
+                    </Collapse>
+                  </>
                 )}
-
                 <Button
                   variant="outlined"
                   size="small"
@@ -419,7 +528,6 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                 >
                   Delete
                 </Button>
-
                 {!exp.isPaid && (
                   <Button
                     variant="outlined"
@@ -436,123 +544,160 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                     )}
                   </Button>
                 )}
-
-                <Dialog open={!!deleteId} onClose={() => setDeleteId(null)}>
-                  <DialogTitle>Confirm Deletion</DialogTitle>
-                  <DialogContent>
-                    <Typography>
-                      Are you sure you want to delete this item?
-                    </Typography>
-                  </DialogContent>
-                  <DialogActions>
-                    <Button onClick={() => setDeleteId(null)}>Cancel</Button>
-                    <Button
-                      onClick={handleDelete}
-                      color="error"
-                      disabled={deleting}
-                      variant="contained"
-                    >
-                      {deleting ? <CircularProgress size={20} /> : 'Delete'}
-                    </Button>
-                  </DialogActions>
-                </Dialog>
-
-                {/* confirmation of mark as paid */}
-                <Dialog
-                  open={confirmDialogOpen}
-                  onClose={() => setConfirmDialogOpen(false)}
-                >
-                  <DialogTitle>Deduct from Fund</DialogTitle>
-                  <DialogContent>
-                    <Typography>
-                      Do you want to deduct Rs{' '}
-                      <strong>{selectedExpenditure?.amount}</strong> from your
-                      main fund for <em>{selectedExpenditure?.title}</em>?
-                    </Typography>
-                    <FormControl fullWidth sx={{ mt: 2 }} size="small">
-                      <InputLabel>Deduct From</InputLabel>
-                      <Select
-                        value={deductionSource}
-                        onChange={async (e) => {
-                          const mode = e.target.value as typeof deductionSource;
-                          setDeductionSource(mode);
-
-                          // Re-check funds
-                          try {
-                            const docRef = doc(
-                              db,
-                              'totalCashSnapshots',
-                              userId
-                            );
-                            const docSnap = await getDoc(docRef);
-                            if (docSnap.exists()) {
-                              const sources = docSnap.data()?.sources || {};
-                              const available = sources[mode] || 0;
-                              setAvailableFunds(available);
-                              setInsufficientFunds(
-                                (selectedExpenditure?.amount || 0) > available
-                              );
-                            } else {
-                              setAvailableFunds(0);
-                              setInsufficientFunds(true);
-                            }
-                          } catch (error) {
-                            console.error('Error checking funds:', error);
-                          }
-                        }}
-                        label="Deduct From"
-                      >
-                        {[
-                          'in_hand',
-                          'bank',
-                          'easypaisa',
-                          'jazzcash',
-                          'other',
-                        ].map((mode) => (
-                          <MenuItem key={mode} value={mode}>
-                            {mode}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {insufficientFunds && (
-                        <Typography
-                          mt={1}
-                          color="error"
-                          fontWeight="bold"
-                          fontSize={14}
-                        >
-                          ⚠️ Insufficient funds in{' '}
-                          {deductionSource.replace('_', ' ')} — Available: Rs{' '}
-                          {availableFunds.toLocaleString()}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  </DialogContent>
-                  <DialogActions>
-                    <Button onClick={() => setConfirmDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={handleConfirmPaid}
-                      disabled={actionLoading || insufficientFunds}
-                    >
-                      {actionLoading ? (
-                        <CircularProgress size={18} />
-                      ) : (
-                        'Confirm'
-                      )}
-                    </Button>
-                  </DialogActions>
-                </Dialog>
               </Box>
             ))}
           </Box>
         ) : null
       )}
 
-      {/* Modal */}
+      {/* Delete Confirmation */}
+      <Dialog open={!!deleteId} onClose={() => setDeleteId(null)}>
+        <DialogTitle>Confirm Deletion</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to delete this item?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteId(null)}>Cancel</Button>
+          <Button
+            onClick={handleDelete}
+            color="error"
+            disabled={deleting}
+            variant="contained"
+          >
+            {deleting ? <CircularProgress size={20} /> : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Mark as Paid Confirmation */}
+      <Dialog
+        open={confirmDialogOpen}
+        onClose={() => setConfirmDialogOpen(false)}
+      >
+        <DialogTitle>Deduct from Fund</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Do you want to deduct Rs{' '}
+            <strong>{selectedExpenditure?.amount}</strong> from your main fund
+            for <em>{selectedExpenditure?.title}</em>?
+          </Typography>
+          <FormControl fullWidth sx={{ mt: 2 }} size="small">
+            <InputLabel>Deduct From</InputLabel>
+            <Select
+              value={deductionSource}
+              onChange={async (e) => {
+                const source = e.target.value;
+                setDeductionSource(source);
+                setSelectedBank(''); // Reset bank selection when source changes
+
+                // Check available funds for the new source
+                if (selectedExpenditure) {
+                  await checkAvailableFunds(selectedExpenditure.amount);
+                }
+              }}
+              label="Deduct From"
+            >
+              {['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other'].map(
+                (mode) => (
+                  <MenuItem key={mode} value={mode}>
+                    {mode}
+                  </MenuItem>
+                )
+              )}
+            </Select>
+
+            {/* Extra bank select if source = bank */}
+            {deductionSource === 'bank' && (
+              <>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 1, mb: 1 }}
+                >
+                  Please select a bank to deduct from:
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Bank</InputLabel>
+                    <Select
+                      value={selectedBank}
+                      label="Bank"
+                      onChange={async (e) => {
+                        const bankId = e.target.value as string;
+                        setSelectedBank(bankId);
+
+                        // Check available funds when bank changes
+                        if (selectedExpenditure) {
+                          await checkAvailableFunds(selectedExpenditure.amount);
+                        }
+                      }}
+                    >
+                      {banks.map((bank) => (
+                        <MenuItem key={bank.id} value={bank.id}>
+                          {bank.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    label="New Bank"
+                    size="small"
+                    value={newBankName}
+                    onChange={(e) => setNewBankName(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleAddBank();
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleAddBank}
+                    disabled={!newBankName.trim() || actionLoading}
+                  >
+                    Add Bank
+                  </Button>
+                </Stack>
+              </>
+            )}
+
+            {insufficientFunds && (
+              <Typography mt={1} color="error" fontWeight="bold" fontSize={14}>
+                ⚠️ Insufficient funds in {deductionSource.replace('_', ' ')}
+                {deductionSource === 'bank' &&
+                  selectedBank &&
+                  ` (${banks.find((b) => b.id === selectedBank)?.name})`}
+                — Available: Rs {availableFunds.toLocaleString()}
+              </Typography>
+            )}
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => handleConfirmPaid(false)}
+            color="warning"
+            disabled={actionLoading}
+          >
+            No
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => handleConfirmPaid(true)}
+            disabled={
+              actionLoading ||
+              insufficientFunds ||
+              (deductionSource === 'bank' && !selectedBank)
+            }
+          >
+            {actionLoading ? <CircularProgress size={18} /> : 'Confirm'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Expenditure Modal */}
       <Dialog
         open={openModal}
         onClose={() => setOpenModal(false)}
@@ -582,31 +727,33 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
             margin="normal"
           />
 
-          <FormControl fullWidth margin="normal" size="small">
-            <InputLabel>Type</InputLabel>
-            <Select
-              value={type}
-              label="Type"
-              onChange={(e) => setType(e.target.value)}
-            >
-              <MenuItem value="one-time">One-time</MenuItem>
-              <MenuItem value="recurring">Recurring</MenuItem>
-            </Select>
-          </FormControl>
-
-          <FormControl fullWidth margin="normal" size="small">
-            <InputLabel>Frequency</InputLabel>
-            <Select
-              value={frequency}
-              label="Frequency"
-              onChange={(e) => setFrequency(e.target.value)}
-            >
-              <MenuItem value="daily">Daily</MenuItem>
-              <MenuItem value="weekly">Weekly</MenuItem>
-              <MenuItem value="monthly">Monthly</MenuItem>
-              <MenuItem value="one_time">One Time</MenuItem>
-            </Select>
-          </FormControl>
+          <Stack direction="row" spacing={2} mt={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Type</InputLabel>
+              <Select
+                value={type}
+                label="Type"
+                onChange={(e) => setType(e.target.value)}
+              >
+                <MenuItem value="one-time">One-time</MenuItem>
+                <MenuItem value="recurring">Recurring</MenuItem>
+              </Select>
+            </FormControl>
+            {type === 'recurring' && (
+              <FormControl fullWidth size="small">
+                <InputLabel>Frequency</InputLabel>
+                <Select
+                  value={frequency}
+                  label="Frequency"
+                  onChange={(e) => setFrequency(e.target.value)}
+                >
+                  <MenuItem value="daily">Daily</MenuItem>
+                  <MenuItem value="weekly">Weekly</MenuItem>
+                  <MenuItem value="monthly">Monthly</MenuItem>
+                </Select>
+              </FormControl>
+            )}
+          </Stack>
 
           <FormControl fullWidth margin="normal" size="small">
             <InputLabel>Category</InputLabel>
@@ -624,48 +771,38 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
           </FormControl>
 
           <Box mt={2}>
-            <Typography variant="body2" fontWeight={500} mb={0.5}>
+            <Typography variant="body2" fontWeight={600} mb={0.5} color="error">
               Due Date
             </Typography>
             <DatePicker
               selected={dueDate}
               onChange={(date: Date | null) => setDueDate(date)}
-              className="MuiInputBase-input MuiOutlinedInput-input MuiInputBase-inputSizeSmall"
-              dateFormat="dd/MM/yyyy"
-              placeholderText="Select due date"
+              className="w-full border px-3 py-2 rounded-md text-sm"
             />
-          </Box>
-
-          <Box display="flex" alignItems="center" mt={2}>
-            <Checkbox
-              size="small"
-              checked={isPaid}
-              onChange={(e) => setIsPaid(e.target.checked)}
-            />
-            <Typography fontSize={14}>Has been paid</Typography>
           </Box>
 
           <TextField
             label="Notes"
-            size="small"
             fullWidth
+            size="small"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             margin="normal"
             multiline
-            rows={2}
+            rows={3}
           />
+          <Box display="flex" alignItems="center" mt={2}>
+            <Checkbox
+              checked={isPaid}
+              onChange={(e) => setIsPaid(e.target.checked)}
+            />
+            <Typography>Mark as Paid</Typography>
+          </Box>
         </DialogContent>
-
         <DialogActions>
           <Button onClick={() => setOpenModal(false)}>Cancel</Button>
-          <Button
-            onClick={handleSave}
-            variant="contained"
-            color="success"
-            disabled={saving || !title || amount === ''}
-          >
-            {saving ? <CircularProgress size={22} /> : 'Save'}
+          <Button onClick={handleSave} variant="contained" disabled={saving}>
+            {saving ? <CircularProgress size={18} /> : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -270,14 +270,11 @@ export default function TodoDetailPage() {
                   {step.description}
                 </Typography>
                 <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                  <Typography variant="body2" fontSize={12}>
-                    Status:
-                  </Typography>
                   <Select
                     size="small"
                     value={step.status}
                     onChange={(e) => updateStepStatusLocal(idx, e.target.value)}
-                    sx={{ minWidth: 100 }}
+                    sx={{ minWidth: 100, fontSize: '12px' }}
                   >
                     {STATUS_OPTIONS.map((status) => (
                       <MenuItem key={status.value} value={status.value}>
@@ -285,14 +282,15 @@ export default function TodoDetailPage() {
                       </MenuItem>
                     ))}
                   </Select>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontSize: '12px' }}
+                    onClick={() => setSubStepTargetIndex(idx)}
+                  >
+                    + Add Sub-step
+                  </Button>
                 </Stack>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => setSubStepTargetIndex(idx)}
-                >
-                  + Add Sub-step
-                </Button>
               </Box>
 
               {/* Sub-steps */}

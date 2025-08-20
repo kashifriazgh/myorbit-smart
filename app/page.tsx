@@ -10,13 +10,16 @@ import ExpectedIncome from './components/homepage/ExpectedIncomes';
 // import MostFocusedTime from './components/homepage/MostFocusedTime';
 import DashboardHome from './components/homepage/Opener';
 // import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingIntializer';
-
+import OnGoingStreaks from './components/homepage/OnGoingStreaks';
+import TimeTableNotifier from './components/homepage/TimeTableNotifier';
 export default function Homepage() {
   return (
     <div className="p-2 mx-auto flex-col flex max-w-2xl my-20 justify-center">
       {/* <OnBoardingInitializer /> */}
+      <TimeTableNotifier />
       <DashboardHome />
       <Mood />
+      <OnGoingStreaks />
       <ImportantTasks />
       <OverdueTasks />
       <ExpectedExpenses />

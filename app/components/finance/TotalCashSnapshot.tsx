@@ -125,9 +125,9 @@ export default function TotalCashSnapshotComponent({
 
     // ✅ Only update sources if NOT freezed
     if (!isFreezed) {
-      if (source === 'bank' && bankId) {
-        updatedSources.bank[bankId] =
-          (updatedSources.bank[bankId] ?? 0) + amount;
+      if (source === 'bank' && bankName) {
+        updatedSources.bank[bankName] =
+          (updatedSources.bank[bankName] ?? 0) + amount;
       } else if (source !== 'bank') {
         updatedSources[source] = (updatedSources[source] ?? 0) + amount;
       }
@@ -188,14 +188,14 @@ export default function TotalCashSnapshotComponent({
       newTotal -= amount;
     } else {
       // ✅ Deduct from normal sources
-      if (source === 'bank' && bankId) {
-        const current = updatedSources.bank[bankId] ?? 0;
+      if (source === 'bank' && bankName) {
+        const current = updatedSources.bank[bankName] ?? 0;
         if (amount > current) {
           alert(`Not enough balance in Bank: ${bankName}`);
           setSaving(false);
           return;
         }
-        updatedSources.bank[bankId] = current - amount;
+        updatedSources.bank[bankName] = current - amount;
       } else if (source !== 'bank') {
         const current = (updatedSources[source] as number) ?? 0;
         if (amount > current) {
