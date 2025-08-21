@@ -11,6 +11,8 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import PriceCheckIcon from '@mui/icons-material/PriceCheck';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -147,6 +149,14 @@ export default function BottomNav() {
           <ListItemButton disabled={!user} component={Link} href="/ideas">
             <LightbulbIcon sx={{ mr: 1 }} />
             <ListItemText primary="Ideas" />
+          </ListItemButton>
+          <ListItemButton disabled={!user} component={Link} href="/time-table">
+            <EventAvailableIcon sx={{ mr: 1 }} />
+            <ListItemText primary="Time Table" />
+          </ListItemButton>
+          <ListItemButton disabled={!user} component={Link} href="/streaks">
+            <TimelineIcon sx={{ mr: 1 }} />
+            <ListItemText primary="Streaks" />
           </ListItemButton>
         </List>
       </Popover>
