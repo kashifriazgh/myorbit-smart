@@ -579,7 +579,8 @@ export interface initialOnBoarding {
   TopPriorities?: string[]; // e.g. learning, creativity, health
   shoppingHabits?: string; // e.g weekly , monthly, as needed
   incomeType?: string; // e.g. monthly, weekly
-  startOfMonth?: Date; // e.g. 01 or 05
+  startOfMonth?: number; // e.g. 01 or 05
+  startOfWeek?: number;
   preferredTheme?: 'light' | 'dark' | 'auto';
 }
 
@@ -608,6 +609,7 @@ export interface InitialOnBoarding {
   shoppingHabits?: OnBoardingField<'weekly' | 'monthly' | 'as-needed'>;
   incomeType?: OnBoardingField<'monthly' | 'weekly' | 'irregular'>;
   startOfMonth?: OnBoardingField<number>; // Day of month: 1–31
+  startOfWeek?: OnBoardingField<number>; // Day of week: 0 = Sunday, 1 = Monday, etc.
 }
 
 export interface StreakProps {

@@ -12,105 +12,138 @@ import {
   Stack,
   CircularProgress,
   useTheme as useMuiTheme,
+  InputAdornment,
 } from '@mui/material';
 import {
   CheckCircleOutline,
   KeyboardArrowLeft,
   KeyboardArrowRight,
 } from '@mui/icons-material';
-import { useState, useEffect, useMemo } from 'react';
-import {
-  collection,
-  onSnapshot,
-  updateDoc,
-  doc,
-  Timestamp,
-} from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { StreakProps } from '@/app/lib/interface';
+import { useStreaks } from '@/app/lib/context/StreaksContext';
+import { useAuth } from '@/app/lib/context/userContext';
 import moment from 'moment';
 import Link from 'next/link';
 
+// Debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 const OnGoingStreaks = () => {
   const theme = useMuiTheme();
-  const [streaks, setStreaks] = useState<StreakProps[]>([]);
+  const { streaks, markStreakDone, updateRemarks } = useStreaks();
+  const { user } = useAuth();
+
   const [activeStep, setActiveStep] = useState(0);
   const [progressModalOpen, setProgressModalOpen] = useState(false);
-  const [selectedStreak, setSelectedStreak] = useState<StreakProps | null>(
-    null
-  );
+  const [selectedStreakId, setSelectedStreakId] = useState<string | null>(null);
+
   const [currentProgress, setCurrentProgress] = useState('');
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
-  // Fetch streaks in real-time
-  useEffect(() => {
-    const streaksRef = collection(db, 'streaks');
-    const unsub = onSnapshot(streaksRef, (snap) => {
-      const allStreaks = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as StreakProps),
-      }));
-      setStreaks(allStreaks);
-    });
-    return () => unsub();
-  }, []);
+  const lastSavedRef = useRef<string>('');
 
-  // Filter streaks not yet done
+  // 🔑 filter for user-specific streaks
+  const userStreaks = useMemo(() => {
+    if (!user?.uid) return [];
+    return streaks.filter((s) => s.userId === user.uid);
+  }, [streaks, user?.uid]);
+
+  // streaks not yet done today
   const filteredStreaks = useMemo(() => {
-    return streaks.filter((s) => {
+    return userStreaks.filter((s) => {
       if (!s.attendance || s.attendance.length === 0) return true;
-
       const today = moment().startOf('day');
-      if (s.habitType === 'daily') {
-        return !s.attendance.some((a) => moment(a.date).isSame(today, 'day'));
-      } else if (s.habitType === 'weekly') {
-        const weekStart = moment().startOf('week');
-        const weekEnd = moment().endOf('week');
-        return !s.attendance.some((a) => {
-          const aDate = moment(a.date);
-          return aDate.isBetween(weekStart, weekEnd, undefined, '[]');
-        });
-      }
-      return true;
+      return !s.attendance.some((a) => moment(a.date).isSame(today, 'day'));
     });
-  }, [streaks]);
+  }, [userStreaks]);
+
+  // keep activeStep in range
+  useEffect(() => {
+    if (filteredStreaks.length === 0) {
+      if (activeStep !== 0) setActiveStep(0);
+      return;
+    }
+    if (activeStep >= filteredStreaks.length) {
+      setActiveStep(filteredStreaks.length - 1);
+    }
+  }, [filteredStreaks.length, activeStep]);
+
+  const debouncedProgress = useDebounce(currentProgress, 1000);
+
+  // auto-save remarks
+  useEffect(() => {
+    if (!progressModalOpen || !selectedStreakId || !dirty) return;
+    if (debouncedProgress === lastSavedRef.current) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setSaving(true);
+        await updateRemarks(
+          { id: selectedStreakId } as StreakProps,
+          debouncedProgress
+        );
+        if (!cancelled) {
+          lastSavedRef.current = debouncedProgress;
+        }
+      } catch (err) {
+        console.error('Failed to auto-save remarks:', err);
+      } finally {
+        if (!cancelled) setSaving(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedProgress, dirty, progressModalOpen, selectedStreakId]);
+
+  // if no user → render nothing
+  if (!user?.uid) return null;
+  // if no streaks → render nothing
+  if (filteredStreaks.length === 0) return null;
 
   const currentStreak = filteredStreaks[activeStep];
   if (!currentStreak) return null;
 
-  const timeFormatted = currentStreak.reminderTime
-    ? moment(currentStreak.reminderTime, 'HH:mm').format('hh:mm A')
+  const timeFormatted = currentStreak.reminder?.time
+    ? moment(currentStreak.reminder.time, 'HH:mm').format('hh:mm A')
     : null;
 
-  const isDoneToday = currentStreak.lastChecked
-    ? moment(currentStreak.lastChecked.toDate()).isSame(moment(), 'day')
-    : false;
-
-  const handleMarkDone = (streak: StreakProps) => {
-    setSelectedStreak(streak);
-    setCurrentProgress('');
+  const openMarkUpdate = (streak: StreakProps) => {
+    setSelectedStreakId(streak.id!);
+    const initial = streak.currentProgress ?? '';
+    setCurrentProgress(initial);
+    lastSavedRef.current = initial;
+    setDirty(false);
     setProgressModalOpen(true);
   };
 
-  const saveProgress = async () => {
-    if (!selectedStreak?.id) return;
+  const saveAndMarkDone = async () => {
+    if (!selectedStreakId) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'streaks', selectedStreak.id), {
-        currentProgress,
-        updatedAt: Timestamp.now(),
-        lastChecked: Timestamp.now(),
-      });
+      await markStreakDone(
+        { id: selectedStreakId } as StreakProps,
+        currentProgress
+      );
       setProgressModalOpen(false);
-      setSelectedStreak(null);
+      setSelectedStreakId(null);
     } catch (err) {
-      console.error('Failed to update streak:', err);
+      console.error('Failed to mark streak done:', err);
     } finally {
       setSaving(false);
     }
   };
-
-  if (filteredStreaks.length === 0) return null;
 
   return (
     <Box className="p-4 w-full max-w-4xl mx-auto">
@@ -124,7 +157,6 @@ const OnGoingStreaks = () => {
       </Box>
 
       <Box className="flex items-center relative">
-        {/* Left Arrow */}
         <IconButton
           size="small"
           onClick={() => setActiveStep((prev) => prev - 1)}
@@ -132,14 +164,9 @@ const OnGoingStreaks = () => {
           className="bg-white dark:bg-gray-800 shadow"
           sx={{ mr: 2 }}
         >
-          {theme.direction === 'rtl' ? (
-            <KeyboardArrowRight />
-          ) : (
-            <KeyboardArrowLeft />
-          )}
+          <KeyboardArrowLeft />
         </IconButton>
 
-        {/* Streak Card */}
         <Card className="flex-1 rounded-xl shadow-sm" sx={{ height: 160 }}>
           <CardContent className="flex flex-col justify-between h-full">
             <Typography
@@ -183,15 +210,13 @@ const OnGoingStreaks = () => {
               variant="outlined"
               size="small"
               startIcon={<CheckCircleOutline />}
-              onClick={() => handleMarkDone(currentStreak)}
-              disabled={isDoneToday}
+              onClick={() => openMarkUpdate(currentStreak)}
             >
-              {isDoneToday ? 'Done Today' : 'Mark as Done'}
+              Mark / Update
             </Button>
           </CardContent>
         </Card>
 
-        {/* Right Arrow */}
         <IconButton
           size="small"
           onClick={() => setActiveStep((prev) => prev + 1)}
@@ -199,15 +224,11 @@ const OnGoingStreaks = () => {
           className="bg-white dark:bg-gray-800 shadow"
           sx={{ ml: 2 }}
         >
-          {theme.direction === 'rtl' ? (
-            <KeyboardArrowLeft />
-          ) : (
-            <KeyboardArrowRight />
-          )}
+          <KeyboardArrowRight />
         </IconButton>
       </Box>
 
-      {/* Progress Modal */}
+      {/* Modal */}
       <Modal
         open={progressModalOpen}
         onClose={() => setProgressModalOpen(false)}
@@ -219,39 +240,54 @@ const OnGoingStreaks = () => {
               theme.palette.mode === 'dark' ? '#1e1e1e' : 'white',
             color: theme.palette.text.primary,
             borderRadius: 2,
-            width: 320,
+            width: 360,
             mx: 'auto',
             mt: '20%',
             boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
           }}
         >
-          <Typography fontWeight={600} mb={2}>
-            Update Progress
-          </Typography>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            mb={2}
+          >
+            <Typography fontWeight={600}>Update Progress</Typography>
+            {saving && <CircularProgress size={16} />}
+          </Stack>
+
           <TextField
             fullWidth
             size="small"
             value={currentProgress}
-            onChange={(e) => setCurrentProgress(e.target.value)}
-            placeholder="Write today’s progress (e.g. Surah Baqarah verse 20)"
-            sx={{
-              backgroundColor:
-                theme.palette.mode === 'dark' ? '#2a2a2a' : 'white',
-              color: theme.palette.text.primary,
+            onChange={(e) => {
+              setCurrentProgress(e.target.value);
+              setDirty(true);
             }}
+            placeholder="Remarks (optional)"
             inputProps={{ maxLength: 100 }}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  {saving ? <CircularProgress size={16} /> : null}
+                </InputAdornment>
+              ),
+            }}
           />
+
           <Stack direction="row" spacing={1} justifyContent="flex-end" mt={2}>
-            <Button onClick={() => setProgressModalOpen(false)}>Cancel</Button>
+            <Button onClick={() => setProgressModalOpen(false)}>
+              Save & Close
+            </Button>
             <Button
               variant="contained"
-              disabled={saving || !currentProgress}
-              onClick={saveProgress}
+              disabled={saving}
+              onClick={saveAndMarkDone}
             >
               {saving ? (
                 <CircularProgress size={18} sx={{ color: 'white' }} />
               ) : (
-                'Save'
+                'Mark as Done'
               )}
             </Button>
           </Stack>

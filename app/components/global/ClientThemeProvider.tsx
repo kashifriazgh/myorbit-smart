@@ -10,6 +10,8 @@ import {
   useCustomTheme,
 } from '@/app/lib/context/themeContext';
 import { TodoProvider } from '../../lib/context/todoContext';
+import { StreaksProvider } from '../../lib/context/StreaksContext';
+import { OnboardingProvider } from '../../lib/context/onBoardingContext';
 
 export default function ClientThemeProvider({
   children,
@@ -18,13 +20,17 @@ export default function ClientThemeProvider({
 }) {
   return (
     <UserProvider>
-      <CustomThemeProvider>
-        <TodoProvider>
-          <CssBaseline />
-          <ThemeBodyEffect />
-          {children}
-        </TodoProvider>
-      </CustomThemeProvider>
+      <OnboardingProvider>
+        <CustomThemeProvider>
+          <TodoProvider>
+            <StreaksProvider>
+              <CssBaseline />
+              <ThemeBodyEffect />
+              {children}
+            </StreaksProvider>
+          </TodoProvider>
+        </CustomThemeProvider>
+      </OnboardingProvider>
     </UserProvider>
   );
 }

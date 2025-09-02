@@ -1,5 +1,6 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -7,80 +8,56 @@ import {
   CircularProgress,
   Typography,
   Button,
+  TextField,
 } from '@mui/material';
 import Stepper from '@mui/material/Stepper';
 import Step from '@mui/material/Step';
 import StepLabel from '@mui/material/StepLabel';
-import {
-  collection,
-  doc,
-  onSnapshot,
-  updateDoc,
-  Timestamp,
-} from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
-import { StreakProps } from '@/app/lib/interface';
 import moment from 'moment-timezone';
+import { StreakProps } from '@/app/lib/interface';
+import { useStreaks } from '@/app/lib/context/StreaksContext';
 import ProgressModal from './StreakMarkDone';
 import DeleteStreak from './StreakDelete';
 
-export default function StreaksList() {
-  const [streaks, setStreaks] = useState<StreakProps[]>([]);
-  const [loading, setLoading] = useState(true);
+// ✅ simple debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debounced;
+}
 
-  // For modal state
+export default function StreaksList() {
+  const { streaks, loading, markStreakDone, updateRemarks } = useStreaks();
   const [selectedStreak, setSelectedStreak] = useState<StreakProps | null>(
     null
   );
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    const streaksRef = collection(db, 'streaks');
+  // Local remarks state per streak
+  const [remarksMap, setRemarksMap] = useState<{ [id: string]: string }>({});
 
-    const unsub = onSnapshot(streaksRef, (snap) => {
-      const allStreaks = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as StreakProps),
-      }));
-
-      setStreaks(allStreaks);
-      setLoading(false);
-    });
-
-    return () => unsub();
-  }, []);
-
+  // Handle saving streak done
   const handleSaveProgress = async (progress: string) => {
-    if (!selectedStreak?.id) return;
-
-    const today = moment().format('YYYY-MM-DD');
-    const dayName = moment().format('dddd');
-
-    const alreadyDone = selectedStreak.attendance?.some(
-      (a) => a.date === today
-    );
-    if (alreadyDone) {
-      setModalOpen(false);
-      return;
-    }
-
-    const updatedAttendance = [
-      ...(selectedStreak.attendance || []),
-      { date: today, day: dayName, progress },
-    ];
-
-    const streakRef = doc(db, 'streaks', selectedStreak.id);
-    await updateDoc(streakRef, {
-      lastChecked: Timestamp.now(),
-      attendance: updatedAttendance,
-      streaksCount: (selectedStreak.streaksCount || 0) + 1,
-      updatedAt: Timestamp.now(),
-      currentProgress: progress,
-    });
-
+    if (!selectedStreak) return;
+    await markStreakDone(selectedStreak, progress);
     setModalOpen(false);
     setSelectedStreak(null);
   };
+
+  // ✅ Debounced remarks updater
+  const debouncedRemarks = useDebounce(remarksMap, 1000);
+
+  useEffect(() => {
+    Object.entries(debouncedRemarks).forEach(([id, text]) => {
+      const streak = streaks.find((s) => s.id === id);
+      if (streak && streak.currentProgress !== text) {
+        updateRemarks(streak, text); // 🔥 update only if changed
+      }
+    });
+  }, [debouncedRemarks, streaks, updateRemarks]);
 
   if (loading) {
     return (
@@ -125,10 +102,10 @@ export default function StreaksList() {
               borderRadius: 2,
               boxShadow: 2,
               bgcolor: 'background.paper',
-              '&:hover .delete-btn': { opacity: 1 }, // show delete only on hover
+              '&:hover .delete-btn': { opacity: 1 },
             }}
           >
-            {/* Delete Button (top-right, hidden until hover) */}
+            {/* Delete Button */}
             <Box
               className="delete-btn"
               sx={{
@@ -143,17 +120,14 @@ export default function StreaksList() {
             </Box>
 
             <CardContent>
-              {/* Title */}
               <Typography variant="h6">{streak.title}</Typography>
 
-              {/* Description */}
               {streak.description && (
                 <Typography variant="body2" color="text.secondary">
                   {streak.description}
                 </Typography>
               )}
 
-              {/* Habit Type + Time + Streak Count */}
               <Typography
                 variant="body2"
                 mt={1}
@@ -197,7 +171,7 @@ export default function StreaksList() {
                 </Stepper>
               </Box>
 
-              {/* Mark Done + Current Progress */}
+              {/* Mark Done + Remarks */}
               <Box
                 mt={2}
                 display="flex"
@@ -217,23 +191,27 @@ export default function StreaksList() {
                   {alreadyDoneToday ? 'Done Today ✅' : 'Mark as Done'}
                 </Button>
 
-                {/* Show current progress if available */}
-                {streak.currentProgress && (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ fontStyle: 'italic' }}
-                  >
-                    {streak.currentProgress}
-                  </Typography>
-                )}
+                {/* Remarks input (auto-save) */}
+                <TextField
+                  size="small"
+                  placeholder="Write your remarks..."
+                  value={remarksMap[streak.id!] ?? streak.currentProgress ?? ''}
+                  onChange={(e) =>
+                    setRemarksMap((prev) => ({
+                      ...prev,
+                      [streak.id!]: e.target.value,
+                    }))
+                  }
+                  fullWidth
+                  multiline
+                  variant="outlined"
+                />
               </Box>
             </CardContent>
           </Card>
         );
       })}
 
-      {/* ✅ Dynamic Progress Modal */}
       {selectedStreak && (
         <ProgressModal
           open={modalOpen}

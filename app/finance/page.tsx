@@ -11,6 +11,7 @@ import {
   useTheme,
   CircularProgress,
 } from '@mui/material';
+import FinancialCheckPoints from '../components/finance/FinancialCheckPoints';
 import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
 import TotalCashSnapshotComponent from '../components/finance/TotalCashSnapshot';
 import { useAuth } from '../lib/context/userContext';
@@ -157,9 +158,8 @@ export default function Finance() {
     <Container maxWidth="md" sx={{ py: 4 }}>
       <TotalCashSnapshotComponent userId={user.uid} />
       <CashFlowChart />
-      <Link href="/finance">Finance</Link> |<Link href="/ideas">Ideas</Link> |
-      <Link href="/to-do">To Dos</Link> |<Link href="/journals">Journals</Link>{' '}
-      |
+      <FinancialCheckPoints />
+
       <Box mt={4}>
         <Typography variant="h6" fontWeight="bold" mb={2}>
           Budget Sections

@@ -39,8 +39,8 @@ export default function StartDaySelector() {
   const { user } = useAuth();
   const theme = useTheme();
 
-  const [startDayOfWeek, setStartDayOfWeek] = useState<string | null>(null);
-  const [startDayOfMonth, setStartDayOfMonth] = useState<string | null>(null);
+  const [startOfWeek, setStartOfWeek] = useState<string | null>(null);
+  const [startOfMonth, setStartOfMonth] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -51,12 +51,8 @@ export default function StartDaySelector() {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data();
-          setStartDayOfWeek(
-            data?.initialOnBoarding?.startDayOfWeek?.value ?? null
-          );
-          setStartDayOfMonth(
-            data?.initialOnBoarding?.startDayOfMonth?.value ?? null
-          );
+          setStartOfWeek(data?.initialOnBoarding?.startOfWeek?.value ?? null);
+          setStartOfMonth(data?.initialOnBoarding?.startOfMonth?.value ?? null);
         }
       } catch (error) {
         console.error('Failed to fetch start days:', error);
@@ -68,7 +64,7 @@ export default function StartDaySelector() {
   }, [user]);
 
   const updateField = async (
-    field: 'startDayOfWeek' | 'startDayOfMonth',
+    field: 'startOfWeek' | 'startOfMonth',
     value: string
   ) => {
     if (!user?.uid) return;
@@ -97,10 +93,10 @@ export default function StartDaySelector() {
         await updateDoc(ref, newField);
       }
 
-      if (field === 'startDayOfWeek') {
-        setStartDayOfWeek(value);
+      if (field === 'startOfWeek') {
+        setStartOfWeek(value);
       } else {
-        setStartDayOfMonth(value);
+        setStartOfMonth(value);
       }
     } catch (err) {
       console.error(`Failed to update ${field}:`, err);
@@ -135,9 +131,9 @@ export default function StartDaySelector() {
                 >
                   <Button
                     size="small"
-                    variant={startDayOfWeek === day ? 'contained' : 'outlined'}
-                    color={startDayOfWeek === day ? 'primary' : 'inherit'}
-                    onClick={() => updateField('startDayOfWeek', day)}
+                    variant={startOfWeek === day ? 'contained' : 'outlined'}
+                    color={startOfWeek === day ? 'primary' : 'inherit'}
+                    onClick={() => updateField('startOfWeek', day)}
                     sx={{
                       px: 2,
                       py: 1,
@@ -145,7 +141,7 @@ export default function StartDaySelector() {
                       borderRadius: 4,
                       textTransform: 'capitalize',
                       boxShadow:
-                        startDayOfWeek === day ? theme.shadows[2] : 'none',
+                        startOfWeek === day ? theme.shadows[2] : 'none',
                       minWidth: 80,
                     }}
                   >
@@ -176,7 +172,7 @@ export default function StartDaySelector() {
                   variants={fadeIn}
                 >
                   <Box
-                    onClick={() => updateField('startDayOfMonth', day)}
+                    onClick={() => updateField('startOfMonth', day)}
                     sx={{
                       cursor: 'pointer',
                       px: 2,
@@ -185,27 +181,27 @@ export default function StartDaySelector() {
                       minWidth: 45,
                       textAlign: 'center',
                       fontSize: '0.9rem',
-                      fontWeight: startDayOfMonth === day ? 600 : 400,
+                      fontWeight: startOfMonth === day ? 600 : 400,
                       border: `2px solid ${
-                        startDayOfMonth === day
+                        startOfMonth === day
                           ? theme.palette.primary.main
                           : theme.palette.divider
                       }`,
                       backgroundColor:
-                        startDayOfMonth === day
+                        startOfMonth === day
                           ? theme.palette.primary.light
                           : theme.palette.background.paper,
                       color:
-                        startDayOfMonth === day
+                        startOfMonth === day
                           ? theme.palette.primary.contrastText
                           : theme.palette.text.primary,
                       boxShadow:
-                        startDayOfMonth === day ? theme.shadows[4] : 'none',
+                        startOfMonth === day ? theme.shadows[4] : 'none',
                       transition: 'all 0.3s',
                       '&:hover': {
                         boxShadow: theme.shadows[2],
                         backgroundColor:
-                          startDayOfMonth === day
+                          startOfMonth === day
                             ? theme.palette.primary.light
                             : theme.palette.action.hover,
                       },

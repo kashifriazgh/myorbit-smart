@@ -40,9 +40,14 @@ export function OnboardingProvider({
 
       if (snap.exists()) {
         const data = snap.data();
+        console.log('🔍 Raw Firestore data:', data);
+        console.log('🔍 initialOnBoarding data:', data.initialOnBoarding);
+
+        // Ensure we have the proper structure
+        const onboardingData = data.initialOnBoarding || {};
         setOnboarding({
           userId: user.uid,
-          ...data.initialOnBoarding,
+          ...onboardingData,
         });
       } else {
         console.warn('⚠️ No onboarding document found for this user');
@@ -56,6 +61,7 @@ export function OnboardingProvider({
   };
 
   useEffect(() => {
+    console.log('🔍 useEffect triggered with user.uid:', user?.uid);
     fetchOnboarding();
   }, [user?.uid]);
 
