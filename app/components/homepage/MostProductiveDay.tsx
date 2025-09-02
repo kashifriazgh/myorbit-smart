@@ -329,13 +329,7 @@ export default function MostProductiveDay() {
   }
 
   if (!data) {
-    return (
-      <Box sx={{ p: 2 }}>
-        <Typography variant="body2" color="text.secondary">
-          No activity found for the selected week range.
-        </Typography>
-      </Box>
-    );
+    return null;
   }
 
   // ---------- final render ----------

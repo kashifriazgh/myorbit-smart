@@ -14,7 +14,7 @@ import OnGoingStreaks from './components/homepage/OnGoingStreaks';
 import TimeTableNotifier from './components/homepage/TimeTableNotifier';
 export default function Homepage() {
   return (
-    <div className="p-2 mx-auto flex-col flex max-w-2xl my-20 justify-center">
+    <div className="p-2 mx-auto flex-col flex max-w-2xl my-10 justify-center">
       {/* <OnBoardingInitializer /> */}
       <TimeTableNotifier />
       <DashboardHome />

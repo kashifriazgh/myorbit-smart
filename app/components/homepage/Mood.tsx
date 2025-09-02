@@ -56,7 +56,9 @@ export default function Mood() {
       const timeout = setTimeout(() => {
         setAllowedToShow(true);
       }, remaining);
-      return () => clearTimeout(timeout);
+      return () => {
+        clearTimeout(timeout);
+      };
     }
   }, []);
 
@@ -117,7 +119,7 @@ export default function Mood() {
             {/* Header (same width/structure as OverdueTasks header) */}
             <Box className="flex justify-between items-start mb-2">
               <Typography
-                variant="h5"
+                variant="h6"
                 fontWeight="700"
                 className="cursor-default"
                 sx={{
@@ -127,7 +129,7 @@ export default function Mood() {
                       : theme.palette.primary.main,
                 }}
               >
-                How are you feeling this day?
+                How are you feeling today?
               </Typography>
 
               <Stack direction="row" spacing={1}>
@@ -147,6 +149,12 @@ export default function Mood() {
             <Box className="mt-1">
               <Collapse in={showMoodSelector} timeout={500} unmountOnExit>
                 <Box className="flex flex-col items-center">
+                  <Typography
+                    variant="body2"
+                    sx={{ color: theme.palette.text.secondary, mb: 1.5 }}
+                  >
+                    Pick an emoji, then set intensity.
+                  </Typography>
                   {/* Large emoji preview */}
                   {selectedMood && (
                     <Box className="mb-4 text-center">
@@ -171,27 +179,43 @@ export default function Mood() {
                     </Box>
                   )}
 
-                  {/* Emoji row (wraps like Overdue Task's tags) */}
-                  <Box className="flex flex-wrap gap-2 justify-center items-center mb-4">
-                    {moodOptions.map((mood) => (
-                      <Box
-                        key={mood}
-                        onClick={() => setSelectedMood(mood)}
-                        className={`rounded-full p-1 cursor-pointer transition ${
-                          selectedMood === mood
-                            ? 'bg-yellow-200 scale-110'
-                            : 'bg-transparent'
-                        }`}
-                        sx={{
-                          transform:
-                            selectedMood === mood ? 'scale(1.15)' : 'scale(1)',
-                          transition: 'all 0.15s ease-in-out',
-                        }}
-                      >
-                        <MoodEmoji mood={mood} size={30} />
-                      </Box>
-                    ))}
-                  </Box>
+                  {/* Segmented control for mood selection */}
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    justifyContent="center"
+                    flexWrap="wrap"
+                    sx={{ mb: 2 }}
+                  >
+                    {moodOptions.map((mood) => {
+                      const active = selectedMood === mood;
+                      return (
+                        <Button
+                          key={mood}
+                          onClick={() => setSelectedMood(mood)}
+                          size="small"
+                          variant={active ? 'contained' : 'outlined'}
+                          color={active ? 'primary' : 'inherit'}
+                          startIcon={<MoodEmoji mood={mood} size={20} />}
+                          aria-pressed={active}
+                          sx={{
+                            borderRadius: 999,
+                            textTransform: 'none',
+                            px: 1.25,
+                            py: 0.5,
+                            ...(active
+                              ? {}
+                              : {
+                                  borderColor: 'divider',
+                                  color: 'text.secondary',
+                                }),
+                          }}
+                        >
+                          {mood.replace('-', ' ')}
+                        </Button>
+                      );
+                    })}
+                  </Stack>
 
                   {/* Slider + Submit (keeps same max width behaviour as OverdueTasks inputs) */}
                   {selectedMood && (
@@ -218,6 +242,19 @@ export default function Mood() {
                           marks
                           step={1}
                           sx={{
+                            height: 8,
+                            '& .MuiSlider-track': { border: 'none' },
+                            '& .MuiSlider-rail': {
+                              opacity: 1,
+                              bgcolor: 'action.hover',
+                            },
+                            '& .MuiSlider-thumb': {
+                              width: 18,
+                              height: 18,
+                              '&:focus, &:hover, &.Mui-active': {
+                                boxShadow: '0 0 0 6px rgba(99,102,241,.16)',
+                              },
+                            },
                             color:
                               moodLevel <= 2
                                 ? theme.palette.error.main
@@ -244,7 +281,7 @@ export default function Mood() {
                           {loading ? (
                             <CircularProgress size={20} color="inherit" />
                           ) : (
-                            'Save Mood Entry'
+                            'Save'
                           )}
                         </Button>
                       </Box>

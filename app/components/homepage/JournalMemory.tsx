@@ -1,6 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { collection, getDocs, Timestamp } from 'firebase/firestore';
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  Timestamp,
+} from 'firebase/firestore';
 import moment from 'moment-timezone';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -68,8 +74,11 @@ export default function JournalMemory() {
       const expiry = now.clone().endOf('day').valueOf();
 
       try {
-        const cachedWeek = await dbDexie.memories.get('week');
-        const cachedMonth = await dbDexie.memories.get('month');
+        const userScopedWeekKey = `week:${user.uid}`;
+        const userScopedMonthKey = `month:${user.uid}`;
+
+        const cachedWeek = await dbDexie.memories.get(userScopedWeekKey);
+        const cachedMonth = await dbDexie.memories.get(userScopedMonthKey);
 
         if (
           cachedWeek?.data &&
@@ -83,10 +92,12 @@ export default function JournalMemory() {
           return;
         }
 
-        const snap = await getDocs(collection(db, 'journals'));
-        const allJournals = snap.docs
-          .map((doc) => ({ ...doc.data(), id: doc.id } as JournalEntry))
-          .filter((j) => j.authorId === user.uid);
+        const snap = await getDocs(
+          query(collection(db, 'journals'), where('authorId', '==', user.uid))
+        );
+        const allJournals = snap.docs.map(
+          (doc) => ({ ...doc.data(), id: doc.id } as JournalEntry)
+        );
 
         const matchJournal = (targetDate: moment.Moment) =>
           allJournals
@@ -171,7 +182,7 @@ ${toneInstructions}
           };
           setWeekMemory(weekData);
           await dbDexie.memories.put({
-            id: 'week',
+            id: userScopedWeekKey,
             data: weekData,
             expiresAt: expiry,
           });
@@ -192,7 +203,7 @@ ${toneInstructions}
           };
           setMonthMemory(monthData);
           await dbDexie.memories.put({
-            id: 'month',
+            id: userScopedMonthKey,
             data: monthData,
             expiresAt: expiry,
           });

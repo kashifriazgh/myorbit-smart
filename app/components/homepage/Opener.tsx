@@ -7,6 +7,7 @@ import {
   CircularProgress,
   Card,
   CardContent,
+  Skeleton,
 } from '@mui/material';
 import {
   collection,
@@ -21,27 +22,32 @@ import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useEffect, useState } from 'react';
 import moment from 'moment';
-import { Assignment, AttachMoney, Book } from '@mui/icons-material';
+import {
+  Assignment,
+  AttachMoney,
+  Book,
+  EmojiEmotions,
+  CheckCircle,
+} from '@mui/icons-material';
 import Link from 'next/link';
 
+// ✅ Reusable circular progress with overlay label
 function CircularProgressWithLabel({ value }: { value: number }) {
   return (
     <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-      {/* Neutral background circle */}
       <CircularProgress
         variant="determinate"
         value={100}
         size={100}
         thickness={5}
-        sx={{ color: 'lightgray', position: 'absolute' }}
+        sx={{ color: '#e5e7eb', position: 'absolute' }}
       />
-      {/* Actual progress overlay */}
       <CircularProgress
         variant="determinate"
         value={value}
         size={100}
         thickness={5}
-        color="primary"
+        sx={{ color: '#3b82f6' }}
       />
       <Box
         sx={{
@@ -56,14 +62,11 @@ function CircularProgressWithLabel({ value }: { value: number }) {
           justifyContent: 'center',
         }}
       >
-        <Typography
-          variant="caption"
-          component="div"
-          color="textPrimary"
-          fontWeight="bold"
-          fontSize="1rem"
-        >
+        <Typography variant="body1" fontWeight="bold" color="textPrimary">
           {`${Math.round(value)}%`}
+        </Typography>
+        <Typography variant="caption" color="textSecondary">
+          Complete
         </Typography>
       </Box>
     </Box>
@@ -77,8 +80,9 @@ export default function DashboardHome() {
   const [remainingIncomes, setRemainingIncomes] = useState<string[]>([]);
   const [remainingExpenses, setRemainingExpenses] = useState<string[]>([]);
   const [journalWritten, setJournalWritten] = useState<boolean>(false);
+  const [moodLogged, setMoodLogged] = useState<boolean>(false);
   const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchName = async () => {
@@ -88,7 +92,6 @@ export default function DashboardHome() {
         if (snap.exists()) {
           const data = snap.data();
           setFirstName(data.firstName || '');
-          setLastName(data.lastName || '');
         }
       }
     };
@@ -99,6 +102,7 @@ export default function DashboardHome() {
     if (!user) return;
 
     const fetchProgress = async () => {
+      setLoading(true);
       const today = moment().startOf('day');
       const endOfToday = moment().endOf('day');
       let total = 0;
@@ -168,12 +172,28 @@ export default function DashboardHome() {
       completed += journalDone ? 1 : 0;
       setJournalWritten(journalDone);
 
+      const moodSnap = await getDocs(
+        query(collection(db, 'moods'), where('userId', '==', user.uid))
+      );
+      const moods = moodSnap.docs
+        .map((doc) => doc.data())
+        .filter(
+          (m) =>
+            (m.recordedAt && checkDateInRange(m.recordedAt)) ||
+            (m.createdAt && checkDateInRange(m.createdAt))
+        );
+      total += 1;
+      const moodDone = moods.length > 0;
+      completed += moodDone ? 1 : 0;
+      setMoodLogged(moodDone);
+
       const percentage =
         total === 0 ? 0 : Math.round((completed / total) * 100);
       setProgress(percentage);
       setRemainingTodos(pendingTodos);
       setRemainingIncomes(pendingIncomes);
       setRemainingExpenses(pendingExpenses);
+      setLoading(false);
     };
 
     fetchProgress();
@@ -181,64 +201,139 @@ export default function DashboardHome() {
 
   const totalPayments = remainingIncomes.length + remainingExpenses.length;
   const hasRemaining =
-    remainingTodos.length > 0 || totalPayments > 0 || !journalWritten;
+    remainingTodos.length > 0 ||
+    totalPayments > 0 ||
+    !journalWritten ||
+    !moodLogged;
+
+  // ✅ Reusable Segment Card (smaller)
+  const SegmentCard = ({
+    icon,
+    label,
+    count,
+    done,
+    color,
+    loading,
+  }: {
+    icon: React.ReactNode;
+    label: string;
+    count: number;
+    done: boolean;
+    color: string;
+    loading: boolean;
+  }) => (
+    <div className="w-full">
+      {loading ? (
+        <Skeleton variant="rounded" height={100} />
+      ) : (
+        <div className="rounded-xl flex flex-col items-center justify-center py-4 bg-white/70 backdrop-blur-md border border-gray-200 shadow-sm hover:shadow-md transition-all">
+          <div className={`mb-2 ${done ? 'text-green-500' : color} text-2xl`}>
+            {icon}
+          </div>
+          <Typography variant="body2" fontWeight={600}>
+            {label}
+          </Typography>
+          <div className="mt-1">
+            {done ? (
+              <CheckCircle className="text-green-500 text-lg" />
+            ) : (
+              <span
+                className={`px-3 py-0.5 text-xs font-semibold rounded-full ${color}`}
+              >
+                {count}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <Box className="p-4 space-y-6">
-      <Card className="bg-[#0A1930] text-white rounded-2xl">
-        <CardContent className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+    <Box className="p-4">
+      <Card className="rounded-2xl shadow-md bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 text-white">
+        <CardContent className="flex flex-col lg:flex-row items-center justify-between gap-6 p-6">
           {/* Left Section */}
-          <Box className="flex flex-col justify-between space-y-4">
+          <Box className="flex flex-col items-start space-y-4 w-full lg:w-1/2">
             <div>
-              <Typography variant="body2" color="textSecondary">
-                Welcome {firstName} {lastName}
-              </Typography>
-              <Typography variant="h6" fontWeight="bold">
-                {progress >= 90
-                  ? "Excellent, Today's plan is almost done"
-                  : progress >= 50
-                  ? "Great, you're halfway through"
-                  : 'Keep going, you can do more today!'}
-              </Typography>
+              {loading ? (
+                <>
+                  <Skeleton width={120} height={20} />
+                  <Skeleton width={220} height={28} />
+                </>
+              ) : (
+                <>
+                  <Typography variant="body2" className="opacity-80">
+                    Welcome back,{' '}
+                    <span className="font-semibold">{firstName}</span>
+                  </Typography>
+                  <Typography variant="h6" fontWeight="bold">
+                    {progress >= 90
+                      ? "Amazing! You're almost done 🎉"
+                      : progress >= 50
+                      ? 'Great work, keep going 🚀'
+                      : "Let's crush today's plan 💪"}
+                  </Typography>
+                </>
+              )}
             </div>
 
-            {hasRemaining && (
-              <Link href="/1/plans-remaining" className="mt-auto md:mt-0">
+            {!loading && hasRemaining && (
+              <Link href="/1/plans-remaining">
                 <Button
-                  variant="outlined"
+                  variant="contained"
                   color="secondary"
-                  className="w-full md:w-auto"
+                  className="rounded-full shadow-md"
                 >
-                  See all remaining plan
+                  See Remaining Plans
                 </Button>
               </Link>
             )}
           </Box>
 
           {/* Right Section */}
-          <Box className="flex flex-col items-center justify-center space-y-3">
-            <CircularProgressWithLabel value={progress} />
+          <Box className="flex flex-col items-center justify-center w-full lg:w-1/2">
+            {loading ? (
+              <Skeleton variant="circular" width={100} height={100} />
+            ) : (
+              <CircularProgressWithLabel value={progress} />
+            )}
 
-            <Box className="text-sm font-semibold flex flex-col items-center text-gray-900 dark:text-gray-100">
-              <Box className="flex items-center gap-2">
-                <span className="text-blue-500">
-                  <Assignment fontSize="small" />
-                </span>
-                <span>{remainingTodos.length}</span>
-                <span className="text-gray-500">&bull;</span>
-
-                <span className="text-green-500">
-                  <AttachMoney fontSize="small" />
-                </span>
-                <span>{totalPayments}</span>
-                <span className="text-gray-500">&bull;</span>
-
-                <span className="text-purple-500">
-                  <Book fontSize="small" />
-                </span>
-                <span>{journalWritten ? '0' : '1'}</span>
-              </Box>
-            </Box>
+            {/* Segments */}
+            <div className="grid grid-cols-2 gap-3 w-full mt-6">
+              <SegmentCard
+                icon={<Assignment />}
+                label="Tasks"
+                count={remainingTodos.length}
+                done={remainingTodos.length === 0}
+                color="text-blue-600 bg-blue-100"
+                loading={loading}
+              />
+              <SegmentCard
+                icon={<AttachMoney />}
+                label="Payments"
+                count={totalPayments}
+                done={totalPayments === 0}
+                color="text-green-600 bg-green-100"
+                loading={loading}
+              />
+              <SegmentCard
+                icon={<Book />}
+                label="Journal"
+                count={1}
+                done={journalWritten}
+                color="text-purple-600 bg-purple-100"
+                loading={loading}
+              />
+              <SegmentCard
+                icon={<EmojiEmotions />}
+                label="Mood"
+                count={1}
+                done={moodLogged}
+                color="text-amber-600 bg-amber-100"
+                loading={loading}
+              />
+            </div>
           </Box>
         </CardContent>
       </Card>

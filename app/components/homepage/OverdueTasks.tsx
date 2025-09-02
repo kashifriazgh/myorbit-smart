@@ -319,9 +319,7 @@ export default function OverdueTasks() {
         </>
       ) : (
         !loading && (
-          <Typography variant="body2" color="text.secondary">
-            No overdue tasks found.
-          </Typography>
+          <Typography variant="body2" color="text.secondary"></Typography>
         )
       )}
 
