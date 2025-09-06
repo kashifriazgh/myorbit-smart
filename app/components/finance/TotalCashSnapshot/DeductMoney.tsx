@@ -84,7 +84,10 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
   if (fromFreeze) {
     balance = snapshot.freezeAmount ?? 0;
   } else if (source === 'bank' && selectedBank) {
-    balance = snapshot.sources.bank?.[selectedBank] ?? 0; // ✅ key by bankId
+    const selectedBankName = banks.find((b) => b.id === selectedBank)?.name;
+    balance = selectedBankName
+      ? snapshot.sources.bank?.[selectedBankName] ?? 0
+      : 0; // key by bank name in snapshot
   } else if (source !== 'bank') {
     balance = (snapshot.sources[source] as number) ?? 0;
   }

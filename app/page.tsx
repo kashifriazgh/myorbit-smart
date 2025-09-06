@@ -9,6 +9,7 @@ import MostProductiveDay from './components/homepage/MostProductiveDay';
 import ExpectedIncome from './components/homepage/ExpectedIncomes';
 // import MostFocusedTime from './components/homepage/MostFocusedTime';
 import DashboardHome from './components/homepage/Opener';
+import FinancialCheckPoints from './components/finance/FinancialCheckPoints';
 // import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingIntializer';
 import OnGoingStreaks from './components/homepage/OnGoingStreaks';
 import TimeTableNotifier from './components/homepage/TimeTableNotifier';
@@ -18,6 +19,7 @@ export default function Homepage() {
       {/* <OnBoardingInitializer /> */}
       <TimeTableNotifier />
       <DashboardHome />
+      <FinancialCheckPoints />
       <Mood />
       <OnGoingStreaks />
       <ImportantTasks />

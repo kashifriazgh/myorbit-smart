@@ -13,22 +13,15 @@ import {
   InputLabel,
   MenuItem,
   Select,
-  Checkbox,
-  useTheme,
   CircularProgress,
   Stack,
   Collapse,
   LinearProgress,
 } from '@mui/material';
 import { ExpandLess, ExpandMore } from '@mui/icons-material';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
-import useMediaQuery from '@mui/material/useMediaQuery';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -38,46 +31,55 @@ import {
   updateDoc,
   query,
   where,
+  addDoc,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { Expenditure, Bank, TotalCashSnapshot } from '@/app/lib/interface';
-import { EXPENSE_CATEGORIES } from '@/app/lib/constant';
 import ExpenditureChart from './ChartViewByCategories';
 import { useAuth } from '@/app/lib/context/userContext';
+import AddExpenditureDialog from './utilsCompos/addExpenditureModal';
+import {
+  handleDeleteExpense,
+  handleAmountUpdate,
+} from '@/app/lib/functions/expenditures';
+
+type TransactionSource =
+  | 'bank'
+  | 'in_hand'
+  | 'easypaisa'
+  | 'jazzcash'
+  | 'other';
 
 export default function ExpendituresComponent({ userId }: { userId: string }) {
   const { theme } = useCustomTheme();
   const { user } = useAuth();
-  const muiTheme = useTheme();
-  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
 
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // form + modal state
   const [openModal, setOpenModal] = useState(false);
-  const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState<number | ''>('');
-  const [type, setType] = useState<'one-time' | 'recurring'>('one-time');
-  const [frequency, setFrequency] = useState<
-    'monthly' | 'weekly' | 'daily' | 'one_time'
-  >('one_time');
-  const [isPaid, setIsPaid] = useState(false);
-  const [category, setCategory] = useState('');
-  const [notes, setNotes] = useState('');
-  const [dueDate, setDueDate] = useState<Date | null>(new Date()); // default date set
 
+  // deletion + updates
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [updatingPaidId, setUpdatingPaidId] = useState<string | null>(null);
 
-  const [saving, setSaving] = useState(false);
+  // --- Mark-as-Paid confirmation + main fund deduction ---
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [selectedExpenditure, setSelectedExpenditure] =
     useState<Expenditure | null>(null);
-  const [deductionSource, setDeductionSource] = useState<
-    'in_hand' | 'bank' | 'easypaisa' | 'jazzcash' | 'other'
-  >('in_hand');
+
+  const SOURCE_OPTIONS: TransactionSource[] = [
+    'bank',
+    'in_hand',
+    'easypaisa',
+    'jazzcash',
+    'other',
+  ];
+  const [deductionSource, setDeductionSource] =
+    useState<TransactionSource>('in_hand');
 
   // bank-specific state
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -91,6 +93,59 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
   const [notesOpen, setNotesOpen] = useState(false);
   const [amountUpdatingId, setAmountUpdatingId] = useState<string | null>(null);
 
+  // Helper function to check if recurring expense should be reset
+  const shouldResetPaidStatus = (exp: Expenditure): boolean => {
+    if (exp.type !== 'recurring' || !exp.isPaid || !exp.lastPaidDate) {
+      return false;
+    }
+
+    const lastPaid =
+      exp.lastPaidDate instanceof Date
+        ? exp.lastPaidDate
+        : exp.lastPaidDate.toDate();
+    const today = new Date();
+    const daysDiff = Math.floor(
+      (today.getTime() - lastPaid.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    switch (exp.frequency) {
+      case 'daily':
+        return daysDiff >= 1;
+      case 'weekly':
+        return daysDiff >= 7;
+      case 'monthly':
+        return daysDiff >= 30; // Approximate month
+      default:
+        return false;
+    }
+  };
+
+  // Helper function to reset paid status for recurring expenses
+  const resetRecurringExpenses = async () => {
+    const expensesToReset = expenditures.filter(shouldResetPaidStatus);
+
+    for (const exp of expensesToReset) {
+      if (exp.id) {
+        try {
+          await updateDoc(doc(db, 'expenditures', exp.id), {
+            isPaid: false,
+            updatedAt: serverTimestamp(),
+          });
+        } catch (error) {
+          console.error('Error resetting expense:', error);
+        }
+      }
+    }
+
+    // Update local state
+    setExpenditures((prev) =>
+      prev.map((exp) =>
+        shouldResetPaidStatus(exp) ? { ...exp, isPaid: false } : exp
+      )
+    );
+  };
+
+  // ---- Fetch data ----
   useEffect(() => {
     const fetchExpenditures = async () => {
       const snap = await getDocs(collection(db, 'expenditures'));
@@ -109,9 +164,8 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
         })
         .filter((e) => e.userId === userId)
         .filter((e) => {
-          // filtering rule
-          if (e.type === 'recurring') return true; // always show recurring
-          if (e.type === 'one-time' && !e.isPaid) return true; // show unpaid one-time
+          if (e.type === 'recurring') return true;
+          if (e.type === 'one-time' && !e.isPaid) return true;
           return false;
         })
         .sort((a, b) => {
@@ -122,9 +176,14 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
 
       setExpenditures(docs);
       setLoading(false);
+
+      // Reset recurring expenses that should be available again
+      setTimeout(() => {
+        resetRecurringExpenses();
+      }, 1000);
     };
 
-    const fetchBanks = async () => {
+    const fetchBanksForUser = async () => {
       if (!user) return;
       const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
@@ -136,10 +195,14 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
     };
 
     fetchExpenditures();
-    fetchBanks();
+    fetchBanksForUser();
   }, [userId, user]);
 
-  const totalAmount = expenditures.reduce((sum, e) => sum + e.amount, 0);
+  // ---- helpers ----
+  const totalAmount = useMemo(
+    () => expenditures.reduce((sum, e) => sum + e.amount, 0),
+    [expenditures]
+  );
 
   const groupedByType: Record<'one-time' | 'recurring', Expenditure[]> = {
     'one-time': [],
@@ -147,116 +210,119 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
   };
   expenditures.forEach((e) => groupedByType[e.type].push(e));
 
-  const handleSave = async () => {
-    if (!title || !amount) return;
-    setSaving(true);
-    const now = new Date();
-    const newExp: Expenditure = {
-      userId,
-      title,
-      amount: Number(amount),
-      type,
-      frequency,
-      category,
-      isPaid,
-      notes,
-      dueDate: dueDate ?? new Date(),
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const ref = await addDoc(collection(db, 'expenditures'), {
-      ...newExp,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+  const isDark = theme?.mode === 'dark';
+  const categoryWiseData = useMemo(() => {
+    const result: Record<string, number> = {};
+    expenditures.forEach((exp) => {
+      const cat = exp.category || 'Uncategorized';
+      result[cat] = (result[cat] || 0) + exp.amount;
     });
+    return Object.entries(result).map(([name, value]) => ({ name, value }));
+  }, [expenditures]);
 
-    setExpenditures((prev) => [...prev, { ...newExp, id: ref.id }]);
-    setSaving(false);
-    setOpenModal(false);
-    setTitle('');
-    setAmount('');
-    setType('one-time');
-    setFrequency('one_time');
-    setCategory('');
-    setIsPaid(false);
-    setNotes('');
-    setDueDate(new Date());
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    setDeleting(true);
-    await deleteDoc(doc(db, 'expenditures', deleteId));
-    setExpenditures((prev) => prev.filter((e) => e.id !== deleteId));
-    setDeleting(false);
-    setDeleteId(null);
-  };
-
-  const handleAddBank = async () => {
-    if (!user || !newBankName.trim()) return;
-    const docRef = await addDoc(collection(db, 'banks'), {
-      userId: user.uid,
-      name: newBankName.trim(),
-      createdAt: Timestamp.now(),
-    });
-    const newBank: Bank = {
-      id: docRef.id,
-      userId: user.uid,
-      name: newBankName.trim(),
-      createdAt: Timestamp.now(),
-    };
-    setBanks((prev) => [...prev, newBank]);
-    setSelectedBank(newBank.id!);
-    setNewBankName('');
-  };
-
-  const handleOpenConfirmDialog = async (exp: Expenditure) => {
-    setSelectedExpenditure(exp);
-    setConfirmDialogOpen(true);
-
-    // Check available funds based on current deduction source
-    await checkAvailableFunds(exp.amount);
-  };
-
-  const checkAvailableFunds = async (amount: number) => {
+  // ---- Available funds refresh ----
+  const refreshAvailableFunds = async (
+    source: TransactionSource,
+    bankId?: string
+  ) => {
     try {
       const docRef = doc(db, 'totalCashSnapshots', userId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as TotalCashSnapshot;
-        let available = 0;
+      const snap = await getDoc(docRef);
+      let available = 0;
 
-        if (deductionSource === 'bank' && selectedBank) {
-          available = data.sources.bank[selectedBank] || 0;
-        } else if (deductionSource !== 'bank') {
-          available = data.sources[deductionSource] || 0;
+      if (snap.exists()) {
+        const data = snap.data() as TotalCashSnapshot;
+
+        if (source === 'bank') {
+          const bankName = banks.find((b) => b.id === bankId)?.name;
+          if (bankName) {
+            const bankMap = data.sources?.bank || {};
+            available = bankMap[bankName] || 0;
+          } else {
+            available = 0;
+          }
+        } else {
+          available = (data.sources?.[source] as number) || 0;
         }
-
-        setAvailableFunds(available);
-        setInsufficientFunds(amount > available);
+      } else {
+        available = 0;
       }
-    } catch (err) {
-      console.error('Error getting balance:', err);
+
+      setAvailableFunds(available);
+      setInsufficientFunds(
+        !!selectedExpenditure && available < selectedExpenditure.amount
+      );
+    } catch (e) {
+      console.error('Error fetching available funds:', e);
       setAvailableFunds(0);
       setInsufficientFunds(true);
     }
   };
 
-  const handleConfirmPaid = async (updateFunds: boolean) => {
-    if (!selectedExpenditure) return;
-    setActionLoading(true);
-    setUpdatingPaidId(selectedExpenditure.id!);
+  // Refresh available funds whenever dialog opens / selection changes
+  useEffect(() => {
+    if (!confirmDialogOpen) return;
+    if (deductionSource === 'bank') {
+      refreshAvailableFunds('bank', selectedBank);
+    } else {
+      refreshAvailableFunds(deductionSource);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmDialogOpen, deductionSource, selectedBank]);
+
+  // ---- Bank add ----
+  const handleAddBank = async () => {
+    if (!user || !newBankName.trim()) return;
     try {
-      // Update expenditure status
-      const expRef = doc(db, 'expenditures', selectedExpenditure.id!);
-      await updateDoc(expRef, {
+      const res = await addDoc(collection(db, 'banks'), {
+        userId: user.uid,
+        name: newBankName.trim(),
+        createdAt: serverTimestamp(),
+      });
+      const newBank: Bank = {
+        id: res.id,
+        name: newBankName.trim(),
+        userId: user.uid,
+      } as Bank;
+      setBanks((prev) => [...prev, newBank]);
+      setSelectedBank(res.id);
+      setNewBankName('');
+    } catch (e) {
+      console.error('Error adding bank:', e);
+    }
+  };
+
+  // ---- Mark as paid handlers ----
+  const openMarkPaidDialog = async (exp: Expenditure) => {
+    setSelectedExpenditure(exp);
+    setDeductionSource('in_hand');
+    setSelectedBank('');
+    setConfirmDialogOpen(true);
+  };
+
+  const markExpensePaid = async (exp: Expenditure, deductFromFund: boolean) => {
+    try {
+      setUpdatingPaidId(exp.id!);
+
+      // 1) Update the expenditure as paid with payment history
+      const currentPayment = {
+        date: new Date(),
+        amount: exp.amount,
+      };
+
+      // Get current payment history or initialize empty array
+      const currentExp = expenditures.find((e) => e.id === exp.id);
+      const existingHistory = currentExp?.paymentHistory || [];
+
+      await updateDoc(doc(db, 'expenditures', exp.id!), {
         isPaid: true,
+        lastPaidDate: serverTimestamp(),
+        paymentHistory: [...existingHistory, currentPayment],
         updatedAt: serverTimestamp(),
       });
 
-      if (updateFunds) {
-        // Get bank info if source is bank
+      // 2) Deduct from main fund (optional)
+      if (deductFromFund) {
         let bankId: string | undefined;
         let bankName: string | undefined;
 
@@ -264,122 +330,100 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
           const bank = banks.find((b) => b.id === selectedBank);
           bankId = bank?.id;
           bankName = bank?.name;
-
-          // Debug logging
-          console.log('Selected bank ID:', selectedBank);
-          console.log('Found bank object:', bank);
-          console.log('Bank name to use:', bankName);
         }
 
-        // Save transaction to cashTransactions
+        // Log cash transaction
         await addDoc(collection(db, 'cashTransactions'), {
           userId,
-          amount: selectedExpenditure.amount,
+          amount: exp.amount,
           type: 'deduct',
           source: deductionSource,
           category: 'expenditure',
-          note: `Payment for: ${selectedExpenditure.title}`,
+          note: `Expense paid: ${exp.title}`,
           bankId: bankId || null,
           BankName: bankName || null,
           createdAt: serverTimestamp(),
         });
 
-        // Update totalCashSnapshot
-        const docRef = doc(db, 'totalCashSnapshots', userId);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as TotalCashSnapshot;
+        // Update snapshot
+        const snapRef = doc(db, 'totalCashSnapshots', userId);
+        const snap = await getDoc(snapRef);
+
+        if (snap.exists()) {
+          const data = snap.data() as TotalCashSnapshot;
           const updatedSources = { ...data.sources };
 
           if (deductionSource === 'bank' && bankName) {
-            console.log('Updating bank source:', bankName);
-            console.log('Current bank sources:', data.sources.bank);
-            console.log(
-              'Current amount for this bank:',
-              data.sources.bank[bankName] || 0
-            );
-            console.log('Deducting amount:', selectedExpenditure.amount);
-
+            updatedSources.bank = updatedSources.bank || {};
             updatedSources.bank[bankName] =
-              (updatedSources.bank[bankName] || 0) - selectedExpenditure.amount;
-
-            console.log(
-              'New amount for this bank:',
-              updatedSources.bank[bankName]
-            );
+              (updatedSources.bank[bankName] || 0) - exp.amount;
           } else if (deductionSource !== 'bank') {
-            updatedSources[deductionSource] =
-              (updatedSources[deductionSource] as number) -
-              selectedExpenditure.amount;
+            if (deductionSource === 'in_hand') {
+              updatedSources.in_hand = updatedSources.in_hand - exp.amount;
+            } else if (deductionSource === 'easypaisa') {
+              updatedSources.easypaisa = updatedSources.easypaisa - exp.amount;
+            } else if (deductionSource === 'jazzcash') {
+              updatedSources.jazzcash = updatedSources.jazzcash - exp.amount;
+            } else if (deductionSource === 'other') {
+              updatedSources.other = updatedSources.other - exp.amount;
+            }
           }
 
-          const updatedSnapshot: TotalCashSnapshot = {
+          await setDoc(snapRef, {
             ...data,
             sources: updatedSources,
-            totalAmount: data.totalAmount - selectedExpenditure.amount,
-            updatedAt: new Date(),
-          };
-
-          console.log('Final updated sources:', updatedSources);
-          console.log('Final updated snapshot:', updatedSnapshot);
-
-          await setDoc(docRef, {
-            ...updatedSnapshot,
+            totalAmount: (data.totalAmount || 0) - exp.amount,
             updatedAt: serverTimestamp(),
           });
         }
-        setUpdatingPaidId(null);
       }
 
-      // Update local state with smooth hiding
-      if (selectedExpenditure.type === 'one-time') {
-        setExpenditures((prev) =>
-          prev.map((item) =>
-            item.id === selectedExpenditure.id
-              ? { ...item, isPaid: true }
-              : item
-          )
-        );
-        setTimeout(() => {
-          setExpenditures((prev) =>
-            prev.filter(
-              (item) =>
-                !(
-                  item.id === selectedExpenditure.id && item.type === 'one-time'
-                )
-            )
-          );
-        }, 300);
+      // 3) Local UI update
+      if (exp.type === 'one-time') {
+        setExpenditures((prev) => prev.filter((e) => e.id !== exp.id));
       } else {
         setExpenditures((prev) =>
-          prev.map((item) =>
-            item.id === selectedExpenditure.id
-              ? { ...item, isPaid: true }
-              : item
+          prev.map((e) =>
+            e.id === exp.id
+              ? {
+                  ...e,
+                  isPaid: true,
+                  lastPaidDate: new Date(),
+                  paymentHistory: [
+                    ...(e.paymentHistory || []),
+                    { date: new Date(), amount: exp.amount },
+                  ],
+                }
+              : e
           )
         );
       }
-
-      setConfirmDialogOpen(false);
-      setSelectedExpenditure(null);
-      setDeductionSource('in_hand');
-      setSelectedBank('');
-      setInsufficientFunds(false);
-    } catch (error) {
-      console.error('Error updating expenditure:', error);
-      alert('Error updating expenditure. Please try again.');
+    } catch (e) {
+      console.error('Error marking expense paid:', e);
     } finally {
-      setActionLoading(false);
+      setUpdatingPaidId(null);
     }
   };
 
-  const handleAmountUpdate = async (id: string, newAmount: number) => {
-    setAmountUpdatingId(id);
-    const ref = doc(db, 'expenditures', id);
-    await updateDoc(ref, { amount: newAmount, updatedAt: serverTimestamp() });
-    setAmountUpdatingId(null);
+  const handleConfirmYes = async () => {
+    if (!selectedExpenditure) return;
+    setActionLoading(true);
+    await markExpensePaid(selectedExpenditure, true);
+    setActionLoading(false);
+    setConfirmDialogOpen(false);
+    setSelectedExpenditure(null);
   };
 
+  const handleConfirmNo = async () => {
+    if (!selectedExpenditure) return;
+    setActionLoading(true);
+    await markExpensePaid(selectedExpenditure, false);
+    setActionLoading(false);
+    setConfirmDialogOpen(false);
+    setSelectedExpenditure(null);
+  };
+
+  // ---- Render ----
   if (!theme || loading) {
     return (
       <Box textAlign="center" mt={4}>
@@ -387,17 +431,6 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
       </Box>
     );
   }
-
-  const isDark = theme.mode === 'dark';
-  const getCategoryWiseData = () => {
-    const result: Record<string, number> = {};
-    expenditures.forEach((exp) => {
-      const cat = exp.category || 'Uncategorized';
-      result[cat] = (result[cat] || 0) + exp.amount;
-    });
-    return Object.entries(result).map(([name, value]) => ({ name, value }));
-  };
-  const categoryWiseData = getCategoryWiseData();
 
   return (
     <Box
@@ -408,7 +441,7 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
         p: 4,
         boxShadow: 6,
         borderRadius: 3,
-        bgcolor: isDark ? muiTheme.palette.background.paper : '#fff',
+        bgcolor: isDark ? '#1e293b' : '#fff',
       }}
     >
       <Typography variant="h5" fontWeight="bold" mb={2}>
@@ -429,6 +462,7 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
         Total ({expenditures.length}) – Rs {totalAmount.toLocaleString()}
       </Typography>
 
+      {/* --- LIST EXPENSES --- */}
       {(['one-time', 'recurring'] as const).map((group) =>
         groupedByType[group].length > 0 ? (
           <Box key={group} mb={3}>
@@ -472,7 +506,12 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                         );
                       }}
                       onBlur={() =>
-                        exp.id && handleAmountUpdate(exp.id, exp.amount)
+                        exp.id &&
+                        handleAmountUpdate(
+                          exp.id,
+                          exp.amount,
+                          setAmountUpdatingId
+                        )
                       }
                       inputProps={{
                         style: {
@@ -503,6 +542,18 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                 <Typography variant="body2" mt={0.5}>
                   {exp.isPaid ? '✅ Paid' : '❌ Not Paid'}
                 </Typography>
+
+                {/* Payment Count */}
+                {exp.paymentHistory && exp.paymentHistory.length > 0 && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    display="block"
+                  >
+                    💰 {exp.paymentHistory.length} payment
+                    {exp.paymentHistory.length > 1 ? 's' : ''} made
+                  </Typography>
+                )}
                 {exp.notes && (
                   <>
                     <Button
@@ -534,8 +585,8 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                     size="small"
                     color="primary"
                     sx={{ mt: 1 }}
-                    onClick={() => handleOpenConfirmDialog(exp)}
-                    disabled={updatingPaidId === exp.id}
+                    onClick={() => openMarkPaidDialog(exp)}
+                    disabled={actionLoading}
                   >
                     {updatingPaidId === exp.id ? (
                       <CircularProgress size={18} />
@@ -559,7 +610,14 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
         <DialogActions>
           <Button onClick={() => setDeleteId(null)}>Cancel</Button>
           <Button
-            onClick={handleDelete}
+            onClick={() =>
+              handleDeleteExpense(
+                deleteId!,
+                setExpenditures,
+                setDeleting,
+                setDeleteId
+              )
+            }
             color="error"
             disabled={deleting}
             variant="contained"
@@ -569,243 +627,112 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
         </DialogActions>
       </Dialog>
 
-      {/* Mark as Paid Confirmation */}
+      {/* Mark as Paid: Deduct from main fund? */}
       <Dialog
         open={confirmDialogOpen}
         onClose={() => setConfirmDialogOpen(false)}
       >
-        <DialogTitle>Deduct from Fund</DialogTitle>
+        <DialogTitle>Deduct from main fund?</DialogTitle>
         <DialogContent>
           <Typography>
-            Do you want to deduct Rs{' '}
-            <strong>{selectedExpenditure?.amount}</strong> from your main fund
-            for <em>{selectedExpenditure?.title}</em>?
+            Do you want to deduct{' '}
+            <strong>Rs {selectedExpenditure?.amount}</strong> for{' '}
+            <em>{selectedExpenditure?.title}</em> from your main fund?
           </Typography>
-          <FormControl fullWidth sx={{ mt: 2 }} size="small">
+
+          <FormControl fullWidth sx={{ mt: 2 }}>
             <InputLabel>Deduct From</InputLabel>
             <Select
               value={deductionSource}
-              onChange={async (e) => {
-                const source = e.target.value;
-                setDeductionSource(source);
-                setSelectedBank(''); // Reset bank selection when source changes
-
-                // Check available funds for the new source
-                if (selectedExpenditure) {
-                  await checkAvailableFunds(selectedExpenditure.amount);
-                }
-              }}
               label="Deduct From"
+              onChange={(e) =>
+                setDeductionSource(e.target.value as TransactionSource)
+              }
             >
-              {['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other'].map(
-                (mode) => (
-                  <MenuItem key={mode} value={mode}>
-                    {mode}
-                  </MenuItem>
-                )
-              )}
-            </Select>
-
-            {/* Extra bank select if source = bank */}
-            {deductionSource === 'bank' && (
-              <>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ mt: 1, mb: 1 }}
-                >
-                  Please select a bank to deduct from:
-                </Typography>
-                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Bank</InputLabel>
-                    <Select
-                      value={selectedBank}
-                      label="Bank"
-                      onChange={async (e) => {
-                        const bankId = e.target.value as string;
-                        setSelectedBank(bankId);
-
-                        // Check available funds when bank changes
-                        if (selectedExpenditure) {
-                          await checkAvailableFunds(selectedExpenditure.amount);
-                        }
-                      }}
-                    >
-                      {banks.map((bank) => (
-                        <MenuItem key={bank.id} value={bank.id}>
-                          {bank.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <TextField
-                    label="New Bank"
-                    size="small"
-                    value={newBankName}
-                    onChange={(e) => setNewBankName(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        handleAddBank();
-                      }
-                    }}
-                  />
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={handleAddBank}
-                    disabled={!newBankName.trim() || actionLoading}
-                  >
-                    Add Bank
-                  </Button>
-                </Stack>
-              </>
-            )}
-
-            {insufficientFunds && (
-              <Typography mt={1} color="error" fontWeight="bold" fontSize={14}>
-                ⚠️ Insufficient funds in {deductionSource.replace('_', ' ')}
-                {deductionSource === 'bank' &&
-                  selectedBank &&
-                  ` (${banks.find((b) => b.id === selectedBank)?.name})`}
-                — Available: Rs {availableFunds.toLocaleString()}
-              </Typography>
-            )}
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={() => handleConfirmPaid(false)}
-            color="warning"
-            disabled={actionLoading}
-          >
-            No
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => handleConfirmPaid(true)}
-            disabled={
-              actionLoading ||
-              insufficientFunds ||
-              (deductionSource === 'bank' && !selectedBank)
-            }
-          >
-            {actionLoading ? <CircularProgress size={18} /> : 'Confirm'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Add Expenditure Modal */}
-      <Dialog
-        open={openModal}
-        onClose={() => setOpenModal(false)}
-        fullScreen={isMobile}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Add Expenditure</DialogTitle>
-        <DialogContent>
-          <TextField
-            label="Title"
-            fullWidth
-            size="small"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            margin="normal"
-          />
-          <TextField
-            label="Amount"
-            fullWidth
-            size="small"
-            type="number"
-            value={amount}
-            onChange={(e) =>
-              setAmount(e.target.value === '' ? '' : Number(e.target.value))
-            }
-            margin="normal"
-          />
-
-          <Stack direction="row" spacing={2} mt={2}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Type</InputLabel>
-              <Select
-                value={type}
-                label="Type"
-                onChange={(e) => setType(e.target.value)}
-              >
-                <MenuItem value="one-time">One-time</MenuItem>
-                <MenuItem value="recurring">Recurring</MenuItem>
-              </Select>
-            </FormControl>
-            {type === 'recurring' && (
-              <FormControl fullWidth size="small">
-                <InputLabel>Frequency</InputLabel>
-                <Select
-                  value={frequency}
-                  label="Frequency"
-                  onChange={(e) => setFrequency(e.target.value)}
-                >
-                  <MenuItem value="daily">Daily</MenuItem>
-                  <MenuItem value="weekly">Weekly</MenuItem>
-                  <MenuItem value="monthly">Monthly</MenuItem>
-                </Select>
-              </FormControl>
-            )}
-          </Stack>
-
-          <FormControl fullWidth margin="normal" size="small">
-            <InputLabel>Category</InputLabel>
-            <Select
-              value={category}
-              label="Category"
-              onChange={(e) => setCategory(e.target.value)}
-            >
-              {EXPENSE_CATEGORIES.map((cat) => (
-                <MenuItem key={cat} value={cat}>
-                  {cat}
+              {SOURCE_OPTIONS.map((mode) => (
+                <MenuItem key={mode} value={mode}>
+                  {mode}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
 
-          <Box mt={2}>
-            <Typography variant="body2" fontWeight={600} mb={0.5} color="error">
-              Due Date
-            </Typography>
-            <DatePicker
-              selected={dueDate}
-              onChange={(date: Date | null) => setDueDate(date)}
-              className="w-full border px-3 py-2 rounded-md text-sm"
-            />
-          </Box>
+          {deductionSource === 'bank' && (
+            <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Bank</InputLabel>
+                <Select
+                  value={selectedBank}
+                  label="Bank"
+                  onChange={(e) => setSelectedBank(e.target.value)}
+                >
+                  {banks.map((bank) => (
+                    <MenuItem key={bank.id} value={bank.id}>
+                      {bank.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label="New Bank"
+                size="small"
+                value={newBankName}
+                onChange={(e) => setNewBankName(e.target.value)}
+              />
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleAddBank}
+                disabled={!newBankName.trim()}
+              >
+                Add Bank
+              </Button>
+            </Stack>
+          )}
 
-          <TextField
-            label="Notes"
-            fullWidth
-            size="small"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            margin="normal"
-            multiline
-            rows={3}
-          />
-          <Box display="flex" alignItems="center" mt={2}>
-            <Checkbox
-              checked={isPaid}
-              onChange={(e) => setIsPaid(e.target.checked)}
-            />
-            <Typography>Mark as Paid</Typography>
-          </Box>
+          <Typography mt={1} fontSize={14}>
+            Available in <strong>{deductionSource}</strong>
+            {deductionSource === 'bank' &&
+              selectedBank &&
+              ` (${banks.find((b) => b.id === selectedBank)?.name})`}
+            : Rs {availableFunds.toLocaleString()}
+          </Typography>
+
+          {insufficientFunds && (
+            <Typography mt={1} color="error" fontWeight="bold" fontSize={13}>
+              ⚠️ Not enough balance in the selected source. You can still mark
+              as paid without deduction (press “No”).
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenModal(false)}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained" disabled={saving}>
-            {saving ? <CircularProgress size={18} /> : 'Save'}
+          <Button
+            onClick={() => setConfirmDialogOpen(false)}
+            disabled={actionLoading}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmNo} disabled={actionLoading}>
+            No
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmYes}
+            disabled={
+              actionLoading || (deductionSource === 'bank' && !selectedBank)
+            }
+          >
+            {actionLoading ? <CircularProgress size={18} /> : 'Yes'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Add Expenditure Modal */}
+      <AddExpenditureDialog
+        open={openModal}
+        onClose={() => setOpenModal(false)}
+        onAdded={(newExp) => setExpenditures((prev) => [...prev, newExp])}
+      />
     </Box>
   );
 }

@@ -260,30 +260,45 @@ export default function LoanDialog() {
           ) : (
             <>
               <Typography color="error" fontSize={14}>
-                Total To Pay Back: {totals.toPay}
+                Total To Pay Back: ₨{totals.toPay.toLocaleString()}
               </Typography>
               <Typography color="success.main" fontSize={14}>
-                Total To Receive: {totals.toReceive}
+                Total To Receive: ₨{totals.toReceive.toLocaleString()}
               </Typography>
-
-              {/* Active Loans List */}
-              {activeLoans.length > 0 && (
-                <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" fontWeight="bold" mb={1}>
-                    Active Loans ({activeLoans.length})
-                  </Typography>
-                  {activeLoans.map((loan) => (
-                    <Typography
-                      key={loan.id}
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      {loan.counterparty}: Rs {loan.amount} ({loan.type})
-                    </Typography>
-                  ))}
-                </Box>
-              )}
             </>
+          )}
+
+          {/* Active Loans List */}
+          {!loadingLoans && activeLoans.length > 0 && (
+            <Box sx={{ mt: 2, mb: 2 }}>
+              <Typography variant="h6" fontSize={16} fontWeight="bold" mb={1}>
+                Active Loans ({activeLoans.length})
+              </Typography>
+              {activeLoans.map((loan) => (
+                <Box
+                  key={loan.id}
+                  sx={{
+                    p: 1.5,
+                    mb: 1,
+                    border: '1px solid #e0e0e0',
+                    borderRadius: 1,
+                    backgroundColor:
+                      loan.type === 'borrow' ? '#fff3e0' : '#e8f5e8',
+                  }}
+                >
+                  <Typography variant="body2" fontWeight="bold">
+                    {loan.counterparty} - ₨{loan.amount?.toLocaleString()}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {loan.type === 'borrow' ? 'You borrowed' : 'You lent'} •
+                    Due:{' '}
+                    {loan.dueDate instanceof Date
+                      ? loan.dueDate.toLocaleDateString()
+                      : loan.dueDate?.toDate?.()?.toLocaleDateString() || 'N/A'}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
           )}
 
           {/* Loan form */}
@@ -309,9 +324,24 @@ export default function LoanDialog() {
             </Select>
           </FormControl>
 
+          {/* Hint for loan type */}
+          {loanType === 'borrow' && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Borrow → You are taking money from someone. You will need to
+              return it later.
+            </Typography>
+          )}
+
+          {loanType === 'lend' && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Lend → You are giving money to someone. They will return it to you
+              later.
+            </Typography>
+          )}
+
           <TextField
             fullWidth
-            label="Counterparty"
+            label="Lender / Borrower Name"
             value={counterparty}
             onChange={(e) => setCounterparty(e.target.value)}
             margin="normal"

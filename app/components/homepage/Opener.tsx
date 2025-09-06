@@ -81,6 +81,7 @@ export default function DashboardHome() {
   const [remainingExpenses, setRemainingExpenses] = useState<string[]>([]);
   const [journalWritten, setJournalWritten] = useState<boolean>(false);
   const [moodLogged, setMoodLogged] = useState<boolean>(false);
+  const [overdueTodos, setOverdueTodos] = useState<string[]>([]);
   const [firstName, setFirstName] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -105,8 +106,6 @@ export default function DashboardHome() {
       setLoading(true);
       const today = moment().startOf('day');
       const endOfToday = moment().endOf('day');
-      let total = 0;
-      let completed = 0;
 
       const checkDateInRange = (date: Date | Timestamp) => {
         const momentDate = moment(
@@ -116,62 +115,75 @@ export default function DashboardHome() {
       };
 
       const pendingTodos: string[] = [];
+      const overdueTodosList: string[] = [];
       const pendingIncomes: string[] = [];
       const pendingExpenses: string[] = [];
 
+      // ✅ Todos
       const todoSnap = await getDocs(
         query(collection(db, 'todos'), where('authorId', '==', user.uid))
       );
-      const todos = todoSnap.docs
-        .map((doc) => doc.data())
-        .filter((todo) => todo.dueDate && checkDateInRange(todo.dueDate));
-      total += todos.length;
-      completed += todos.filter((t) => t.status === 'completed').length;
-      todos.forEach((todo) => {
+      const todos = todoSnap.docs.map((doc) => doc.data());
+
+      const todayTodos = todos.filter(
+        (todo) => todo.dueDate && checkDateInRange(todo.dueDate)
+      );
+      const overdue = todos.filter(
+        (todo) =>
+          todo.dueDate &&
+          moment(
+            todo.dueDate.toDate ? todo.dueDate.toDate() : todo.dueDate
+          ).isBefore(today, 'day') &&
+          todo.status !== 'completed'
+      );
+
+      todayTodos.forEach((todo) => {
         if (todo.status !== 'completed') {
           pendingTodos.push(todo.title || 'Unnamed Todo');
         }
       });
 
+      overdue.forEach((todo) => {
+        overdueTodosList.push(todo.title || 'Unnamed Todo');
+      });
+
+      // ✅ Incomes
       const incomeSnap = await getDocs(
         query(collection(db, 'incomeSources'), where('userId', '==', user.uid))
       );
       const incomes = incomeSnap.docs
         .map((doc) => doc.data())
         .filter((i) => i.expectedDate && checkDateInRange(i.expectedDate));
-      total += incomes.length;
-      completed += incomes.filter((i) => i.isReceived).length;
       incomes.forEach((income) => {
         if (!income.isReceived) {
           pendingIncomes.push(income.source || 'Unnamed Income');
         }
       });
 
+      // ✅ Expenses
       const expenseSnap = await getDocs(
         query(collection(db, 'expenditures'), where('userId', '==', user.uid))
       );
       const expenses = expenseSnap.docs
         .map((doc) => doc.data())
         .filter((e) => e.dueDate && checkDateInRange(e.dueDate));
-      total += expenses.length;
-      completed += expenses.filter((e) => e.isPaid).length;
       expenses.forEach((expense) => {
         if (!expense.isPaid) {
           pendingExpenses.push(expense.title || 'Unnamed Expense');
         }
       });
 
+      // ✅ Journal
       const journalSnap = await getDocs(
         query(collection(db, 'journals'), where('authorId', '==', user.uid))
       );
       const journals = journalSnap.docs
         .map((doc) => doc.data())
         .filter((j) => j.createdAt && checkDateInRange(j.createdAt));
-      total += 1;
       const journalDone = journals.length > 0;
-      completed += journalDone ? 1 : 0;
       setJournalWritten(journalDone);
 
+      // ✅ Mood
       const moodSnap = await getDocs(
         query(collection(db, 'moods'), where('userId', '==', user.uid))
       );
@@ -182,15 +194,25 @@ export default function DashboardHome() {
             (m.recordedAt && checkDateInRange(m.recordedAt)) ||
             (m.createdAt && checkDateInRange(m.createdAt))
         );
-      total += 1;
       const moodDone = moods.length > 0;
-      completed += moodDone ? 1 : 0;
       setMoodLogged(moodDone);
 
+      // ✅ Progress (only today’s items, NOT overdue)
+      const totalItems =
+        todayTodos.length + incomes.length + expenses.length + 2;
+      const completedItems =
+        todayTodos.filter((t) => t.status === 'completed').length +
+        incomes.filter((i) => i.isReceived).length +
+        expenses.filter((e) => e.isPaid).length +
+        (journalDone ? 1 : 0) +
+        (moodDone ? 1 : 0);
+
       const percentage =
-        total === 0 ? 0 : Math.round((completed / total) * 100);
+        totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100);
+
       setProgress(percentage);
       setRemainingTodos(pendingTodos);
+      setOverdueTodos(overdueTodosList);
       setRemainingIncomes(pendingIncomes);
       setRemainingExpenses(pendingExpenses);
       setLoading(false);
@@ -206,7 +228,7 @@ export default function DashboardHome() {
     !journalWritten ||
     !moodLogged;
 
-  // ✅ Reusable Segment Card (smaller)
+  // ✅ Reusable Segment Card
   const SegmentCard = ({
     icon,
     label,
@@ -278,12 +300,23 @@ export default function DashboardHome() {
               )}
             </div>
 
+            {/* Overdue indicator */}
+            {!loading && overdueTodos.length > 0 && (
+              <Box className="mt-2">
+                <span className="inline-block rounded-full bg-red-100 text-red-700 px-3 py-1 text-xs font-semibold">
+                  You have {overdueTodos.length}{' '}
+                  {overdueTodos.length === 1 ? 'Task' : 'Tasks'} overdue.
+                  Reschedule or complete them to stay on track.
+                </span>
+              </Box>
+            )}
+
             {!loading && hasRemaining && (
               <Link href="/1/plans-remaining">
                 <Button
                   variant="contained"
                   color="secondary"
-                  className="rounded-full shadow-md"
+                  className="rounded-full shadow-md mt-2"
                 >
                   See Remaining Plans
                 </Button>

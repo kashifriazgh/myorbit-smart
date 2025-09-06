@@ -21,9 +21,9 @@ import {
   DialogActions,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { ToDoStep, Todo } from '@/app/lib/interface';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useTodoContext } from '@/app/lib/context/todoContext';
@@ -39,10 +39,12 @@ import { STATUS_OPTIONS } from '@/app/lib/constant';
 type ConfirmDelete =
   | { type: 'step'; stepIndex: number }
   | { type: 'sub'; stepIndex: number; subIndex: number }
+  | { type: 'todo' }
   | null;
 
 export default function TodoDetailPage() {
   const { id } = useParams();
+  const router = useRouter();
   const { user } = useAuth();
   const { todos, updateStepStatus, updateSubStepStatus } = useTodoContext();
 
@@ -128,7 +130,6 @@ export default function TodoDetailPage() {
       progressPercent: progress,
     });
 
-    // Update local state
     setTodo((prev) =>
       prev ? { ...prev, steps: updatedSteps, progressPercent: progress } : prev
     );
@@ -140,10 +141,8 @@ export default function TodoDetailPage() {
   ) => {
     if (!todo?.id || !todo.steps) return;
 
-    // Use context function for consistency
     await updateStepStatus(todo.id, stepIndex, newStatus);
 
-    // Update local state
     const updated = [...todo.steps];
     updated[stepIndex].status = newStatus as Todo['steps'][0]['status'];
     updated[stepIndex].done = newStatus === 'completed';
@@ -169,10 +168,8 @@ export default function TodoDetailPage() {
     sub.done = newDone;
     sub.status = newDone ? 'completed' : 'in_progress';
 
-    // Use context function for consistency
     await updateSubStepStatus(todo.id, stepIndex, subIndex, newDone);
 
-    // Update local state
     const progress = calculateProgress(updated);
     setTodo((prev) =>
       prev ? { ...prev, steps: updated, progressPercent: progress } : prev
@@ -183,16 +180,21 @@ export default function TodoDetailPage() {
     if (!todo || !confirmDelete) return;
     setIsDeleting(true);
     try {
-      const updated = [...todo.steps];
-      if (confirmDelete.type === 'step') {
-        updated.splice(confirmDelete.stepIndex, 1);
+      if (confirmDelete.type === 'todo') {
+        await deleteDoc(doc(db, 'todos', todo.id));
+        router.push('/app/todos'); // 🔹 Redirect after deleting the task
       } else {
-        updated[confirmDelete.stepIndex].subSteps?.splice(
-          confirmDelete.subIndex,
-          1
-        );
+        const updated = [...todo.steps];
+        if (confirmDelete.type === 'step') {
+          updated.splice(confirmDelete.stepIndex, 1);
+        } else {
+          updated[confirmDelete.stepIndex].subSteps?.splice(
+            confirmDelete.subIndex,
+            1
+          );
+        }
+        await updateStepsInFirestore(updated);
       }
-      await updateStepsInFirestore(updated);
     } finally {
       setIsDeleting(false);
       setConfirmDelete(null);
@@ -236,7 +238,7 @@ export default function TodoDetailPage() {
           <Step key={idx} completed={step.status === 'completed'}>
             <StepLabel
               onClick={() => setActiveStep(idx)}
-              sx={{ cursor: 'pointer' }} // 🔹 Added clickable navigation
+              sx={{ cursor: 'pointer' }}
             >
               <Box
                 sx={{
@@ -286,14 +288,16 @@ export default function TodoDetailPage() {
                     size="small"
                     variant="outlined"
                     sx={{ fontSize: '12px' }}
-                    onClick={() => setSubStepTargetIndex(idx)}
+                    onClick={() => {
+                      setSubStepTargetIndex(idx);
+                      setSubStepModalOpen(true);
+                    }}
                   >
                     + Add Sub-step
                   </Button>
                 </Stack>
               </Box>
 
-              {/* Sub-steps */}
               {step.subSteps && step.subSteps.length > 0 && (
                 <Box sx={{ pl: 2, borderLeft: '2px solid #e0e0e0' }}>
                   {step.subSteps.map((subStep, subIdx) => (
@@ -346,12 +350,16 @@ export default function TodoDetailPage() {
       </Stepper>
 
       <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
-        <Button
-          variant="contained"
-          onClick={() => setStepModalOpen(true)}
-          disabled={!todo.steps || todo.steps.length === 0}
-        >
+        <Button variant="contained" onClick={() => setStepModalOpen(true)}>
           + Add Step
+        </Button>
+
+        <Button
+          variant="outlined"
+          color="error"
+          onClick={() => setConfirmDelete({ type: 'todo' })}
+        >
+          Delete Task
         </Button>
       </Box>
 
@@ -402,8 +410,12 @@ export default function TodoDetailPage() {
         <DialogContent>
           <DialogContentText>
             Are you sure you want to delete this{' '}
-            {confirmDelete?.type === 'step' ? 'step' : 'sub-step'}? This action
-            cannot be undone.
+            {confirmDelete?.type === 'todo'
+              ? 'task'
+              : confirmDelete?.type === 'step'
+              ? 'step'
+              : 'sub-step'}
+            ? This action cannot be undone.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

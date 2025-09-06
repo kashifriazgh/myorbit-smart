@@ -322,7 +322,11 @@ export interface IncomeSource {
   frequency: 'monthly' | 'weekly' | 'daily' | 'one_time';
   amount: number;
   expectedDate?: Date | Timestamp;
+  dayOfWeek?: number; // 0 = Sunday, 6 = Saturday
+  dayOfMonth?: number; // 1 - 30
   isReceived?: boolean;
+  lastReceivedDate?: Date | Timestamp; // <-- NEW: track when last marked received
+  paymentHistory?: { date: Date | Timestamp; amount: number }[]; // <-- NEW: track all payments
   category?: string;
   notes?: string;
   createdAt: Date | Timestamp;
@@ -338,6 +342,10 @@ export interface Expenditure {
   amount: number;
   dueDate?: Date | Timestamp;
   isPaid?: boolean;
+  dayOfWeek?: number; // 0 = Sunday, 6 = Saturday
+  dayOfMonth?: number; // 1 - 30
+  lastPaidDate?: Date | Timestamp; // <-- NEW: track when last marked received
+  paymentHistory?: { date: Date | Timestamp; amount: number }[]; // <-- NEW: track all payments
   category?: string;
   notes?: string;
   createdAt: Date | Timestamp;
