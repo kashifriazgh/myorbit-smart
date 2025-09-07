@@ -12,6 +12,17 @@ import { db } from '@/app/lib/firebase';
 import { StreakProps } from '@/app/lib/interface';
 import moment from 'moment';
 
+// ✅ Helper function to convert date to Date object
+function convertToDate(date: Timestamp | string | Date): Date {
+  if (date instanceof Timestamp) {
+    return date.toDate();
+  } else if (typeof date === 'string') {
+    return new Date(date);
+  } else {
+    return date;
+  }
+}
+
 interface StreaksContextType {
   streaks: StreakProps[];
   loading: boolean;
@@ -50,15 +61,19 @@ export const StreaksProvider = ({
 
   // ✅ Mark streak as done (with or without remarks)
   const markStreakDone = async (streak: StreakProps, progress: string = '') => {
-    const today = moment().format('YYYY-MM-DD');
+    const today = moment().startOf('day');
     const dayName = moment().format('dddd');
 
-    const alreadyDone = streak.attendance?.some((a) => a.date === today);
+    const alreadyDone = streak.attendance?.some((a) => {
+      // Handle both Timestamp and string dates
+      const date = convertToDate(a.date);
+      return moment(date).isSame(today, 'day');
+    });
     if (alreadyDone) return;
 
     const updatedAttendance = [
       ...(streak.attendance || []),
-      { date: today, day: dayName, progress },
+      { date: Timestamp.now(), day: dayName, progress: progress || undefined },
     ];
 
     await updateDoc(doc(db, 'streaks', streak.id!), {

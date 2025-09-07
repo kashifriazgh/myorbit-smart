@@ -7,30 +7,22 @@ import {
   Stack,
   Typography,
   IconButton,
-  Modal,
   Tooltip,
-  TextField,
   useTheme as useMuiTheme,
   MobileStepper,
   Skeleton,
 } from '@mui/material';
 
-import { useEffect, useState } from 'react';
-import {
-  collection,
-  getDocs,
-  Timestamp,
-  updateDoc,
-  doc,
-} from 'firebase/firestore';
+import { useState } from 'react';
 import moment from 'moment-timezone';
-import { db } from '@/app/lib/firebase';
+import { Timestamp } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { IncomeSource } from '@/app/lib/interface';
+import { useIncomeSources } from '@/app/lib/context/IncomeSourcesContext';
+import { IncomeSource, TransactionSource } from '@/app/lib/interface';
+import MarkAsReceivedDialog from '../finance/MarkAsReceivedDialog';
+import RescheduleDialog from '../finance/RescheduleDialog';
 import { Event } from '@mui/icons-material';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
 import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
 
@@ -38,127 +30,97 @@ export default function ExpectedIncome() {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const muiTheme = useMuiTheme();
+  const {
+    incomeSources,
+    banks,
+    loading,
+    markAsReceived,
+    rescheduleIncome,
+    addNewBank,
+  } = useIncomeSources();
 
-  const [items, setItems] = useState<IncomeSource[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [markingId, setMarkingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null); // For fade-out
   const [activeStep, setActiveStep] = useState(0);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [rescheduleItem, setRescheduleItem] = useState<IncomeSource | null>(
+  const [markAsReceivedOpen, setMarkAsReceivedOpen] = useState(false);
+  const [selectedIncome, setSelectedIncome] = useState<IncomeSource | null>(
     null
   );
-  const [newDate, setNewDate] = useState<Date | null>(null);
-  const [reschedulingLoading, setReschedulingLoading] = useState(false); // New loading state for save button
+  const [actionLoading, setActionLoading] = useState(false);
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
 
   const now = moment().startOf('day');
   const endOfMonth = moment().endOf('month');
 
-  const fetchIncome = async () => {
-    if (!user) return;
-    setLoading(true);
+  // Filter income sources for expected incomes
+  const items = incomeSources
+    .filter((inc) => {
+      const expected = inc.expectedDate;
+      const due = moment(expected);
+      return (
+        inc.userId === user?.uid &&
+        !inc.isReceived &&
+        due.isSameOrAfter(now) &&
+        due.isSameOrBefore(endOfMonth)
+      );
+    })
+    .sort((a, b) => {
+      const aDue = moment(a.expectedDate);
+      const bDue = moment(b.expectedDate);
+      return aDue.diff(bDue);
+    })
+    .slice(0, 6);
 
-    try {
-      const snap = await getDocs(collection(db, 'incomeSources'));
-      const allIncome = snap.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      })) as IncomeSource[];
-
-      const filtered = allIncome
-        .filter((inc) => {
-          const expected =
-            (inc.expectedDate as Timestamp)?.toDate?.() || inc.expectedDate;
-          const due = moment(expected);
-          return (
-            inc.userId === user.uid &&
-            !inc.isReceived &&
-            due.isSameOrAfter(now) &&
-            due.isSameOrBefore(endOfMonth)
-          );
-        })
-        .sort((a, b) => {
-          const aDue = moment(
-            (a.expectedDate as Timestamp)?.toDate?.() || a.expectedDate
-          );
-          const bDue = moment(
-            (b.expectedDate as Timestamp)?.toDate?.() || b.expectedDate
-          );
-          return aDue.diff(bDue);
-        })
-        .slice(0, 6);
-
-      setItems(filtered);
-    } catch (err) {
-      console.error('❌ Failed to load expected income:', err);
-    } finally {
-      setLoading(false);
-    }
+  const handleMarkAsReceived = (inc: IncomeSource) => {
+    setSelectedIncome(inc);
+    setMarkAsReceivedOpen(true);
   };
 
-  const markAsReceived = async (inc: IncomeSource) => {
-    if (!inc.id) return;
-
-    setMarkingId(inc.id);
-
+  const handleMarkAsReceivedConfirm = async (
+    updateMainFund: boolean,
+    fundSource?: TransactionSource,
+    bankId?: string
+  ) => {
+    if (!selectedIncome) return;
+    setActionLoading(true);
     try {
-      await updateDoc(doc(db, 'incomeSources', inc.id), {
-        isReceived: true,
-        updatedAt: new Date(),
-      });
+      await markAsReceived(selectedIncome, updateMainFund, fundSource, bankId);
+      setMarkAsReceivedOpen(false);
+      setSelectedIncome(null);
 
       // Start fade-out transition
-      setRemovingId(inc.id);
-
-      // After fade-out delay, remove the item
+      setRemovingId(selectedIncome.id!);
       setTimeout(() => {
-        setItems((prev) => {
-          const updated = prev.filter((item) => item.id !== inc.id);
-          if (activeStep >= updated.length) {
-            setActiveStep(Math.max(updated.length - 1, 0));
-          }
-          return updated;
-        });
         setRemovingId(null);
-      }, 300); // match transition duration
-    } catch (err) {
-      console.error('❌ Failed to mark income as received:', err);
+        if (activeStep >= items.length - 1) {
+          setActiveStep(Math.max(items.length - 2, 0));
+        }
+      }, 300);
+    } catch (error) {
+      console.error('Error marking as received:', error);
     } finally {
-      setMarkingId(null);
+      setActionLoading(false);
     }
   };
 
   const handleReschedule = (item: IncomeSource) => {
-    setRescheduleItem(item);
-    const date =
-      item.expectedDate instanceof Timestamp
-        ? item.expectedDate.toDate()
-        : new Date(item.expectedDate as Date);
-    setNewDate(date);
+    setSelectedIncome(item);
     setRescheduleOpen(true);
   };
 
-  const updateExpectedDate = async () => {
-    if (!rescheduleItem || !newDate) return;
-    setReschedulingLoading(true);
+  const handleRescheduleConfirm = async (newDate: Date) => {
+    if (!selectedIncome?.id) return;
+    setRescheduleLoading(true);
     try {
-      await updateDoc(doc(db, 'incomeSources', rescheduleItem.id), {
-        expectedDate: Timestamp.fromDate(newDate),
-        updatedAt: new Date(),
-      });
+      await rescheduleIncome(selectedIncome.id, newDate);
       setRescheduleOpen(false);
-      setRescheduleItem(null);
-      fetchIncome();
-    } catch (err) {
-      console.error('❌ Failed to reschedule income:', err);
+      setSelectedIncome(null);
+    } catch (error) {
+      console.error('Error rescheduling:', error);
     } finally {
-      setReschedulingLoading(false);
+      setRescheduleLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchIncome();
-  }, [user]);
 
   if (!theme) return null; // or return a loading skeleton
 
@@ -265,15 +227,11 @@ export default function ExpectedIncome() {
                   borderColor: '#047857',
                 },
               }}
-              onClick={() => markAsReceived(activeItem)}
-              disabled={markingId === activeItem.id}
-              startIcon={
-                markingId === activeItem.id ? (
-                  <CircularProgress size={16} />
-                ) : null
-              }
+              onClick={() => handleMarkAsReceived(activeItem)}
+              disabled={actionLoading}
+              startIcon={actionLoading ? <CircularProgress size={16} /> : null}
             >
-              {markingId === activeItem.id ? 'Updating...' : 'Mark as Received'}
+              {actionLoading ? 'Updating...' : 'Mark as Received'}
             </Button>
 
             <Tooltip title="Reschedule">
@@ -322,53 +280,25 @@ export default function ExpectedIncome() {
         }
       />
 
-      <Modal open={rescheduleOpen} onClose={() => setRescheduleOpen(false)}>
-        <Box
-          sx={{
-            p: 3,
-            backgroundColor: theme.mode === 'dark' ? '#1e293b' : '#fff',
-            borderRadius: 2,
-            width: 300,
-            mx: 'auto',
-            mt: '15%',
-            boxShadow: muiTheme.shadows[5],
-          }}
-        >
-          <Typography fontWeight={600} mb={2}>
-            Reschedule Income
-          </Typography>
+      {/* Mark as Received Dialog */}
+      <MarkAsReceivedDialog
+        open={markAsReceivedOpen}
+        onClose={() => setMarkAsReceivedOpen(false)}
+        income={selectedIncome}
+        banks={banks}
+        onConfirm={handleMarkAsReceivedConfirm}
+        onAddBank={addNewBank}
+        loading={actionLoading}
+      />
 
-          <DatePicker
-            selected={newDate}
-            onChange={(date: Date | null) => setNewDate(date)}
-            minDate={new Date()}
-            dateFormat="yyyy-MM-dd"
-            customInput={
-              <TextField
-                fullWidth
-                size="small"
-                variant="outlined"
-                label="New Expected Date"
-              />
-            }
-          />
-
-          <Stack direction="row" spacing={1} justifyContent="flex-end" mt={2}>
-            <Button onClick={() => setRescheduleOpen(false)}>Cancel</Button>
-            <Button
-              onClick={updateExpectedDate}
-              variant="contained"
-              disabled={!newDate || reschedulingLoading}
-            >
-              {reschedulingLoading ? (
-                <CircularProgress size={20} sx={{ color: 'white' }} />
-              ) : (
-                'Save'
-              )}
-            </Button>
-          </Stack>
-        </Box>
-      </Modal>
+      {/* Reschedule Dialog */}
+      <RescheduleDialog
+        open={rescheduleOpen}
+        onClose={() => setRescheduleOpen(false)}
+        income={selectedIncome}
+        onConfirm={handleRescheduleConfirm}
+        loading={rescheduleLoading}
+      />
     </Box>
   );
 }

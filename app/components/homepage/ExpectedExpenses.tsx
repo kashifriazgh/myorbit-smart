@@ -13,33 +13,46 @@ import {
   useTheme as useMuiTheme,
   MobileStepper,
   Skeleton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
-import {
-  collection,
-  getDocs,
-  Timestamp,
-  updateDoc,
-  doc,
-} from 'firebase/firestore';
 import moment from 'moment-timezone';
-import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { Expenditure } from '@/app/lib/interface';
+import { Expenditure, TransactionSource } from '@/app/lib/interface';
 import { Event } from '@mui/icons-material';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
+import {
+  useExpenditures,
+  ExpendituresProvider,
+} from '@/app/lib/context/ExpendituresContext';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/app/lib/firebase';
+import { TotalCashSnapshot } from '@/app/lib/interface';
 
-export default function ExpectedExpenses() {
+function ExpectedExpenses() {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const muiTheme = useMuiTheme();
+  const {
+    expenditures,
+    banks,
+    loading,
+    markAsPaid,
+    rescheduleExpenditure,
+    addNewBank,
+  } = useExpenditures();
 
-  const [items, setItems] = useState<Expenditure[]>([]);
-  const [loading, setLoading] = useState(true);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -49,67 +62,58 @@ export default function ExpectedExpenses() {
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
 
-  const fetchData = async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const snap = await getDocs(collection(db, 'expenditures'));
-      const allExpenses = snap.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      })) as Expenditure[];
+  // Fund deduction state
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [selectedExpenditure, setSelectedExpenditure] =
+    useState<Expenditure | null>(null);
+  const [deductionSource, setDeductionSource] =
+    useState<TransactionSource>('in_hand');
+  const [selectedBank, setSelectedBank] = useState('');
+  const [newBankName, setNewBankName] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [availableFunds, setAvailableFunds] = useState(0);
+  const [insufficientFunds, setInsufficientFunds] = useState(false);
 
-      const filtered = allExpenses
-        .filter((exp) => {
-          const due = moment(
-            (exp.dueDate as Timestamp)?.toDate?.() || exp.dueDate
-          );
-          return (
-            exp.userId === user.uid &&
-            !exp.isPaid &&
-            due.isSameOrAfter(moment(), 'day')
-          );
-        })
+  const SOURCE_OPTIONS: TransactionSource[] = [
+    'bank',
+    'in_hand',
+    'easypaisa',
+    'jazzcash',
+    'other',
+  ];
 
-        .sort((a, b) => {
-          const aDue = moment(
-            (a.dueDate as Timestamp)?.toDate?.() || a.dueDate
-          );
-          const bDue = moment(
-            (b.dueDate as Timestamp)?.toDate?.() || b.dueDate
-          );
-          return aDue.diff(bDue);
-        })
-        .slice(0, 6);
+  // Filter expenditures for upcoming expenses
+  const items = expenditures
+    .filter((exp) => {
+      const due = moment(exp.dueDate);
+      return !exp.isPaid && due.isSameOrAfter(moment(), 'day');
+    })
+    .sort((a, b) => {
+      const aDue = moment(a.dueDate);
+      const bDue = moment(b.dueDate);
+      return aDue.diff(bDue);
+    })
+    .slice(0, 6);
 
-      setItems(filtered);
-      setActiveStep(0);
-    } catch (err) {
-      console.error('❌ Failed to load expected expenses:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const markAsPaid = async (exp: Expenditure) => {
+  const handleMarkAsPaid = async (exp: Expenditure) => {
     if (!exp.id) return;
     setMarkingId(exp.id);
+    setSelectedExpenditure(exp);
+    setDeductionSource('in_hand');
+    setSelectedBank('');
+    setConfirmDialogOpen(true);
+    setMarkingId(null);
+  };
 
+  const markExpensePaid = async (exp: Expenditure, deductFromFund: boolean) => {
     try {
-      await updateDoc(doc(db, 'expenditures', exp.id), {
-        isPaid: true,
-        updatedAt: new Date(),
-      });
-
-      setItems((prev) => {
-        const updated = prev.filter((item) => item.id !== exp.id);
-        if (activeStep >= updated.length) {
-          setActiveStep(Math.max(updated.length - 1, 0));
-        }
-        return updated;
-      });
-    } catch (err) {
-      console.error('❌ Failed to mark expense as paid:', err);
+      setMarkingId(exp.id!);
+      await markAsPaid(exp, deductFromFund, deductionSource, selectedBank);
+      if (activeStep >= items.length - 1) {
+        setActiveStep(Math.max(items.length - 2, 0));
+      }
+    } catch (e) {
+      console.error('Error marking expense paid:', e);
     } finally {
       setMarkingId(null);
     }
@@ -117,11 +121,9 @@ export default function ExpectedExpenses() {
 
   const handleReschedule = (item: Expenditure) => {
     setRescheduleItem(item);
-    const date =
-      item.dueDate instanceof Timestamp
-        ? item.dueDate.toDate()
-        : new Date(item.dueDate);
-    setNewDueDate(date);
+    const dueDate =
+      item.dueDate instanceof Timestamp ? item.dueDate.toDate() : item.dueDate;
+    setNewDueDate(dueDate || new Date());
     setRescheduleOpen(true);
   };
 
@@ -129,13 +131,9 @@ export default function ExpectedExpenses() {
     if (!rescheduleItem || !newDueDate) return;
     setReschedulingLoading(true);
     try {
-      await updateDoc(doc(db, 'expenditures', rescheduleItem.id), {
-        dueDate: Timestamp.fromDate(newDueDate),
-        updatedAt: new Date(),
-      });
+      await rescheduleExpenditure(rescheduleItem.id!, newDueDate);
       setRescheduleOpen(false);
       setRescheduleItem(null);
-      fetchData();
     } catch (err) {
       console.error('❌ Failed to reschedule expense:', err);
     } finally {
@@ -143,9 +141,73 @@ export default function ExpectedExpenses() {
     }
   };
 
+  // Available funds refresh
+  const refreshAvailableFunds = async (
+    source: TransactionSource,
+    bankId?: string
+  ) => {
+    try {
+      const docRef = doc(db, 'totalCashSnapshots', user?.uid || '');
+      const snap = await getDoc(docRef);
+      let available = 0;
+
+      if (snap.exists()) {
+        const data = snap.data() as TotalCashSnapshot;
+
+        if (source === 'bank') {
+          const bankName = banks.find((b) => b.id === bankId)?.name;
+          if (bankName) {
+            const bankMap = data.sources?.bank || {};
+            available = bankMap[bankName] || 0;
+          } else {
+            available = 0;
+          }
+        } else {
+          available = (data.sources?.[source] as number) || 0;
+        }
+      } else {
+        available = 0;
+      }
+
+      setAvailableFunds(available);
+      setInsufficientFunds(
+        !!selectedExpenditure && available < selectedExpenditure.amount
+      );
+    } catch (e) {
+      console.error('Error fetching available funds:', e);
+      setAvailableFunds(0);
+      setInsufficientFunds(true);
+    }
+  };
+
+  // Refresh available funds whenever dialog opens / selection changes
   useEffect(() => {
-    fetchData();
-  }, [user]);
+    if (!confirmDialogOpen) return;
+    if (deductionSource === 'bank') {
+      refreshAvailableFunds('bank', selectedBank);
+    } else {
+      refreshAvailableFunds(deductionSource);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmDialogOpen, deductionSource, selectedBank]);
+
+  const handleConfirmYes = async () => {
+    if (!selectedExpenditure) return;
+    setActionLoading(true);
+    await markExpensePaid(selectedExpenditure, true);
+    setActionLoading(false);
+    setConfirmDialogOpen(false);
+    setSelectedExpenditure(null);
+  };
+
+  const handleConfirmNo = async () => {
+    if (!selectedExpenditure) return;
+    setActionLoading(true);
+    await markExpensePaid(selectedExpenditure, false);
+    setActionLoading(false);
+    setConfirmDialogOpen(false);
+    setSelectedExpenditure(null);
+  };
 
   if (!theme) return null; // or return a loading skeleton
 
@@ -225,12 +287,7 @@ export default function ExpectedExpenses() {
                 {activeItem.title}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Due:{' '}
-                {moment(
-                  activeItem.dueDate instanceof Timestamp
-                    ? activeItem.dueDate.toDate()
-                    : activeItem.dueDate
-                ).format('MMM D, YYYY')}
+                Due: {moment(activeItem.dueDate).format('MMM D, YYYY')}
               </Typography>
             </Box>
             <Typography fontWeight={600} fontSize={16}>
@@ -248,7 +305,7 @@ export default function ExpectedExpenses() {
                 color: borderColor,
                 '&:hover': { backgroundColor: '#fee2e2' },
               }}
-              onClick={() => markAsPaid(activeItem)}
+              onClick={() => handleMarkAsPaid(activeItem)}
               disabled={markingId === activeItem.id}
             >
               {markingId === activeItem.id ? (
@@ -350,6 +407,127 @@ export default function ExpectedExpenses() {
           </Stack>
         </Box>
       </Modal>
+
+      {/* Mark as Paid: Deduct from main fund? */}
+      <Dialog
+        open={confirmDialogOpen}
+        onClose={() => setConfirmDialogOpen(false)}
+      >
+        <DialogTitle>Deduct from main fund?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Do you want to deduct{' '}
+            <strong>Rs {selectedExpenditure?.amount}</strong> for{' '}
+            <em>{selectedExpenditure?.title}</em> from your main fund?
+          </Typography>
+
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel>Deduct From</InputLabel>
+            <Select
+              value={deductionSource}
+              label="Deduct From"
+              onChange={(e) =>
+                setDeductionSource(e.target.value as TransactionSource)
+              }
+            >
+              {SOURCE_OPTIONS.map((mode) => (
+                <MenuItem key={mode} value={mode}>
+                  {mode}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {deductionSource === 'bank' && (
+            <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Bank</InputLabel>
+                <Select
+                  value={selectedBank}
+                  label="Bank"
+                  onChange={(e) => setSelectedBank(e.target.value)}
+                >
+                  {banks.map((bank) => (
+                    <MenuItem key={bank.id} value={bank.id}>
+                      {bank.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label="New Bank"
+                size="small"
+                value={newBankName}
+                onChange={(e) => setNewBankName(e.target.value)}
+              />
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={async () => {
+                  if (!newBankName.trim()) return;
+                  try {
+                    const newBank = await addNewBank(newBankName.trim());
+                    setSelectedBank(newBank.id);
+                    setNewBankName('');
+                  } catch (e) {
+                    console.error('Error adding bank:', e);
+                  }
+                }}
+                disabled={!newBankName.trim()}
+              >
+                Add Bank
+              </Button>
+            </Stack>
+          )}
+
+          <Typography mt={1} fontSize={14}>
+            Available in <strong>{deductionSource}</strong>
+            {deductionSource === 'bank' &&
+              selectedBank &&
+              ` (${banks.find((b) => b.id === selectedBank)?.name})`}
+            : Rs {availableFunds.toLocaleString()}
+          </Typography>
+
+          {insufficientFunds && (
+            <Typography mt={1} color="error" fontWeight="bold" fontSize={13}>
+              ⚠️ Not enough balance in the selected source. You can still mark
+              as paid without deduction (press &#34;No&#34;).
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmDialogOpen(false)}
+            disabled={actionLoading}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmNo} disabled={actionLoading}>
+            No
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmYes}
+            disabled={
+              actionLoading || (deductionSource === 'bank' && !selectedBank)
+            }
+          >
+            {actionLoading ? <CircularProgress size={18} /> : 'Yes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
+  );
+}
+
+export default function ExpectedExpensesWithProvider() {
+  const { user } = useAuth();
+
+  if (!user) return null;
+
+  return (
+    <ExpendituresProvider userId={user.uid}>
+      <ExpectedExpenses />
+    </ExpendituresProvider>
   );
 }

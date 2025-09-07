@@ -9,6 +9,8 @@ import {
   Typography,
   Button,
   TextField,
+  Tooltip,
+  Chip,
 } from '@mui/material';
 import Stepper from '@mui/material/Stepper';
 import Step from '@mui/material/Step';
@@ -18,6 +20,7 @@ import { StreakProps } from '@/app/lib/interface';
 import { useStreaks } from '@/app/lib/context/StreaksContext';
 import ProgressModal from './StreakMarkDone';
 import DeleteStreak from './StreakDelete';
+import { Timestamp } from 'firebase/firestore';
 
 // ✅ simple debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -27,6 +30,17 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => clearTimeout(handler);
   }, [value, delay]);
   return debounced;
+}
+
+// ✅ Helper function to convert date to Date object
+function convertToDate(date: Timestamp | string | Date): Date {
+  if (date instanceof Timestamp) {
+    return date.toDate();
+  } else if (typeof date === 'string') {
+    return new Date(date);
+  } else {
+    return date;
+  }
 }
 
 export default function StreaksList() {
@@ -81,18 +95,28 @@ export default function StreaksList() {
         const last7Days = Array.from({ length: 7 }, (_, i) =>
           moment()
             .subtract(6 - i, 'days')
-            .format('YYYY-MM-DD')
+            .startOf('day')
         );
 
         const attendanceDots = last7Days.map((date) => {
-          const isPresent = streak.attendance?.some((a) => a.date === date);
-          return { date, isPresent };
+          const attendanceEntry = streak.attendance?.find((a) => {
+            // Handle both Timestamp and string dates
+            const entryDate = convertToDate(a.date);
+            return moment(entryDate).isSame(date, 'day');
+          });
+          return {
+            date: date.format('YYYY-MM-DD'),
+            isPresent: !!attendanceEntry,
+            progress: attendanceEntry?.progress,
+          };
         });
 
-        const today = moment().format('YYYY-MM-DD');
-        const alreadyDoneToday = streak.attendance?.some(
-          (a) => a.date === today
-        );
+        const today = moment().startOf('day');
+        const alreadyDoneToday = streak.attendance?.some((a) => {
+          // Handle both Timestamp and string dates
+          const date = convertToDate(a.date);
+          return moment(date).isSame(today, 'day');
+        });
 
         return (
           <Card
@@ -143,26 +167,35 @@ export default function StreaksList() {
                 <Stepper activeStep={-1} alternativeLabel>
                   {attendanceDots.map((dot, i) => {
                     const dayLetter = moment(dot.date).format('dd')[0];
+                    const tooltipTitle = dot.isPresent
+                      ? `${moment(dot.date).format('MMM DD')}${
+                          dot.progress ? `: ${dot.progress}` : ''
+                        }`
+                      : `${moment(dot.date).format('MMM DD')}: Not completed`;
+
                     return (
                       <Step key={i}>
                         <StepLabel
                           icon={
-                            <Box
-                              sx={{
-                                width: 28,
-                                height: 28,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                borderRadius: '50%',
-                                bgcolor: dot.isPresent ? 'green' : 'grey.300',
-                                color: dot.isPresent ? 'white' : 'black',
-                                fontSize: 14,
-                                fontWeight: 600,
-                              }}
-                            >
-                              {dayLetter}
-                            </Box>
+                            <Tooltip title={tooltipTitle} arrow>
+                              <Box
+                                sx={{
+                                  width: 28,
+                                  height: 28,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: '50%',
+                                  bgcolor: dot.isPresent ? 'green' : 'grey.300',
+                                  color: dot.isPresent ? 'white' : 'black',
+                                  fontSize: 14,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {dayLetter}
+                              </Box>
+                            </Tooltip>
                           }
                         />
                       </Step>
@@ -170,6 +203,35 @@ export default function StreaksList() {
                   })}
                 </Stepper>
               </Box>
+
+              {/* Recent Progress Entries */}
+              {streak.attendance && streak.attendance.length > 0 && (
+                <Box mt={2}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    gutterBottom
+                  >
+                    Recent Progress:
+                  </Typography>
+                  <Box display="flex" flexWrap="wrap" gap={0.5}>
+                    {streak.attendance
+                      .filter((entry) => entry.progress)
+                      .slice(-3) // Show last 3 entries with progress
+                      .map((entry, index) => (
+                        <Chip
+                          key={index}
+                          label={`${moment(convertToDate(entry.date)).format(
+                            'MMM DD'
+                          )}: ${entry.progress}`}
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontSize: '0.75rem' }}
+                        />
+                      ))}
+                  </Box>
+                </Box>
+              )}
 
               {/* Mark Done + Remarks */}
               <Box

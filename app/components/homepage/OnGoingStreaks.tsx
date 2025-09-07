@@ -25,6 +25,7 @@ import { useStreaks } from '@/app/lib/context/StreaksContext';
 import { useAuth } from '@/app/lib/context/userContext';
 import moment from 'moment';
 import Link from 'next/link';
+import { Timestamp } from 'firebase/firestore';
 
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -34,6 +35,17 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => clearTimeout(t);
   }, [value, delay]);
   return debounced;
+}
+
+// ✅ Helper function to convert date to Date object
+function convertToDate(date: Timestamp | string | Date): Date {
+  if (date instanceof Timestamp) {
+    return date.toDate();
+  } else if (typeof date === 'string') {
+    return new Date(date);
+  } else {
+    return date;
+  }
 }
 
 const OnGoingStreaks = () => {
@@ -62,7 +74,11 @@ const OnGoingStreaks = () => {
     return userStreaks.filter((s) => {
       if (!s.attendance || s.attendance.length === 0) return true;
       const today = moment().startOf('day');
-      return !s.attendance.some((a) => moment(a.date).isSame(today, 'day'));
+      return !s.attendance.some((a) => {
+        // Handle both Timestamp and string dates
+        const date = convertToDate(a.date);
+        return moment(date).isSame(today, 'day');
+      });
     });
   }, [userStreaks]);
 
@@ -119,6 +135,15 @@ const OnGoingStreaks = () => {
     ? moment(currentStreak.reminder.time, 'HH:mm').format('hh:mm A')
     : null;
 
+  // Get the last progress entry from attendance
+  const lastProgressEntry = currentStreak.attendance
+    ?.filter((entry) => entry.progress)
+    ?.sort((a, b) => {
+      const dateA = convertToDate(a.date);
+      const dateB = convertToDate(b.date);
+      return moment(dateB).diff(moment(dateA));
+    })?.[0];
+
   const openMarkUpdate = (streak: StreakProps) => {
     setSelectedStreakId(streak.id!);
     const initial = streak.currentProgress ?? '';
@@ -132,10 +157,14 @@ const OnGoingStreaks = () => {
     if (!selectedStreakId) return;
     setSaving(true);
     try {
-      await markStreakDone(
-        { id: selectedStreakId } as StreakProps,
-        currentProgress
-      );
+      // Find the full streak object to preserve existing attendance
+      const fullStreak = streaks.find((s) => s.id === selectedStreakId);
+      if (!fullStreak) {
+        console.error('Streak not found');
+        return;
+      }
+
+      await markStreakDone(fullStreak, currentProgress);
       setProgressModalOpen(false);
       setSelectedStreakId(null);
     } catch (err) {
@@ -201,8 +230,28 @@ const OnGoingStreaks = () => {
                   whiteSpace: 'nowrap',
                   mb: 1,
                 }}
+                title={currentStreak.currentProgress}
               >
                 {currentStreak.currentProgress}
+              </Typography>
+            )}
+
+            {lastProgressEntry && !currentStreak.currentProgress && (
+              <Typography
+                variant="body2"
+                sx={{
+                  fontStyle: 'italic',
+                  color: theme.palette.text.secondary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  mb: 1,
+                }}
+                title={`Last progress (${moment(
+                  convertToDate(lastProgressEntry.date)
+                ).format('MMM DD')}): ${lastProgressEntry.progress}`}
+              >
+                Last: {lastProgressEntry.progress}
               </Typography>
             )}
 

@@ -626,14 +626,13 @@ export interface StreakProps {
   title: string; // e.g. "Morning Walk"
   description?: string; // optional details
   category?: string; // Health, Study, Spiritual, etc.
-  habitType: 'daily' | 'weekly';
+  habitType: 'daily' | 'weekly' | 'monthly';
   target?: string; // e.g. "30 mins" / "10 pages"
   startDate: Timestamp;
   reminderTime?: string; // e.g. "06:00" in 24h format
   privacy: 'private' | 'public';
-
   lastChecked?: Timestamp; // last time user marked it done
-  attendance: { date: string; day: string }[];
+  attendance: { date: Timestamp; day: string; progress?: string }[];
   streaksCount: number;
 
   reminder: {

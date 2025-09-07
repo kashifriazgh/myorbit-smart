@@ -17,46 +17,40 @@ import {
   Stack,
   Collapse,
   LinearProgress,
+  Modal,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
-import { ExpandLess, ExpandMore } from '@mui/icons-material';
+import { ExpandLess, ExpandMore, Event } from '@mui/icons-material';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  query,
-  where,
-  addDoc,
-} from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { Expenditure, Bank, TotalCashSnapshot } from '@/app/lib/interface';
+import { Expenditure, TransactionSource } from '@/app/lib/interface';
 import ExpenditureChart from './ChartViewByCategories';
-import { useAuth } from '@/app/lib/context/userContext';
+// Note: user filtering is handled by ExpendituresProvider context using userId prop
 import AddExpenditureDialog from './utilsCompos/addExpenditureModal';
 import {
-  handleDeleteExpense,
-  handleAmountUpdate,
-} from '@/app/lib/functions/expenditures';
+  useExpenditures,
+  ExpendituresProvider,
+} from '@/app/lib/context/ExpendituresContext';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/app/lib/firebase';
+import { TotalCashSnapshot } from '@/app/lib/interface';
 
-type TransactionSource =
-  | 'bank'
-  | 'in_hand'
-  | 'easypaisa'
-  | 'jazzcash'
-  | 'other';
-
-export default function ExpendituresComponent({ userId }: { userId: string }) {
+function ExpendituresComponent({ userId }: { userId: string }) {
   const { theme } = useCustomTheme();
-  const { user } = useAuth();
-
-  const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Data filtering by user is handled in ExpendituresProvider context
+  const {
+    expenditures,
+    banks,
+    loading,
+    markAsPaid,
+    rescheduleExpenditure,
+    updateExpenditureAmount,
+    deleteExpenditure,
+    addNewBank,
+  } = useExpenditures();
 
   // form + modal state
   const [openModal, setOpenModal] = useState(false);
@@ -82,7 +76,6 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
     useState<TransactionSource>('in_hand');
 
   // bank-specific state
-  const [banks, setBanks] = useState<Bank[]>([]);
   const [selectedBank, setSelectedBank] = useState('');
   const [newBankName, setNewBankName] = useState('');
 
@@ -92,111 +85,17 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
 
   const [notesOpen, setNotesOpen] = useState(false);
   const [amountUpdatingId, setAmountUpdatingId] = useState<string | null>(null);
+  const [editingAmounts, setEditingAmounts] = useState<Record<string, number>>(
+    {}
+  );
 
-  // Helper function to check if recurring expense should be reset
-  const shouldResetPaidStatus = (exp: Expenditure): boolean => {
-    if (exp.type !== 'recurring' || !exp.isPaid || !exp.lastPaidDate) {
-      return false;
-    }
-
-    const lastPaid =
-      exp.lastPaidDate instanceof Date
-        ? exp.lastPaidDate
-        : exp.lastPaidDate.toDate();
-    const today = new Date();
-    const daysDiff = Math.floor(
-      (today.getTime() - lastPaid.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    switch (exp.frequency) {
-      case 'daily':
-        return daysDiff >= 1;
-      case 'weekly':
-        return daysDiff >= 7;
-      case 'monthly':
-        return daysDiff >= 30; // Approximate month
-      default:
-        return false;
-    }
-  };
-
-  // Helper function to reset paid status for recurring expenses
-  const resetRecurringExpenses = async () => {
-    const expensesToReset = expenditures.filter(shouldResetPaidStatus);
-
-    for (const exp of expensesToReset) {
-      if (exp.id) {
-        try {
-          await updateDoc(doc(db, 'expenditures', exp.id), {
-            isPaid: false,
-            updatedAt: serverTimestamp(),
-          });
-        } catch (error) {
-          console.error('Error resetting expense:', error);
-        }
-      }
-    }
-
-    // Update local state
-    setExpenditures((prev) =>
-      prev.map((exp) =>
-        shouldResetPaidStatus(exp) ? { ...exp, isPaid: false } : exp
-      )
-    );
-  };
-
-  // ---- Fetch data ----
-  useEffect(() => {
-    const fetchExpenditures = async () => {
-      const snap = await getDocs(collection(db, 'expenditures'));
-      const docs = snap.docs
-        .map((d) => {
-          const data = d.data() as Expenditure;
-          return {
-            ...data,
-            id: d.id,
-            createdAt: (data.createdAt as Timestamp)?.toDate() ?? new Date(),
-            updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(),
-            dueDate: data.dueDate
-              ? (data.dueDate as Timestamp).toDate()
-              : undefined,
-          };
-        })
-        .filter((e) => e.userId === userId)
-        .filter((e) => {
-          if (e.type === 'recurring') return true;
-          if (e.type === 'one-time' && !e.isPaid) return true;
-          return false;
-        })
-        .sort((a, b) => {
-          const dateA = a.dueDate?.getTime() ?? 0;
-          const dateB = b.dueDate?.getTime() ?? 0;
-          return dateA - dateB;
-        });
-
-      setExpenditures(docs);
-      setLoading(false);
-
-      // Reset recurring expenses that should be available again
-      setTimeout(() => {
-        resetRecurringExpenses();
-      }, 1000);
-    };
-
-    const fetchBanksForUser = async () => {
-      if (!user) return;
-      const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
-      const snap = await getDocs(q);
-      const fetched: Bank[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<Bank, 'id'>),
-      }));
-      setBanks(fetched);
-    };
-
-    fetchExpenditures();
-    fetchBanksForUser();
-  }, [userId, user]);
+  // reschedule state
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleItem, setRescheduleItem] = useState<Expenditure | null>(
+    null
+  );
+  const [newDueDate, setNewDueDate] = useState<Date | null>(null);
+  const [reschedulingLoading, setReschedulingLoading] = useState(false);
 
   // ---- helpers ----
   const totalAmount = useMemo(
@@ -272,20 +171,10 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
 
   // ---- Bank add ----
   const handleAddBank = async () => {
-    if (!user || !newBankName.trim()) return;
+    if (!newBankName.trim()) return;
     try {
-      const res = await addDoc(collection(db, 'banks'), {
-        userId: user.uid,
-        name: newBankName.trim(),
-        createdAt: serverTimestamp(),
-      });
-      const newBank: Bank = {
-        id: res.id,
-        name: newBankName.trim(),
-        userId: user.uid,
-      } as Bank;
-      setBanks((prev) => [...prev, newBank]);
-      setSelectedBank(res.id);
+      const newBank = await addNewBank(newBankName.trim());
+      setSelectedBank(newBank.id);
       setNewBankName('');
     } catch (e) {
       console.error('Error adding bank:', e);
@@ -303,101 +192,7 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
   const markExpensePaid = async (exp: Expenditure, deductFromFund: boolean) => {
     try {
       setUpdatingPaidId(exp.id!);
-
-      // 1) Update the expenditure as paid with payment history
-      const currentPayment = {
-        date: new Date(),
-        amount: exp.amount,
-      };
-
-      // Get current payment history or initialize empty array
-      const currentExp = expenditures.find((e) => e.id === exp.id);
-      const existingHistory = currentExp?.paymentHistory || [];
-
-      await updateDoc(doc(db, 'expenditures', exp.id!), {
-        isPaid: true,
-        lastPaidDate: serverTimestamp(),
-        paymentHistory: [...existingHistory, currentPayment],
-        updatedAt: serverTimestamp(),
-      });
-
-      // 2) Deduct from main fund (optional)
-      if (deductFromFund) {
-        let bankId: string | undefined;
-        let bankName: string | undefined;
-
-        if (deductionSource === 'bank' && selectedBank) {
-          const bank = banks.find((b) => b.id === selectedBank);
-          bankId = bank?.id;
-          bankName = bank?.name;
-        }
-
-        // Log cash transaction
-        await addDoc(collection(db, 'cashTransactions'), {
-          userId,
-          amount: exp.amount,
-          type: 'deduct',
-          source: deductionSource,
-          category: 'expenditure',
-          note: `Expense paid: ${exp.title}`,
-          bankId: bankId || null,
-          BankName: bankName || null,
-          createdAt: serverTimestamp(),
-        });
-
-        // Update snapshot
-        const snapRef = doc(db, 'totalCashSnapshots', userId);
-        const snap = await getDoc(snapRef);
-
-        if (snap.exists()) {
-          const data = snap.data() as TotalCashSnapshot;
-          const updatedSources = { ...data.sources };
-
-          if (deductionSource === 'bank' && bankName) {
-            updatedSources.bank = updatedSources.bank || {};
-            updatedSources.bank[bankName] =
-              (updatedSources.bank[bankName] || 0) - exp.amount;
-          } else if (deductionSource !== 'bank') {
-            if (deductionSource === 'in_hand') {
-              updatedSources.in_hand = updatedSources.in_hand - exp.amount;
-            } else if (deductionSource === 'easypaisa') {
-              updatedSources.easypaisa = updatedSources.easypaisa - exp.amount;
-            } else if (deductionSource === 'jazzcash') {
-              updatedSources.jazzcash = updatedSources.jazzcash - exp.amount;
-            } else if (deductionSource === 'other') {
-              updatedSources.other = updatedSources.other - exp.amount;
-            }
-          }
-
-          await setDoc(snapRef, {
-            ...data,
-            sources: updatedSources,
-            totalAmount: (data.totalAmount || 0) - exp.amount,
-            updatedAt: serverTimestamp(),
-          });
-        }
-      }
-
-      // 3) Local UI update
-      if (exp.type === 'one-time') {
-        setExpenditures((prev) => prev.filter((e) => e.id !== exp.id));
-      } else {
-        setExpenditures((prev) =>
-          prev.map((e) =>
-            e.id === exp.id
-              ? {
-                  ...e,
-                  isPaid: true,
-                  lastPaidDate: new Date(),
-                  paymentHistory: [
-                    ...(e.paymentHistory || []),
-                    { date: new Date(), amount: exp.amount },
-                  ],
-                }
-              : e
-          )
-        );
-      }
+      await markAsPaid(exp, deductFromFund, deductionSource, selectedBank);
     } catch (e) {
       console.error('Error marking expense paid:', e);
     } finally {
@@ -421,6 +216,29 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
     setActionLoading(false);
     setConfirmDialogOpen(false);
     setSelectedExpenditure(null);
+  };
+
+  // ---- Reschedule handlers ----
+  const handleReschedule = (item: Expenditure) => {
+    setRescheduleItem(item);
+    const dueDate =
+      item.dueDate instanceof Timestamp ? item.dueDate.toDate() : item.dueDate;
+    setNewDueDate(dueDate || new Date());
+    setRescheduleOpen(true);
+  };
+
+  const updateDueDate = async () => {
+    if (!rescheduleItem || !newDueDate) return;
+    setReschedulingLoading(true);
+    try {
+      await rescheduleExpenditure(rescheduleItem.id!, newDueDate);
+      setRescheduleOpen(false);
+      setRescheduleItem(null);
+    } catch (err) {
+      console.error('❌ Failed to reschedule expense:', err);
+    } finally {
+      setReschedulingLoading(false);
+    }
   };
 
   // ---- Render ----
@@ -491,34 +309,68 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                   <Typography fontWeight="bold">{exp.title}</Typography>
                   <Box sx={{ minWidth: 100 }}>
                     <TextField
-                      type="number"
+                      type="text"
                       variant="standard"
-                      value={exp.amount}
-                      size="small"
-                      onChange={(e) => {
-                        const newAmount = Number(e.target.value);
-                        setExpenditures((prev) =>
-                          prev.map((item) =>
-                            item.id === exp.id
-                              ? { ...item, amount: newAmount }
-                              : item
-                          )
-                        );
-                      }}
-                      onBlur={() =>
-                        exp.id &&
-                        handleAmountUpdate(
-                          exp.id,
-                          exp.amount,
-                          setAmountUpdatingId
-                        )
+                      value={
+                        editingAmounts[exp.id!] !== undefined
+                          ? editingAmounts[exp.id!].toString()
+                          : exp.amount.toString()
                       }
+                      size="small"
+                      placeholder="0"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow empty string, numbers, and decimal point
+                        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                          const newAmount =
+                            value === '' ? 0 : parseFloat(value) || 0;
+                          setEditingAmounts((prev) => ({
+                            ...prev,
+                            [exp.id!]: newAmount,
+                          }));
+                        }
+                      }}
+                      onBlur={() => {
+                        if (exp.id) {
+                          const finalAmount =
+                            editingAmounts[exp.id] !== undefined
+                              ? editingAmounts[exp.id]
+                              : exp.amount;
+                          setAmountUpdatingId(exp.id);
+                          updateExpenditureAmount(exp.id, finalAmount).finally(
+                            () => {
+                              setAmountUpdatingId(null);
+                              setEditingAmounts((prev) => {
+                                const newState = { ...prev };
+                                delete newState[exp.id!];
+                                return newState;
+                              });
+                            }
+                          );
+                        }
+                      }}
+                      onFocus={(e) => {
+                        // Select all text when focused for easy editing
+                        e.target.select();
+                      }}
                       inputProps={{
                         style: {
-                          maxWidth: 80,
+                          maxWidth: 100,
                           textAlign: 'right',
                           fontWeight: 'bold',
                           color: '#16a34a',
+                          fontSize: '14px',
+                        },
+                      }}
+                      sx={{
+                        '& .MuiInput-underline:before': {
+                          borderBottomColor: 'rgba(22, 163, 74, 0.3)',
+                        },
+                        '& .MuiInput-underline:hover:before': {
+                          borderBottomColor: 'rgba(22, 163, 74, 0.5)',
+                        },
+                        '& .MuiInput-underline:after': {
+                          borderBottomColor: '#16a34a',
                         },
                       }}
                     />
@@ -570,31 +422,44 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
                     </Collapse>
                   </>
                 )}
-                <Button
-                  variant="outlined"
-                  size="small"
-                  color="error"
-                  sx={{ mt: 1, mr: 1 }}
-                  onClick={() => exp.id && setDeleteId(exp.id)}
-                >
-                  Delete
-                </Button>
-                {!exp.isPaid && (
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
                   <Button
                     variant="outlined"
                     size="small"
-                    color="primary"
-                    sx={{ mt: 1 }}
-                    onClick={() => openMarkPaidDialog(exp)}
-                    disabled={actionLoading}
+                    color="error"
+                    onClick={() => exp.id && setDeleteId(exp.id)}
                   >
-                    {updatingPaidId === exp.id ? (
-                      <CircularProgress size={18} />
-                    ) : (
-                      'Mark as Paid'
-                    )}
+                    Delete
                   </Button>
-                )}
+                  {!exp.isPaid && (
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      color="primary"
+                      onClick={() => openMarkPaidDialog(exp)}
+                      disabled={actionLoading}
+                    >
+                      {updatingPaidId === exp.id ? (
+                        <CircularProgress size={18} />
+                      ) : (
+                        'Mark as Paid'
+                      )}
+                    </Button>
+                  )}
+                  <Tooltip title="Reschedule">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleReschedule(exp)}
+                      sx={{
+                        color: '#f59e0b',
+                        border: '1px solid #f59e0b',
+                        borderRadius: 1,
+                      }}
+                    >
+                      <Event fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
               </Box>
             ))}
           </Box>
@@ -610,14 +475,18 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
         <DialogActions>
           <Button onClick={() => setDeleteId(null)}>Cancel</Button>
           <Button
-            onClick={() =>
-              handleDeleteExpense(
-                deleteId!,
-                setExpenditures,
-                setDeleting,
-                setDeleteId
-              )
-            }
+            onClick={async () => {
+              if (!deleteId) return;
+              setDeleting(true);
+              try {
+                await deleteExpenditure(deleteId);
+                setDeleteId(null);
+              } catch (error) {
+                console.error('Error deleting expenditure:', error);
+              } finally {
+                setDeleting(false);
+              }
+            }}
             color="error"
             disabled={deleting}
             variant="contained"
@@ -731,8 +600,69 @@ export default function ExpendituresComponent({ userId }: { userId: string }) {
       <AddExpenditureDialog
         open={openModal}
         onClose={() => setOpenModal(false)}
-        onAdded={(newExp) => setExpenditures((prev) => [...prev, newExp])}
+        onAdded={() => {}} // Context will handle the update automatically
       />
+
+      {/* Reschedule Modal */}
+      <Modal open={rescheduleOpen} onClose={() => setRescheduleOpen(false)}>
+        <Box
+          sx={{
+            p: 3,
+            backgroundColor: isDark ? '#1e293b' : '#fff',
+            borderRadius: 2,
+            width: 300,
+            mx: 'auto',
+            mt: '15%',
+            boxShadow: 5,
+          }}
+        >
+          <Typography fontWeight={600} mb={2}>
+            Reschedule Payment
+          </Typography>
+
+          <DatePicker
+            selected={newDueDate}
+            onChange={(date: Date | null) => setNewDueDate(date)}
+            minDate={new Date()}
+            dateFormat="yyyy-MM-dd"
+            customInput={
+              <TextField
+                fullWidth
+                size="small"
+                variant="outlined"
+                label="New Due Date"
+              />
+            }
+          />
+
+          <Stack direction="row" spacing={1} justifyContent="flex-end" mt={2}>
+            <Button onClick={() => setRescheduleOpen(false)}>Cancel</Button>
+            <Button
+              onClick={updateDueDate}
+              variant="contained"
+              disabled={!newDueDate || reschedulingLoading}
+            >
+              {reschedulingLoading ? (
+                <CircularProgress size={20} sx={{ color: 'white' }} />
+              ) : (
+                'Save'
+              )}
+            </Button>
+          </Stack>
+        </Box>
+      </Modal>
     </Box>
+  );
+}
+
+export default function ExpendituresComponentWithProvider({
+  userId,
+}: {
+  userId: string;
+}) {
+  return (
+    <ExpendituresProvider userId={userId}>
+      <ExpendituresComponent userId={userId} />
+    </ExpendituresProvider>
   );
 }

@@ -1,119 +1,51 @@
 'use client';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Box,
   Button,
   Typography,
   TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
   CircularProgress,
   Stack,
 } from '@mui/material';
-import {
-  doc,
-  getDoc,
-  addDoc,
-  setDoc,
-  serverTimestamp,
-  updateDoc,
-  collection,
-} from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import {
-  IncomeSource,
-  TransactionSource,
-  Bank,
-  TotalCashSnapshot,
-} from '@/app/lib/interface';
+import { IncomeSource, TransactionSource } from '@/app/lib/interface';
 import ChartViewByCategory from './ChartViewByCategories';
-import { useAuth } from '@/app/lib/context/userContext';
 import AddIncomeModal from './utilsCompos/addIncomeModal';
-import {
-  fetchIncomeSources,
-  fetchBanks,
-  addNewBank,
-  updateIncomeAmount,
-  deleteIncomeSource,
-  shouldResetReceived, // ✅ imported reset helper
-} from '@/app/lib/functions/incomeSources';
+import { useIncomeSources } from '@/app/lib/context/IncomeSourcesContext';
+import MarkAsReceivedDialog from './MarkAsReceivedDialog';
+import RescheduleDialog from './RescheduleDialog';
 
 export default function IncomeSourceComponent({ userId }: { userId: string }) {
   const { theme } = useCustomTheme();
-  const { user } = useAuth();
+  const {
+    incomeSources,
+    banks,
+    loading,
+    markAsReceived,
+    rescheduleIncome,
+    updateIncomeAmount,
+    deleteIncomeSource,
+    addNewBank,
+  } = useIncomeSources();
 
-  const [sources, setSources] = useState<
-    (IncomeSource & { isHiding?: boolean })[]
-  >([]);
-  const [loading, setLoading] = useState(true);
   const [openModal, setOpenModal] = useState(false);
   const [updatingAmountId, setUpdatingAmountId] = useState<string | null>(null);
+  const [editingAmounts, setEditingAmounts] = useState<Record<string, number>>(
+    {}
+  );
 
-  // Confirm dialog
+  // Dialog states
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
   const [selectedIncome, setSelectedIncome] = useState<IncomeSource | null>(
     null
   );
   const [actionLoading, setActionLoading] = useState(false);
-
-  const SOURCE_OPTIONS: TransactionSource[] = [
-    'bank',
-    'in_hand',
-    'easypaisa',
-    'jazzcash',
-    'other',
-  ];
-  const [incomeSourceForMainFund, setIncomeSourceForMainFund] =
-    useState<TransactionSource>('in_hand');
-
-  // Bank state
-  const [banks, setBanks] = useState<Bank[]>([]);
-  const [selectedBank, setSelectedBank] = useState('');
-  const [newBankName, setNewBankName] = useState('');
-
-  const [availableFunds, setAvailableFunds] = useState(0);
-  const [sourceBalanceWarning, setSourceBalanceWarning] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      const incomeData = await fetchIncomeSources(userId);
-
-      // ✅ Reset recurring incomes if needed
-      const normalized = incomeData.map((src) => {
-        if (shouldResetReceived(src)) {
-          return { ...src, isReceived: false };
-        }
-        return src;
-      });
-
-      setSources(normalized);
-      setLoading(false);
-
-      if (user) {
-        const bankData = await fetchBanks(user.uid);
-        setBanks(bankData);
-      }
-    }
-    load();
-  }, [userId, user]);
-
-  const handleAddBank = async () => {
-    if (!user || !newBankName.trim()) return;
-    const newBank = await addNewBank(user.uid, newBankName);
-    setBanks((prev) => [...prev, newBank]);
-    setSelectedBank(newBank.id!);
-    setNewBankName('');
-  };
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
 
   // Filtered sources for display
-  const displayedSources = sources
+  const displayedSources = incomeSources
     .filter((src) =>
       src.type === 'recurring'
         ? true
@@ -144,159 +76,54 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
     }));
   }, [displayedSources]);
 
-  const onClickMark = async (src: IncomeSource) => {
+  const onClickMark = (src: IncomeSource) => {
     setSelectedIncome(src);
-    setIncomeSourceForMainFund('in_hand');
-    setSelectedBank('');
-
-    try {
-      const docRef = doc(db, 'totalCashSnapshots', userId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const available = data.sources?.['in_hand'] || 0;
-        setAvailableFunds(available);
-        setSourceBalanceWarning(available < 0);
-      } else {
-        setAvailableFunds(0);
-        setSourceBalanceWarning(true);
-      }
-    } catch (err) {
-      console.error('Error fetching snapshot:', err);
-      setAvailableFunds(0);
-      setSourceBalanceWarning(true);
-    }
-
     setConfirmDialogOpen(true);
   };
 
-  const markAsReceived = async (src: IncomeSource, updateMainFund: boolean) => {
+  const onClickReschedule = (src: IncomeSource) => {
+    setSelectedIncome(src);
+    setRescheduleDialogOpen(true);
+  };
+
+  const handleMarkAsReceived = async (
+    updateMainFund: boolean,
+    fundSource?: TransactionSource,
+    bankId?: string
+  ) => {
+    if (!selectedIncome) return;
+    setActionLoading(true);
     try {
-      // Create payment record for history
-      const currentPayment = {
-        date: new Date(),
-        amount: src.amount,
-      };
-
-      // Get current payment history or initialize empty array
-      const currentSrc = sources.find((s) => s.id === src.id);
-      const existingHistory = currentSrc?.paymentHistory || [];
-
-      await updateDoc(doc(db, 'incomeSources', src.id!), {
-        isReceived: true,
-        lastReceivedDate: serverTimestamp(), // ✅ track last time received
-        paymentHistory: [...existingHistory, currentPayment],
-        updatedAt: serverTimestamp(),
-      });
-
-      if (updateMainFund) {
-        let bankId: string | undefined;
-        let bankName: string | undefined;
-
-        if (incomeSourceForMainFund === 'bank' && selectedBank) {
-          const bank = banks.find((b) => b.id === selectedBank);
-          bankId = bank?.id;
-          bankName = bank?.name;
-        }
-
-        await addDoc(collection(db, 'cashTransactions'), {
-          userId,
-          amount: src.amount,
-          type: 'add',
-          source: incomeSourceForMainFund,
-          category: 'income',
-          note: `Income received: ${src.title}`,
-          bankId: bankId || null,
-          BankName: bankName || null,
-          createdAt: serverTimestamp(),
-        });
-
-        const docRef = doc(db, 'totalCashSnapshots', userId);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as TotalCashSnapshot;
-          const updatedSources = { ...data.sources };
-
-          if (incomeSourceForMainFund === 'bank' && bankName) {
-            updatedSources.bank[bankName] =
-              (updatedSources.bank[bankName] || 0) + src.amount;
-          } else if (incomeSourceForMainFund !== 'bank') {
-            updatedSources[incomeSourceForMainFund] =
-              (updatedSources[incomeSourceForMainFund] as number) + src.amount;
-          }
-
-          await setDoc(docRef, {
-            ...data,
-            sources: updatedSources,
-            totalAmount: data.totalAmount + src.amount,
-            updatedAt: serverTimestamp(),
-          });
-        }
-      }
-
-      if (src.type === 'one-time') {
-        setSources((prev) =>
-          prev.map((i) => (i.id === src.id ? { ...i, isHiding: true } : i))
-        );
-        setTimeout(
-          () =>
-            setSources((prev) =>
-              prev.filter((i) => !(i.id === src.id && i.type === 'one-time'))
-            ),
-          300
-        );
-      } else {
-        setSources((prev) =>
-          prev.map((i) =>
-            i.id === src.id
-              ? {
-                  ...i,
-                  isReceived: true,
-                  lastReceivedDate: new Date(),
-                  paymentHistory: [
-                    ...(i.paymentHistory || []),
-                    { date: new Date(), amount: src.amount },
-                  ],
-                }
-              : i
-          )
-        );
-      }
-    } catch (err) {
-      console.error('Error marking received:', err);
+      await markAsReceived(selectedIncome, updateMainFund, fundSource, bankId);
+      setConfirmDialogOpen(false);
+      setSelectedIncome(null);
+    } catch (error) {
+      console.error('Error marking as received:', error);
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleConfirmYes = async () => {
-    if (!selectedIncome) return;
-    setActionLoading(true);
-    await markAsReceived(selectedIncome, true);
-    setActionLoading(false);
-    setConfirmDialogOpen(false);
-    setSelectedIncome(null);
-  };
-
-  const handleConfirmNo = async () => {
-    if (!selectedIncome) return;
-    setActionLoading(true);
-    await markAsReceived(selectedIncome, false);
-    setActionLoading(false);
-    setConfirmDialogOpen(false);
-    setSelectedIncome(null);
+  const handleReschedule = async (newDate: Date) => {
+    if (!selectedIncome?.id) return;
+    setRescheduleLoading(true);
+    try {
+      await rescheduleIncome(selectedIncome.id, newDate);
+      setRescheduleDialogOpen(false);
+      setSelectedIncome(null);
+    } catch (error) {
+      console.error('Error rescheduling:', error);
+    } finally {
+      setRescheduleLoading(false);
+    }
   };
 
   const handleDelete = async (src: IncomeSource) => {
-    setSources((prev) =>
-      prev.map((i) => (i.id === src.id ? { ...i, isHiding: true } : i))
-    );
-    setTimeout(async () => {
-      try {
-        if (src.id) await deleteIncomeSource(src.id);
-      } catch (err) {
-        console.error('Error deleting income:', err);
-      }
-      setSources((prev) => prev.filter((i) => i.id !== src.id));
-    }, 300);
+    try {
+      if (src.id) await deleteIncomeSource(src.id);
+    } catch (err) {
+      console.error('Error deleting income:', err);
+    }
   };
 
   if (!theme || loading)
@@ -346,7 +173,7 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
             borderLeft: '4px solid #3b82f6',
             borderRadius: 2,
             backgroundColor: theme.mode === 'dark' ? '#1e293b' : '#f9fafb',
-            opacity: src.isHiding ? 0 : 1,
+            opacity: 1,
             transition: 'opacity 0.3s ease',
           }}
         >
@@ -359,35 +186,68 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
             <Typography fontWeight="bold">{src.title}</Typography>
             <Box sx={{ position: 'relative' }}>
               <TextField
-                type="number"
+                type="text"
                 variant="standard"
-                value={src.amount}
+                value={
+                  editingAmounts[src.id!] !== undefined
+                    ? editingAmounts[src.id!].toString()
+                    : src.amount.toString()
+                }
                 size="small"
+                placeholder="0"
                 onChange={(e) => {
-                  const newAmt = Number(e.target.value);
-                  setSources((prev) =>
-                    prev.map((i) =>
-                      i.id === src.id ? { ...i, amount: newAmt } : i
-                    )
-                  );
+                  const value = e.target.value;
+                  // Allow empty string, numbers, and decimal point
+                  if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                    const newAmount = value === '' ? 0 : parseFloat(value) || 0;
+                    setEditingAmounts((prev) => ({
+                      ...prev,
+                      [src.id!]: newAmount,
+                    }));
+                  }
                 }}
                 onBlur={async () => {
                   if (!src.id) return;
+                  const finalAmount =
+                    editingAmounts[src.id] !== undefined
+                      ? editingAmounts[src.id]
+                      : src.amount;
                   setUpdatingAmountId(src.id);
                   try {
-                    await updateIncomeAmount(src.id, src.amount);
+                    await updateIncomeAmount(src.id, finalAmount);
+                    setEditingAmounts((prev) => {
+                      const newState = { ...prev };
+                      delete newState[src.id!];
+                      return newState;
+                    });
                   } catch (err) {
                     console.error('Error updating amount:', err);
                   } finally {
                     setUpdatingAmountId(null);
                   }
                 }}
+                onFocus={(e) => {
+                  // Select all text when focused for easy editing
+                  e.target.select();
+                }}
                 inputProps={{
                   style: {
-                    maxWidth: 80,
+                    maxWidth: 100,
                     textAlign: 'right',
                     fontWeight: 'bold',
                     color: '#2563eb',
+                    fontSize: '14px',
+                  },
+                }}
+                sx={{
+                  '& .MuiInput-underline:before': {
+                    borderBottomColor: 'rgba(59, 130, 246, 0.3)',
+                  },
+                  '& .MuiInput-underline:hover:before': {
+                    borderBottomColor: 'rgba(59, 130, 246, 0.5)',
+                  },
+                  '& .MuiInput-underline:after': {
+                    borderBottomColor: '#3b82f6',
                   },
                 }}
               />
@@ -437,139 +297,77 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
             </Typography>
           )}
 
-          <Button
-            variant="outlined"
-            size="small"
-            color="error"
-            sx={{ mt: 1, mr: 1 }}
-            onClick={() => handleDelete(src)}
-          >
-            Delete
-          </Button>
-
-          {!src.isReceived && (
+          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
             <Button
               variant="outlined"
               size="small"
-              color="primary"
-              sx={{ mt: 1 }}
-              onClick={() => onClickMark(src)}
-              disabled={actionLoading}
+              color="error"
+              onClick={() => handleDelete(src)}
             >
-              {actionLoading && selectedIncome?.id === src.id ? (
-                <CircularProgress size={18} />
-              ) : (
-                'Mark as Received'
-              )}
+              Delete
             </Button>
-          )}
+
+            {!src.isReceived && (
+              <>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  color="primary"
+                  onClick={() => onClickMark(src)}
+                  disabled={actionLoading}
+                >
+                  {actionLoading && selectedIncome?.id === src.id ? (
+                    <CircularProgress size={18} />
+                  ) : (
+                    'Mark as Received'
+                  )}
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  size="small"
+                  color="secondary"
+                  onClick={() => onClickReschedule(src)}
+                  disabled={rescheduleLoading}
+                >
+                  {rescheduleLoading && selectedIncome?.id === src.id ? (
+                    <CircularProgress size={18} />
+                  ) : (
+                    'Reschedule'
+                  )}
+                </Button>
+              </>
+            )}
+          </Stack>
         </Box>
       ))}
 
-      {/* Confirm Dialog */}
-      <Dialog
+      {/* Mark as Received Dialog */}
+      <MarkAsReceivedDialog
         open={confirmDialogOpen}
         onClose={() => setConfirmDialogOpen(false)}
-      >
-        <DialogTitle>Add to main fund?</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Do you want to add the amount{' '}
-            <strong>Rs {selectedIncome?.amount}</strong> from{' '}
-            <em>{selectedIncome?.title}</em> to your main fund?
-          </Typography>
+        income={selectedIncome}
+        banks={banks}
+        onConfirm={handleMarkAsReceived}
+        onAddBank={addNewBank}
+        loading={actionLoading}
+      />
 
-          <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel>Source in Fund</InputLabel>
-            <Select
-              value={incomeSourceForMainFund}
-              onChange={(e) =>
-                setIncomeSourceForMainFund(e.target.value as TransactionSource)
-              }
-            >
-              {SOURCE_OPTIONS.map((mode) => (
-                <MenuItem key={mode} value={mode}>
-                  {mode}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          {incomeSourceForMainFund === 'bank' && (
-            <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Bank</InputLabel>
-                <Select
-                  value={selectedBank}
-                  onChange={(e) => setSelectedBank(e.target.value)}
-                >
-                  {banks.map((bank) => (
-                    <MenuItem key={bank.id} value={bank.id}>
-                      {bank.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <TextField
-                label="New Bank"
-                size="small"
-                value={newBankName}
-                onChange={(e) => setNewBankName(e.target.value)}
-              />
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={handleAddBank}
-                disabled={!newBankName.trim()}
-              >
-                Add Bank
-              </Button>
-            </Stack>
-          )}
-
-          <Typography mt={1} fontSize={14}>
-            Available in <strong>{incomeSourceForMainFund}</strong>
-            {incomeSourceForMainFund === 'bank' &&
-              selectedBank &&
-              ` (${banks.find((b) => b.id === selectedBank)?.name})`}
-            : Rs {availableFunds.toLocaleString()}
-          </Typography>
-
-          {sourceBalanceWarning && (
-            <Typography mt={1} color="error" fontWeight="bold" fontSize={13}>
-              ⚠️ This source previously had negative or no balance.
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => setConfirmDialogOpen(false)}
-            disabled={actionLoading}
-          >
-            Cancel
-          </Button>
-          <Button onClick={handleConfirmNo} disabled={actionLoading}>
-            No
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleConfirmYes}
-            disabled={
-              actionLoading ||
-              (incomeSourceForMainFund === 'bank' && !selectedBank)
-            }
-          >
-            {actionLoading ? <CircularProgress size={18} /> : 'Yes'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Reschedule Dialog */}
+      <RescheduleDialog
+        open={rescheduleDialogOpen}
+        onClose={() => setRescheduleDialogOpen(false)}
+        income={selectedIncome}
+        onConfirm={handleReschedule}
+        loading={rescheduleLoading}
+      />
 
       {/* Add Income Modal */}
       <AddIncomeModal
         open={openModal}
         onClose={() => setOpenModal(false)}
         userId={userId}
-        onAdded={(income) => setSources((prev) => [...prev, income])}
+        onAdded={() => {}} // Context will handle the update automatically
       />
     </Box>
   );

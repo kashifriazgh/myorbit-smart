@@ -13,30 +13,38 @@ import FinancialCheckPoints from './components/finance/FinancialCheckPoints';
 // import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingIntializer';
 import OnGoingStreaks from './components/homepage/OnGoingStreaks';
 import TimeTableNotifier from './components/homepage/TimeTableNotifier';
+import { IncomeSourcesProvider } from './lib/context/IncomeSourcesContext';
+import { useAuth } from './lib/context/userContext';
 export default function Homepage() {
+  const { user } = useAuth();
+
+  if (!user) return null;
+
   return (
-    <div className="p-2 mx-auto flex-col flex max-w-2xl my-10 justify-center">
-      {/* <OnBoardingInitializer /> */}
-      <TimeTableNotifier />
-      <DashboardHome />
-      <FinancialCheckPoints />
-      <Mood />
-      <OnGoingStreaks />
-      <ImportantTasks />
-      <OverdueTasks />
-      <ExpectedExpenses />
-      <ExpectedIncome />
-      <JournalMemory />
+    <IncomeSourcesProvider userId={user.uid}>
+      <div className="p-2 mx-auto flex-col flex max-w-2xl my-10 justify-center">
+        {/* <OnBoardingInitializer /> */}
+        <TimeTableNotifier />
+        <DashboardHome />
+        <FinancialCheckPoints />
+        <Mood />
+        <OnGoingStreaks />
+        <ImportantTasks />
+        <OverdueTasks />
+        <ExpectedExpenses />
+        <ExpectedIncome />
+        <JournalMemory />
 
-      <MostProductiveDay />
+        <MostProductiveDay />
 
-      {/* <MostFocusedTime
-        data={{
-          hourStart: 21,
-          hourEnd: 22,
-          day: 'Sunday',
-        }}
-      /> */}
-    </div>
+        {/* <MostFocusedTime
+          data={{
+            hourStart: 21,
+            hourEnd: 22,
+            day: 'Sunday',
+          }}
+        /> */}
+      </div>
+    </IncomeSourcesProvider>
   );
 }

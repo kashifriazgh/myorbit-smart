@@ -16,7 +16,12 @@ import {
   useTheme,
   Stack,
   Alert,
+  useMediaQuery,
+  Divider,
+  Chip,
+  IconButton,
 } from '@mui/material';
+import { Add, Delete } from '@mui/icons-material';
 import { useState } from 'react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
@@ -46,6 +51,7 @@ export default function BuyItemModal({
 }) {
   const theme = useTheme();
   const { user } = useAuth();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [planTitle, setPlanTitle] = useState('');
   const [budgetLimit, setBudgetLimit] = useState<number | ''>('');
@@ -99,6 +105,10 @@ export default function BuyItemModal({
     setNotes('');
   };
 
+  const handleRemoveItem = (index: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSavePlan = async () => {
     if (!planTitle || items.length === 0 || !user) return;
 
@@ -138,125 +148,302 @@ export default function BuyItemModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>Create Shopping Plan</DialogTitle>
-      <DialogContent>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth={isMobile ? 'sm' : 'md'}
+      fullScreen={isMobile}
+      sx={{
+        '& .MuiDialog-paper': {
+          margin: isMobile ? 0 : 'auto',
+          maxHeight: isMobile ? '100vh' : '90vh',
+        },
+      }}
+    >
+      <DialogTitle
+        sx={{
+          pb: 1,
+          fontSize: isMobile ? '1.25rem' : '1.5rem',
+          fontWeight: 'bold',
+        }}
+      >
+        Create Shopping Plan
+      </DialogTitle>
+
+      <DialogContent
+        sx={{
+          px: isMobile ? 2 : 3,
+          py: isMobile ? 1 : 2,
+          '&::-webkit-scrollbar': {
+            width: '6px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: theme.palette.mode === 'dark' ? '#555' : '#ccc',
+            borderRadius: '3px',
+          },
+        }}
+      >
         {/* Plan Title & Budget */}
-        <TextField
-          label="Plan Title"
-          fullWidth
-          value={planTitle}
-          onChange={(e) => setPlanTitle(e.target.value)}
-          margin="normal"
-        />
-        <TextField
-          label="Budget Limit (Rs)"
-          fullWidth
-          type="number"
-          value={budgetLimit}
-          onChange={(e) =>
-            setBudgetLimit(e.target.value === '' ? '' : Number(e.target.value))
-          }
-          margin="normal"
-        />
+        <Stack spacing={2}>
+          <TextField
+            label="Plan Title"
+            fullWidth
+            value={planTitle}
+            onChange={(e) => setPlanTitle(e.target.value)}
+            size={isMobile ? 'medium' : 'medium'}
+            sx={{
+              '& .MuiInputBase-input': {
+                fontSize: isMobile ? '16px' : '14px', // Prevents zoom on iOS
+              },
+            }}
+          />
 
-        {/* New Item */}
-        <Typography mt={3} fontWeight="bold">
-          Add Item
-        </Typography>
-
-        <TextField
-          label="Item Title"
-          fullWidth
-          value={itemTitle}
-          onChange={(e) => setItemTitle(e.target.value)}
-          margin="normal"
-        />
-
-        <TextField
-          label="Estimated Price"
-          fullWidth
-          type="number"
-          value={estimatedPrice}
-          onChange={(e) =>
-            setEstimatedPrice(
-              e.target.value === '' ? '' : Number(e.target.value)
-            )
-          }
-          margin="normal"
-        />
-
-        <FormControl fullWidth margin="normal">
-          <InputLabel>Priority</InputLabel>
-          <Select
-            value={priority}
-            label="Priority"
+          <TextField
+            label="Budget Limit (Rs)"
+            fullWidth
+            type="number"
+            value={budgetLimit}
             onChange={(e) =>
-              setPriority(e.target.value as BuyItemEntry['priority'])
+              setBudgetLimit(
+                e.target.value === '' ? '' : Number(e.target.value)
+              )
             }
-          >
-            {PRIORITIES.map((p) => (
-              <MenuItem key={p} value={p}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            size={isMobile ? 'medium' : 'medium'}
+            sx={{
+              '& .MuiInputBase-input': {
+                fontSize: isMobile ? '16px' : '14px',
+              },
+            }}
+          />
+        </Stack>
 
-        <TextField
-          label="Notes (optional)"
-          fullWidth
-          multiline
-          rows={2}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          margin="normal"
-        />
+        <Divider sx={{ my: 3 }} />
 
-        <Box mt={1}>
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={handleAddItem}
-            disabled={estimatedPrice === '' || itemTitle === ''}
+        {/* New Item Section */}
+        <Box>
+          <Typography
+            variant="h6"
+            fontWeight="bold"
+            mb={2}
+            sx={{
+              fontSize: isMobile ? '1.1rem' : '1.25rem',
+            }}
           >
-            + Add Item
-          </Button>
+            Add Item
+          </Typography>
+
+          <Stack spacing={2}>
+            <TextField
+              label="Item Title"
+              fullWidth
+              value={itemTitle}
+              onChange={(e) => setItemTitle(e.target.value)}
+              size={isMobile ? 'medium' : 'medium'}
+              sx={{
+                '& .MuiInputBase-input': {
+                  fontSize: isMobile ? '16px' : '14px',
+                },
+              }}
+            />
+
+            <TextField
+              label="Estimated Price (Rs)"
+              fullWidth
+              type="number"
+              value={estimatedPrice}
+              onChange={(e) =>
+                setEstimatedPrice(
+                  e.target.value === '' ? '' : Number(e.target.value)
+                )
+              }
+              size={isMobile ? 'medium' : 'medium'}
+              sx={{
+                '& .MuiInputBase-input': {
+                  fontSize: isMobile ? '16px' : '14px',
+                },
+              }}
+            />
+
+            <FormControl fullWidth size={isMobile ? 'medium' : 'medium'}>
+              <InputLabel>Priority</InputLabel>
+              <Select
+                value={priority}
+                label="Priority"
+                onChange={(e) =>
+                  setPriority(e.target.value as BuyItemEntry['priority'])
+                }
+                sx={{
+                  '& .MuiSelect-select': {
+                    fontSize: isMobile ? '16px' : '14px',
+                  },
+                }}
+              >
+                {PRIORITIES.map((p) => (
+                  <MenuItem
+                    key={p}
+                    value={p}
+                    sx={{ fontSize: isMobile ? '16px' : '14px' }}
+                  >
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Notes (optional)"
+              fullWidth
+              multiline
+              rows={isMobile ? 3 : 2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              size={isMobile ? 'medium' : 'medium'}
+              sx={{
+                '& .MuiInputBase-input': {
+                  fontSize: isMobile ? '16px' : '14px',
+                },
+              }}
+            />
+
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleAddItem}
+              disabled={estimatedPrice === '' || itemTitle === ''}
+              startIcon={<Add />}
+              size={isMobile ? 'large' : 'medium'}
+              sx={{
+                py: isMobile ? 1.5 : 1,
+                fontSize: isMobile ? '16px' : '14px',
+                fontWeight: 'bold',
+              }}
+            >
+              Add Item
+            </Button>
+          </Stack>
         </Box>
 
         {/* Error */}
         {error && (
           <Box mt={2}>
-            <Alert severity="error">{error}</Alert>
+            <Alert
+              severity="error"
+              sx={{ fontSize: isMobile ? '14px' : '13px' }}
+            >
+              {error}
+            </Alert>
           </Box>
         )}
 
         {/* Items List */}
         {items.length > 0 && (
           <Box mt={4}>
-            <Typography variant="subtitle2" gutterBottom>
-              Items in This Plan ({items.length}) — Estimated Total:{' '}
-              <strong>Rs {Number(totalEstimate || 0).toLocaleString()}</strong>
-            </Typography>
-            <Stack spacing={1}>
+            <Box
+              display="flex"
+              justifyContent="space-between"
+              alignItems="center"
+              mb={2}
+            >
+              <Typography
+                variant="subtitle1"
+                fontWeight="bold"
+                sx={{
+                  fontSize: isMobile ? '1rem' : '0.875rem',
+                }}
+              >
+                Items ({items.length})
+              </Typography>
+              <Chip
+                label={`Rs ${Number(totalEstimate || 0).toLocaleString()}`}
+                color="primary"
+                size={isMobile ? 'medium' : 'small'}
+                sx={{ fontWeight: 'bold' }}
+              />
+            </Box>
+
+            <Stack spacing={1.5}>
               {items.map((item, idx) => (
                 <Box
                   key={idx}
-                  p={1.5}
-                  bgcolor={
-                    theme.palette.mode === 'dark' ? '#1f2937' : '#f3f4f6'
-                  }
-                  borderRadius={2}
+                  sx={{
+                    p: 2,
+                    bgcolor:
+                      theme.palette.mode === 'dark' ? '#1f2937' : '#f8fafc',
+                    borderRadius: 2,
+                    border: `1px solid ${
+                      theme.palette.mode === 'dark' ? '#374151' : '#e2e8f0'
+                    }`,
+                    position: 'relative',
+                  }}
                 >
-                  <Typography fontWeight="bold">
-                    {item.title ?? 'Untitled'} – Rs{' '}
-                    {(item.estimatedPrice || 0).toLocaleString()}
-                  </Typography>
+                  <Box
+                    display="flex"
+                    justifyContent="space-between"
+                    alignItems="flex-start"
+                  >
+                    <Box flex={1} pr={1}>
+                      <Typography
+                        fontWeight="bold"
+                        sx={{
+                          fontSize: isMobile ? '16px' : '14px',
+                          mb: 0.5,
+                        }}
+                      >
+                        {item.title ?? 'Untitled'}
+                      </Typography>
 
-                  <Typography fontSize="0.85rem" color="text.secondary">
-                    Priority: {item.priority}
-                    {item.notes && ` • 📝 ${item.notes}`}
-                  </Typography>
+                      <Box display="flex" alignItems="center" gap={1} mb={1}>
+                        <Typography
+                          variant="body2"
+                          color="primary"
+                          fontWeight="bold"
+                          sx={{ fontSize: isMobile ? '15px' : '13px' }}
+                        >
+                          Rs {(item.estimatedPrice || 0).toLocaleString()}
+                        </Typography>
+                        <Chip
+                          label={item.priority}
+                          size="small"
+                          color={
+                            item.priority === 'urgent'
+                              ? 'error'
+                              : item.priority === 'needed'
+                              ? 'warning'
+                              : 'default'
+                          }
+                          sx={{ fontSize: isMobile ? '12px' : '10px' }}
+                        />
+                      </Box>
+
+                      {item.notes && (
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontSize: isMobile ? '14px' : '12px' }}
+                        >
+                          📝 {item.notes}
+                        </Typography>
+                      )}
+                    </Box>
+
+                    <IconButton
+                      onClick={() => handleRemoveItem(idx)}
+                      size={isMobile ? 'medium' : 'small'}
+                      sx={{
+                        color: 'error.main',
+                        '&:hover': {
+                          bgcolor: 'error.light',
+                          color: 'white',
+                        },
+                      }}
+                    >
+                      <Delete fontSize={isMobile ? 'medium' : 'small'} />
+                    </IconButton>
+                  </Box>
                 </Box>
               ))}
             </Stack>
@@ -264,13 +451,37 @@ export default function BuyItemModal({
         )}
       </DialogContent>
 
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+      <DialogActions
+        sx={{
+          px: isMobile ? 2 : 3,
+          py: isMobile ? 2 : 1,
+          gap: 1,
+          flexDirection: isMobile ? 'column' : 'row',
+        }}
+      >
+        <Button
+          onClick={onClose}
+          size={isMobile ? 'large' : 'medium'}
+          sx={{
+            width: isMobile ? '100%' : 'auto',
+            py: isMobile ? 1.5 : 1,
+            fontSize: isMobile ? '16px' : '14px',
+          }}
+        >
+          Cancel
+        </Button>
         <Button
           onClick={handleSavePlan}
           variant="contained"
           color="success"
           disabled={!planTitle || items.length === 0}
+          size={isMobile ? 'large' : 'medium'}
+          sx={{
+            width: isMobile ? '100%' : 'auto',
+            py: isMobile ? 1.5 : 1,
+            fontSize: isMobile ? '16px' : '14px',
+            fontWeight: 'bold',
+          }}
         >
           Save Plan
         </Button>

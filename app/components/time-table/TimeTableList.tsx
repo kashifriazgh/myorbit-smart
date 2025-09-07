@@ -16,13 +16,22 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
-import { collection, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  where,
+} from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { TimeTableProps } from '@/app/lib/interface';
+import { useAuth } from '@/app/lib/context/userContext';
 import Link from 'next/link';
 import DeleteIcon from '@mui/icons-material/Delete';
 
 const TimeTableList = () => {
+  const { user } = useAuth();
   const [tables, setTables] = useState<TimeTableProps[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -32,17 +41,29 @@ const TimeTableList = () => {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'timeTables'), (snap) => {
-      const allTables = snap.docs.map((d) => ({
+    if (!user?.uid) {
+      setTables([]);
+      setLoading(false);
+      return;
+    }
+
+    // ✅ Optimized: Only fetch time tables for the current user
+    const q = query(
+      collection(db, 'timeTables'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const userTables = snap.docs.map((d) => ({
         id: d.id,
         ...(d.data() as TimeTableProps),
       }));
-      setTables(allTables);
+      setTables(userTables);
       setLoading(false);
     });
 
     return () => unsub();
-  }, []);
+  }, [user?.uid]);
 
   const handleDeleteConfirm = async () => {
     if (!deleteId) return;
@@ -117,11 +138,6 @@ const TimeTableList = () => {
               {table.description && (
                 <Typography variant="body2" color="text.secondary" gutterBottom>
                   {table.description}
-                </Typography>
-              )}
-              {table.steps?.[0] && (
-                <Typography variant="body2" color="text.primary">
-                  {table.steps[0].field1}
                 </Typography>
               )}
             </CardContent>

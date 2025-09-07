@@ -304,9 +304,8 @@ export default function DashboardHome() {
             {!loading && overdueTodos.length > 0 && (
               <Box className="mt-2">
                 <span className="inline-block rounded-full bg-red-100 text-red-700 px-3 py-1 text-xs font-semibold">
-                  You have {overdueTodos.length}{' '}
-                  {overdueTodos.length === 1 ? 'Task' : 'Tasks'} overdue.
-                  Reschedule or complete them to stay on track.
+                  {overdueTodos.length}{' '}
+                  {overdueTodos.length === 1 ? 'Task is' : 'Tasks are'} overdue.
                 </span>
               </Box>
             )}

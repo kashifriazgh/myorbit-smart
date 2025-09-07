@@ -69,10 +69,9 @@ export function stagesMaker({ today = new Date() }: StageMakerArgs): Stage[] {
     date: moment.Moment,
     from: moment.Moment
   ) => {
-    const formatted = date.format('ddd, DD MMM YY');
-    const label = `${rawLabel} – ${formatted}`;
+    const formatted = date.format('ddd DD MMM YY');
     stages.push({
-      label,
+      label: formatted,
       start: date.toDate(),
       from: from.toDate(),
       to: date.toDate(),
@@ -646,7 +645,24 @@ export default function FinancialTimeline() {
             }}
           >
             <CardContent>
-              <Typography variant="subtitle1" fontWeight="bold">
+              <Typography
+                variant="subtitle1"
+                fontWeight="bold"
+                sx={{
+                  background:
+                    'linear-gradient(45deg, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4, #FFEAA7)',
+                  backgroundSize: '300% 300%',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  animation: 'gradientShift 3s ease infinite',
+                  '@keyframes gradientShift': {
+                    '0%': { backgroundPosition: '0% 50%' },
+                    '50%': { backgroundPosition: '100% 50%' },
+                    '100%': { backgroundPosition: '0% 50%' },
+                  },
+                }}
+              >
                 {point.title}
               </Typography>
               <Typography

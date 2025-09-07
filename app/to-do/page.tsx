@@ -1,10 +1,12 @@
 'use client';
 
-import { Box, TextField, Typography } from '@mui/material';
+import { Box, TextField, Typography, Button } from '@mui/material';
 import { useState } from 'react';
 import ToDoModal from '../components/to-do/todoModal';
 import TodosList from '../components/to-do/todoList';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import Link from 'next/link';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 export default function TodosPage() {
   const [open, setOpen] = useState(false);
@@ -55,6 +57,38 @@ export default function TodosPage() {
       />
 
       <TodosList />
+
+      {/* View Completed Tasks Button */}
+      <Box mt={3} textAlign="center">
+        <Link href="/to-do/completed" style={{ textDecoration: 'none' }}>
+          <Button
+            variant="outlined"
+            startIcon={<CheckCircleIcon />}
+            sx={{
+              px: 3,
+              py: 1.5,
+              borderRadius: 2,
+              textTransform: 'none',
+              fontSize: '1rem',
+              fontWeight: 500,
+              borderColor: theme.mode === 'dark' ? '#4ade80' : '#22c55e',
+              color: theme.mode === 'dark' ? '#4ade80' : '#22c55e',
+              '&:hover': {
+                borderColor: theme.mode === 'dark' ? '#22c55e' : '#16a34a',
+                backgroundColor:
+                  theme.mode === 'dark'
+                    ? 'rgba(34, 197, 94, 0.1)'
+                    : 'rgba(34, 197, 94, 0.05)',
+                transform: 'translateY(-1px)',
+              },
+              transition: 'all 0.2s ease',
+            }}
+          >
+            View Completed Tasks
+          </Button>
+        </Link>
+      </Box>
+
       <ToDoModal open={open} onClose={() => setOpen(false)} />
     </Box>
   );

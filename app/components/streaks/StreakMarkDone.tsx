@@ -26,7 +26,6 @@ export default function ProgressModal({
   const [progress, setProgress] = useState('');
 
   const handleSave = () => {
-    if (!progress.trim()) return;
     onSave(progress.trim());
     setProgress('');
   };
@@ -43,8 +42,8 @@ export default function ProgressModal({
         </Typography>
 
         <TextField
-          label="Today's Progress"
-          placeholder="e.g. Surah Baqarah, Verse 25"
+          label="Today's Progress (Optional)"
+          placeholder="e.g. Surah Baqarah, Verse 25 (leave empty to just mark as done)"
           fullWidth
           multiline
           minRows={2}
@@ -55,8 +54,8 @@ export default function ProgressModal({
 
         <Box mt={2}>
           <Typography variant="caption" color="text.secondary">
-            Write what you completed today. This helps you continue from the
-            exact point tomorrow.
+            Write what you completed today (optional). This helps you continue from the
+            exact point tomorrow. You can also just mark as done without progress.
           </Typography>
         </Box>
       </DialogContent>
@@ -64,7 +63,7 @@ export default function ProgressModal({
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="contained" onClick={handleSave}>
-          Save Progress
+          Mark as Done
         </Button>
       </DialogActions>
     </Dialog>
