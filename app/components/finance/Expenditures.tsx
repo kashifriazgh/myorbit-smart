@@ -103,6 +103,18 @@ function ExpendituresComponent({ userId }: { userId: string }) {
     [expenditures]
   );
 
+  // Helper function to calculate days between dates
+  const getDaysDifference = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time to start of day
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0); // Reset time to start of day
+
+    const diffTime = targetDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
   const groupedByType: Record<'one-time' | 'recurring', Expenditure[]> = {
     'one-time': [],
     recurring: [],
@@ -385,12 +397,37 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                 </Typography>
                 {exp.dueDate && (
                   <Typography variant="body2" color="error" fontWeight="bold">
-                    Due Date:{' '}
+                    📅 Due Date:{' '}
                     {exp.dueDate instanceof Date
                       ? exp.dueDate.toLocaleDateString()
-                      : ''}
+                      : exp.dueDate?.toDate?.()?.toLocaleDateString() ||
+                        'Invalid date'}
                   </Typography>
                 )}
+                {exp.effectiveFromDate &&
+                  (() => {
+                    const effectiveDate =
+                      exp.effectiveFromDate instanceof Date
+                        ? exp.effectiveFromDate
+                        : exp.effectiveFromDate?.toDate?.();
+
+                    if (effectiveDate) {
+                      const daysDiff = getDaysDifference(effectiveDate);
+                      if (daysDiff > 0) {
+                        return (
+                          <Typography
+                            variant="body2"
+                            color="primary"
+                            sx={{ fontWeight: 'medium' }}
+                          >
+                            🚀 Effected By: {effectiveDate.toLocaleDateString()}{' '}
+                            (after {daysDiff} day{daysDiff !== 1 ? 's' : ''})
+                          </Typography>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
                 <Typography variant="body2" mt={0.5}>
                   {exp.isPaid ? '✅ Paid' : '❌ Not Paid'}
                 </Typography>

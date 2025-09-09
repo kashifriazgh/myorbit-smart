@@ -322,6 +322,7 @@ export interface IncomeSource {
   frequency: 'monthly' | 'weekly' | 'daily' | 'one_time';
   amount: number;
   expectedDate?: Date | Timestamp;
+  effectiveFromDate?: Date | Timestamp; // <-- NEW: when recurring income should start
   dayOfWeek?: number; // 0 = Sunday, 6 = Saturday
   dayOfMonth?: number; // 1 - 30
   isReceived?: boolean;
@@ -341,6 +342,7 @@ export interface Expenditure {
   frequency: 'monthly' | 'weekly' | 'daily' | 'one_time';
   amount: number;
   dueDate?: Date | Timestamp;
+  effectiveFromDate?: Date | Timestamp; // <-- NEW: when recurring expenditure should start
   isPaid?: boolean;
   dayOfWeek?: number; // 0 = Sunday, 6 = Saturday
   dayOfMonth?: number; // 1 - 30

@@ -15,6 +15,10 @@ import AddIncomeModal from './utilsCompos/addIncomeModal';
 import { useIncomeSources } from '@/app/lib/context/IncomeSourcesContext';
 import MarkAsReceivedDialog from './MarkAsReceivedDialog';
 import RescheduleDialog from './RescheduleDialog';
+import DeleteConfirmModal from '../global/DeleteConfirmModal';
+import DeleteIcon from '@mui/icons-material/Delete';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 export default function IncomeSourceComponent({ userId }: { userId: string }) {
   const { theme } = useCustomTheme();
@@ -38,11 +42,13 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
   // Dialog states
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedIncome, setSelectedIncome] = useState<IncomeSource | null>(
     null
   );
   const [actionLoading, setActionLoading] = useState(false);
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Filtered sources for display
   const displayedSources = incomeSources
@@ -63,6 +69,18 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
     (sum, src) => sum + src.amount,
     0
   );
+
+  // Helper function to calculate days between dates
+  const getDaysDifference = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time to start of day
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0); // Reset time to start of day
+
+    const diffTime = targetDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
 
   const categoryChartData = useMemo(() => {
     const categoryMap = new Map<string, number>();
@@ -118,11 +136,22 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
     }
   };
 
-  const handleDelete = async (src: IncomeSource) => {
+  const onClickDelete = (src: IncomeSource) => {
+    setSelectedIncome(src);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!selectedIncome?.id) return;
+    setDeleteLoading(true);
     try {
-      if (src.id) await deleteIncomeSource(src.id);
+      await deleteIncomeSource(selectedIncome.id);
+      setDeleteDialogOpen(false);
+      setSelectedIncome(null);
     } catch (err) {
       console.error('Error deleting income:', err);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -269,13 +298,37 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
           </Typography>
           {src.expectedDate && (
             <Typography variant="body2" color="text.secondary">
-              Expected:{' '}
+              📅 Expected:{' '}
               {src.expectedDate instanceof Date
                 ? src.expectedDate.toLocaleDateString()
                 : src.expectedDate?.toDate?.()?.toLocaleDateString() ||
                   'Invalid date'}
             </Typography>
           )}
+          {src.effectiveFromDate &&
+            (() => {
+              const effectiveDate =
+                src.effectiveFromDate instanceof Date
+                  ? src.effectiveFromDate
+                  : src.effectiveFromDate?.toDate?.();
+
+              if (effectiveDate) {
+                const daysDiff = getDaysDifference(effectiveDate);
+                if (daysDiff > 0) {
+                  return (
+                    <Typography
+                      variant="body2"
+                      color="primary"
+                      sx={{ fontWeight: 'medium' }}
+                    >
+                      🚀 Effected By: {effectiveDate.toLocaleDateString()}{' '}
+                      (after {daysDiff} day{daysDiff !== 1 ? 's' : ''})
+                    </Typography>
+                  );
+                }
+              }
+              return null;
+            })()}
           <Typography variant="body2" mt={0.5}>
             {src.isReceived ? '✅ Received' : '❌ Not Received'}
           </Typography>
@@ -297,12 +350,35 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
             </Typography>
           )}
 
-          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+          {/* Action Buttons - All on one line with icons */}
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              mt: 1,
+              '& .MuiButton-root': {
+                minWidth: 'auto',
+                fontSize: '0.75rem',
+                px: { xs: 1, sm: 1.5 },
+                py: 0.5,
+                flex: { xs: 1, sm: 'none' },
+              },
+            }}
+          >
             <Button
               variant="outlined"
               size="small"
               color="error"
-              onClick={() => handleDelete(src)}
+              onClick={() => onClickDelete(src)}
+              disabled={deleteLoading}
+              title="Delete income source"
+              startIcon={
+                deleteLoading && selectedIncome?.id === src.id ? (
+                  <CircularProgress size={16} />
+                ) : (
+                  <DeleteIcon />
+                )
+              }
             >
               Delete
             </Button>
@@ -315,12 +391,20 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                   color="primary"
                   onClick={() => onClickMark(src)}
                   disabled={actionLoading}
+                  title="Mark as received"
+                  startIcon={
+                    actionLoading && selectedIncome?.id === src.id ? (
+                      <CircularProgress size={16} />
+                    ) : (
+                      <CheckCircleIcon
+                        sx={{
+                          color: src.isReceived ? '#4caf50' : '#9e9e9e',
+                        }}
+                      />
+                    )
+                  }
                 >
-                  {actionLoading && selectedIncome?.id === src.id ? (
-                    <CircularProgress size={18} />
-                  ) : (
-                    'Mark as Received'
-                  )}
+                  {actionLoading && selectedIncome?.id === src.id ? '...' : ''}
                 </Button>
 
                 <Button
@@ -329,12 +413,16 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                   color="secondary"
                   onClick={() => onClickReschedule(src)}
                   disabled={rescheduleLoading}
+                  title="Reschedule income"
+                  startIcon={
+                    rescheduleLoading && selectedIncome?.id === src.id ? (
+                      <CircularProgress size={16} />
+                    ) : (
+                      <CalendarTodayIcon />
+                    )
+                  }
                 >
-                  {rescheduleLoading && selectedIncome?.id === src.id ? (
-                    <CircularProgress size={18} />
-                  ) : (
-                    'Reschedule'
-                  )}
+                  Reschedule
                 </Button>
               </>
             )}
@@ -360,6 +448,15 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
         income={selectedIncome}
         onConfirm={handleReschedule}
         loading={rescheduleLoading}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmModal
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDelete}
+        loading={deleteLoading}
+        itemLabel="income source"
       />
 
       {/* Add Income Modal */}

@@ -11,6 +11,7 @@ import {
   addDoc,
   setDoc,
   getDoc,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import {
@@ -71,6 +72,10 @@ export const IncomeSourcesProvider = ({
       const allIncome = snap.docs.map((d) => {
         const data = d.data() as IncomeSource;
         const expected = data.expectedDate as Timestamp | Date | undefined;
+        const effectiveFrom = data.effectiveFromDate as
+          | Timestamp
+          | Date
+          | undefined;
         const lastReceived = data.lastReceivedDate as
           | Timestamp
           | Date
@@ -85,6 +90,11 @@ export const IncomeSourcesProvider = ({
             ? expected instanceof Timestamp
               ? expected.toDate()
               : expected
+            : undefined,
+          effectiveFromDate: effectiveFrom
+            ? effectiveFrom instanceof Timestamp
+              ? effectiveFrom.toDate()
+              : effectiveFrom
             : undefined,
           lastReceivedDate: lastReceived
             ? lastReceived instanceof Timestamp
@@ -227,10 +237,7 @@ export const IncomeSourcesProvider = ({
 
   const deleteIncomeSource = async (incomeId: string) => {
     try {
-      await updateDoc(doc(db, 'incomeSources', incomeId), {
-        deleted: true,
-        updatedAt: serverTimestamp(),
-      });
+      await deleteDoc(doc(db, 'incomeSources', incomeId));
     } catch (error) {
       console.error('Error deleting income source:', error);
       throw error;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useEffect, useState } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import {
   Box,
   Typography,
@@ -156,6 +156,21 @@ function classifyStatus(amount: number) {
   if (amount >= 15000) return { label: '✅ Stable', color: 'green' };
   if (amount >= 5000) return { label: '⚠ Warning', color: 'orange' };
   return { label: '⛔ Critical', color: 'red' };
+}
+
+// Helper function to check if an item's effectiveFromDate is valid for calculation
+function isEffectiveDateValid(
+  item: IncomeSource | Expenditure,
+  calculationDate: moment.Moment
+): boolean {
+  // If no effectiveFromDate is set, the item is always valid
+  if (!item.effectiveFromDate) return true;
+
+  const effectiveDate = toMoment(item.effectiveFromDate);
+  if (!effectiveDate) return true;
+
+  // The item is valid if the effective date is today or in the past
+  return effectiveDate.isSameOrBefore(calculationDate, 'day');
 }
 
 // Helper function to check if a recurring item should be included in a date range
@@ -346,6 +361,11 @@ async function calculateStages(
     allIncome
       .filter((d) => d.isReceived !== true)
       .forEach((d) => {
+        // Check if the item's effectiveFromDate is valid for this calculation
+        if (!isEffectiveDateValid(d, cumulativeToDate)) {
+          return; // Skip this item if it's not yet effective
+        }
+
         let shouldInclude = false;
         let occurrences = 1;
 
@@ -391,6 +411,11 @@ async function calculateStages(
     allExpense
       .filter((d) => d.isPaid !== true)
       .forEach((d) => {
+        // Check if the item's effectiveFromDate is valid for this calculation
+        if (!isEffectiveDateValid(d, cumulativeToDate)) {
+          return; // Skip this item if it's not yet effective
+        }
+
         let shouldInclude = false;
         let occurrences = 1;
 
@@ -479,14 +504,19 @@ async function calculateStages(
       items: {
         incomes: incomeItems
           .filter((item) => {
+            const originalItem = allIncome.find((d) => d.title === item.title);
+            if (!originalItem) return false;
+
+            // Check if the item's effectiveFromDate is valid for this stage
+            if (!isEffectiveDateValid(originalItem, stageToDate)) {
+              return false;
+            }
+
             // Filter items to show only those within this specific stage
             const itemDate =
               item.type === 'one-time'
-                ? allIncome.find((d) => d.title === item.title)?.expectedDate
-                  ? toMoment(
-                      allIncome.find((d) => d.title === item.title)
-                        ?.expectedDate
-                    )
+                ? originalItem.expectedDate
+                  ? toMoment(originalItem.expectedDate)
                   : null
                 : null;
             return (
@@ -520,13 +550,19 @@ async function calculateStages(
           }),
         expenses: expenseItems
           .filter((item) => {
+            const originalItem = allExpense.find((d) => d.title === item.title);
+            if (!originalItem) return false;
+
+            // Check if the item's effectiveFromDate is valid for this stage
+            if (!isEffectiveDateValid(originalItem, stageToDate)) {
+              return false;
+            }
+
             // Filter items to show only those within this specific stage
             const itemDate =
               item.type === 'one-time'
-                ? allExpense.find((d) => d.title === item.title)?.dueDate
-                  ? toMoment(
-                      allExpense.find((d) => d.title === item.title)?.dueDate
-                    )
+                ? originalItem.dueDate
+                  ? toMoment(originalItem.dueDate)
                   : null
                 : null;
             return (
