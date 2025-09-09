@@ -28,9 +28,11 @@ import AddIcon from '@mui/icons-material/Add';
 import { LocalizationProvider, TimePicker } from '@mui/x-date-pickers';
 import { AdapterMoment } from '@mui/x-date-pickers/AdapterMoment';
 import moment from 'moment';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 const TimeTableDetail = () => {
   const { id } = useParams(); // get the id from URL
+  const { theme } = useCustomTheme();
   const [table, setTable] = useState<TimeTableProps | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -155,7 +157,17 @@ const TimeTableDetail = () => {
 
   return (
     <LocalizationProvider dateAdapter={AdapterMoment}>
-      <Box maxWidth="700px" mx="auto" p={2}>
+      <Box
+        maxWidth="700px"
+        mx="auto"
+        p={2}
+        sx={{
+          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+          color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+          minHeight: '100vh',
+          borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+        }}
+      >
         {/* Header with Edit Button */}
         <Box
           display="flex"

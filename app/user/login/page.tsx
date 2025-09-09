@@ -18,9 +18,11 @@ import {
 } from '@mui/material';
 
 import { Visibility, VisibilityOff } from '@mui/icons-material';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { theme } = useCustomTheme();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -85,7 +87,18 @@ export default function LoginPage() {
   };
 
   return (
-    <Box maxWidth={400} mx="auto" mt={10} px={2}>
+    <Box
+      maxWidth={400}
+      mx="auto"
+      mt={10}
+      px={2}
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       <Typography variant="h5" mb={2}>
         User Login
       </Typography>

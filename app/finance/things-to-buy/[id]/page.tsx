@@ -41,6 +41,7 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import WarningIcon from '@mui/icons-material/Warning';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import { useTheme } from '@mui/material/styles';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 const PRIORITY_ORDER = { urgent: 1, needed: 2, optional: 3 };
 const PRIORITIES = ['optional', 'needed', 'urgent'] as const;
@@ -102,6 +103,7 @@ const AnimatedCounter = ({
 export default function BuyItemDetailPage() {
   const { id } = useParams();
   const planId = Array.isArray(id) ? id[0] : id ?? '';
+  const { theme: customTheme } = useCustomTheme();
   const [plan, setPlan] = useState<BuyItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [editIndex, setEditIndex] = useState<number | null>(null);
@@ -266,7 +268,18 @@ export default function BuyItemDetailPage() {
   if (!plan) return <Typography textAlign="center">Plan not found.</Typography>;
 
   return (
-    <Box mt={4} p={isMobile ? 1 : 2} maxWidth="700px" mx="auto">
+    <Box
+      mt={4}
+      p={isMobile ? 1 : 2}
+      maxWidth="700px"
+      mx="auto"
+      sx={{
+        backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: customTheme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       <Fade in={true} timeout={800}>
         <Card
           elevation={3}

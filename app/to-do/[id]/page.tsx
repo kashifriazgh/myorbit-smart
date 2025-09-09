@@ -35,6 +35,7 @@ import TodoProgressBar from '@/app/components/to-do/todoDetailPage/TotDoProgress
 import TodoActionButtons from '@/app/components/to-do/todoDetailPage/ToDoActionButtons';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { STATUS_OPTIONS } from '@/app/lib/constant';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 type ConfirmDelete =
   | { type: 'step'; stepIndex: number }
@@ -46,6 +47,7 @@ export default function TodoDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const { user } = useAuth();
+  const { theme } = useCustomTheme();
   const { todos, updateStepStatus, updateSubStepStatus } = useTodoContext();
 
   const [todo, setTodo] = useState<Todo | null>(null);
@@ -218,7 +220,18 @@ export default function TodoDetailPage() {
   if (!todo) return <Typography>Task not found.</Typography>;
 
   return (
-    <Box mt={4} p={2} maxWidth="700px" mx="auto">
+    <Box
+      mt={4}
+      p={2}
+      maxWidth="700px"
+      mx="auto"
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       <TodoHeader title={todo.title} description={todo.description} />
 
       <Divider sx={{ my: 2 }} />

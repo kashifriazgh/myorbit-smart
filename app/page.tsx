@@ -15,14 +15,24 @@ import OnGoingStreaks from './components/homepage/OnGoingStreaks';
 import TimeTableNotifier from './components/homepage/TimeTableNotifier';
 import { IncomeSourcesProvider } from './lib/context/IncomeSourcesContext';
 import { useAuth } from './lib/context/userContext';
+import { useCustomTheme } from './lib/context/themeContext';
 export default function Homepage() {
   const { user } = useAuth();
+  const { theme } = useCustomTheme();
 
   if (!user) return null;
 
   return (
     <IncomeSourcesProvider userId={user.uid}>
-      <div className="p-2 mx-auto flex-col flex max-w-2xl my-10 justify-center">
+      <div
+        className="p-2 mx-auto flex-col flex max-w-2xl my-10 justify-center"
+        style={{
+          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+          color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+          minHeight: '100vh',
+          borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+        }}
+      >
         {/* <OnBoardingInitializer /> */}
         <TimeTableNotifier />
         <DashboardHome />

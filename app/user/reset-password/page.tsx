@@ -11,8 +11,10 @@ import {
 } from '@mui/material';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '@/app/lib/firebase';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 export default function ResetPasswordPage() {
+  const { theme } = useCustomTheme();
   const [email, setEmail] = useState('');
   const [snack, setSnack] = useState({
     open: false,
@@ -53,7 +55,18 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <Box maxWidth={400} mx="auto" mt={10}>
+    <Box
+      maxWidth={400}
+      mx="auto"
+      mt={10}
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+        p: 2,
+      }}
+    >
       <Typography variant="h5" mb={2}>
         Reset Password
       </Typography>

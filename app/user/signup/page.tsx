@@ -25,9 +25,11 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { auth, db } from '@/app/lib/firebase';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 export default function SignupPage() {
   const router = useRouter();
+  const { theme } = useCustomTheme();
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -155,7 +157,17 @@ export default function SignupPage() {
   }
 
   return (
-    <Box maxWidth={400} mx="auto" my={10}>
+    <Box
+      maxWidth={400}
+      mx="auto"
+      my={10}
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       <Typography variant="h5" mb={2}>
         Sign Up
       </Typography>

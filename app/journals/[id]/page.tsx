@@ -15,6 +15,7 @@ import { db } from '@/app/lib/firebase';
 import { JournalEntry } from '@/app/lib/interface';
 import moment from 'moment';
 import AIEnhanceModal from '@/app/components/global/AIModal';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 const moodPhrases: Record<string, string[]> = {
   happy: ["You're radiating joy!", 'A bright and cheerful day!'],
@@ -26,6 +27,7 @@ const moodPhrases: Record<string, string[]> = {
 
 export default function JournalDetailPage() {
   const { id } = useParams();
+  const { theme } = useCustomTheme();
   const [journal, setJournal] = useState<JournalEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [aiModalOpen, setAIModalOpen] = useState(false);
@@ -65,7 +67,18 @@ export default function JournalDetailPage() {
     ];
 
   return (
-    <Box mt={4} p={2} maxWidth="700px" mx="auto">
+    <Box
+      mt={4}
+      p={2}
+      maxWidth="700px"
+      mx="auto"
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       {/* Title */}
       <Typography variant="h5" fontWeight="bold" gutterBottom>
         {journal.title}

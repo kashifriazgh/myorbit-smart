@@ -35,6 +35,7 @@ import { db } from '@/app/lib/firebase';
 import { BuyItem } from '@/app/lib/interface';
 import BuyItemModal from '@/app/components/finance/BuyItemModal';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import Link from 'next/link';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
@@ -46,6 +47,7 @@ import moment from 'moment-timezone';
 export default function ThingsToBuyPage() {
   const { user } = useAuth();
   const theme = useTheme();
+  const { theme: customTheme } = useCustomTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [loading, setLoading] = useState(true);
@@ -128,7 +130,18 @@ export default function ThingsToBuyPage() {
   );
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', my: 4, px: isMobile ? 1 : 3 }}>
+    <Box
+      sx={{
+        maxWidth: 1200,
+        mx: 'auto',
+        my: 4,
+        px: isMobile ? 1 : 3,
+        backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: customTheme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       {/* Hero Header */}
       <Fade in={true} timeout={800}>
         <Card

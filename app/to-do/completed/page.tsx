@@ -12,7 +12,17 @@ export default function CompletedTodosPage() {
   if (!theme) return null;
 
   return (
-    <Box maxWidth="600px" mx="auto" p={1.5}>
+    <Box
+      maxWidth="600px"
+      mx="auto"
+      p={1.5}
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       {/* Header with back button */}
       <Box display="flex" alignItems="center" gap={2} mb={3}>
         <Link href="/to-do" style={{ textDecoration: 'none' }}>

@@ -39,6 +39,7 @@ import { ExpandMore, ExpandLess } from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import Link from 'next/link';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 interface MasterUser {
   uid: string;
   email: string;
@@ -56,6 +57,7 @@ interface SubUser {
 }
 
 export default function ManageUsersPage() {
+  const { theme } = useCustomTheme();
   const [showAddUser, setShowAddUser] = useState(false);
 
   const [masterUser, setMasterUser] = useState<MasterUser | null>(null);
@@ -194,7 +196,18 @@ export default function ManageUsersPage() {
   };
 
   return (
-    <Box maxWidth="1000px" mx="auto" mt={4} className="p-4">
+    <Box
+      maxWidth="1000px"
+      mx="auto"
+      mt={4}
+      className="p-4"
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       <Typography variant="h5" mb={2}>
         Manage Users
       </Typography>

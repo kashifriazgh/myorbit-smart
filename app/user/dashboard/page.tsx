@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/app/lib/context/userContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import {
   Box,
   Typography,
@@ -20,6 +21,7 @@ import { useEffect, useState } from 'react';
 
 export default function ManageDashboard() {
   const { user } = useAuth();
+  const { theme } = useCustomTheme();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [copied, setCopied] = useState(false);
@@ -80,9 +82,26 @@ export default function ManageDashboard() {
   }
 
   return (
-    <Box maxWidth={800} mx="auto" mt={6} p={3}>
+    <Box
+      maxWidth={800}
+      mx="auto"
+      mt={6}
+      p={3}
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+      }}
+    >
       {/* Profile Card */}
-      <Card sx={{ mb: 4 }}>
+      <Card
+        sx={{
+          mb: 4,
+          backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+          color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        }}
+      >
         <CardContent>
           <Typography variant="h6" gutterBottom>
             Your Profile
