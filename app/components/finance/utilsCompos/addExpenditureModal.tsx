@@ -28,6 +28,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { EXPENSE_CATEGORIES } from '@/app/lib/constant';
 import { Expenditure } from '@/app/lib/interface';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { db } from '@/app/lib/firebase';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
@@ -41,6 +42,7 @@ export default function AddExpenditureDialog({
   onAdded: (exp: Expenditure & { id: string }) => void;
 }) {
   const { user } = useAuth();
+  const { theme } = useCustomTheme();
   const userId = user.uid;
 
   // ---- Form state ----
@@ -209,10 +211,17 @@ export default function AddExpenditureDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md" sx={{
+      '& .MuiDialog-paper': {
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+      },
+    }}>
       <DialogTitle sx={{ pb: 1 }}>
         <Stack direction="row" alignItems="center" spacing={1}>
-          <Typography variant="h6" component="div">
+          <Typography variant="h6" component="div" sx={{
+            color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+          }}>
             Add New Expenditure
           </Typography>
         </Stack>
@@ -232,6 +241,27 @@ export default function AddExpenditureDialog({
             error={!!errors.title}
             helperText={errors.title}
             required
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '& fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                },
+                '&:hover fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                },
+              },
+              '& .MuiInputLabel-root': {
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                '&.Mui-focused': {
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+                },
+              },
+            }}
           />
 
           <TextField
@@ -247,19 +277,67 @@ export default function AddExpenditureDialog({
             error={!!errors.amount}
             helperText={errors.amount}
             required
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '& fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                },
+                '&:hover fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                },
+              },
+              '& .MuiInputLabel-root': {
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                '&.Mui-focused': {
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+                },
+              },
+            }}
           />
 
           <FormControl fullWidth error={!!errors.category} required>
-            <InputLabel>Category</InputLabel>
+            <InputLabel sx={{
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+              '&.Mui-focused': {
+                color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+              },
+            }}>Category</InputLabel>
             <Select
               value={category}
               onChange={(e) => {
                 setCategory(e.target.value);
                 handleFieldChange('category');
               }}
+              sx={{
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '& .MuiOutlinedInput-notchedOutline': {
+                  borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                },
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                },
+                '& .MuiSvgIcon-root': {
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                },
+              }}
             >
               {EXPENSE_CATEGORIES.map((cat) => (
-                <MenuItem key={cat} value={cat}>
+                <MenuItem key={cat} value={cat} sx={{
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                  '&:hover': {
+                    backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                  },
+                }}>
                   {cat}
                 </MenuItem>
               ))}
@@ -278,32 +356,104 @@ export default function AddExpenditureDialog({
           {/* Expenditure Type & Frequency */}
           <Stack direction="row" spacing={2}>
             <FormControl fullWidth>
-              <InputLabel>Expenditure Type</InputLabel>
+              <InputLabel sx={{
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                '&.Mui-focused': {
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+                },
+              }}>Expenditure Type</InputLabel>
               <Select
                 value={type}
                 onChange={(e) => {
                   setType(e.target.value);
                   handleFieldChange('type');
                 }}
+                sx={{
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                  },
+                  '& .MuiSvgIcon-root': {
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                  },
+                }}
               >
-                <MenuItem value="one-time">One-time</MenuItem>
-                <MenuItem value="recurring">Recurring</MenuItem>
+                <MenuItem value="one-time" sx={{
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                  '&:hover': {
+                    backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                  },
+                }}>One-time</MenuItem>
+                <MenuItem value="recurring" sx={{
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                  '&:hover': {
+                    backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                  },
+                }}>Recurring</MenuItem>
               </Select>
             </FormControl>
 
             {type === 'recurring' && (
               <FormControl fullWidth error={!!errors.frequency} required>
-                <InputLabel>Frequency</InputLabel>
+                <InputLabel sx={{
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                  '&.Mui-focused': {
+                    color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+                  },
+                }}>Frequency</InputLabel>
                 <Select
                   value={frequency}
                   onChange={(e) => {
                     setFrequency(e.target.value);
                     handleFieldChange('frequency');
                   }}
+                  sx={{
+                    backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                    },
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                    },
+                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                      borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                    },
+                    '& .MuiSvgIcon-root': {
+                      color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                    },
+                  }}
                 >
-                  <MenuItem value="daily">Daily</MenuItem>
-                  <MenuItem value="weekly">Weekly</MenuItem>
-                  <MenuItem value="monthly">Monthly</MenuItem>
+                  <MenuItem value="daily" sx={{
+                    backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                    '&:hover': {
+                      backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                    },
+                  }}>Daily</MenuItem>
+                  <MenuItem value="weekly" sx={{
+                    backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                    '&:hover': {
+                      backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                    },
+                  }}>Weekly</MenuItem>
+                  <MenuItem value="monthly" sx={{
+                    backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                    '&:hover': {
+                      backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                    },
+                  }}>Monthly</MenuItem>
                 </Select>
                 {errors.frequency && (
                   <Typography
@@ -321,12 +471,33 @@ export default function AddExpenditureDialog({
           {/* Day Selection - Immediately after frequency */}
           {type === 'recurring' && frequency === 'weekly' && (
             <FormControl fullWidth error={!!errors.dayOfWeek} required>
-              <InputLabel>Day of Week</InputLabel>
+              <InputLabel sx={{
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                '&.Mui-focused': {
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+                },
+              }}>Day of Week</InputLabel>
               <Select
                 value={dayOfWeek ?? ''}
                 onChange={(e) => {
                   setDayOfWeek(Number(e.target.value));
                   handleFieldChange('dayOfWeek');
+                }}
+                sx={{
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                  },
+                  '& .MuiSvgIcon-root': {
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                  },
                 }}
               >
                 {[
@@ -338,7 +509,13 @@ export default function AddExpenditureDialog({
                   'Friday',
                   'Saturday',
                 ].map((day, idx) => (
-                  <MenuItem key={idx} value={idx}>
+                  <MenuItem key={idx} value={idx} sx={{
+                    backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                    '&:hover': {
+                      backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                    },
+                  }}>
                     {day}
                   </MenuItem>
                 ))}
@@ -357,16 +534,43 @@ export default function AddExpenditureDialog({
 
           {type === 'recurring' && frequency === 'monthly' && (
             <FormControl fullWidth error={!!errors.dayOfMonth} required>
-              <InputLabel>Day of Month</InputLabel>
+              <InputLabel sx={{
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                '&.Mui-focused': {
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+                },
+              }}>Day of Month</InputLabel>
               <Select
                 value={dayOfMonth ?? ''}
                 onChange={(e) => {
                   setDayOfMonth(Number(e.target.value));
                   handleFieldChange('dayOfMonth');
                 }}
+                sx={{
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                  },
+                  '& .MuiSvgIcon-root': {
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                  },
+                }}
               >
                 {Array.from({ length: 30 }, (_, i) => i + 1).map((day) => (
-                  <MenuItem key={day} value={day}>
+                  <MenuItem key={day} value={day} sx={{
+                    backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                    '&:hover': {
+                      backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                    },
+                  }}>
                     {day}
                   </MenuItem>
                 ))}
@@ -388,20 +592,24 @@ export default function AddExpenditureDialog({
             <Box
               sx={{
                 p: 2,
-                bgcolor: '#fff3e0',
-                border: '2px solid #ffcc02',
+                bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#fff3e0',
+                border: theme?.mode === 'dark' ? '2px solid #334155' : '2px solid #ffcc02',
                 borderRadius: 2,
                 '& .react-datepicker-wrapper': { width: '100%' },
                 '& .react-datepicker__input-container input': {
                   width: '100%',
                   padding: '12px',
-                  border: '2px solid #ff9800',
+                  border: theme?.mode === 'dark' ? '2px solid #475569' : '2px solid #ff9800',
                   borderRadius: '8px',
                   fontSize: '14px',
-                  backgroundColor: '#fff',
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#fff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
                   '&:focus': {
-                    borderColor: '#f57c00',
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#f57c00',
                     outline: 'none',
+                  },
+                  '&::placeholder': {
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#666666',
                   },
                 },
               }}
@@ -409,7 +617,10 @@ export default function AddExpenditureDialog({
               <Typography
                 variant="body2"
                 fontWeight="medium"
-                sx={{ mb: 1, color: '#f57c00' }}
+                sx={{ 
+                  mb: 1, 
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#f57c00' 
+                }}
               >
                 📅 Due Date
               </Typography>
@@ -427,20 +638,24 @@ export default function AddExpenditureDialog({
             <Box
               sx={{
                 p: 2,
-                bgcolor: '#fce4ec',
-                border: '2px solid #f8bbd9',
+                bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#fce4ec',
+                border: theme?.mode === 'dark' ? '2px solid #334155' : '2px solid #f8bbd9',
                 borderRadius: 2,
                 '& .react-datepicker-wrapper': { width: '100%' },
                 '& .react-datepicker__input-container input': {
                   width: '100%',
                   padding: '12px',
-                  border: '2px solid #e91e63',
+                  border: theme?.mode === 'dark' ? '2px solid #475569' : '2px solid #e91e63',
                   borderRadius: '8px',
                   fontSize: '14px',
-                  backgroundColor: '#fff',
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#fff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
                   '&:focus': {
-                    borderColor: '#c2185b',
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#c2185b',
                     outline: 'none',
+                  },
+                  '&::placeholder': {
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#666666',
                   },
                 },
               }}
@@ -448,7 +663,10 @@ export default function AddExpenditureDialog({
               <Typography
                 variant="body2"
                 fontWeight="medium"
-                sx={{ mb: 1, color: '#c2185b' }}
+                sx={{ 
+                  mb: 1, 
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#c2185b' 
+                }}
               >
                 🚀 With Effect From
               </Typography>
@@ -469,7 +687,11 @@ export default function AddExpenditureDialog({
                   label={`Starts: ${effectiveFromDate.toLocaleDateString()}`}
                   color="secondary"
                   size="small"
-                  sx={{ mt: 1 }}
+                  sx={{ 
+                    mt: 1,
+                    backgroundColor: theme?.mode === 'dark' ? '#475569' : undefined,
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : undefined,
+                  }}
                 />
               )}
             </Box>
@@ -484,7 +706,9 @@ export default function AddExpenditureDialog({
               sx={{ cursor: 'pointer', mb: 1 }}
               onClick={() => setNotesOpen(!notesOpen)}
             >
-              <Typography variant="body2" fontWeight="medium">
+              <Typography variant="body2" fontWeight="medium" sx={{
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+              }}>
                 📝 Notes & Options (Optional)
               </Typography>
               <IconButton size="small">
@@ -507,10 +731,14 @@ export default function AddExpenditureDialog({
                   }
                   label={
                     <Box>
-                      <Typography variant="body2" fontWeight="medium">
+                      <Typography variant="body2" fontWeight="medium" sx={{
+                        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                      }}>
                         Mark as paid now
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">
+                      <Typography variant="caption" sx={{
+                        color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                      }}>
                         Check this if you&apos;ve already paid this expenditure
                       </Typography>
                     </Box>
@@ -523,6 +751,27 @@ export default function AddExpenditureDialog({
                   placeholder="Add any additional notes about this expenditure..."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                      color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                      '& fieldset': {
+                        borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                      },
+                    },
+                    '& .MuiInputLabel-root': {
+                      color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                      '&.Mui-focused': {
+                        color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+                      },
+                    },
+                  }}
                 />
               </Stack>
             </Collapse>

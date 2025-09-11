@@ -10,6 +10,12 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Optimize for development
+  experimental: {
+    optimizePackageImports: ['@mui/material', '@mui/icons-material'],
+  },
+  // Disable source maps in development for faster builds
+  productionBrowserSourceMaps: false,
 };
 
 export default withPWA(nextConfig);

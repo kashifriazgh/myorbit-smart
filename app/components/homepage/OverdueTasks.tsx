@@ -326,16 +326,28 @@ export default function OverdueTasks() {
       {/* Reschedule Modal */}
       <Modal open={rescheduleOpen} onClose={() => setRescheduleOpen(false)}>
         <Box
-          className="absolute bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg"
+          className="absolute rounded-lg p-6 shadow-lg"
           sx={{
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
             minWidth: 320,
             outline: 'none',
+            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+            color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+            border:
+              theme?.mode === 'dark'
+                ? '1px solid #334155'
+                : '1px solid #e5e7eb',
           }}
         >
-          <Typography variant="h6" gutterBottom>
+          <Typography
+            variant="h6"
+            gutterBottom
+            sx={{
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+            }}
+          >
             Reschedule Task
           </Typography>
           <TextField
@@ -343,25 +355,101 @@ export default function OverdueTasks() {
             label="Task Title"
             value={rescheduleTask?.title || ''}
             InputProps={{ readOnly: true }}
-            sx={{ mb: 2 }}
+            sx={{
+              mb: 2,
+              '& .MuiOutlinedInput-root': {
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '& fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
+                },
+                '&:hover fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                },
+              },
+              '& .MuiInputLabel-root': {
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                '&.Mui-focused': {
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
+                },
+              },
+            }}
           />
-          <Typography variant="body2" gutterBottom>
+          <Typography
+            variant="body2"
+            gutterBottom
+            sx={{
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+            }}
+          >
             New Due Date
           </Typography>
-          <DatePicker
-            selected={newDueDate}
-            onChange={(date: Date | null) => setNewDueDate(date)}
-            dateFormat="yyyy-MM-dd"
-            className="border px-3 py-2 rounded-md w-full"
-            placeholderText="Select new date"
-          />
+          <Box
+            sx={{
+              mb: 2,
+              '& .react-datepicker-wrapper': { width: '100%' },
+              '& .react-datepicker__input-container input': {
+                width: '100%',
+                padding: '12px',
+                border:
+                  theme?.mode === 'dark'
+                    ? '2px solid #475569'
+                    : '2px solid #d1d5db',
+                borderRadius: '8px',
+                fontSize: '14px',
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '&:focus': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
+                  outline: 'none',
+                },
+                '&::placeholder': {
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#666666',
+                },
+              },
+            }}
+          >
+            <DatePicker
+              selected={newDueDate}
+              onChange={(date: Date | null) => setNewDueDate(date)}
+              dateFormat="yyyy-MM-dd"
+              className="w-full"
+              placeholderText="Select new date"
+            />
+          </Box>
           <Stack direction="row" justifyContent="flex-end" mt={3} spacing={2}>
-            <Button onClick={() => setRescheduleOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => setRescheduleOpen(false)}
+              sx={{
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                '&:hover': {
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
+                },
+              }}
+            >
+              Cancel
+            </Button>
             <Button
               onClick={updateDueDate}
               variant="contained"
               color="primary"
               disabled={!newDueDate || reschedulingLoading}
+              sx={{
+                backgroundColor: theme?.mode === 'dark' ? '#3b82f6' : '#1976d2',
+                '&:hover': {
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#2563eb' : '#1565c0',
+                },
+                '&:disabled': {
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#475569' : '#e5e7eb',
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#9ca3af',
+                },
+              }}
             >
               {reschedulingLoading ? (
                 <CircularProgress size={20} sx={{ color: 'white' }} />

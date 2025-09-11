@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
+    "dev:clean": "node cleanup-dev.js && npm run dev",
+    "dev:fast": "next dev --port 3001",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clean": "node cleanup-dev.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

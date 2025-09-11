@@ -20,6 +20,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useEffect, useState } from 'react';
 import moment from 'moment';
 import {
@@ -75,6 +76,7 @@ function CircularProgressWithLabel({ value }: { value: number }) {
 
 export default function DashboardHome() {
   const { user } = useAuth();
+  const { theme } = useCustomTheme();
   const [progress, setProgress] = useState(0);
   const [remainingTodos, setRemainingTodos] = useState<string[]>([]);
   const [remainingIncomes, setRemainingIncomes] = useState<string[]>([]);
@@ -248,11 +250,25 @@ export default function DashboardHome() {
       {loading ? (
         <Skeleton variant="rounded" height={100} />
       ) : (
-        <div className="rounded-xl flex flex-col items-center justify-center py-4 bg-white/70 backdrop-blur-md border border-gray-200 shadow-sm hover:shadow-md transition-all">
+        <div
+          className="rounded-xl flex flex-col items-center justify-center py-4 backdrop-blur-md shadow-sm hover:shadow-md transition-all"
+          style={{
+            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+            borderColor: theme?.mode === 'dark' ? '#334155' : '#e5e7eb',
+            borderWidth: '1px',
+            borderStyle: 'solid',
+          }}
+        >
           <div className={`mb-2 ${done ? 'text-green-500' : color} text-2xl`}>
             {icon}
           </div>
-          <Typography variant="body2" fontWeight={600}>
+          <Typography
+            variant="body2"
+            fontWeight={600}
+            sx={{
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+            }}
+          >
             {label}
           </Typography>
           <div className="mt-1">
@@ -273,7 +289,15 @@ export default function DashboardHome() {
 
   return (
     <Box className="p-4">
-      <Card className="rounded-2xl shadow-md bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 text-white">
+      <Card
+        className="rounded-2xl shadow-md text-white"
+        sx={{
+          background:
+            theme?.mode === 'dark'
+              ? 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e293b 100%)'
+              : 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1e3a8a 100%)',
+        }}
+      >
         <CardContent className="flex flex-col lg:flex-row items-center justify-between gap-6 p-6">
           {/* Left Section */}
           <Box className="flex flex-col items-start space-y-4 w-full lg:w-1/2">
@@ -303,7 +327,14 @@ export default function DashboardHome() {
             {/* Overdue indicator */}
             {!loading && overdueTodos.length > 0 && (
               <Box className="mt-2">
-                <span className="inline-block rounded-full bg-red-100 text-red-700 px-3 py-1 text-xs font-semibold">
+                <span
+                  className="inline-block rounded-full px-3 py-1 text-xs font-semibold"
+                  style={{
+                    backgroundColor:
+                      theme?.mode === 'dark' ? '#7f1d1d' : '#fef2f2',
+                    color: theme?.mode === 'dark' ? '#fca5a5' : '#dc2626',
+                  }}
+                >
                   {overdueTodos.length}{' '}
                   {overdueTodos.length === 1 ? 'Task is' : 'Tasks are'} overdue.
                 </span>

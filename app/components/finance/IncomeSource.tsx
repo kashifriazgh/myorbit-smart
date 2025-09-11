@@ -404,7 +404,7 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                     )
                   }
                 >
-                  {actionLoading && selectedIncome?.id === src.id ? '...' : ''}
+                  {actionLoading && selectedIncome?.id === src.id ? '...' : '.'}
                 </Button>
 
                 <Button

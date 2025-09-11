@@ -30,6 +30,7 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import { INCOME_CATEGORIES } from '@/app/lib/constant';
 import { IncomeSource } from '@/app/lib/interface';
 import { saveIncomeSource } from '@/app/lib/functions/incomeSources';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 export default function AddIncomeModal({
   open,
@@ -42,6 +43,7 @@ export default function AddIncomeModal({
   onAdded: (income: IncomeSource & { id: string }) => void;
   userId: string;
 }) {
+  const { theme } = useCustomTheme();
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState<number | ''>('');
   const [type, setType] = useState<'one-time' | 'recurring'>('one-time');
@@ -371,20 +373,24 @@ export default function AddIncomeModal({
             <Box
               sx={{
                 p: 2,
-                bgcolor: '#f8f9ff',
-                border: '2px solid #e3f2fd',
+                bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#f8f9ff',
+                border: theme?.mode === 'dark' ? '2px solid #334155' : '2px solid #e3f2fd',
                 borderRadius: 2,
                 '& .react-datepicker-wrapper': { width: '100%' },
                 '& .react-datepicker__input-container input': {
                   width: '100%',
                   padding: '12px',
-                  border: '2px solid #2196f3',
+                  border: theme?.mode === 'dark' ? '2px solid #475569' : '2px solid #2196f3',
                   borderRadius: '8px',
                   fontSize: '14px',
-                  backgroundColor: '#fff',
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#fff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
                   '&:focus': {
-                    borderColor: '#1976d2',
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#1976d2',
                     outline: 'none',
+                  },
+                  '&::placeholder': {
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#666666',
                   },
                 },
               }}
@@ -392,7 +398,10 @@ export default function AddIncomeModal({
               <Typography
                 variant="body2"
                 fontWeight="medium"
-                sx={{ mb: 1, color: '#1976d2' }}
+                sx={{ 
+                  mb: 1, 
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#1976d2' 
+                }}
               >
                 📅 Expected Date
               </Typography>
@@ -410,20 +419,24 @@ export default function AddIncomeModal({
             <Box
               sx={{
                 p: 2,
-                bgcolor: '#f3e5f5',
-                border: '2px solid #e1bee7',
+                bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#f3e5f5',
+                border: theme?.mode === 'dark' ? '2px solid #334155' : '2px solid #e1bee7',
                 borderRadius: 2,
                 '& .react-datepicker-wrapper': { width: '100%' },
                 '& .react-datepicker__input-container input': {
                   width: '100%',
                   padding: '12px',
-                  border: '2px solid #9c27b0',
+                  border: theme?.mode === 'dark' ? '2px solid #475569' : '2px solid #9c27b0',
                   borderRadius: '8px',
                   fontSize: '14px',
-                  backgroundColor: '#fff',
+                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#fff',
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
                   '&:focus': {
-                    borderColor: '#7b1fa2',
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#7b1fa2',
                     outline: 'none',
+                  },
+                  '&::placeholder': {
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#666666',
                   },
                 },
               }}
@@ -431,7 +444,10 @@ export default function AddIncomeModal({
               <Typography
                 variant="body2"
                 fontWeight="medium"
-                sx={{ mb: 1, color: '#7b1fa2' }}
+                sx={{ 
+                  mb: 1, 
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#7b1fa2' 
+                }}
               >
                 🚀 With Effect From
               </Typography>
@@ -452,7 +468,11 @@ export default function AddIncomeModal({
                   label={`Starts: ${effectiveFromDate.toLocaleDateString()}`}
                   color="secondary"
                   size="small"
-                  sx={{ mt: 1 }}
+                  sx={{ 
+                    mt: 1,
+                    backgroundColor: theme?.mode === 'dark' ? '#475569' : undefined,
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : undefined,
+                  }}
                 />
               )}
             </Box>
