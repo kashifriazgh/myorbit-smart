@@ -247,7 +247,14 @@ export default function TodoDetailPage() {
       <Divider sx={{ my: 2 }} />
 
       <Stepper activeStep={activeStep} orientation="vertical">
-        {todo.steps.map((step, idx) => (
+        {todo.steps
+          .sort((a, b) => {
+            // Sort so completed steps appear at bottom
+            if (a.status === 'completed' && b.status !== 'completed') return 1;
+            if (a.status !== 'completed' && b.status === 'completed') return -1;
+            return 0;
+          })
+          .map((step, idx) => (
           <Step key={idx} completed={step.status === 'completed'}>
             <StepLabel
               onClick={() => setActiveStep(idx)}
@@ -321,6 +328,10 @@ export default function TodoDetailPage() {
                         alignItems: 'center',
                         gap: 1,
                         mb: 1,
+                        position: 'relative',
+                        '&:hover .substep-delete': {
+                          opacity: 1,
+                        },
                       }}
                     >
                       <Checkbox
@@ -337,12 +348,20 @@ export default function TodoDetailPage() {
                           color: subStep.done
                             ? 'text.secondary'
                             : 'text.primary',
+                          flex: 1,
                         }}
                       >
                         {subStep.text}
                       </Typography>
                       <IconButton
                         size="small"
+                        className="substep-delete"
+                        sx={{
+                          opacity: 0,
+                          transition: 'opacity 0.2s',
+                          position: 'absolute',
+                          right: 0,
+                        }}
                         onClick={() =>
                           setConfirmDelete({
                             type: 'sub',

@@ -200,7 +200,7 @@ export default function MostProductiveDay() {
 
         // --- JOURNALS (createdAt) ---
         journals.forEach((j) => {
-          const uid = j?.authorId !== undefined ? String(j.authorId) : null;
+          const uid = j?.userId !== undefined ? String(j.userId) : null;
           const d = toJsDate((j as JournalEntry).createdAt);
           if (uid === user.uid && d && inRange(d)) addActivity(d, 'score', 1);
         });

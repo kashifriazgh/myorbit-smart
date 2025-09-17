@@ -15,6 +15,7 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PublicIcon from '@mui/icons-material/Public';
+import AssignmentIcon from '@mui/icons-material/Assignment';
 import IdeaActionButton from './IdeaLevelButton';
 import { IDEA_LEVELS } from '@/app/lib/constant';
 import moment from 'moment-timezone';
@@ -25,6 +26,11 @@ import {
   updateDoc,
   doc,
   deleteDoc,
+  query,
+  where,
+  addDoc,
+  serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -54,7 +60,6 @@ export default function IdeasList() {
   const [filter, setFilter] = useState({
     level: 'all',
     privacy: 'all',
-    scope: 'all',
   });
 
   const { theme } = useCustomTheme();
@@ -69,7 +74,8 @@ export default function IdeasList() {
 
     try {
       const ideasRef = collection(db, 'ideas');
-      const snap = await getDocs(ideasRef);
+      const q = query(ideasRef, where('authorId', '==', user.uid));
+      const snap = await getDocs(q);
 
       if (snap.empty) {
         console.warn('📭 No ideas found in Firestore.');
@@ -92,16 +98,7 @@ export default function IdeasList() {
       const endDate = now.clone().endOf('day');
 
       const filtered = allIdeas.filter((idea) => {
-        const { level, privacy, sharedWith, authorId, localCreatedAt } = idea;
-
-        const isOwn = authorId === user.uid;
-        const isShared =
-          Array.isArray(sharedWith) && sharedWith.includes(user.uid);
-
-        const scopeMatch =
-          filter.scope === 'all' ||
-          (filter.scope === 'own' && isOwn) ||
-          (filter.scope === 'shared' && isShared);
+        const { level, privacy, localCreatedAt } = idea;
 
         const levelMatch = filter.level === 'all' || level === filter.level;
         const privacyMatch =
@@ -115,7 +112,7 @@ export default function IdeasList() {
           ? timestamp.isBetween(startDate, endDate, null, '[]')
           : false;
 
-        return scopeMatch && levelMatch && privacyMatch && isInLast30Days;
+        return levelMatch && privacyMatch && isInLast30Days;
       });
 
       const sorted = filtered.sort((a, b) => {
@@ -149,6 +146,50 @@ export default function IdeasList() {
   const handleCloseAIModal = () => {
     setAIModalOpen(false);
     setActiveIdea(null);
+  };
+
+  const handleConvertToTask = async (idea: Idea) => {
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, 'todos'), {
+        title: idea.text,
+        description: `Converted from idea: ${idea.text}`,
+        steps: [],
+        priority:
+          (idea.level as string) === 'super'
+            ? 'critical'
+            : (idea.level as string) === 'important'
+            ? 'urgent'
+            : 'routine',
+        status: 'in_progress',
+        progressPercent: 0,
+        pinned: false,
+        isArchived: false,
+        authorId: user.uid,
+        authorName: user.firstName || '',
+        assignedUsers: [],
+        sharedWith: [],
+        startDate: Timestamp.fromDate(new Date()),
+        dueDate: Timestamp.fromDate(
+          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        ), // 7 days from now
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        privacy: idea.privacy,
+        isImportant:
+          (idea.level as string) === 'super' ||
+          (idea.level as string) === 'important',
+      });
+
+      // Optionally delete the idea after converting
+      // await deleteDoc(doc(db, 'ideas', idea.id));
+
+      // Refresh the ideas list
+      fetchIdeas();
+    } catch (error) {
+      console.error('Error converting idea to task:', error);
+    }
   };
 
   if (!theme) return <CircularProgress />;
@@ -191,21 +232,6 @@ export default function IdeasList() {
             <option value="all">All</option>
             <option value="private">Private</option>
             <option value="public">Public</option>
-          </Select>
-        </FormControl>
-        <FormControl size="small">
-          <InputLabel>Scope</InputLabel>
-          <Select
-            sx={{ fontSize: '10px' }}
-            native
-            value={filter.scope}
-            onChange={(e) =>
-              setFilter((prev) => ({ ...prev, scope: e.target.value }))
-            }
-          >
-            <option value="all">All</option>
-            <option value="own">Own</option>
-            <option value="shared">Shared With Me</option>
           </Select>
         </FormControl>
       </Stack>
@@ -328,6 +354,14 @@ export default function IdeasList() {
                         e.stopPropagation();
                         setActiveIdea(idea);
                         setPrivacyModalOpen(true);
+                      }}
+                    />
+                    <IdeaActionButton
+                      icon={<AssignmentIcon sx={{ color: 'primary.main' }} />}
+                      tooltip="Convert to Task"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleConvertToTask(idea);
                       }}
                     />
                     <IdeaActionButton

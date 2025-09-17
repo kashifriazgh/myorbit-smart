@@ -71,9 +71,9 @@ export default function JournalList() {
         const now = moment();
         const past30 = now.clone().subtract(30, 'days').toDate();
 
+        // Only filter by createdAt to avoid composite index requirement
         const q = query(
           collection(db, 'journals'),
-          where('authorId', '==', user.uid),
           where('createdAt', '>=', past30),
           orderBy('createdAt', 'desc')
         );
@@ -83,7 +83,8 @@ export default function JournalList() {
 
         snapshot.forEach((doc) => {
           const data = doc.data();
-          if (data.title && data.createdAt) {
+          // Filter by userId in client-side to avoid composite index
+          if (data.title && data.createdAt && data.userId === user.uid) {
             entries.push({
               id: doc.id,
               title: data.title,

@@ -7,9 +7,12 @@ import {
   updateDoc,
   doc,
   Timestamp,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { StreakProps } from '@/app/lib/interface';
+import { useAuth } from './userContext';
 import moment from 'moment';
 
 // ✅ Helper function to convert date to Date object
@@ -45,10 +48,18 @@ export const StreaksProvider = ({
 }) => {
   const [streaks, setStreaks] = useState<StreakProps[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   useEffect(() => {
+    if (!user?.uid) {
+      setStreaks([]);
+      setLoading(false);
+      return;
+    }
+
     const streaksRef = collection(db, 'streaks');
-    const unsub = onSnapshot(streaksRef, (snap) => {
+    const q = query(streaksRef, where('userId', '==', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map((d) => ({
         id: d.id,
         ...(d.data() as StreakProps),
@@ -57,7 +68,7 @@ export const StreaksProvider = ({
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [user?.uid]);
 
   // ✅ Mark streak as done (with or without remarks)
   const markStreakDone = async (streak: StreakProps, progress: string = '') => {

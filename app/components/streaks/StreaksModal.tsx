@@ -13,7 +13,10 @@ import {
   DialogContent,
   DialogActions,
   CircularProgress,
+  Collapse,
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { addDoc, collection, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -38,12 +41,12 @@ export default function CreateStreakForm({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('');
   const [habitType, setHabitType] = useState<'daily' | 'weekly'>('daily');
-  const [privacy, setPrivacy] = useState<'private' | 'public'>('private');
+  const [privacy] = useState<'private' | 'public'>('private');
   const [reminderTime, setReminderTime] = useState('');
   const [reminderDay, setReminderDay] = useState('Monday'); // for weekly
   const [loading, setLoading] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
 
   const { user } = useAuth();
   const { theme } = useCustomTheme();
@@ -60,7 +63,7 @@ export default function CreateStreakForm({
       userId: user.uid,
       title: title.trim(),
       description: description.trim() || '',
-      category: category.trim() || '',
+      category: '', // Removed category field
       habitType,
       target: '',
       startDate: Timestamp.now(),
@@ -80,8 +83,8 @@ export default function CreateStreakForm({
       setOpen(false);
       setTitle('');
       setDescription('');
-      setCategory('');
       setReminderTime('');
+      setDescriptionExpanded(false);
     } catch (err) {
       console.error('❌ Error saving streak:', err);
     } finally {
@@ -134,40 +137,91 @@ export default function CreateStreakForm({
               required
             />
 
-            <TextField
-              label="Description (optional)"
-              fullWidth
-              margin="normal"
-              multiline
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-
-            <TextField
-              label="Category (e.g. Health, Study)"
-              fullWidth
-              margin="normal"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            />
-
-            {/* Habit Type */}
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Habit Type</InputLabel>
-              <Select
-                value={habitType}
-                onChange={(e) =>
-                  setHabitType(e.target.value as 'daily' | 'weekly')
+            {/* Collapsible Description */}
+            <Box display="flex" alignItems="center" margin="normal">
+              <Button
+                startIcon={
+                  descriptionExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />
                 }
-                label="Habit Type"
+                onClick={() => setDescriptionExpanded(!descriptionExpanded)}
+                sx={{
+                  textTransform: 'none',
+                  justifyContent: 'flex-start',
+                  p: 0,
+                }}
               >
-                <MenuItem value="daily">Daily</MenuItem>
-                <MenuItem value="weekly">Weekly</MenuItem>
-              </Select>
-            </FormControl>
+                Description (optional)
+              </Button>
+            </Box>
+            <Collapse in={descriptionExpanded}>
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                sx={{ mb: 1 }}
+              />
+            </Collapse>
 
-            <FormControl fullWidth margin="normal">
+            {/* Type and Day on same line */}
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <FormControl fullWidth>
+                <InputLabel>Type</InputLabel>
+                <Select
+                  value={habitType}
+                  onChange={(e) =>
+                    setHabitType(e.target.value as 'daily' | 'weekly')
+                  }
+                  label="Type"
+                >
+                  <MenuItem value="daily">Daily</MenuItem>
+                  <MenuItem value="weekly">Weekly</MenuItem>
+                </Select>
+              </FormControl>
+
+              {habitType === 'weekly' ? (
+                <FormControl fullWidth>
+                  <InputLabel>Day</InputLabel>
+                  <Select
+                    value={reminderDay}
+                    onChange={(e) => setReminderDay(e.target.value)}
+                    label="Day"
+                  >
+                    {daysOfWeek.map((day) => (
+                      <MenuItem key={day} value={day}>
+                        {day}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <TextField
+                  label="Reminder Time"
+                  type="time"
+                  fullWidth
+                  value={reminderTime}
+                  onChange={(e) => setReminderTime(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                />
+              )}
+            </div>
+
+            {/* Reminder Time for weekly habits */}
+            {habitType === 'weekly' && (
+              <TextField
+                label="Reminder Time"
+                type="time"
+                fullWidth
+                margin="normal"
+                value={reminderTime}
+                onChange={(e) => setReminderTime(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            )}
+
+            {/* Privacy field commented out */}
+            {/* <FormControl fullWidth margin="normal">
               <InputLabel>Privacy</InputLabel>
               <Select
                 value={privacy}
@@ -179,33 +233,7 @@ export default function CreateStreakForm({
                 <MenuItem value="private">Only Me</MenuItem>
                 <MenuItem value="public">Public</MenuItem>
               </Select>
-            </FormControl>
-
-            {habitType === 'weekly' && (
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Reminder Day</InputLabel>
-                <Select
-                  value={reminderDay}
-                  onChange={(e) => setReminderDay(e.target.value)}
-                >
-                  {daysOfWeek.map((day) => (
-                    <MenuItem key={day} value={day}>
-                      {day}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
-
-            <TextField
-              label="Reminder Time"
-              type="time"
-              fullWidth
-              margin="normal"
-              value={reminderTime}
-              onChange={(e) => setReminderTime(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
+            </FormControl> */}
           </Box>
         </DialogContent>
 

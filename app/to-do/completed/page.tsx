@@ -24,7 +24,17 @@ export default function CompletedTodosPage() {
       }}
     >
       {/* Header with back button */}
-      <Box display="flex" alignItems="center" gap={2} mb={3}>
+      <Box
+        display="flex"
+        alignItems="center"
+        gap={2}
+        mb={3}
+        sx={{
+          flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          gap: { xs: 1, sm: 2 },
+        }}
+      >
         <Link href="/to-do" style={{ textDecoration: 'none' }}>
           <Button
             variant="outlined"
@@ -46,7 +56,14 @@ export default function CompletedTodosPage() {
             Back to Tasks
           </Button>
         </Link>
-        <Typography variant="h4" sx={{ flexGrow: 1 }}>
+        <Typography
+          variant="h4"
+          sx={{
+            flexGrow: 1,
+            fontSize: { xs: '1.75rem', sm: '2.125rem' },
+            textAlign: { xs: 'left', sm: 'left' },
+          }}
+        >
           ✅ Completed Tasks
         </Typography>
       </Box>

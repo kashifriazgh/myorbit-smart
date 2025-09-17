@@ -55,7 +55,7 @@ export default function JournalModal({ open, onClose }: Props) {
 
     setLoading(true);
     const journal = {
-      authorId: user!.uid,
+      userId: user!.uid,
       authorName: user?.firstName || '',
       createdAt: serverTimestamp(),
       mood: mood ? { type: mood, level: moodLevel } : null,

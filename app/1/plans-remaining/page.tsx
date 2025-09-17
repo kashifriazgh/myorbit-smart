@@ -12,6 +12,7 @@ import {
   Container,
   Divider,
   Skeleton,
+  Button,
 } from '@mui/material';
 import {
   Assignment,
@@ -20,6 +21,8 @@ import {
   CheckCircle,
   Cancel,
   Payments,
+  EmojiEmotions,
+  Print,
 } from '@mui/icons-material';
 import {
   collection,
@@ -32,6 +35,7 @@ import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import moment from 'moment';
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 export default function RemainingPlansPage() {
   const { user } = useAuth();
@@ -39,6 +43,7 @@ export default function RemainingPlansPage() {
   const [remainingIncomes, setRemainingIncomes] = useState<string[]>([]);
   const [remainingExpenses, setRemainingExpenses] = useState<string[]>([]);
   const [journalWritten, setJournalWritten] = useState<boolean>(false);
+  const [moodLogged, setMoodLogged] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -90,16 +95,24 @@ export default function RemainingPlansPage() {
         .map((e) => e.title || 'Unnamed Expense');
 
       const journalSnap = await getDocs(
-        query(collection(db, 'journals'), where('authorId', '==', user.uid))
+        query(collection(db, 'journals'), where('userId', '==', user.uid))
       );
       const journals = journalSnap.docs
         .map((doc) => doc.data())
         .filter((j) => j.createdAt && checkDateInRange(j.createdAt));
 
+      const moodSnap = await getDocs(
+        query(collection(db, 'moods'), where('userId', '==', user.uid))
+      );
+      const moods = moodSnap.docs
+        .map((doc) => doc.data())
+        .filter((m) => m.createdAt && checkDateInRange(m.createdAt));
+
       setRemainingTodos(todos);
       setRemainingIncomes(incomes);
       setRemainingExpenses(expenses);
       setJournalWritten(journals.length > 0);
+      setMoodLogged(moods.length > 0);
       setLoading(false);
     };
 
@@ -132,7 +145,8 @@ export default function RemainingPlansPage() {
   const renderList = (
     items: string[],
     color: string,
-    icon: React.ReactNode
+    icon: React.ReactNode,
+    href?: string
   ) => (
     <List dense>
       {items.map((item, index) => (
@@ -140,7 +154,18 @@ export default function RemainingPlansPage() {
           <ListItemIcon sx={{ color }}>{icon}</ListItemIcon>
           <ListItemText
             primaryTypographyProps={{ fontSize: '0.95rem' }}
-            primary={`${index + 1}. ${item}`}
+            primary={
+              href ? (
+                <Link
+                  href={href}
+                  style={{ textDecoration: 'none', color: 'inherit' }}
+                >
+                  {`${index + 1}. ${item}`}
+                </Link>
+              ) : (
+                `${index + 1}. ${item}`
+              )
+            }
           />
         </ListItem>
       ))}
@@ -154,6 +179,7 @@ export default function RemainingPlansPage() {
       items: remainingTodos,
       color: '#1976d2',
       itemIcon: <Assignment fontSize="small" />,
+      href: '/to-do',
     },
     {
       title: 'Pending Incomes',
@@ -161,6 +187,7 @@ export default function RemainingPlansPage() {
       items: remainingIncomes,
       color: 'green',
       itemIcon: <AttachMoney fontSize="small" />,
+      href: '/finance',
     },
     {
       title: 'Pending Expenses',
@@ -168,6 +195,7 @@ export default function RemainingPlansPage() {
       items: remainingExpenses,
       color: 'red',
       itemIcon: <Payments fontSize="small" />,
+      href: '/finance',
     },
     {
       title: 'Journal',
@@ -176,20 +204,49 @@ export default function RemainingPlansPage() {
       color: 'purple',
       itemIcon: <Book fontSize="small" />,
       isJournal: true,
+      href: '/journals',
+    },
+    {
+      title: 'Mood',
+      icon: <EmojiEmotions sx={{ color: 'orange' }} />,
+      items: moodLogged ? [] : ['Mood not logged yet'],
+      color: 'orange',
+      itemIcon: <EmojiEmotions fontSize="small" />,
+      isMood: true,
     },
   ];
 
   // Show only sections that have pending items
   const pendingSections = sections.filter((section) =>
-    section.isJournal ? !journalWritten : section.items.length > 0
+    section.isJournal
+      ? !journalWritten
+      : section.isMood
+      ? !moodLogged
+      : section.items.length > 0
   );
 
   return (
     <Container maxWidth="md">
       <Box py={4}>
-        <Typography variant="h5" fontWeight="bold" mb={3}>
-          Today’s Remaining Plans
-        </Typography>
+        <Box
+          display="flex"
+          justifyContent="space-between"
+          alignItems="center"
+          mb={3}
+        >
+          <Typography variant="h5" fontWeight="bold">
+            Today&#39;s Remaining Plans
+          </Typography>
+          <Link href="/1/print" style={{ textDecoration: 'none' }}>
+            <Button
+              variant="outlined"
+              startIcon={<Print />}
+              sx={{ '@media print': { display: 'none' } }}
+            >
+              Take Print
+            </Button>
+          </Link>
+        </Box>
 
         {loading ? (
           <>
@@ -223,6 +280,8 @@ export default function RemainingPlansPage() {
                   section.title,
                   section.isJournal
                     ? journalWritten
+                    : section.isMood
+                    ? moodLogged
                     : section.items.length === 0
                 )}
                 <Divider sx={{ mb: 2 }} />
@@ -234,10 +293,30 @@ export default function RemainingPlansPage() {
                     sx={{ color: section.color }}
                   >
                     {section.itemIcon}
+                    <Link
+                      href={section.href}
+                      style={{ textDecoration: 'none', color: 'inherit' }}
+                    >
+                      <Typography>{section.items[0]}</Typography>
+                    </Link>
+                  </Box>
+                ) : section.isMood ? (
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={1}
+                    sx={{ color: section.color }}
+                  >
+                    {section.itemIcon}
                     <Typography>{section.items[0]}</Typography>
                   </Box>
                 ) : (
-                  renderList(section.items, section.color, section.itemIcon)
+                  renderList(
+                    section.items,
+                    section.color,
+                    section.itemIcon,
+                    section.href
+                  )
                 )}
               </CardContent>
             </Card>

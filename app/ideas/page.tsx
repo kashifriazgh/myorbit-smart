@@ -5,11 +5,15 @@ import { useState } from 'react';
 import IdeaModal from '../components/ideas/IdeasModal';
 import IdeasList from '../components/ideas/IdeasList';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import Link from 'next/link';
 
 export default function IdeasPage() {
   const [open, setOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { theme } = useCustomTheme();
+
+  const handleIdeaCreated = () => {
+    setRefreshKey((prev) => prev + 1);
+  };
 
   if (!theme) return null;
 
@@ -54,11 +58,12 @@ export default function IdeasPage() {
         }}
         sx={{ mb: 3 }}
       />
-      <Link href="/finance">Finance</Link> |<Link href="/ideas">Ideas</Link> |
-      <Link href="/to-do">To Dos</Link> |<Link href="/journals">Journals</Link>{' '}
-      |
-      <IdeasList />
-      <IdeaModal open={open} onClose={() => setOpen(false)} />
+      <IdeasList key={refreshKey} />
+      <IdeaModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onIdeaCreated={handleIdeaCreated}
+      />
     </Box>
   );
 }

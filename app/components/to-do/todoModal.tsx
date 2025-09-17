@@ -284,6 +284,35 @@ export default function ToDoModal({ open, onClose }: Props) {
           <Divider />
           <Typography fontWeight={600}>Task Steps</Typography>
 
+          {/* Hint message about steps */}
+          <Box
+            sx={{
+              p: 1.5,
+              bgcolor: theme.palette.action.hover,
+              borderRadius: 1,
+              border: `1px solid ${theme.palette.primary.light}`,
+              mb: 2,
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                color: theme.palette.text.secondary,
+                fontSize: '0.875rem',
+                fontStyle: 'italic',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+              }}
+            >
+              💡{' '}
+              <span>
+                You can also add steps and sub-steps later in the task detail
+                page after creating the task.
+              </span>
+            </Typography>
+          </Box>
+
           {steps.map((step, stepIndex) => (
             <Box key={stepIndex} sx={{ mb: 2 }}>
               {/* Step header */}

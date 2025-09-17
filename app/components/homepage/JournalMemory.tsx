@@ -107,7 +107,7 @@ export default function JournalMemory() {
 
         // Only fetch from Firestore if we need to
         const snap = await getDocs(
-          query(collection(db, 'journals'), where('authorId', '==', user.uid))
+          query(collection(db, 'journals'), where('userId', '==', user.uid))
         );
         const allJournals = snap.docs.map(
           (doc) => ({ ...doc.data(), id: doc.id } as JournalEntry)

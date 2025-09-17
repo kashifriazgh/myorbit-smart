@@ -44,9 +44,10 @@ const privacyIcons: Record<Privacy, React.ReactNode> = {
 interface Props {
   open: boolean;
   onClose: () => void;
+  onIdeaCreated?: () => void;
 }
 
-export default function IdeaModal({ open, onClose }: Props) {
+export default function IdeaModal({ open, onClose, onIdeaCreated }: Props) {
   const [ideaText, setIdeaText] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
@@ -89,6 +90,7 @@ export default function IdeaModal({ open, onClose }: Props) {
     logFocusTime(user.uid);
 
     setLoading(false);
+    onIdeaCreated?.();
     onClose();
   };
 

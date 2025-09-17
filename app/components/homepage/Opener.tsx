@@ -177,7 +177,7 @@ export default function DashboardHome() {
 
       // ✅ Journal
       const journalSnap = await getDocs(
-        query(collection(db, 'journals'), where('authorId', '==', user.uid))
+        query(collection(db, 'journals'), where('userId', '==', user.uid))
       );
       const journals = journalSnap.docs
         .map((doc) => doc.data())
@@ -238,6 +238,7 @@ export default function DashboardHome() {
     done,
     color,
     loading,
+    href,
   }: {
     icon: React.ReactNode;
     label: string;
@@ -245,57 +246,63 @@ export default function DashboardHome() {
     done: boolean;
     color: string;
     loading: boolean;
-  }) => (
-    <div className="w-full">
-      {loading ? (
-        <Skeleton variant="rounded" height={100} />
-      ) : (
-        <div
-          className="rounded-xl flex flex-col items-center justify-center py-4 backdrop-blur-md shadow-sm hover:shadow-md transition-all"
-          style={{
-            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-            borderColor: theme?.mode === 'dark' ? '#334155' : '#e5e7eb',
-            borderWidth: '1px',
-            borderStyle: 'solid',
-          }}
-        >
-          <div className={`mb-2 ${done ? 'text-green-500' : color} text-2xl`}>
-            {icon}
-          </div>
-          <Typography
-            variant="body2"
-            fontWeight={600}
-            sx={{
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+    href?: string;
+  }) => {
+    const cardContent = (
+      <div className="w-full">
+        {loading ? (
+          <Skeleton variant="rounded" height={100} />
+        ) : (
+          <div
+            className="rounded-xl flex flex-col items-center justify-center py-4 backdrop-blur-md shadow-sm hover:shadow-md transition-all"
+            style={{
+              backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+              borderColor: theme?.mode === 'dark' ? '#334155' : '#e5e7eb',
+              borderWidth: '1px',
+              borderStyle: 'solid',
             }}
           >
-            {label}
-          </Typography>
-          <div className="mt-1">
-            {done ? (
-              <CheckCircle className="text-green-500 text-lg" />
-            ) : (
-              <span
-                className={`px-3 py-0.5 text-xs font-semibold rounded-full ${color}`}
-              >
-                {count}
-              </span>
-            )}
+            <div className={`mb-2 ${done ? 'text-green-500' : color} text-2xl`}>
+              {icon}
+            </div>
+            <Typography
+              variant="body2"
+              fontWeight={600}
+              sx={{
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+              }}
+            >
+              {label}
+            </Typography>
+            <div className="mt-1">
+              {done ? (
+                <CheckCircle className="text-green-500 text-lg" />
+              ) : (
+                <span
+                  className={`px-3 py-0.5 text-xs font-semibold rounded-full ${color}`}
+                >
+                  {count}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+        )}
+      </div>
+    );
+
+    return href ? <Link href={href}>{cardContent}</Link> : cardContent;
+  };
 
   return (
     <Box className="p-4">
       <Card
-        className="rounded-2xl shadow-md text-white"
+        className="rounded-2xl shadow-md"
         sx={{
           background:
             theme?.mode === 'dark'
               ? 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e293b 100%)'
-              : 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1e3a8a 100%)',
+              : '#ffffff',
+          color: theme?.mode === 'dark' ? '#ffffff' : '#000000',
         }}
       >
         <CardContent className="flex flex-col lg:flex-row items-center justify-between gap-6 p-6">
@@ -309,11 +316,23 @@ export default function DashboardHome() {
                 </>
               ) : (
                 <>
-                  <Typography variant="body2" className="opacity-80">
+                  <Typography
+                    variant="body2"
+                    className="opacity-80"
+                    sx={{
+                      color: theme?.mode === 'dark' ? '#ffffff' : '#000000',
+                    }}
+                  >
                     Welcome back,{' '}
                     <span className="font-semibold">{firstName}</span>
                   </Typography>
-                  <Typography variant="h6" fontWeight="bold">
+                  <Typography
+                    variant="h6"
+                    fontWeight="bold"
+                    sx={{
+                      color: theme?.mode === 'dark' ? '#ffffff' : '#000000',
+                    }}
+                  >
                     {progress >= 90
                       ? "Amazing! You're almost done 🎉"
                       : progress >= 50
@@ -371,6 +390,7 @@ export default function DashboardHome() {
                 done={remainingTodos.length === 0}
                 color="text-blue-600 bg-blue-100"
                 loading={loading}
+                href={remainingTodos.length > 0 ? '/to-do' : undefined}
               />
               <SegmentCard
                 icon={<AttachMoney />}
@@ -379,6 +399,7 @@ export default function DashboardHome() {
                 done={totalPayments === 0}
                 color="text-green-600 bg-green-100"
                 loading={loading}
+                href={totalPayments > 0 ? '/finance' : undefined}
               />
               <SegmentCard
                 icon={<Book />}
@@ -387,6 +408,7 @@ export default function DashboardHome() {
                 done={journalWritten}
                 color="text-purple-600 bg-purple-100"
                 loading={loading}
+                href={!journalWritten ? '/journals' : undefined}
               />
               <SegmentCard
                 icon={<EmojiEmotions />}

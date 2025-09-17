@@ -9,7 +9,7 @@ import {
   DialogActions,
   Button,
 } from '@mui/material';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function AddStepModal({
   open,
@@ -31,6 +31,20 @@ export default function AddStepModal({
     onClose();
   };
 
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleAdd();
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      setText('');
+      setDesc('');
+    }
+  }, [open]);
+
   return (
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>Add New Step</DialogTitle>
@@ -39,6 +53,7 @@ export default function AddStepModal({
           label="Step Title"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onKeyPress={handleKeyPress}
           fullWidth
           size="small"
           sx={{ mb: 2 }}
@@ -47,6 +62,7 @@ export default function AddStepModal({
           label="Description (optional)"
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
+          onKeyPress={handleKeyPress}
           fullWidth
           multiline
           size="small"

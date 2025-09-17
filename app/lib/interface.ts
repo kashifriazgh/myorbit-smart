@@ -128,7 +128,7 @@ export interface JournalEntry {
   id?: string;
 
   // Auth
-  authorId: string;
+  userId: string;
   authorName?: string;
   sharedWith?: string[]; // users who can view/edit
 
