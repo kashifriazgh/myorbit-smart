@@ -40,9 +40,11 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import Link from 'next/link';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+
 interface MasterUser {
   uid: string;
   email: string;
+  role?: string;
 }
 
 interface SubUser {
@@ -72,6 +74,23 @@ export default function ManageUsersPage() {
     type: 'success' | 'error' | 'warning' | 'info';
   }>({ open: false, msg: '', type: 'success' });
 
+  const [usersLimit, setUsersLimit] = useState(1);
+
+  // Fetch users limit from API
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+        setUsersLimit(config.usersLimit);
+      } catch (error) {
+        console.error('Failed to fetch config:', error);
+        setUsersLimit(1); // fallback to default
+      }
+    };
+    fetchConfig();
+  }, []);
+
   const fetchUsers = async () => {
     if (!masterUser) return;
     const q = query(
@@ -97,6 +116,38 @@ export default function ManageUsersPage() {
   }, [masterUser]);
 
   const handleCreate = async () => {
+    // 🔍 Verify master user role
+    if (!masterUser) {
+      setSnack({
+        open: true,
+        msg: 'You must be logged in to create users.',
+        type: 'error',
+      });
+      return;
+    }
+
+    // Check if current user has master role
+    const userDoc = await getDoc(doc(db, 'users', masterUser.uid));
+    const userData = userDoc.data();
+    if (!userData || userData.role !== 'master') {
+      setSnack({
+        open: true,
+        msg: 'Only master users can create sub-users.',
+        type: 'error',
+      });
+      return;
+    }
+
+    // 🔍 Check user limit
+    if (users.length >= usersLimit) {
+      setSnack({
+        open: true,
+        msg: `You have reached the maximum limit of ${usersLimit} sub-user(s).`,
+        type: 'error',
+      });
+      return;
+    }
+
     if (!email) {
       setSnack({ open: true, msg: 'Email is required.', type: 'error' });
       return;
@@ -224,12 +275,23 @@ export default function ManageUsersPage() {
         </Box>
       )}
 
-      <Button
-        onClick={() => setShowAddUser((prev) => !prev)}
-        endIcon={showAddUser ? <ExpandLess /> : <ExpandMore />}
-      >
-        {showAddUser ? 'Hide Add User' : 'Add New Sub-User'}
-      </Button>
+      <Box display="flex" alignItems="center" gap={2} mb={2}>
+        <Button
+          onClick={() => setShowAddUser((prev) => !prev)}
+          endIcon={showAddUser ? <ExpandLess /> : <ExpandMore />}
+          disabled={users.length >= usersLimit}
+        >
+          {showAddUser ? 'Hide Add User' : 'Add New Sub-User'}
+        </Button>
+        <Typography variant="body2" color="text.secondary">
+          ({users.length}/{usersLimit} users)
+        </Typography>
+        {users.length >= usersLimit && (
+          <Typography variant="body2" color="error">
+            Limit reached
+          </Typography>
+        )}
+      </Box>
 
       <Collapse in={showAddUser} timeout="auto" unmountOnExit>
         <Box mt={2}>
@@ -252,10 +314,15 @@ export default function ManageUsersPage() {
             sx={{ mt: 2 }}
             onClick={handleCreate}
             variant="contained"
-            disabled={loading}
+            disabled={loading || users.length >= usersLimit}
           >
             {loading ? <CircularProgress size={20} /> : 'Add User'}
           </Button>
+          {users.length >= usersLimit && (
+            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+              Cannot add more users. Limit of {usersLimit} reached.
+            </Typography>
+          )}
         </Box>
       </Collapse>
 
