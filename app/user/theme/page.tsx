@@ -11,6 +11,7 @@ import { db } from '@/app/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { THEME_PRESETS } from '@/app/lib/theme-presets';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { useAuth } from '@/app/lib/context/userContext';
 import { useState } from 'react';
 
 interface ThemePreset {
@@ -20,16 +21,23 @@ interface ThemePreset {
 }
 
 export default function ThemeSettings() {
-  const { theme, refreshTheme } = useCustomTheme(); // ✅ make sure this is available
+  const { theme, refreshTheme } = useCustomTheme();
+  const { user } = useAuth();
 
   const [loadingTheme, setLoadingTheme] = useState<string | null>(null);
 
-  if (!theme) return <CircularProgress />;
+  if (!theme || !user) return <CircularProgress />;
 
   const handleSetTheme = async (themeToApply: ThemePreset) => {
     setLoadingTheme(themeToApply.name);
     try {
-      await setDoc(doc(db, 'theme', 'activeTheme'), themeToApply);
+      // Save theme with userId to make it user-specific
+      const userThemeData = {
+        ...themeToApply,
+        mode: theme.mode, // Preserve current mode setting
+        userId: user.uid,
+      };
+      await setDoc(doc(db, 'theme', user.uid), userThemeData);
       await refreshTheme(); // ✅ refresh theme after saving
     } catch (err) {
       alert('Failed to apply theme: ' + (err as Error).message);

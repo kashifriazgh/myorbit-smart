@@ -218,6 +218,7 @@ export interface Theme {
   primary: string;
   secondary: string;
   mode: 'light' | 'dark';
+  userId?: string;
 }
 
 export interface FirestoreUser {

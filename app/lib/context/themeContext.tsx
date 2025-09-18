@@ -2,9 +2,10 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { Theme } from '@/app/lib/interface';
+import { useAuth } from './userContext';
 
 interface ThemeData {
   theme: Theme;
@@ -20,12 +21,25 @@ export function CustomThemeProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const { user } = useAuth();
   const [themeData, setThemeData] = useState<Theme | null>(null);
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
 
   // Load from localStorage & subscribe to Firestore
   useEffect(() => {
-    const cached = localStorage.getItem(THEME_CACHE_KEY);
+    if (!user) {
+      // If no user, use default theme
+      setThemeData({
+        name: 'Default',
+        primary: '#1976d2',
+        secondary: '#9c27b0',
+        mode: 'light',
+      });
+      return;
+    }
+
+    const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
+    const cached = localStorage.getItem(userCacheKey);
     if (cached) {
       try {
         const parsed: Theme = JSON.parse(cached);
@@ -35,42 +49,56 @@ export function CustomThemeProvider({
       }
     }
 
-    const ref = doc(db, 'theme', 'activeTheme');
+    // Subscribe to user-specific theme document
+    const ref = doc(db, 'theme', user.uid);
     const unsub = onSnapshot(ref, (docSnap) => {
       if (docSnap.exists()) {
         const theme = docSnap.data() as Theme;
-        localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(theme));
+        localStorage.setItem(userCacheKey, JSON.stringify(theme));
         setThemeData(theme);
+      } else {
+        // If no user theme exists, create a default one
+        const defaultTheme: Theme = {
+          name: 'Default',
+          primary: '#1976d2',
+          secondary: '#9c27b0',
+          mode: 'light',
+          userId: user.uid,
+        };
+        setDoc(ref, defaultTheme);
+        localStorage.setItem(userCacheKey, JSON.stringify(defaultTheme));
+        setThemeData(defaultTheme);
       }
     });
 
     return () => unsub();
-  }, []);
+  }, [user]);
 
   const setThemeMode = async (mode: 'light' | 'dark') => {
-    if (!themeData) return;
-    const ref = doc(db, 'theme', 'activeTheme');
+    if (!themeData || !user) return;
+    const ref = doc(db, 'theme', user.uid);
     const newTheme = { ...themeData, mode };
-    await import('firebase/firestore').then(({ setDoc }) =>
-      setDoc(ref, newTheme, { merge: true })
-    );
-    localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(newTheme));
+    await setDoc(ref, newTheme, { merge: true });
+    const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
+    localStorage.setItem(userCacheKey, JSON.stringify(newTheme));
     setThemeData(newTheme);
   };
 
   const refreshTheme = async () => {
-    const ref = doc(db, 'theme', 'activeTheme');
+    if (!user) return;
+    const ref = doc(db, 'theme', user.uid);
     const docSnap = await getDoc(ref);
     if (docSnap.exists()) {
       const freshTheme = docSnap.data() as Theme;
-      localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(freshTheme));
+      const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
+      localStorage.setItem(userCacheKey, JSON.stringify(freshTheme));
       setThemeData(freshTheme);
     }
   };
 
   // 🔹 Listen to system dark mode changes (Battery Saver triggers this)
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
+    if (typeof window === 'undefined' || !window.matchMedia || !user) return;
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -101,41 +129,7 @@ export function CustomThemeProvider({
         media.removeListener(listener);
       }
     };
-  }, [hasUserInteracted]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-
-    const applySystemTheme = (isDark: boolean) => {
-      if (!hasUserInteracted) {
-        setThemeMode(isDark ? 'dark' : 'light');
-      }
-    };
-
-    // ✅ Initial check
-    applySystemTheme(media.matches);
-
-    // ✅ Change listener
-    const listener = (e: MediaQueryListEvent) => {
-      applySystemTheme(e.matches);
-    };
-
-    if (media.addEventListener) {
-      media.addEventListener('change', listener);
-    } else {
-      media.addListener(listener);
-    }
-
-    return () => {
-      if (media.removeEventListener) {
-        media.removeEventListener('change', listener);
-      } else {
-        media.removeListener(listener);
-      }
-    };
-  }, [hasUserInteracted]);
+  }, [hasUserInteracted, user]);
 
   const setThemeModeWithOverride = async (mode: 'light' | 'dark') => {
     setHasUserInteracted(true); // ✅ stop listening to system changes after first manual change

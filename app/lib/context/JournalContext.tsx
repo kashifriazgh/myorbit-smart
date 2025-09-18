@@ -57,9 +57,7 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('JournalContext - user:', user?.uid);
     if (!user) {
-      console.log('JournalContext - no user, clearing journals');
       setJournals([]);
       setLoading(false);
       return;
@@ -74,17 +72,10 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        console.log('Journal snapshot received:', snapshot.size, 'documents');
         const allJournals: JournalDoc[] = [];
 
         snapshot.forEach((doc) => {
           const data = doc.data();
-          console.log('Journal doc data:', {
-            id: doc.id,
-            title: data.title,
-            userId: data.userId,
-            createdAt: data.createdAt,
-          });
           if (data.title && data.createdAt) {
             allJournals.push({
               id: doc.id,
@@ -105,7 +96,6 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
           return dateB.getTime() - dateA.getTime();
         });
 
-        console.log('Processed journals:', sortedJournals.length);
         setJournals(sortedJournals);
         setLoading(false);
         setError(null);
