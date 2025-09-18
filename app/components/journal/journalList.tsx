@@ -32,9 +32,13 @@ const toDate = (timestamp: Timestamp | Date): Date => {
 };
 
 export default function JournalList() {
-  const { recentJournals, loading } = useJournalContext();
+  const { recentJournals, loading, journals } = useJournalContext();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
+
+  console.log('JournalList - loading:', loading);
+  console.log('JournalList - total journals:', journals.length);
+  console.log('JournalList - recent journals:', recentJournals.length);
 
   const MOOD_COLORS: Record<
     string,

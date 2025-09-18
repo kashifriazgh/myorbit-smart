@@ -6,7 +6,6 @@ import {
   onSnapshot,
   query,
   where,
-  orderBy,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
@@ -58,7 +57,9 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    console.log('JournalContext - user:', user?.uid);
     if (!user) {
+      console.log('JournalContext - no user, clearing journals');
       setJournals([]);
       setLoading(false);
       return;
@@ -67,17 +68,23 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
     // Single subscription for all user journals
     const q = query(
       collection(db, 'journals'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', user.uid)
     );
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
+        console.log('Journal snapshot received:', snapshot.size, 'documents');
         const allJournals: JournalDoc[] = [];
 
         snapshot.forEach((doc) => {
           const data = doc.data();
+          console.log('Journal doc data:', {
+            id: doc.id,
+            title: data.title,
+            userId: data.userId,
+            createdAt: data.createdAt,
+          });
           if (data.title && data.createdAt) {
             allJournals.push({
               id: doc.id,
@@ -91,7 +98,15 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
-        setJournals(allJournals);
+        // Sort by createdAt descending (newest first)
+        const sortedJournals = allJournals.sort((a, b) => {
+          const dateA = toDate(a.createdAt);
+          const dateB = toDate(b.createdAt);
+          return dateB.getTime() - dateA.getTime();
+        });
+
+        console.log('Processed journals:', sortedJournals.length);
+        setJournals(sortedJournals);
         setLoading(false);
         setError(null);
       },
