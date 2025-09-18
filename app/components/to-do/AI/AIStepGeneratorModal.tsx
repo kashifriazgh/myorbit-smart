@@ -14,7 +14,12 @@ import {
   Checkbox,
   Stack,
   Divider,
+  TextField,
+  IconButton,
 } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Cancel';
 import { useState } from 'react';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
@@ -43,6 +48,9 @@ export default function AIStepGeneratorModal({
   const [aiSteps, setAiSteps] = useState<AIStep[]>([]);
   const [selectedSteps, setSelectedSteps] = useState<boolean[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [editingStep, setEditingStep] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState<string>('');
+  const [editingDescription, setEditingDescription] = useState<string>('');
 
   const handleGenerateSteps = async () => {
     if (!taskTitle.trim()) {
@@ -54,6 +62,9 @@ export default function AIStepGeneratorModal({
     setError(null);
     setAiSteps([]);
     setSelectedSteps([]);
+    setEditingStep(null);
+    setEditingText('');
+    setEditingDescription('');
 
     try {
       const content = taskDescription
@@ -64,12 +75,21 @@ export default function AIStepGeneratorModal({
 
 Task: "${content}"
 
-IMPORTANT: Generate only 3-5 steps maximum. Each step should be:
-- Clear and specific
-- Actionable (start with a verb)
-- Realistic and achievable within reasonable time
-- In logical order
-- Focused on the core task, not every possible detail
+IMPORTANT INSTRUCTIONS:
+1. LANGUAGE: Detect the language of the task. If it's in Roman Urdu or pure Urdu, respond in the same language. If it's in English, respond in English.
+
+2. CONTEXT AWARENESS: Analyze the task complexity and context:
+   - If it's a big project/enterprise-level task (high budget, complex requirements, professional context), provide detailed, high-quality steps with professional terminology
+   - If it's a personal/small project (individual, student, startup, simple task), provide practical, achievable steps appropriate for that level
+   - Consider financial, educational, and professional context when suggesting steps
+
+3. STEP REQUIREMENTS: Generate only 3-5 steps maximum. Each step should be:
+   - Clear and specific
+   - Actionable (start with a verb)
+   - Realistic and achievable within reasonable time
+   - In logical order
+   - Contextually appropriate for the task complexity
+   - Focused on the core task, not every possible detail
 
 Format your response as a valid JSON array of objects, where each object has:
 - "text": the step description (required, keep it concise)
@@ -161,6 +181,32 @@ Return ONLY the JSON array, no other text. If the task is too vague or doesn't h
     setSelectedSteps(updated);
   };
 
+  const handleEditStep = (index: number) => {
+    setEditingStep(index);
+    setEditingText(aiSteps[index].text);
+    setEditingDescription(aiSteps[index].description || '');
+  };
+
+  const handleSaveEdit = () => {
+    if (editingStep !== null) {
+      const updated = [...aiSteps];
+      updated[editingStep] = {
+        text: editingText.trim(),
+        description: editingDescription.trim() || undefined,
+      };
+      setAiSteps(updated);
+      setEditingStep(null);
+      setEditingText('');
+      setEditingDescription('');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingStep(null);
+    setEditingText('');
+    setEditingDescription('');
+  };
+
   const handleApply = () => {
     const selected = aiSteps.filter((_, index) => selectedSteps[index]);
     onApply(selected);
@@ -171,6 +217,9 @@ Return ONLY the JSON array, no other text. If the task is too vague or doesn't h
     setAiSteps([]);
     setSelectedSteps([]);
     setError(null);
+    setEditingStep(null);
+    setEditingText('');
+    setEditingDescription('');
     onClose();
   };
 
@@ -294,31 +343,101 @@ Return ONLY the JSON array, no other text. If the task is too vague or doesn't h
                         />
                       }
                       label={
-                        <Box sx={{ ml: 1 }}>
-                          <Typography
-                            variant="body1"
-                            sx={{
-                              fontWeight: selectedSteps[index] ? 600 : 500,
-                              color:
-                                theme?.mode === 'dark' ? '#f1f5f9' : 'inherit',
-                              mb: step.description ? 0.5 : 0,
-                            }}
-                          >
-                            {step.text}
-                          </Typography>
-                          {step.description && (
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                color:
-                                  theme?.mode === 'dark'
-                                    ? '#94a3b8'
-                                    : 'text.secondary',
-                                lineHeight: 1.4,
-                              }}
-                            >
-                              {step.description}
-                            </Typography>
+                        <Box sx={{ ml: 1, flex: 1 }}>
+                          {editingStep === index ? (
+                            <Stack spacing={1}>
+                              <TextField
+                                value={editingText}
+                                onChange={(e) => setEditingText(e.target.value)}
+                                size="small"
+                                fullWidth
+                                placeholder="Step text"
+                                sx={{ mb: 1 }}
+                              />
+                              <TextField
+                                value={editingDescription}
+                                onChange={(e) =>
+                                  setEditingDescription(e.target.value)
+                                }
+                                size="small"
+                                fullWidth
+                                multiline
+                                rows={2}
+                                placeholder="Step description (optional)"
+                              />
+                              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  startIcon={<SaveIcon />}
+                                  onClick={handleSaveEdit}
+                                  disabled={!editingText.trim()}
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<CancelIcon />}
+                                  onClick={handleCancelEdit}
+                                >
+                                  Cancel
+                                </Button>
+                              </Stack>
+                            </Stack>
+                          ) : (
+                            <>
+                              <Box
+                                sx={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'flex-start',
+                                }}
+                              >
+                                <Box sx={{ flex: 1 }}>
+                                  <Typography
+                                    variant="body1"
+                                    sx={{
+                                      fontWeight: selectedSteps[index]
+                                        ? 600
+                                        : 500,
+                                      color:
+                                        theme?.mode === 'dark'
+                                          ? '#f1f5f9'
+                                          : 'inherit',
+                                      mb: step.description ? 0.5 : 0,
+                                    }}
+                                  >
+                                    {step.text}
+                                  </Typography>
+                                  {step.description && (
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        color:
+                                          theme?.mode === 'dark'
+                                            ? '#94a3b8'
+                                            : 'text.secondary',
+                                        lineHeight: 1.4,
+                                      }}
+                                    >
+                                      {step.description}
+                                    </Typography>
+                                  )}
+                                </Box>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleEditStep(index)}
+                                  sx={{
+                                    ml: 1,
+                                    opacity: 0.7,
+                                    '&:hover': { opacity: 1 },
+                                  }}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </Box>
+                            </>
                           )}
                         </Box>
                       }

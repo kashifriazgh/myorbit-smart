@@ -15,14 +15,11 @@ import {
   Stack,
   CircularProgress,
 } from '@mui/material';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import JournalModal from '../components/journal/journalModal';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import JournalList from '../components/journal/journalList';
-import { useAuth } from '@/app/lib/context/userContext';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
-import moment from 'moment';
+import { useJournalContext } from '@/app/lib/context/JournalContext';
 
 import EditIcon from '@mui/icons-material/Edit';
 import BookIcon from '@mui/icons-material/Book';
@@ -32,101 +29,9 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 export default function JournalsPage() {
   const [open, setOpen] = useState(false);
   const { theme: customTheme } = useCustomTheme();
-  const { user } = useAuth();
+  const { insights, loading } = useJournalContext();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
-
-  const [insights, setInsights] = useState({
-    totalEntries: 0,
-    last30Days: 0,
-    currentStreak: 0,
-    longestStreak: 0,
-    loading: true,
-  });
-
-  useEffect(() => {
-    const fetchJournalInsights = async () => {
-      if (!user) return;
-
-      try {
-        const journalsSnap = await getDocs(
-          query(collection(db, 'journals'), where('userId', '==', user.uid))
-        );
-
-        const journals = journalsSnap.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt,
-        }));
-
-        const now = moment();
-        const thirtyDaysAgo = moment().subtract(30, 'days');
-
-        // Calculate insights
-        const totalEntries = journals.length;
-        const last30Days = journals.filter((journal) =>
-          moment(journal.createdAt).isAfter(thirtyDaysAgo)
-        ).length;
-
-        // Calculate current streak
-        let currentStreak = 0;
-        const checkDate = now.clone().startOf('day');
-
-        for (let i = 0; i < 365; i++) {
-          // Check up to 1 year back
-          const hasEntry = journals.some((journal) =>
-            moment(journal.createdAt).isSame(checkDate, 'day')
-          );
-
-          if (hasEntry) {
-            currentStreak++;
-            checkDate.subtract(1, 'day');
-          } else {
-            break;
-          }
-        }
-
-        // Calculate longest streak
-        let longestStreak = 0;
-        let tempStreak = 0;
-        const sortedJournals = journals
-          .sort((a, b) => moment(b.createdAt).diff(moment(a.createdAt)))
-          .map((j) => moment(j.createdAt).startOf('day'));
-
-        if (sortedJournals.length > 0) {
-          const currentDate = sortedJournals[0].clone();
-          let lastDate = currentDate.clone();
-
-          for (let i = 1; i < sortedJournals.length; i++) {
-            const journalDate = sortedJournals[i];
-            const daysDiff = lastDate.diff(journalDate, 'days');
-
-            if (daysDiff === 1) {
-              tempStreak++;
-            } else {
-              longestStreak = Math.max(longestStreak, tempStreak + 1);
-              tempStreak = 0;
-            }
-            lastDate = journalDate.clone();
-          }
-          longestStreak = Math.max(longestStreak, tempStreak + 1);
-        }
-
-        setInsights({
-          totalEntries,
-          last30Days,
-          currentStreak,
-          longestStreak,
-          loading: false,
-        });
-      } catch (error) {
-        console.error('Error fetching journal insights:', error);
-        setInsights((prev) => ({ ...prev, loading: false }));
-      }
-    };
-
-    fetchJournalInsights();
-  }, [user]);
 
   if (!customTheme) return null;
 
@@ -208,7 +113,7 @@ export default function JournalsPage() {
               Journal Insights
             </Typography>
 
-            {insights.loading ? (
+            {loading ? (
               <Box display="flex" justifyContent="center" py={3}>
                 <CircularProgress size={24} />
               </Box>

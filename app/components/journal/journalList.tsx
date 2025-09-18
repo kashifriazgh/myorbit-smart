@@ -14,43 +14,27 @@ import {
   useTheme,
   Avatar,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
-import { db } from '@/app/lib/firebase';
-import {
-  collection,
-  getDocs,
-  orderBy,
-  query,
-  Timestamp,
-  where,
-} from 'firebase/firestore';
 import Link from 'next/link';
-import { useAuth } from '@/app/lib/context/userContext';
+import { useJournalContext } from '@/app/lib/context/JournalContext';
 import moment from 'moment';
 import BookIcon from '@mui/icons-material/Book';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import MoodIcon from '@mui/icons-material/Mood';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import { Timestamp } from 'firebase/firestore';
 
-interface JournalDoc {
-  id: string;
-  title: string;
-  content?: string;
-  mood?: {
-    type: 'happy' | 'loving' | 'sad' | 'heart-broken' | 'angry';
-    level: number;
-  };
-  productivityOfTheDay?: string;
-  createdAt: Timestamp;
-}
+// Helper function to convert Timestamp or Date to Date
+const toDate = (timestamp: Timestamp | Date): Date => {
+  if (timestamp instanceof Date) {
+    return timestamp;
+  }
+  return timestamp.toDate();
+};
 
 export default function JournalList() {
-  const { user } = useAuth();
+  const { recentJournals, loading } = useJournalContext();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
-
-  const [journals, setJournals] = useState<JournalDoc[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const MOOD_COLORS: Record<
     string,
@@ -63,50 +47,6 @@ export default function JournalList() {
     angry: { bg: '#fecaca', text: '#dc2626', emoji: '😠' },
   };
 
-  useEffect(() => {
-    if (!user) return;
-
-    const fetchJournals = async () => {
-      try {
-        const now = moment();
-        const past30 = now.clone().subtract(30, 'days').toDate();
-
-        // Only filter by createdAt to avoid composite index requirement
-        const q = query(
-          collection(db, 'journals'),
-          where('createdAt', '>=', past30),
-          orderBy('createdAt', 'desc')
-        );
-
-        const snapshot = await getDocs(q);
-        const entries: JournalDoc[] = [];
-
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          // Filter by userId in client-side to avoid composite index
-          if (data.title && data.createdAt && data.userId === user.uid) {
-            entries.push({
-              id: doc.id,
-              title: data.title,
-              content: data.content,
-              mood: data.mood,
-              productivityOfTheDay: data.productivityOfTheDay,
-              createdAt: data.createdAt,
-            });
-          }
-        });
-
-        setJournals(entries);
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching journals:', err);
-        setLoading(false);
-      }
-    };
-
-    fetchJournals();
-  }, [user]);
-
   if (loading) {
     return (
       <Stack spacing={2}>
@@ -117,7 +57,7 @@ export default function JournalList() {
     );
   }
 
-  if (journals.length === 0) {
+  if (recentJournals.length === 0) {
     return (
       <Fade in={true} timeout={800}>
         <Card
@@ -161,9 +101,9 @@ export default function JournalList() {
 
   return (
     <Stack spacing={3}>
-      {journals.map((entry, index) => {
+      {recentJournals.map((entry, index) => {
         const moodInfo = entry.mood ? MOOD_COLORS[entry.mood.type] : null;
-        const createdDate = entry.createdAt.toDate();
+        const createdDate = toDate(entry.createdAt);
         const isToday = moment(createdDate).isSame(moment(), 'day');
         const isYesterday = moment(createdDate).isSame(
           moment().subtract(1, 'day'),
