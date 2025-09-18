@@ -24,30 +24,40 @@ export function CustomThemeProvider({
   const { user } = useAuth();
   const [themeData, setThemeData] = useState<Theme | null>(null);
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load from localStorage & subscribe to Firestore
+  // Initialize theme on first load
   useEffect(() => {
-    if (!user) {
-      // If no user, use default theme
-      setThemeData({
-        name: 'Default',
-        primary: '#1976d2',
-        secondary: '#9c27b0',
-        mode: 'light',
-      });
-      return;
-    }
+    if (isInitialized) return;
 
-    const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
-    const cached = localStorage.getItem(userCacheKey);
-    if (cached) {
+    // Try to load from localStorage first (for immediate display)
+    const globalCache = localStorage.getItem(THEME_CACHE_KEY);
+    if (globalCache) {
       try {
-        const parsed: Theme = JSON.parse(cached);
+        const parsed: Theme = JSON.parse(globalCache);
         setThemeData(parsed);
+        setIsInitialized(true);
+        return;
       } catch (err) {
         console.warn('Failed to parse cached theme', err);
       }
     }
+
+    // If no cached theme, use default
+    setThemeData({
+      name: 'Default',
+      primary: '#1976d2',
+      secondary: '#9c27b0',
+      mode: 'light',
+    });
+    setIsInitialized(true);
+  }, [isInitialized]);
+
+  // Load user-specific theme when user is available
+  useEffect(() => {
+    if (!user || !isInitialized) return;
+
+    const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
 
     // Subscribe to user-specific theme document
     const ref = doc(db, 'theme', user.uid);
@@ -55,24 +65,29 @@ export function CustomThemeProvider({
       if (docSnap.exists()) {
         const theme = docSnap.data() as Theme;
         localStorage.setItem(userCacheKey, JSON.stringify(theme));
+        localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(theme)); // Also update global cache
         setThemeData(theme);
       } else {
-        // If no user theme exists, create a default one
-        const defaultTheme: Theme = {
-          name: 'Default',
-          primary: '#1976d2',
-          secondary: '#9c27b0',
-          mode: 'light',
-          userId: user.uid,
-        };
-        setDoc(ref, defaultTheme);
-        localStorage.setItem(userCacheKey, JSON.stringify(defaultTheme));
-        setThemeData(defaultTheme);
+        // Only create default theme if user has no cached theme
+        const userCached = localStorage.getItem(userCacheKey);
+        if (!userCached) {
+          const defaultTheme: Theme = {
+            name: 'Default',
+            primary: '#1976d2',
+            secondary: '#9c27b0',
+            mode: 'light',
+            userId: user.uid,
+          };
+          setDoc(ref, defaultTheme);
+          localStorage.setItem(userCacheKey, JSON.stringify(defaultTheme));
+          localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(defaultTheme));
+          setThemeData(defaultTheme);
+        }
       }
     });
 
     return () => unsub();
-  }, [user]);
+  }, [user, isInitialized]);
 
   const setThemeMode = async (mode: 'light' | 'dark') => {
     if (!themeData || !user) return;
@@ -81,6 +96,7 @@ export function CustomThemeProvider({
     await setDoc(ref, newTheme, { merge: true });
     const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
     localStorage.setItem(userCacheKey, JSON.stringify(newTheme));
+    localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(newTheme)); // Also update global cache
     setThemeData(newTheme);
   };
 
@@ -92,6 +108,7 @@ export function CustomThemeProvider({
       const freshTheme = docSnap.data() as Theme;
       const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
       localStorage.setItem(userCacheKey, JSON.stringify(freshTheme));
+      localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(freshTheme)); // Also update global cache
       setThemeData(freshTheme);
     }
   };

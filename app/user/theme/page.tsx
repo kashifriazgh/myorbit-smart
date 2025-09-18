@@ -38,6 +38,12 @@ export default function ThemeSettings() {
         userId: user.uid,
       };
       await setDoc(doc(db, 'theme', user.uid), userThemeData);
+
+      // Update localStorage cache immediately for better UX
+      const userCacheKey = `cachedTheme_${user.uid}`;
+      localStorage.setItem(userCacheKey, JSON.stringify(userThemeData));
+      localStorage.setItem('cachedTheme', JSON.stringify(userThemeData)); // Global cache
+
       await refreshTheme(); // ✅ refresh theme after saving
     } catch (err) {
       alert('Failed to apply theme: ' + (err as Error).message);
