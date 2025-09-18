@@ -60,19 +60,20 @@ export default function AIStepGeneratorModal({
         ? `${taskTitle}\n\nDescription: ${taskDescription}`
         : taskTitle;
 
-      const instructions = `You are a professional task planner and productivity expert. Analyze the following task and break it down into clear, actionable steps that can be completed sequentially.
+      const instructions = `You are a professional task planner and productivity expert. Analyze the following task and break it down into 3-5 realistic, actionable steps that can be completed sequentially.
 
 Task: "${content}"
 
-Please provide 3-8 specific, actionable steps that will help complete this task. Each step should be:
+IMPORTANT: Generate only 3-5 steps maximum. Each step should be:
 - Clear and specific
 - Actionable (start with a verb)
-- Realistic and achievable
+- Realistic and achievable within reasonable time
 - In logical order
+- Focused on the core task, not every possible detail
 
-Format your response as a JSON array of objects, where each object has:
-- "text": the step description (required)
-- "description": additional details or context (optional)
+Format your response as a valid JSON array of objects, where each object has:
+- "text": the step description (required, keep it concise)
+- "description": additional details or context (optional, keep it brief)
 
 Example format:
 [
@@ -81,7 +82,7 @@ Example format:
   {"text": "Execute the main task", "description": "Complete the primary objective"}
 ]
 
-If the task is too vague or doesn't have clear actionable steps, return an empty array [].`;
+Return ONLY the JSON array, no other text. If the task is too vague or doesn't have clear actionable steps, return an empty array [].`;
 
       const response = await fetch('/api/ideas/improve-idea', {
         method: 'POST',
@@ -109,42 +110,40 @@ If the task is too vague or doesn't have clear actionable steps, return an empty
 
       // Try to parse the JSON response
       try {
-        const parsedSteps = JSON.parse(result);
+        // Clean the result to remove any markdown formatting
+        const cleanResult = result.replace(/```json\s*|\s*```/g, '').trim();
+        const parsedSteps = JSON.parse(cleanResult);
+
         if (Array.isArray(parsedSteps) && parsedSteps.length > 0) {
-          setAiSteps(parsedSteps);
-          setSelectedSteps(new Array(parsedSteps.length).fill(true)); // Select all by default
+          // Limit to maximum 5 steps and filter out invalid entries
+          const validSteps = parsedSteps
+            .filter(
+              (step) =>
+                step &&
+                typeof step === 'object' &&
+                step.text &&
+                step.text.trim()
+            )
+            .slice(0, 5)
+            .map((step) => ({
+              text: step.text.trim(),
+              description: step.description
+                ? step.description.trim()
+                : undefined,
+            }));
+
+          if (validSteps.length > 0) {
+            setAiSteps(validSteps);
+            setSelectedSteps(new Array(validSteps.length).fill(true)); // Select all by default
+          } else {
+            setError('No valid steps could be generated for this task.');
+          }
         } else {
           setError('No actionable steps could be generated for this task.');
         }
       } catch (parseError) {
-        // If JSON parsing fails, try to extract steps from text
-        const lines = result.split('\n').filter((line) => line.trim());
-        const extractedSteps: AIStep[] = [];
-        console.log(parseError);
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (
-            trimmed &&
-            !trimmed.startsWith('[') &&
-            !trimmed.startsWith(']') &&
-            !trimmed.startsWith('{') &&
-            !trimmed.startsWith('}')
-          ) {
-            // Remove numbering and bullet points
-            const cleanText = trimmed.replace(/^[\d\.\-\*\•]\s*/, '');
-            if (cleanText.length > 5) {
-              // Only include meaningful steps
-              extractedSteps.push({ text: cleanText });
-            }
-          }
-        }
-
-        if (extractedSteps.length > 0) {
-          setAiSteps(extractedSteps);
-          setSelectedSteps(new Array(extractedSteps.length).fill(true));
-        } else {
-          setError('Could not extract actionable steps from the response.');
-        }
+        console.error('JSON parsing error:', parseError);
+        setError('Failed to parse AI response. Please try again.');
       }
     } catch (error) {
       console.error('Error generating steps:', error);
@@ -242,52 +241,90 @@ If the task is too vague or doesn't have clear actionable steps, return an empty
           {aiSteps.length > 0 && (
             <Box>
               <Divider sx={{ mb: 2 }} />
-              <Typography variant="subtitle2" gutterBottom>
-                Select the steps you want to add:
+              <Typography
+                variant="subtitle2"
+                gutterBottom
+                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+              >
+                🤖 AI Generated Steps ({aiSteps.length})
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  Select the steps you want to add to your task:
+                </Typography>
               </Typography>
               <FormGroup>
                 {aiSteps.map((step, index) => (
-                  <FormControlLabel
+                  <Box
                     key={index}
-                    control={
-                      <Checkbox
-                        checked={selectedSteps[index]}
-                        onChange={() => handleStepToggle(index)}
-                        sx={{
-                          color: theme?.mode === 'dark' ? '#e2e8f0' : undefined,
-                        }}
-                      />
-                    }
-                    label={
-                      <Box>
-                        <Typography
-                          variant="body2"
+                    sx={{
+                      p: 2,
+                      mb: 1.5,
+                      border: `2px solid ${
+                        selectedSteps[index] ? 'primary.main' : 'divider'
+                      }`,
+                      borderRadius: 2,
+                      bgcolor: selectedSteps[index]
+                        ? theme?.mode === 'dark'
+                          ? 'rgba(59, 130, 246, 0.1)'
+                          : 'rgba(59, 130, 246, 0.05)'
+                        : theme?.mode === 'dark'
+                        ? '#374151'
+                        : '#f9fafb',
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                        bgcolor: selectedSteps[index]
+                          ? theme?.mode === 'dark'
+                            ? 'rgba(59, 130, 246, 0.15)'
+                            : 'rgba(59, 130, 246, 0.08)'
+                          : theme?.mode === 'dark'
+                          ? '#4b5563'
+                          : '#f3f4f6',
+                      },
+                    }}
+                  >
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={selectedSteps[index]}
+                          onChange={() => handleStepToggle(index)}
                           sx={{
-                            fontWeight: selectedSteps[index] ? 500 : 400,
                             color:
-                              theme?.mode === 'dark' ? '#f1f5f9' : 'inherit',
+                              theme?.mode === 'dark' ? '#e2e8f0' : undefined,
                           }}
-                        >
-                          {step.text}
-                        </Typography>
-                        {step.description && (
+                        />
+                      }
+                      label={
+                        <Box sx={{ ml: 1 }}>
                           <Typography
-                            variant="caption"
+                            variant="body1"
                             sx={{
+                              fontWeight: selectedSteps[index] ? 600 : 500,
                               color:
-                                theme?.mode === 'dark'
-                                  ? '#94a3b8'
-                                  : 'text.secondary',
-                              fontStyle: 'italic',
+                                theme?.mode === 'dark' ? '#f1f5f9' : 'inherit',
+                              mb: step.description ? 0.5 : 0,
                             }}
                           >
-                            {step.description}
+                            {step.text}
                           </Typography>
-                        )}
-                      </Box>
-                    }
-                    sx={{ mb: 1 }}
-                  />
+                          {step.description && (
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color:
+                                  theme?.mode === 'dark'
+                                    ? '#94a3b8'
+                                    : 'text.secondary',
+                                lineHeight: 1.4,
+                              }}
+                            >
+                              {step.description}
+                            </Typography>
+                          )}
+                        </Box>
+                      }
+                      sx={{ m: 0, width: '100%' }}
+                    />
+                  </Box>
                 ))}
               </FormGroup>
             </Box>
