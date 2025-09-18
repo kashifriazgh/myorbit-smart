@@ -7,7 +7,6 @@ import {
   IconButton,
   Typography,
   InputBase,
-  Badge,
   MenuItem,
   Menu,
   Box,
@@ -17,7 +16,7 @@ import { Skeleton } from '@mui/material';
 
 import { styled, alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
-import NotificationsIcon from '@mui/icons-material/Notifications';
+import HistoryIcon from '@mui/icons-material/History';
 import AccountCircle from '@mui/icons-material/AccountCircle';
 import MoreIcon from '@mui/icons-material/MoreVert';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
@@ -149,12 +148,15 @@ export default function AppBarTop() {
       onClose={handleMobileMenuClose}
     >
       <MenuItem>
-        <IconButton size="large" color="inherit">
-          <Badge badgeContent={7} color="error">
-            <NotificationsIcon />
-          </Badge>
-        </IconButton>
-        <p>Notifications</p>
+        <Link
+          href="/2/change-log"
+          style={{ textDecoration: 'none', color: 'inherit' }}
+        >
+          <IconButton size="large" color="inherit">
+            <HistoryIcon />
+          </IconButton>
+        </Link>
+        <p>Change Log</p>
       </MenuItem>
 
       {/* ✅ Dark Mode Toggle on Mobile */}
@@ -236,11 +238,11 @@ export default function AppBarTop() {
 
           <Box sx={{ flexGrow: 1 }} />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-            <IconButton size="large" color="inherit">
-              <Badge badgeContent={7} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </IconButton>
+            <Link href="/2/change-log">
+              <IconButton size="large" color="inherit" aria-label="change log">
+                <HistoryIcon />
+              </IconButton>
+            </Link>
             <IconButton
               size="large"
               color="inherit"
