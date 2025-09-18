@@ -59,11 +59,12 @@ export function CustomThemeProvider({
 
     const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
 
-    // Subscribe to user-specific theme document
+    // First, immediately fetch the user's theme from Firestore to update localStorage
     const ref = doc(db, 'theme', user.uid);
-    const unsub = onSnapshot(ref, (docSnap) => {
+    getDoc(ref).then((docSnap) => {
       if (docSnap.exists()) {
         const theme = docSnap.data() as Theme;
+        // Update localStorage with Firestore data when user logs in
         localStorage.setItem(userCacheKey, JSON.stringify(theme));
         localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(theme)); // Also update global cache
         setThemeData(theme);
@@ -83,6 +84,16 @@ export function CustomThemeProvider({
           localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(defaultTheme));
           setThemeData(defaultTheme);
         }
+      }
+    });
+
+    // Also subscribe to real-time updates for future changes
+    const unsub = onSnapshot(ref, (docSnap) => {
+      if (docSnap.exists()) {
+        const theme = docSnap.data() as Theme;
+        localStorage.setItem(userCacheKey, JSON.stringify(theme));
+        localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(theme));
+        setThemeData(theme);
       }
     });
 
