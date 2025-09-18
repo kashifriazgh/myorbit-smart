@@ -34,8 +34,10 @@ import TodoMetaChips from '@/app/components/to-do/todoDetailPage/ToDoMetaChips';
 import TodoProgressBar from '@/app/components/to-do/todoDetailPage/TotDoProgressBar';
 import TodoActionButtons from '@/app/components/to-do/todoDetailPage/ToDoActionButtons';
 import DeleteIcon from '@mui/icons-material/Delete';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { STATUS_OPTIONS } from '@/app/lib/constant';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import AIStepGeneratorModal from '../../components/to-do/AI/AIStepGeneratorModal';
 
 type ConfirmDelete =
   | { type: 'step'; stepIndex: number }
@@ -63,6 +65,7 @@ export default function TodoDetailPage() {
 
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDelete>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [aiStepModalOpen, setAiStepModalOpen] = useState(false);
 
   const calculateProgress = (steps: Todo['steps']) => {
     let completed = 0;
@@ -210,6 +213,23 @@ export default function TodoDetailPage() {
     setCompleteConfirmOpen(false);
   };
 
+  const handleAIStepsApply = async (
+    aiSteps: { text: string; description?: string }[]
+  ) => {
+    if (!todo?.steps) return;
+
+    const newSteps = aiSteps.map((aiStep) => ({
+      text: aiStep.text,
+      description: aiStep.description || '',
+      status: 'in_progress' as const,
+      done: false,
+      subSteps: [],
+    }));
+
+    const updatedSteps = [...todo.steps, ...newSteps];
+    await updateStepsInFirestore(updatedSteps);
+  };
+
   if (loading)
     return (
       <Box textAlign="center" mt={5}>
@@ -255,135 +275,153 @@ export default function TodoDetailPage() {
             return 0;
           })
           .map((step, idx) => (
-          <Step key={idx} completed={step.status === 'completed'}>
-            <StepLabel
-              onClick={() => setActiveStep(idx)}
-              sx={{ cursor: 'pointer' }}
-            >
-              <Box
-                sx={{
-                  position: 'relative',
-                  '&:hover .step-delete': { opacity: 1 },
-                }}
+            <Step key={idx} completed={step.status === 'completed'}>
+              <StepLabel
+                onClick={() => setActiveStep(idx)}
+                sx={{ cursor: 'pointer' }}
               >
-                {`${step.text}`}
-                <IconButton
-                  size="small"
-                  className="step-delete"
+                <Box
                   sx={{
-                    position: 'absolute',
-                    right: -40,
-                    top: -8,
-                    opacity: 0,
-                    transition: 'opacity 0.2s',
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirmDelete({ type: 'step', stepIndex: idx });
+                    position: 'relative',
+                    '&:hover .step-delete': { opacity: 1 },
                   }}
                 >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            </StepLabel>
-            <StepContent>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary" mb={1}>
-                  {step.description}
-                </Typography>
-                <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                  <Select
+                  {`${step.text}`}
+                  <IconButton
                     size="small"
-                    value={step.status}
-                    onChange={(e) => updateStepStatusLocal(idx, e.target.value)}
-                    sx={{ minWidth: 100, fontSize: '12px' }}
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <MenuItem key={status.value} value={status.value}>
-                        {status.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: '12px' }}
-                    onClick={() => {
-                      setSubStepTargetIndex(idx);
-                      setSubStepModalOpen(true);
+                    className="step-delete"
+                    sx={{
+                      position: 'absolute',
+                      right: -40,
+                      top: -8,
+                      opacity: 0,
+                      transition: 'opacity 0.2s',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDelete({ type: 'step', stepIndex: idx });
                     }}
                   >
-                    + Add Sub-step
-                  </Button>
-                </Stack>
-              </Box>
-
-              {step.subSteps && step.subSteps.length > 0 && (
-                <Box sx={{ pl: 2, borderLeft: '2px solid #e0e0e0' }}>
-                  {step.subSteps.map((subStep, subIdx) => (
-                    <Box
-                      key={subIdx}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        mb: 1,
-                        position: 'relative',
-                        '&:hover .substep-delete': {
-                          opacity: 1,
-                        },
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              </StepLabel>
+              <StepContent>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2" color="text.secondary" mb={1}>
+                    {step.description}
+                  </Typography>
+                  <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                    <Select
+                      size="small"
+                      value={step.status}
+                      onChange={(e) =>
+                        updateStepStatusLocal(idx, e.target.value)
+                      }
+                      sx={{ minWidth: 100, fontSize: '12px' }}
+                    >
+                      {STATUS_OPTIONS.map((status) => (
+                        <MenuItem key={status.value} value={status.value}>
+                          {status.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      sx={{ fontSize: '12px' }}
+                      onClick={() => {
+                        setSubStepTargetIndex(idx);
+                        setSubStepModalOpen(true);
                       }}
                     >
-                      <Checkbox
-                        checked={subStep.done}
-                        onChange={() => handleSubStepToggle(idx, subIdx)}
-                        size="small"
-                      />
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          textDecoration: subStep.done
-                            ? 'line-through'
-                            : 'none',
-                          color: subStep.done
-                            ? 'text.secondary'
-                            : 'text.primary',
-                          flex: 1,
-                        }}
-                      >
-                        {subStep.text}
-                      </Typography>
-                      <IconButton
-                        size="small"
-                        className="substep-delete"
-                        sx={{
-                          opacity: 0,
-                          transition: 'opacity 0.2s',
-                          position: 'absolute',
-                          right: 0,
-                        }}
-                        onClick={() =>
-                          setConfirmDelete({
-                            type: 'sub',
-                            stepIndex: idx,
-                            subIndex: subIdx,
-                          })
-                        }
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  ))}
+                      + Add Sub-step
+                    </Button>
+                  </Stack>
                 </Box>
-              )}
-            </StepContent>
-          </Step>
-        ))}
+
+                {step.subSteps && step.subSteps.length > 0 && (
+                  <Box sx={{ pl: 2, borderLeft: '2px solid #e0e0e0' }}>
+                    {step.subSteps.map((subStep, subIdx) => (
+                      <Box
+                        key={subIdx}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          mb: 1,
+                          position: 'relative',
+                          '&:hover .substep-delete': {
+                            opacity: 1,
+                          },
+                        }}
+                      >
+                        <Checkbox
+                          checked={subStep.done}
+                          onChange={() => handleSubStepToggle(idx, subIdx)}
+                          size="small"
+                        />
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            textDecoration: subStep.done
+                              ? 'line-through'
+                              : 'none',
+                            color: subStep.done
+                              ? 'text.secondary'
+                              : 'text.primary',
+                            flex: 1,
+                          }}
+                        >
+                          {subStep.text}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          className="substep-delete"
+                          sx={{
+                            opacity: 0,
+                            transition: 'opacity 0.2s',
+                            position: 'absolute',
+                            right: 0,
+                          }}
+                          onClick={() =>
+                            setConfirmDelete({
+                              type: 'sub',
+                              stepIndex: idx,
+                              subIndex: subIdx,
+                            })
+                          }
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+              </StepContent>
+            </Step>
+          ))}
       </Stepper>
 
-      <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+      <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         <Button variant="contained" onClick={() => setStepModalOpen(true)}>
           + Add Step
+        </Button>
+
+        <Button
+          variant="outlined"
+          startIcon={<AutoAwesomeIcon />}
+          onClick={() => setAiStepModalOpen(true)}
+          sx={{
+            borderColor: 'primary.main',
+            color: 'primary.main',
+            '&:hover': {
+              borderColor: 'primary.dark',
+              backgroundColor: 'primary.light',
+            },
+          }}
+        >
+          AI Generate Steps
         </Button>
 
         <Button
@@ -483,6 +521,15 @@ export default function TodoDetailPage() {
       </Dialog>
 
       <TodoActionButtons todo={todo} user={user!} />
+
+      {/* AI Step Generator Modal */}
+      <AIStepGeneratorModal
+        open={aiStepModalOpen}
+        onClose={() => setAiStepModalOpen(false)}
+        onApply={handleAIStepsApply}
+        taskTitle={todo.title}
+        taskDescription={todo.description}
+      />
     </Box>
   );
 }

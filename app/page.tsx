@@ -37,14 +37,13 @@ export default function Homepage() {
         <TimeTableNotifier />
         <DashboardHome />
         <FinancialCheckPoints />
-        <Mood />
-        <OnGoingStreaks />
         <ImportantTasks />
         <OverdueTasks />
+        <OnGoingStreaks />
+        <Mood />
         <ExpectedExpenses />
         <ExpectedIncome />
         <JournalMemory />
-
         <MostProductiveDay />
 
         {/* <MostFocusedTime

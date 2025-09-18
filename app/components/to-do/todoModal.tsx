@@ -36,6 +36,8 @@ import { useAuth } from '@/app/lib/context/userContext';
 import { PRIORITY_OPTIONS } from '@/app/lib/constant';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import AIStepGeneratorModal from '@/app/components/to-do/AI/AIStepGeneratorModal';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 
 type Props = {
   open: boolean;
@@ -55,6 +57,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   const [dueDate, setDueDate] = useState<Date | null>(new Date());
   const [loading, setLoading] = useState(false);
   const [isImportant, setIsImportant] = useState(false);
+  const [aiStepModalOpen, setAiStepModalOpen] = useState(false);
 
   const [steps, setSteps] = useState<
     {
@@ -84,6 +87,24 @@ export default function ToDoModal({ open, onClose }: Props) {
         status: 'in_progress',
         subSteps: [],
       },
+    ]);
+  };
+
+  const handleAIStepsApply = (
+    aiSteps: { text: string; description?: string }[]
+  ) => {
+    const newSteps = aiSteps.map((aiStep) => ({
+      text: aiStep.text,
+      description: aiStep.description || '',
+      showDescription: false,
+      done: false,
+      status: 'in_progress' as const,
+      subSteps: [],
+    }));
+
+    setSteps((prev) => [
+      ...prev.map((step) => ({ ...step, showDescription: false })),
+      ...newSteps,
     ]);
   };
 
@@ -469,15 +490,34 @@ export default function ToDoModal({ open, onClose }: Props) {
             </Box>
           ))}
 
-          <Button
-            size="medium"
-            variant="contained"
-            startIcon={<AddTaskIcon />}
-            onClick={addStep}
-            sx={{ alignSelf: 'flex-start', bgcolor: 'secondary.main' }}
-          >
-            Add Step
-          </Button>
+          <Stack direction="row" spacing={2} sx={{ alignSelf: 'flex-start' }}>
+            <Button
+              size="medium"
+              variant="contained"
+              startIcon={<AddTaskIcon />}
+              onClick={addStep}
+              sx={{ bgcolor: 'secondary.main' }}
+            >
+              Add Step
+            </Button>
+            <Button
+              size="medium"
+              variant="outlined"
+              startIcon={<AutoAwesomeIcon />}
+              onClick={() => setAiStepModalOpen(true)}
+              disabled={!title.trim()}
+              sx={{
+                borderColor: 'primary.main',
+                color: 'primary.main',
+                '&:hover': {
+                  borderColor: 'primary.dark',
+                  backgroundColor: 'primary.light',
+                },
+              }}
+            >
+              AI Generate Steps
+            </Button>
+          </Stack>
         </Stack>
       </DialogContent>
 
@@ -494,6 +534,15 @@ export default function ToDoModal({ open, onClose }: Props) {
           {loading ? 'Saving...' : 'Save'}
         </Button>
       </DialogActions>
+
+      {/* AI Step Generator Modal */}
+      <AIStepGeneratorModal
+        open={aiStepModalOpen}
+        onClose={() => setAiStepModalOpen(false)}
+        onApply={handleAIStepsApply}
+        taskTitle={title}
+        taskDescription={description}
+      />
     </Dialog>
   );
 }
