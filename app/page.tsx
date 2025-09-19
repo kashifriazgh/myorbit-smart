@@ -1,24 +1,60 @@
 'use client';
-import React from 'react';
-import Mood from './components/homepage/Mood';
-import ImportantTasks from './components/homepage/ImportantTasks';
-import OverdueTasks from './components/homepage/OverdueTasks';
-import ExpectedExpenses from './components/homepage/ExpectedExpenses';
-import JournalMemory from './components/homepage/JournalMemory';
-import MostProductiveDay from './components/homepage/MostProductiveDay';
-import ExpectedIncome from './components/homepage/ExpectedIncomes';
-// import MostFocusedTime from './components/homepage/MostFocusedTime';
-import DashboardHome from './components/homepage/Opener';
-import FinancialCheckPoints from './components/finance/FinancialCheckPoints';
-// import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingIntializer';
-import OnGoingStreaks from './components/homepage/OnGoingStreaks';
-import TimeTableNotifier from './components/homepage/TimeTableNotifier';
+import React, { Suspense, lazy } from 'react';
 import { IncomeSourcesProvider } from './lib/context/IncomeSourcesContext';
 import { useAuth } from './lib/context/userContext';
 import { useCustomTheme } from './lib/context/themeContext';
+import { CircularProgress, Box } from '@mui/material';
+import GuestUserBanner from './components/global/GuestUserBanner';
+
+// Lazy load components for better performance
+const TimeTableNotifier = lazy(
+  () => import('./components/homepage/TimeTableNotifier')
+);
+const DashboardHome = lazy(() => import('./components/homepage/Opener'));
+const FinancialCheckPoints = lazy(
+  () => import('./components/finance/FinancialCheckPoints')
+);
+const ImportantTasks = lazy(
+  () => import('./components/homepage/ImportantTasks')
+);
+const OverdueTasks = lazy(() => import('./components/homepage/OverdueTasks'));
+const OnGoingStreaks = lazy(
+  () => import('./components/homepage/OnGoingStreaks')
+);
+const Mood = lazy(() => import('./components/homepage/Mood'));
+const ExpectedExpenses = lazy(
+  () => import('./components/homepage/ExpectedExpenses')
+);
+const ExpectedIncome = lazy(
+  () => import('./components/homepage/ExpectedIncomes')
+);
+const JournalMemory = lazy(() => import('./components/homepage/JournalMemory'));
+const MostProductiveDay = lazy(
+  () => import('./components/homepage/MostProductiveDay')
+);
+
+// Loading component
+const ComponentLoader = () => (
+  <Box display="flex" justifyContent="center" p={2}>
+    <CircularProgress size={24} />
+  </Box>
+);
 export default function Homepage() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const { theme } = useCustomTheme();
+
+  if (loading) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="100vh"
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   if (!user) return null;
 
@@ -33,18 +69,41 @@ export default function Homepage() {
           borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
         }}
       >
+        <GuestUserBanner />
         {/* <OnBoardingInitializer /> */}
-        <TimeTableNotifier />
-        <DashboardHome />
-        <FinancialCheckPoints />
-        <ImportantTasks />
-        <OverdueTasks />
-        <OnGoingStreaks />
-        <Mood />
-        <ExpectedExpenses />
-        <ExpectedIncome />
-        <JournalMemory />
-        <MostProductiveDay />
+        <Suspense fallback={<ComponentLoader />}>
+          <TimeTableNotifier />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <DashboardHome />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <FinancialCheckPoints />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <ImportantTasks />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <OverdueTasks />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <OnGoingStreaks />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <Mood />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <ExpectedExpenses />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <ExpectedIncome />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <JournalMemory />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <MostProductiveDay />
+        </Suspense>
 
         {/* <MostFocusedTime
           data={{

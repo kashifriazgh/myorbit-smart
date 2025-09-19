@@ -19,7 +19,7 @@ import AssignmentIcon from '@mui/icons-material/Assignment';
 import IdeaActionButton from './IdeaLevelButton';
 import { IDEA_LEVELS } from '@/app/lib/constant';
 import moment from 'moment-timezone';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   collection,
   getDocs,
@@ -64,7 +64,7 @@ export default function IdeasList() {
 
   const { theme } = useCustomTheme();
 
-  const fetchIdeas = async () => {
+  const fetchIdeas = useCallback(async () => {
     if (!user) {
       console.warn('⛔ No user found.');
       return;
@@ -128,11 +128,11 @@ export default function IdeasList() {
     }
 
     setLoading(false);
-  };
+  }, [user, filter]);
 
   useEffect(() => {
     fetchIdeas();
-  }, [user, filter]);
+  }, [fetchIdeas]);
 
   const handleDelete = async () => {
     if (!deleteTargetId) return;

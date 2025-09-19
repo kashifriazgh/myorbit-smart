@@ -176,7 +176,13 @@ export default function ManageDashboard() {
               flex: 1,
               cursor: 'pointer',
               transition: '0.2s',
-              '&:hover': { boxShadow: 6, backgroundColor: 'grey.100' },
+              backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+              '&:hover': {
+                boxShadow: 6,
+                backgroundColor:
+                  theme?.mode === 'dark' ? '#475569' : 'grey.100',
+              },
             }}
           >
             <Typography variant="h6">Manage Users {firstName}</Typography>
@@ -193,7 +199,13 @@ export default function ManageDashboard() {
               flex: 1,
               cursor: 'pointer',
               transition: '0.2s',
-              '&:hover': { boxShadow: 6, backgroundColor: 'grey.100' },
+              backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+              '&:hover': {
+                boxShadow: 6,
+                backgroundColor:
+                  theme?.mode === 'dark' ? '#475569' : 'grey.100',
+              },
             }}
           >
             <Typography variant="h6">Theme Settings </Typography>

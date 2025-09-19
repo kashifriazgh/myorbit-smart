@@ -121,7 +121,13 @@ const OnGoingStreaks = () => {
     return () => {
       cancelled = true;
     };
-  }, [debouncedProgress, dirty, progressModalOpen, selectedStreakId]);
+  }, [
+    debouncedProgress,
+    dirty,
+    progressModalOpen,
+    selectedStreakId,
+    updateRemarks,
+  ]);
 
   // if no user → render nothing
   if (!user?.uid) return null;

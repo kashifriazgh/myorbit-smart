@@ -1,6 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
@@ -100,16 +106,19 @@ export function CustomThemeProvider({
     return () => unsub();
   }, [user, isInitialized]);
 
-  const setThemeMode = async (mode: 'light' | 'dark') => {
-    if (!themeData || !user) return;
-    const ref = doc(db, 'theme', user.uid);
-    const newTheme = { ...themeData, mode };
-    await setDoc(ref, newTheme, { merge: true });
-    const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
-    localStorage.setItem(userCacheKey, JSON.stringify(newTheme));
-    localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(newTheme)); // Also update global cache
-    setThemeData(newTheme);
-  };
+  const setThemeMode = useCallback(
+    async (mode: 'light' | 'dark') => {
+      if (!themeData || !user) return;
+      const ref = doc(db, 'theme', user.uid);
+      const newTheme = { ...themeData, mode };
+      await setDoc(ref, newTheme, { merge: true });
+      const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
+      localStorage.setItem(userCacheKey, JSON.stringify(newTheme));
+      localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(newTheme)); // Also update global cache
+      setThemeData(newTheme);
+    },
+    [themeData, user]
+  );
 
   const refreshTheme = async () => {
     if (!user) return;
@@ -157,7 +166,7 @@ export function CustomThemeProvider({
         media.removeListener(listener);
       }
     };
-  }, [hasUserInteracted, user]);
+  }, [hasUserInteracted, user, setThemeMode]);
 
   const setThemeModeWithOverride = async (mode: 'light' | 'dark') => {
     setHasUserInteracted(true); // ✅ stop listening to system changes after first manual change

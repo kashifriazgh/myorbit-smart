@@ -4,24 +4,35 @@ import { NextRequest, NextResponse } from 'next/server';
 export function middleware(request: NextRequest) {
   const uid = request.cookies.get('uid')?.value;
   const role = request.cookies.get('role')?.value;
+  const guestUID = request.cookies.get('guest_uid')?.value;
   const pathname = request.nextUrl.pathname;
 
   const isAuthPage = pathname === '/user/login' || pathname === '/user/signup';
   const isManagePage = pathname.startsWith('/user/manage');
+  const isDashboardPage = pathname === '/user/dashboard';
 
-  // 🚫 Not logged in
-  if (!uid) {
+  // Check if user has any form of authentication (Firebase or Guest)
+  const hasAuth = uid || guestUID;
+
+  // 🚫 No authentication at all (neither Firebase nor Guest)
+  if (!hasAuth) {
     if (isAuthPage) return NextResponse.next();
-    return NextResponse.redirect(new URL('/user/login', request.url));
+    // Allow access to all pages - guest user will be created on client side
+    return NextResponse.next();
   }
 
-  // 🔁 Logged in and trying to visit login/signup
+  // 🔁 Authenticated user (Firebase) trying to visit login/signup
   if (uid && isAuthPage) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
-  // 🔐 Restrict /user/manage to only master
-  if (isManagePage && role !== 'master') {
+  // 🔐 Restrict /user/manage to only master users (not guests)
+  if (isManagePage && (role !== 'master' || !uid)) {
+    return NextResponse.redirect(new URL('/', request.url));
+  }
+
+  // 🔐 Restrict /user/dashboard to only master users (not guests)
+  if (isDashboardPage && (role !== 'master' || !uid)) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 

@@ -5,16 +5,28 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/app/lib/firebase';
+import { clearGuestUser } from '@/app/lib/guestUser';
+import { useAuth } from '@/app/lib/context/userContext';
 import Cookies from 'js-cookie';
 
 export default function LogoutButton() {
   const router = useRouter();
+  const { isGuest } = useAuth();
 
   const handleLogout = async () => {
     try {
-      await signOut(auth); // Firebase logout
-      Cookies.remove('uid'); // Remove cookie
-      router.push('/login'); // Redirect
+      if (isGuest) {
+        // Clear guest user data
+        clearGuestUser();
+        // Reload the page to reset the app state
+        window.location.reload();
+      } else {
+        // Firebase logout for authenticated users
+        await signOut(auth);
+        Cookies.remove('uid');
+        Cookies.remove('role');
+        router.push('/');
+      }
     } catch (err) {
       console.error('Logout failed:', err);
     }
@@ -27,7 +39,7 @@ export default function LogoutButton() {
       variant="outlined"
       startIcon={<LogoutIcon />}
     >
-      Logout
+      {isGuest ? 'Clear Guest Data' : 'Logout'}
     </Button>
   );
 }

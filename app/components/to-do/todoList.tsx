@@ -32,7 +32,7 @@ import {
   doc,
   onSnapshot,
 } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import moment from 'moment-timezone';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -103,12 +103,15 @@ export default function TodosList() {
     },
   };
 
-  const STATUS_ORDER: Record<string, number> = {
-    in_progress: 1,
-    hold: 2,
-    completed: 3,
-    'left-over': 4,
-  };
+  const STATUS_ORDER: Record<string, number> = useMemo(
+    () => ({
+      in_progress: 1,
+      hold: 2,
+      completed: 3,
+      'left-over': 4,
+    }),
+    []
+  );
 
   const getDueDateColor = (dueDate: Date) => {
     const now = moment();
@@ -184,7 +187,7 @@ export default function TodosList() {
 
     // Clean up listener on unmount or user change
     return () => unsubscribe();
-  }, [user]);
+  }, [user, STATUS_ORDER]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>

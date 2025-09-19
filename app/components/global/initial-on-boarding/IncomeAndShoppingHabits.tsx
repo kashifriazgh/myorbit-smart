@@ -8,7 +8,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   doc,
   getDoc,
@@ -30,7 +30,7 @@ const IncomeAndShoppingHabits = () => {
   const [incomeType, setIncomeType] = useState<string | null>(null);
   const [shoppingHabits, setShoppingHabits] = useState<string | null>(null);
 
-  const fetchUser = async () => {
+  const fetchUser = useCallback(async () => {
     if (!user) return;
     setLoading(true);
 
@@ -45,7 +45,7 @@ const IncomeAndShoppingHabits = () => {
     }
 
     setLoading(false);
-  };
+  }, [user]);
 
   const updateField = async (
     key: 'incomeType' | 'shoppingHabits',
@@ -91,7 +91,7 @@ const IncomeAndShoppingHabits = () => {
 
   useEffect(() => {
     fetchUser();
-  }, [user]);
+  }, [fetchUser]);
 
   if (loading) {
     return (

@@ -20,7 +20,7 @@ import {
   Paper,
   TableContainer,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { auth, db } from '@/app/lib/firebase';
 import {
   collection,
@@ -91,7 +91,7 @@ export default function ManageUsersPage() {
     fetchConfig();
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     if (!masterUser) return;
     const q = query(
       collection(db, 'invites'),
@@ -100,7 +100,7 @@ export default function ManageUsersPage() {
     const snapshot = await getDocs(q);
     const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     setUsers(list);
-  };
+  }, [masterUser]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -113,7 +113,7 @@ export default function ManageUsersPage() {
 
   useEffect(() => {
     if (masterUser) fetchUsers();
-  }, [masterUser]);
+  }, [masterUser, fetchUsers]);
 
   const handleCreate = async () => {
     // 🔍 Verify master user role

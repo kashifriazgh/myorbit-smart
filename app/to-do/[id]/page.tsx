@@ -124,7 +124,7 @@ export default function TodoDetailPage() {
     if (todo?.progressPercent === 100 && todo.status !== 'completed') {
       setCompleteConfirmOpen(true);
     }
-  }, [todo?.progressPercent]);
+  }, [todo?.progressPercent, todo?.status]);
 
   const updateStepsInFirestore = async (updatedSteps: Todo['steps']) => {
     if (!todo?.id) return;

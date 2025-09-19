@@ -226,8 +226,9 @@ export interface FirestoreUser {
   email: string;
   firstName: string;
   lastName: string;
-  role: 'master' | 'editor' | 'viewer';
+  role: 'master' | 'editor' | 'viewer' | 'guest';
   createdAt: Timestamp; // or use `Timestamp` from Firestore
+  isGuest?: boolean; // Optional flag to identify guest users
 }
 
 // Finance

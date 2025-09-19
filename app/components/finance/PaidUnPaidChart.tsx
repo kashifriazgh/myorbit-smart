@@ -41,7 +41,7 @@ export default function PaidUnPaidChart({
         },
       ],
     }),
-    [paidValue, unpaidValue, type]
+    [paidValue, unpaidValue, paidLabel, unpaidLabel]
   );
 
   const options = {

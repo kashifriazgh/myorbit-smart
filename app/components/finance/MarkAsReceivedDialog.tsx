@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -67,25 +67,39 @@ export default function MarkAsReceivedDialog({
   const [bankError, setBankError] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<TotalCashSnapshot | null>(null);
 
-  // Reset state when dialog opens/closes
-  useEffect(() => {
-    if (open && income) {
-      setIncomeSourceForMainFund('in_hand');
-      setSelectedBank('');
-      setNewBankName('');
-      setBankError(null);
-      fetchAvailableFunds();
-    }
-  }, [open, income]);
+  const updateAvailableFunds = useCallback(
+    (
+      snapshotData: TotalCashSnapshot,
+      source: TransactionSource,
+      bankId?: string
+    ) => {
+      if (!snapshotData?.sources) {
+        setAvailableFunds(0);
+        setSourceBalanceWarning(true);
+        return;
+      }
 
-  // Update available funds when fund source changes
-  useEffect(() => {
-    if (snapshot) {
-      updateAvailableFunds(snapshot, incomeSourceForMainFund, selectedBank);
-    }
-  }, [incomeSourceForMainFund, selectedBank, snapshot, banks]);
+      let available = 0;
 
-  const fetchAvailableFunds = async () => {
+      if (source === 'bank' && bankId) {
+        const bank = banks.find((b) => b.id === bankId);
+        const bankName = bank?.name;
+        if (bankName) {
+          available = snapshotData.sources.bank?.[bankName] || 0;
+          console.log(`Bank ${bankName} available: ${available}`);
+        }
+      } else if (source !== 'bank') {
+        available = snapshotData.sources[source] || 0;
+        console.log(`${source} available: ${available}`);
+      }
+
+      setAvailableFunds(available);
+      setSourceBalanceWarning(available < 0);
+    },
+    [banks]
+  );
+
+  const fetchAvailableFunds = useCallback(async () => {
     if (!income?.userId) return;
 
     setFetchingBalance(true);
@@ -109,36 +123,30 @@ export default function MarkAsReceivedDialog({
     } finally {
       setFetchingBalance(false);
     }
-  };
+  }, [
+    income?.userId,
+    incomeSourceForMainFund,
+    selectedBank,
+    updateAvailableFunds,
+  ]);
 
-  const updateAvailableFunds = (
-    snapshotData: TotalCashSnapshot,
-    source: TransactionSource,
-    bankId?: string
-  ) => {
-    if (!snapshotData?.sources) {
-      setAvailableFunds(0);
-      setSourceBalanceWarning(true);
-      return;
+  // Reset state when dialog opens/closes
+  useEffect(() => {
+    if (open && income) {
+      setIncomeSourceForMainFund('in_hand');
+      setSelectedBank('');
+      setNewBankName('');
+      setBankError(null);
+      fetchAvailableFunds();
     }
+  }, [open, income, fetchAvailableFunds]);
 
-    let available = 0;
-
-    if (source === 'bank' && bankId) {
-      const bank = banks.find((b) => b.id === bankId);
-      const bankName = bank?.name;
-      if (bankName) {
-        available = snapshotData.sources.bank?.[bankName] || 0;
-        console.log(`Bank ${bankName} available: ${available}`);
-      }
-    } else if (source !== 'bank') {
-      available = snapshotData.sources[source] || 0;
-      console.log(`${source} available: ${available}`);
+  // Update available funds when fund source changes
+  useEffect(() => {
+    if (snapshot) {
+      updateAvailableFunds(snapshot, incomeSourceForMainFund, selectedBank);
     }
-
-    setAvailableFunds(available);
-    setSourceBalanceWarning(available < 0);
-  };
+  }, [incomeSourceForMainFund, selectedBank, snapshot, updateAvailableFunds]);
 
   const handleConfirmYes = async () => {
     await onConfirm(true, incomeSourceForMainFund, selectedBank);

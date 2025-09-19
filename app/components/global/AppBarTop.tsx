@@ -73,7 +73,7 @@ export default function AppBarTop() {
 
   const isMenuOpen = Boolean(anchorEl);
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
-  const { user, loading } = useAuth();
+  const { user, loading, isGuest } = useAuth();
   const { theme, setThemeMode, refreshTheme } = useCustomTheme();
 
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -111,17 +111,35 @@ export default function AppBarTop() {
         },
       }}
     >
-      {user?.role === 'master' && (
+      {user?.role === 'master' && !isGuest && (
         <MenuItem onClick={handleMenuClose}>
           <Link href="/user/dashboard">Dashboard</Link>
         </MenuItem>
       )}
-      {user?.role === 'master' && <Divider />}
+      {user?.role === 'master' && !isGuest && <Divider />}
 
       {!loading && user ? (
-        <MenuItem onClick={handleMenuClose}>
-          <LogoutButton />
-        </MenuItem>
+        <>
+          {isGuest && (
+            <>
+              <MenuItem onClick={handleMenuClose}>
+                <Link
+                  href="/user/signup"
+                  style={{ color: '#1976d2', fontWeight: 'bold' }}
+                >
+                  🚀 Sign Up to Save Data
+                </Link>
+              </MenuItem>
+              <MenuItem onClick={handleMenuClose}>
+                <Link href="/user/login">Login</Link>
+              </MenuItem>
+              <Divider />
+            </>
+          )}
+          <MenuItem onClick={handleMenuClose}>
+            <LogoutButton />
+          </MenuItem>
+        </>
       ) : (
         [
           <MenuItem key="login" onClick={handleMenuClose}>

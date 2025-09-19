@@ -1,6 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from 'react';
 import {
   collection,
   onSnapshot,
@@ -47,7 +53,7 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchTodos = async () => {
+  const fetchTodos = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -78,7 +84,7 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error('Error fetching todos:', error);
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -89,7 +95,7 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       };
     }
-  }, [user]);
+  }, [user, fetchTodos]);
 
   const updateStepStatus = async (
     todoId: string,

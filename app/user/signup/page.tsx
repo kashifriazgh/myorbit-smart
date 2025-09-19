@@ -9,6 +9,7 @@ import {
   Box,
   CircularProgress,
   Alert,
+  AlertTitle,
   IconButton,
   InputAdornment,
 } from '@mui/material';
@@ -26,10 +27,13 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { useAuth } from '@/app/lib/context/userContext';
+import { migrateGuestDataToUser } from '@/app/lib/guestDataMigration';
 
 export default function SignupPage() {
   const router = useRouter();
   const { theme } = useCustomTheme();
+  const { user: currentUser, isGuest } = useAuth();
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -139,6 +143,28 @@ export default function SignupPage() {
         });
       }
 
+      // Migrate guest data if user was a guest
+      if (isGuest && currentUser) {
+        try {
+          const migrationResult = await migrateGuestDataToUser(
+            currentUser.uid,
+            user.uid
+          );
+          if (
+            migrationResult.success &&
+            migrationResult.migratedCollections.length > 0
+          ) {
+            console.log(
+              '✅ Guest data migrated successfully:',
+              migrationResult.migratedCollections
+            );
+          }
+        } catch (migrationError) {
+          console.error('❌ Failed to migrate guest data:', migrationError);
+          // Don't block signup if migration fails
+        }
+      }
+
       router.push('/');
     } catch (err) {
       console.error(err);
@@ -171,6 +197,14 @@ export default function SignupPage() {
       <Typography variant="h5" mb={2}>
         Sign Up
       </Typography>
+
+      {isGuest && currentUser && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <AlertTitle>🔄 Migrate Your Data</AlertTitle>
+          You&#39;re currently using MyOrbit as a guest. Sign up now to save
+          your data permanently and access it from any device!
+        </Alert>
+      )}
 
       {isMasterBlocked && !isInvitedUser && (
         <Alert severity="warning" sx={{ mb: 2 }}>

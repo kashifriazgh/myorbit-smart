@@ -23,7 +23,7 @@ import {
   KeyboardArrowLeft,
   KeyboardArrowRight,
 } from '@mui/icons-material';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   collection,
   getDocs,
@@ -58,7 +58,7 @@ export default function OverdueTasks() {
   const [activeStep, setActiveStep] = useState(0);
   const maxSteps = Math.min(tasks.length, 6);
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -90,7 +90,7 @@ export default function OverdueTasks() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
@@ -154,7 +154,7 @@ export default function OverdueTasks() {
 
   useEffect(() => {
     fetchTasks();
-  }, [user]);
+  }, [fetchTasks]);
 
   const activeTask = tasks[activeStep];
 

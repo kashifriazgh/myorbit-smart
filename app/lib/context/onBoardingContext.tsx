@@ -1,6 +1,12 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from './userContext';
@@ -27,7 +33,7 @@ export function OnboardingProvider({
   const [onboarding, setOnboarding] = useState<InitialOnBoarding | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchOnboarding = async () => {
+  const fetchOnboarding = useCallback(async () => {
     if (!user?.uid) {
       setOnboarding(null);
       setLoading(false);
@@ -58,12 +64,12 @@ export function OnboardingProvider({
       setOnboarding(null);
     }
     setLoading(false);
-  };
+  }, [user?.uid]);
 
   useEffect(() => {
     console.log('🔍 useEffect triggered with user.uid:', user?.uid);
     fetchOnboarding();
-  }, [user?.uid]);
+  }, [fetchOnboarding, user?.uid]);
 
   return (
     <OnboardingContext.Provider

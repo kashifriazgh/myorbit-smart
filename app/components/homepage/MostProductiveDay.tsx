@@ -301,7 +301,6 @@ export default function MostProductiveDay() {
     };
 
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // ---------- UI states ----------
