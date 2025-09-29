@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { app, db } from '../firebase';
 import { FirestoreUser } from '../interface';
 import { getOrCreateGuestUser } from '../guestUser';
+import Cookies from 'js-cookie';
 const auth = getAuth(app);
 
 interface UserContextType {
@@ -27,6 +28,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log(
+        '🔍 Firebase auth state changed:',
+        firebaseUser ? 'User logged in' : 'No user'
+      );
+
       if (firebaseUser) {
         // User is authenticated with Firebase
         try {
@@ -35,7 +41,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
           if (snap.exists()) {
             const data = snap.data();
-            setUser({
+            const userData = {
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
               firstName: data.firstName || '',
@@ -43,8 +49,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               role: data.role || 'viewer',
               createdAt: data.createdAt,
               isGuest: false,
-            });
+            };
+
+            setUser(userData);
             setIsGuest(false);
+
+            // Set cookies for session persistence
+            Cookies.set('uid', firebaseUser.uid, { expires: 7 });
+            Cookies.set('role', data.role || 'viewer', { expires: 7 });
+
+            console.log('✅ Firebase user authenticated and cookies set');
           } else {
             console.warn('⚠️ No Firestore user document found.');
             setUser(null);
@@ -57,6 +71,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         // No Firebase user - check for guest user or create one
+        console.log('🔍 No Firebase user, checking for guest user');
         const guestUser = getOrCreateGuestUser();
         setUser(guestUser);
         setIsGuest(true);

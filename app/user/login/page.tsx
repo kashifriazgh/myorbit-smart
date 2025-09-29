@@ -66,6 +66,9 @@ export default function LoginPage() {
 
       setSnack({ message: 'Login successful.', type: 'success', open: true });
 
+      // Clear any guest user data
+      Cookies.remove('guest_uid');
+
       setTimeout(() => {
         router.push('/');
       }, 1000);

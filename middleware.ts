@@ -26,6 +26,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
+  // 🔁 Guest user trying to visit login/signup - allow it
+  if (guestUID && isAuthPage) {
+    return NextResponse.next();
+  }
+
   // 🔐 Restrict /user/manage to only master users (not guests)
   if (isManagePage && (role !== 'master' || !uid)) {
     return NextResponse.redirect(new URL('/', request.url));
