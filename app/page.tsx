@@ -7,9 +7,9 @@ import { CircularProgress, Box } from '@mui/material';
 import GuestUserBanner from './components/global/GuestUserBanner';
 
 // Lazy load components for better performance
-const TimeTableNotifier = lazy(
-  () => import('./components/homepage/TimeTableNotifier')
-);
+// const TimeTableNotifier = lazy(
+//   () => import('./components/homepage/TimeTableNotifier')
+// );
 const DashboardHome = lazy(() => import('./components/homepage/Opener'));
 const FinancialCheckPoints = lazy(
   () => import('./components/finance/FinancialCheckPoints')
@@ -71,20 +71,21 @@ export default function Homepage() {
       >
         <GuestUserBanner />
         {/* <OnBoardingInitializer /> */}
-        <Suspense fallback={<ComponentLoader />}>
+        {/* <Suspense fallback={<ComponentLoader />}>
           <TimeTableNotifier />
+        </Suspense> */}
+
+        <Suspense fallback={<ComponentLoader />}>
+          <ImportantTasks />
+        </Suspense>
+        <Suspense fallback={<ComponentLoader />}>
+          <OverdueTasks />
         </Suspense>
         <Suspense fallback={<ComponentLoader />}>
           <DashboardHome />
         </Suspense>
         <Suspense fallback={<ComponentLoader />}>
           <FinancialCheckPoints />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <ImportantTasks />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <OverdueTasks />
         </Suspense>
         <Suspense fallback={<ComponentLoader />}>
           <OnGoingStreaks />

@@ -118,39 +118,37 @@ export default function AppBarTop() {
       )}
       {user?.role === 'master' && !isGuest && <Divider />}
 
-      {!loading && user ? (
-        <>
-          {isGuest && (
-            <>
-              <MenuItem onClick={handleMenuClose}>
-                <Link
-                  href="/user/signup"
-                  style={{ color: '#1976d2', fontWeight: 'bold' }}
-                >
-                  🚀 Sign Up to Save Data
-                </Link>
-              </MenuItem>
-              <MenuItem onClick={handleMenuClose}>
-                <Link href="/user/login">Login</Link>
-              </MenuItem>
-              <Divider />
-            </>
-          )}
-          <MenuItem onClick={handleMenuClose}>
-            <LogoutButton />
-          </MenuItem>
-        </>
-      ) : (
-        [
-          <MenuItem key="login" onClick={handleMenuClose}>
-            <Link href="/user/login">Login</Link>
-          </MenuItem>,
-          <Divider key="divider" />,
-          <MenuItem key="signup" onClick={handleMenuClose}>
-            <Link href="/user/signup">SignUp</Link>
-          </MenuItem>,
-        ]
-      )}
+      {!loading && user
+        ? [
+            ...(isGuest
+              ? [
+                  <MenuItem key="guest-signup" onClick={handleMenuClose}>
+                    <Link
+                      href="/user/signup"
+                      style={{ color: '#1976d2', fontWeight: 'bold' }}
+                    >
+                      🚀 Sign Up to Save Data
+                    </Link>
+                  </MenuItem>,
+                  <MenuItem key="guest-login" onClick={handleMenuClose}>
+                    <Link href="/user/login">Login</Link>
+                  </MenuItem>,
+                  <Divider key="guest-divider" />,
+                ]
+              : []),
+            <MenuItem key="logout" onClick={handleMenuClose}>
+              <LogoutButton />
+            </MenuItem>,
+          ]
+        : [
+            <MenuItem key="login" onClick={handleMenuClose}>
+              <Link href="/user/login">Login</Link>
+            </MenuItem>,
+            <Divider key="divider" />,
+            <MenuItem key="signup" onClick={handleMenuClose}>
+              <Link href="/user/signup">SignUp</Link>
+            </MenuItem>,
+          ]}
     </Menu>
   );
 

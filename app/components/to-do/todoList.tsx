@@ -124,6 +124,23 @@ export default function TodosList() {
     return { bg: '#e5e7eb', text: '#111827' }; // Later
   };
 
+  const toggleWorkStarted = async (todo: Todo) => {
+    if (!todo.id) return;
+    try {
+      await deleteDoc; // no-op to keep imports stable
+    } catch {}
+    try {
+      await (
+        await import('firebase/firestore')
+      ).updateDoc(doc(db, 'todos', todo.id), {
+        workStarted: !todo.workStarted,
+        updatedAt: new Date(),
+      });
+    } catch (err) {
+      console.error('❌ Error toggling workStarted:', err);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
 
@@ -382,6 +399,33 @@ export default function TodosList() {
 
                       {/* Main Content */}
                       <Box flexGrow={1}>
+                        {/* Blinking indicator if work started */}
+                        {todo.workStarted && (
+                          <Box
+                            sx={{
+                              position: 'absolute',
+                              top: 10,
+                              right: 10,
+                              width: 10,
+                              height: 10,
+                              borderRadius: '50%',
+                              bgcolor: 'success.main',
+                              boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)',
+                              animation: 'pulse 1.2s infinite',
+                              '@keyframes pulse': {
+                                '0%': {
+                                  boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)',
+                                },
+                                '70%': {
+                                  boxShadow: '0 0 0 8px rgba(34,197,94, 0)',
+                                },
+                                '100%': {
+                                  boxShadow: '0 0 0 0 rgba(34,197,94, 0)',
+                                },
+                              },
+                            }}
+                          />
+                        )}
                         {/* Title */}
                         <Link
                           href={`/to-do/${todo.id}`}
@@ -510,6 +554,20 @@ export default function TodosList() {
 
                       {/* Action Buttons */}
                       <Box display="flex" flexDirection="column" gap={1}>
+                        <Tooltip
+                          title={todo.workStarted ? 'Stop Work' : 'Work Start'}
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() => toggleWorkStarted(todo)}
+                          >
+                            {todo.workStarted ? (
+                              <PauseIcon fontSize="small" />
+                            ) : (
+                              <PlayArrowIcon fontSize="small" />
+                            )}
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Delete Task">
                           <IconButton
                             size="small"

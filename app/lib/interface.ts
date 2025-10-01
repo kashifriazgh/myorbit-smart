@@ -77,6 +77,8 @@ export interface Todo {
   isImportant?: boolean;
   priority: 'routine' | 'urgent' | 'critical';
   status: 'in_progress' | 'completed' | 'hold' | 'left-over';
+  // Indicates user has actively started working on the task (UI highlight)
+  workStarted?: boolean;
   progressPercent: number; // 0–100
   pinned?: boolean;
   isArchived?: boolean;
