@@ -220,9 +220,11 @@ const ImportantTasks = () => {
                         }}
                       />
                     )}
-                    <Typography variant="subtitle1" fontWeight="medium">
-                      {task?.title}
-                    </Typography>
+                    <Link href={`/to-do/${task.id}`}>
+                      <Typography variant="subtitle1" fontWeight="medium">
+                        {task?.title}
+                      </Typography>
+                    </Link>
                   </Box>
                   <Stack
                     direction="row"

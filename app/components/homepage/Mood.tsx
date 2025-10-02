@@ -31,7 +31,7 @@ export default function Mood() {
   const theme = useTheme();
   const { user } = useAuth();
 
-  const [showMoodSelector, setShowMoodSelector] = useState(false);
+  const [showMoodSelector, setShowMoodSelector] = useState(true); // Changed to true by default
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [moodLevel, setMoodLevel] = useState<number>(5);
   const [loading, setLoading] = useState(false);
@@ -134,7 +134,9 @@ export default function Mood() {
 
               <Stack direction="row" spacing={1}>
                 <Tooltip
-                  title={showMoodSelector ? 'Hide Mood Picker' : 'Select Mood'}
+                  title={
+                    showMoodSelector ? 'Hide Mood Picker' : 'Show Mood Picker'
+                  }
                 >
                   <span>
                     <IconButton onClick={toggleMoodSelector} size="small">
@@ -153,33 +155,10 @@ export default function Mood() {
                     variant="body2"
                     sx={{ color: theme.palette.text.secondary, mb: 1.5 }}
                   >
-                    Pick an emoji, then set intensity.
+                    Pick an emoji to get started.
                   </Typography>
-                  {/* Large emoji preview */}
-                  {selectedMood && (
-                    <Box className="mb-4 text-center">
-                      <MoodEmoji
-                        mood={selectedMood}
-                        size={96}
-                        level={moodLevel}
-                      />
-                      <Typography
-                        variant="subtitle1"
-                        mt={1}
-                        textTransform="capitalize"
-                        sx={{
-                          color:
-                            theme.palette.mode === 'dark'
-                              ? '#e2e8f0'
-                              : '#334155',
-                        }}
-                      >
-                        I’m feeling {selectedMood.replace('-', ' ')}
-                      </Typography>
-                    </Box>
-                  )}
 
-                  {/* Segmented control for mood selection */}
+                  {/* Segmented control for mood selection - Always visible when component is open */}
                   <Stack
                     direction="row"
                     spacing={1}
@@ -217,76 +196,105 @@ export default function Mood() {
                     })}
                   </Stack>
 
-                  {/* Slider + Submit (keeps same max width behaviour as OverdueTasks inputs) */}
-                  {selectedMood && (
-                    <Box className="w-full">
-                      <Box className="mx-auto" sx={{ maxWidth: 640 }}>
-                        <Typography
-                          variant="subtitle2"
-                          gutterBottom
-                          sx={{
-                            color:
-                              theme.palette.mode === 'dark'
-                                ? '#cbd5e1'
-                                : '#334155',
-                          }}
-                        >
-                          How strong is your feeling?
-                        </Typography>
+                  {/* Submission controls - Only visible when a mood is selected */}
+                  <Collapse in={!!selectedMood} timeout={300}>
+                    <Box className="flex flex-col items-center w-full">
+                      {/* Large emoji preview */}
+                      {selectedMood && (
+                        <Box className="mb-4 text-center">
+                          <MoodEmoji
+                            mood={selectedMood}
+                            size={96}
+                            level={moodLevel}
+                          />
+                          <Typography
+                            variant="subtitle1"
+                            mt={1}
+                            textTransform="capitalize"
+                            sx={{
+                              color:
+                                theme.palette.mode === 'dark'
+                                  ? '#e2e8f0'
+                                  : '#334155',
+                            }}
+                          >
+                            I&#39;m feeling {selectedMood.replace('-', ' ')}
+                          </Typography>
+                        </Box>
+                      )}
 
-                        <Slider
-                          value={moodLevel}
-                          onChange={(_, val) => setMoodLevel(val as number)}
-                          min={1}
-                          max={5}
-                          marks
-                          step={1}
-                          sx={{
-                            height: 8,
-                            '& .MuiSlider-track': { border: 'none' },
-                            '& .MuiSlider-rail': {
-                              opacity: 1,
-                              bgcolor: 'action.hover',
-                            },
-                            '& .MuiSlider-thumb': {
-                              width: 18,
-                              height: 18,
-                              '&:focus, &:hover, &.Mui-active': {
-                                boxShadow: '0 0 0 6px rgba(99,102,241,.16)',
-                              },
-                            },
-                            color:
-                              moodLevel <= 2
-                                ? theme.palette.error.main
-                                : moodLevel >= 4
-                                ? theme.palette.success.main
-                                : theme.palette.warning.main,
-                          }}
-                        />
+                      {/* Slider + Submit */}
+                      {selectedMood && (
+                        <Box className="w-full">
+                          <Box className="mx-auto" sx={{ maxWidth: 640 }}>
+                            <Typography
+                              variant="subtitle2"
+                              gutterBottom
+                              sx={{
+                                color:
+                                  theme.palette.mode === 'dark'
+                                    ? '#cbd5e1'
+                                    : '#334155',
+                              }}
+                            >
+                              How strong is your feeling?
+                            </Typography>
 
-                        <Button
-                          variant="contained"
-                          color="primary"
-                          fullWidth
-                          onClick={handleMoodSubmit}
-                          disabled={loading}
-                          sx={{
-                            mt: 2,
-                            py: 1.1,
-                            borderRadius: 2,
-                            textTransform: 'none',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {loading ? (
-                            <CircularProgress size={20} color="inherit" />
-                          ) : (
-                            'Save'
-                          )}
-                        </Button>
-                      </Box>
+                            <Slider
+                              value={moodLevel}
+                              onChange={(_, val) => setMoodLevel(val as number)}
+                              min={1}
+                              max={5}
+                              marks
+                              step={1}
+                              sx={{
+                                height: 8,
+                                '& .MuiSlider-track': { border: 'none' },
+                                '& .MuiSlider-rail': {
+                                  opacity: 1,
+                                  bgcolor: 'action.hover',
+                                },
+                                '& .MuiSlider-thumb': {
+                                  width: 18,
+                                  height: 18,
+                                  '&:focus, &:hover, &.Mui-active': {
+                                    boxShadow: '0 0 0 6px rgba(99,102,241,.16)',
+                                  },
+                                },
+                                color:
+                                  moodLevel <= 2
+                                    ? theme.palette.error.main
+                                    : moodLevel >= 4
+                                    ? theme.palette.success.main
+                                    : theme.palette.warning.main,
+                              }}
+                            />
+
+                            <Button
+                              variant="contained"
+                              color="primary"
+                              fullWidth
+                              onClick={handleMoodSubmit}
+                              disabled={loading}
+                              sx={{
+                                mt: 2,
+                                py: 1.1,
+                                borderRadius: 2,
+                                textTransform: 'none',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {loading ? (
+                                <CircularProgress size={20} color="inherit" />
+                              ) : (
+                                'Save'
+                              )}
+                            </Button>
+                          </Box>
+                        </Box>
+                      )}
                     </Box>
-                  )}
+                  </Collapse>
                 </Box>
               </Collapse>
             </Box>

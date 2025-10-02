@@ -1,9 +1,9 @@
 'use client';
 
+import React, { memo, useEffect, useState, useCallback } from 'react';
 import {
   Box,
   Typography,
-  Button,
   CircularProgress,
   Card,
   CardContent,
@@ -21,19 +21,10 @@ import {
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { useEffect, useState } from 'react';
 import moment from 'moment';
-import {
-  Assignment,
-  AttachMoney,
-  Book,
-  EmojiEmotions,
-  CheckCircle,
-} from '@mui/icons-material';
-import Link from 'next/link';
 
 // ✅ Reusable circular progress with overlay label
-function CircularProgressWithLabel({ value }: { value: number }) {
+const CircularProgressWithLabel = memo(({ value }: { value: number }) => {
   return (
     <Box sx={{ position: 'relative', display: 'inline-flex' }}>
       <CircularProgress
@@ -72,40 +63,45 @@ function CircularProgressWithLabel({ value }: { value: number }) {
       </Box>
     </Box>
   );
+});
+
+CircularProgressWithLabel.displayName = 'CircularProgressWithLabel';
+
+interface ProgressData {
+  progress: number;
+  overdueTodos: string[];
 }
 
-export default function DashboardHome() {
+const WelcomeGreeting = memo(() => {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
-  const [progress, setProgress] = useState(0);
-  const [remainingTodos, setRemainingTodos] = useState<string[]>([]);
-  const [remainingIncomes, setRemainingIncomes] = useState<string[]>([]);
-  const [remainingExpenses, setRemainingExpenses] = useState<string[]>([]);
-  const [journalWritten, setJournalWritten] = useState<boolean>(false);
-  const [moodLogged, setMoodLogged] = useState<boolean>(false);
-  const [overdueTodos, setOverdueTodos] = useState<string[]>([]);
   const [firstName, setFirstName] = useState('');
+  const [progressData, setProgressData] = useState<ProgressData>({
+    progress: 0,
+    overdueTodos: [],
+  });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchName = async () => {
-      if (user?.uid) {
+  const fetchName = useCallback(async () => {
+    if (user?.uid) {
+      try {
         const ref = doc(db, 'users', user.uid);
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data();
           setFirstName(data.firstName || '');
         }
+      } catch (error) {
+        console.error('Error fetching user name:', error);
       }
-    };
-    fetchName();
-  }, [user]);
+    }
+  }, [user?.uid]);
 
-  useEffect(() => {
-    if (!user) return;
+  const fetchProgress = useCallback(async () => {
+    if (!user?.uid) return;
 
-    const fetchProgress = async () => {
-      setLoading(true);
+    setLoading(true);
+    try {
       const today = moment().startOf('day');
       const endOfToday = moment().endOf('day');
 
@@ -116,10 +112,7 @@ export default function DashboardHome() {
         return momentDate.isBetween(today, endOfToday, 'day', '[]');
       };
 
-      const pendingTodos: string[] = [];
       const overdueTodosList: string[] = [];
-      const pendingIncomes: string[] = [];
-      const pendingExpenses: string[] = [];
 
       // ✅ Todos
       const todoSnap = await getDocs(
@@ -139,12 +132,6 @@ export default function DashboardHome() {
           todo.status !== 'completed'
       );
 
-      todayTodos.forEach((todo) => {
-        if (todo.status !== 'completed') {
-          pendingTodos.push(todo.title || 'Unnamed Todo');
-        }
-      });
-
       overdue.forEach((todo) => {
         overdueTodosList.push(todo.title || 'Unnamed Todo');
       });
@@ -156,11 +143,6 @@ export default function DashboardHome() {
       const incomes = incomeSnap.docs
         .map((doc) => doc.data())
         .filter((i) => i.expectedDate && checkDateInRange(i.expectedDate));
-      incomes.forEach((income) => {
-        if (!income.isReceived) {
-          pendingIncomes.push(income.source || 'Unnamed Income');
-        }
-      });
 
       // ✅ Expenses
       const expenseSnap = await getDocs(
@@ -169,11 +151,6 @@ export default function DashboardHome() {
       const expenses = expenseSnap.docs
         .map((doc) => doc.data())
         .filter((e) => e.dueDate && checkDateInRange(e.dueDate));
-      expenses.forEach((expense) => {
-        if (!expense.isPaid) {
-          pendingExpenses.push(expense.title || 'Unnamed Expense');
-        }
-      });
 
       // ✅ Journal
       const journalSnap = await getDocs(
@@ -183,7 +160,6 @@ export default function DashboardHome() {
         .map((doc) => doc.data())
         .filter((j) => j.createdAt && checkDateInRange(j.createdAt));
       const journalDone = journals.length > 0;
-      setJournalWritten(journalDone);
 
       // ✅ Mood
       const moodSnap = await getDocs(
@@ -197,9 +173,8 @@ export default function DashboardHome() {
             (m.createdAt && checkDateInRange(m.createdAt))
         );
       const moodDone = moods.length > 0;
-      setMoodLogged(moodDone);
 
-      // ✅ Progress (only today’s items, NOT overdue)
+      // ✅ Progress (only today's items, NOT overdue)
       const totalItems =
         todayTodos.length + incomes.length + expenses.length + 2;
       const completedItems =
@@ -212,85 +187,29 @@ export default function DashboardHome() {
       const percentage =
         totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100);
 
-      setProgress(percentage);
-      setRemainingTodos(pendingTodos);
-      setOverdueTodos(overdueTodosList);
-      setRemainingIncomes(pendingIncomes);
-      setRemainingExpenses(pendingExpenses);
+      setProgressData({
+        progress: percentage,
+        overdueTodos: overdueTodosList,
+      });
+    } catch (error) {
+      console.error('Error fetching progress data:', error);
+    } finally {
       setLoading(false);
-    };
+    }
+  }, [user?.uid]);
 
+  useEffect(() => {
+    fetchName();
+  }, [fetchName]);
+
+  useEffect(() => {
     fetchProgress();
-  }, [user]);
+  }, [fetchProgress]);
 
-  const totalPayments = remainingIncomes.length + remainingExpenses.length;
-  const hasRemaining =
-    remainingTodos.length > 0 ||
-    totalPayments > 0 ||
-    !journalWritten ||
-    !moodLogged;
-
-  // ✅ Reusable Segment Card
-  const SegmentCard = ({
-    icon,
-    label,
-    count,
-    done,
-    color,
-    loading,
-    href,
-  }: {
-    icon: React.ReactNode;
-    label: string;
-    count: number;
-    done: boolean;
-    color: string;
-    loading: boolean;
-    href?: string;
-  }) => {
-    const cardContent = (
-      <div className="w-full">
-        {loading ? (
-          <Skeleton variant="rounded" height={100} />
-        ) : (
-          <div
-            className="rounded-xl flex flex-col items-center justify-center py-4 backdrop-blur-md shadow-sm hover:shadow-md transition-all"
-            style={{
-              backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-              borderColor: theme?.mode === 'dark' ? '#334155' : '#e5e7eb',
-              borderWidth: '1px',
-              borderStyle: 'solid',
-            }}
-          >
-            <div className={`mb-2 ${done ? 'text-green-500' : color} text-2xl`}>
-              {icon}
-            </div>
-            <Typography
-              variant="body2"
-              fontWeight={600}
-              sx={{
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-              }}
-            >
-              {label}
-            </Typography>
-            <div className="mt-1">
-              {done ? (
-                <CheckCircle className="text-green-500 text-lg" />
-              ) : (
-                <span
-                  className={`px-3 py-0.5 text-xs font-semibold rounded-full ${color}`}
-                >
-                  {count}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-
-    return href ? <Link href={href}>{cardContent}</Link> : cardContent;
+  const getMotivationalMessage = (progress: number) => {
+    if (progress >= 90) return "Amazing! You're almost done 🎉";
+    if (progress >= 50) return 'Great work, keep going 🚀';
+    return "Let's crush today's plan 💪";
   };
 
   return (
@@ -306,7 +225,7 @@ export default function DashboardHome() {
         }}
       >
         <CardContent className="flex flex-col lg:flex-row items-center justify-between gap-6 p-6">
-          {/* Left Section */}
+          {/* Left Section - Greeting */}
           <Box className="flex flex-col items-start space-y-4 w-full lg:w-1/2">
             <div>
               {loading ? (
@@ -333,18 +252,14 @@ export default function DashboardHome() {
                       color: theme?.mode === 'dark' ? '#ffffff' : '#000000',
                     }}
                   >
-                    {progress >= 90
-                      ? "Amazing! You're almost done 🎉"
-                      : progress >= 50
-                      ? 'Great work, keep going 🚀'
-                      : "Let's crush today's plan 💪"}
+                    {getMotivationalMessage(progressData.progress)}
                   </Typography>
                 </>
               )}
             </div>
 
             {/* Overdue indicator */}
-            {!loading && overdueTodos.length > 0 && (
+            {!loading && progressData.overdueTodos.length > 0 && (
               <Box className="mt-2">
                 <span
                   className="inline-block rounded-full px-3 py-1 text-xs font-semibold"
@@ -354,74 +269,30 @@ export default function DashboardHome() {
                     color: theme?.mode === 'dark' ? '#fca5a5' : '#dc2626',
                   }}
                 >
-                  {overdueTodos.length}{' '}
-                  {overdueTodos.length === 1 ? 'Task is' : 'Tasks are'} overdue.
+                  {progressData.overdueTodos.length}{' '}
+                  {progressData.overdueTodos.length === 1
+                    ? 'Task is'
+                    : 'Tasks are'}{' '}
+                  overdue.
                 </span>
               </Box>
             )}
-
-            {!loading && hasRemaining && (
-              <Link href="/1/plans-remaining">
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  className="rounded-full shadow-md mt-2"
-                >
-                  See Remaining Plans
-                </Button>
-              </Link>
-            )}
           </Box>
 
-          {/* Right Section */}
+          {/* Right Section - Progress Circle */}
           <Box className="flex flex-col items-center justify-center w-full lg:w-1/2">
             {loading ? (
               <Skeleton variant="circular" width={100} height={100} />
             ) : (
-              <CircularProgressWithLabel value={progress} />
+              <CircularProgressWithLabel value={progressData.progress} />
             )}
-
-            {/* Segments */}
-            <div className="grid grid-cols-2 gap-3 w-full mt-6">
-              <SegmentCard
-                icon={<Assignment />}
-                label="Tasks"
-                count={remainingTodos.length}
-                done={remainingTodos.length === 0}
-                color="text-blue-600 bg-blue-100"
-                loading={loading}
-                href={remainingTodos.length > 0 ? '/to-do' : undefined}
-              />
-              <SegmentCard
-                icon={<AttachMoney />}
-                label="Payments"
-                count={totalPayments}
-                done={totalPayments === 0}
-                color="text-green-600 bg-green-100"
-                loading={loading}
-                href={totalPayments > 0 ? '/finance' : undefined}
-              />
-              <SegmentCard
-                icon={<Book />}
-                label="Journal"
-                count={1}
-                done={journalWritten}
-                color="text-purple-600 bg-purple-100"
-                loading={loading}
-                href={!journalWritten ? '/journals' : undefined}
-              />
-              <SegmentCard
-                icon={<EmojiEmotions />}
-                label="Mood"
-                count={1}
-                done={moodLogged}
-                color="text-amber-600 bg-amber-100"
-                loading={loading}
-              />
-            </div>
           </Box>
         </CardContent>
       </Card>
     </Box>
   );
-}
+});
+
+WelcomeGreeting.displayName = 'WelcomeGreeting';
+
+export default WelcomeGreeting;

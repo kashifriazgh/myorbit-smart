@@ -10,7 +10,12 @@ import GuestUserBanner from './components/global/GuestUserBanner';
 // const TimeTableNotifier = lazy(
 //   () => import('./components/homepage/TimeTableNotifier')
 // );
-const DashboardHome = lazy(() => import('./components/homepage/Opener'));
+const WelcomeGreeting = lazy(
+  () => import('./components/homepage/WelcomeGreeting')
+);
+const RemainingTasks = lazy(
+  () => import('./components/homepage/RemainingTasks')
+);
 const FinancialCheckPoints = lazy(
   () => import('./components/finance/FinancialCheckPoints')
 );
@@ -18,9 +23,9 @@ const ImportantTasks = lazy(
   () => import('./components/homepage/ImportantTasks')
 );
 const OverdueTasks = lazy(() => import('./components/homepage/OverdueTasks'));
-const OnGoingStreaks = lazy(
-  () => import('./components/homepage/OnGoingStreaks')
-);
+// const OnGoingStreaks = lazy(
+//   () => import('./components/homepage/OnGoingStreaks')
+// );
 const Mood = lazy(() => import('./components/homepage/Mood'));
 const ExpectedExpenses = lazy(
   () => import('./components/homepage/ExpectedExpenses')
@@ -75,6 +80,11 @@ export default function Homepage() {
           <TimeTableNotifier />
         </Suspense> */}
 
+        {/* Welcome Greeting - Top of homepage */}
+        <Suspense fallback={<ComponentLoader />}>
+          <WelcomeGreeting />
+        </Suspense>
+
         <Suspense fallback={<ComponentLoader />}>
           <ImportantTasks />
         </Suspense>
@@ -82,16 +92,7 @@ export default function Homepage() {
           <OverdueTasks />
         </Suspense>
         <Suspense fallback={<ComponentLoader />}>
-          <DashboardHome />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
           <FinancialCheckPoints />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <OnGoingStreaks />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <Mood />
         </Suspense>
         <Suspense fallback={<ComponentLoader />}>
           <ExpectedExpenses />
@@ -99,11 +100,23 @@ export default function Homepage() {
         <Suspense fallback={<ComponentLoader />}>
           <ExpectedIncome />
         </Suspense>
+        {/* <Suspense fallback={<ComponentLoader />}>
+          <OnGoingStreaks />
+        </Suspense> */}
+        <Suspense fallback={<ComponentLoader />}>
+          <Mood />
+        </Suspense>
+
         <Suspense fallback={<ComponentLoader />}>
           <JournalMemory />
         </Suspense>
         <Suspense fallback={<ComponentLoader />}>
           <MostProductiveDay />
+        </Suspense>
+
+        {/* Remaining Tasks - End of homepage */}
+        <Suspense fallback={<ComponentLoader />}>
+          <RemainingTasks />
         </Suspense>
 
         {/* <MostFocusedTime

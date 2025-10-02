@@ -11,6 +11,9 @@ import {
   DialogContent,
   DialogActions,
   Button,
+  ToggleButton,
+  ToggleButtonGroup,
+  Divider,
 } from '@mui/material';
 import { useOnboarding } from '@/app/lib/context/onBoardingContext';
 import type {
@@ -58,7 +61,6 @@ function toMoment(value?: Date | Timestamp | null): moment.Moment | null {
   return moment(value as Date);
 }
 
-// ------------------ Stage Maker ------------------
 // ------------------ Stage Maker ------------------
 export function stagesMaker({ today = new Date() }: StageMakerArgs): Stage[] {
   const stages: Stage[] = [];
@@ -624,6 +626,7 @@ export default function FinancialTimeline() {
     []
   );
   const [selectedPoint, setSelectedPoint] = useState<Checkpoint | null>(null);
+  const [viewMode, setViewMode] = useState<'cards' | 'sheet'>('cards');
 
   const stages = useMemo(() => {
     let startOfMonthValue: number | string = 1;
@@ -646,72 +649,465 @@ export default function FinancialTimeline() {
     }
   }, [user?.uid, stages]);
 
+  // Sheet View Component
+  const SheetView = () => {
+    let initialAmount = 0;
+    // Get the initial amount from the first checkpoint calculation
+    if (dynamicCheckpoints.length > 0) {
+      const firstCheckpoint = dynamicCheckpoints[0];
+      // Calculate initial amount by subtracting all changes from first checkpoint
+      initialAmount =
+        firstCheckpoint.amount -
+        firstCheckpoint.details.incomes +
+        firstCheckpoint.details.expenses +
+        firstCheckpoint.details.loansToPay -
+        firstCheckpoint.details.loansToRecover;
+    }
+
+    // Helper function to get stage header with date ranges
+    const getStageHeader = (index: number, point: Checkpoint) => {
+      if (index === 0) {
+        return `Today (${moment().format('D MMM YY')})`;
+      }
+
+      // Prefer using the stage title (point.title) if available — this avoids
+      // an "unused parameter" lint error while keeping a readable header.
+      if (point?.title) {
+        return `After ${index * 15} Days — ${point.title}`;
+      }
+
+      const startDate = moment().add((index - 1) * 15 + 1, 'days');
+      const endDate = moment().add(index * 15, 'days');
+
+      return `After ${index * 15} Days (${startDate.format(
+        'D MMM'
+      )} - ${endDate.format('D MMM YY')})`;
+    };
+
+    // Helper function to get financial direction icon
+    const getFinancialIcon = (
+      currentAmount: number,
+      previousAmount: number
+    ) => {
+      if (currentAmount > previousAmount) {
+        return { icon: '📈', color: '#2e7d32', direction: 'UP' };
+      } else if (currentAmount < previousAmount) {
+        return { icon: '📉', color: '#d32f2f', direction: 'DOWN' };
+      } else {
+        return { icon: '➡️', color: '#ed6c02', direction: 'STABLE' };
+      }
+    };
+
+    return (
+      <Box sx={{ mt: 2 }}>
+        {dynamicCheckpoints.map((point, index) => {
+          const totalDays = (index + 1) * 15;
+          const previousAmount =
+            index === 0 ? initialAmount : dynamicCheckpoints[index - 1].amount;
+          const financialDirection = getFinancialIcon(
+            point.amount,
+            previousAmount
+          );
+
+          return (
+            <Card key={index} sx={{ mb: 3, borderRadius: 2, boxShadow: 2 }}>
+              <CardContent sx={{ p: 3 }}>
+                {/* Stage Header */}
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <Typography
+                    variant="h6"
+                    fontWeight="bold"
+                    sx={{
+                      color: 'primary.main',
+                      flex: 1,
+                      borderBottom: '2px solid',
+                      borderColor: 'primary.main',
+                      pb: 1,
+                    }}
+                  >
+                    {getStageHeader(index, point)}
+                  </Typography>
+                  <Box sx={{ ml: 2, textAlign: 'center' }}>
+                    <Typography
+                      variant="h4"
+                      sx={{
+                        fontSize: '2rem',
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))',
+                      }}
+                    >
+                      {financialDirection.icon}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: financialDirection.color,
+                        fontWeight: 'bold',
+                        fontSize: '0.75rem',
+                      }}
+                    >
+                      {financialDirection.direction}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {/* Expected/Payable Expenses */}
+                {point.items.expenses.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography
+                      variant="subtitle1"
+                      sx={{
+                        color: 'error.main',
+                        fontWeight: 'bold',
+                        mb: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                      }}
+                    >
+                      💸 Expected/Payable Expenses:
+                    </Typography>
+                    {point.items.expenses.map((expense, expIndex) => (
+                      <Box key={expIndex} sx={{ ml: 2, mb: 0.5 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                          }}
+                        >
+                          <span style={{ fontSize: '1.1em' }}>❌</span>
+                          {String.fromCharCode(105 + expIndex)}. {expense.title}{' '}
+                          {expense.type === 'recurring' &&
+                            `(${expense.frequency})`}{' '}
+                          -{' '}
+                          <span
+                            style={{ color: '#d32f2f', fontWeight: 'bold' }}
+                          >
+                            Rs {expense.amount.toLocaleString()}
+                            {expense.type === 'recurring' &&
+                              expense.frequency === 'daily' && (
+                                <span
+                                  style={{ fontSize: '0.85em', color: '#666' }}
+                                >
+                                  {' '}
+                                  (daily {(expense.amount / 15).toFixed(0)} × 15
+                                  days)
+                                </span>
+                              )}
+                          </span>
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+
+                {/* Expected/Recoverable Income */}
+                {point.items.incomes.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography
+                      variant="subtitle1"
+                      sx={{
+                        color: 'success.main',
+                        fontWeight: 'bold',
+                        mb: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                      }}
+                    >
+                      💰 Expected/Recoverable Income:
+                    </Typography>
+                    {point.items.incomes.map((income, incIndex) => (
+                      <Box key={incIndex} sx={{ ml: 2, mb: 0.5 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                          }}
+                        >
+                          <span style={{ fontSize: '1.1em' }}>✅</span>
+                          {String.fromCharCode(105 + incIndex)}. {income.title}{' '}
+                          {income.type === 'recurring' &&
+                            `(${income.frequency})`}{' '}
+                          +{' '}
+                          <span
+                            style={{ color: '#2e7d32', fontWeight: 'bold' }}
+                          >
+                            Rs {income.amount.toLocaleString()}
+                          </span>
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+
+                {/* Loans */}
+                {point.items.loans.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography
+                      variant="subtitle1"
+                      sx={{
+                        color: 'info.main',
+                        fontWeight: 'bold',
+                        mb: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                      }}
+                    >
+                      🏦 Loans:
+                    </Typography>
+                    {point.items.loans.map((loan, loanIndex) => (
+                      <Box key={loanIndex} sx={{ ml: 2, mb: 0.5 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                          }}
+                        >
+                          <span style={{ fontSize: '1.1em' }}>
+                            {loan.type === 'lend' ? '💸' : '🔄'}
+                          </span>
+                          {String.fromCharCode(105 + loanIndex)}. {loan.title}{' '}
+                          <span
+                            style={{
+                              color:
+                                loan.type === 'lend' ? '#2e7d32' : '#d32f2f',
+                              fontWeight: 'bold',
+                            }}
+                          >
+                            {loan.type === 'lend' ? '+' : '-'}Rs{' '}
+                            {loan.amount.toLocaleString()}
+                          </span>
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+
+                {/* Stage Summary */}
+                <Divider sx={{ my: 2 }} />
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    bgcolor:
+                      point.amount > initialAmount
+                        ? 'rgba(76, 175, 80, 0.1)'
+                        : 'rgba(244, 67, 54, 0.1)',
+                    p: 2,
+                    borderRadius: 1,
+                    border: `1px solid ${
+                      point.amount > initialAmount ? '#4caf50' : '#f44336'
+                    }`,
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    fontWeight="bold"
+                    sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                  >
+                    🎯 End of {totalDays} days:
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    fontWeight="bold"
+                    sx={{
+                      color:
+                        point.amount > initialAmount
+                          ? 'success.dark'
+                          : 'error.dark',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                    }}
+                  >
+                    {point.amount > previousAmount
+                      ? '💰'
+                      : point.amount < previousAmount
+                      ? '⚠️'
+                      : '💳'}{' '}
+                    Rs {point.amount.toLocaleString()}
+                  </Typography>
+                </Box>
+
+                {/* Show calculation breakdown */}
+                <Box
+                  sx={{ mt: 1, fontSize: '0.85em', color: 'text.secondary' }}
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    🧮 Calculation: Current Amount
+                    {point.details.incomes > 0 && (
+                      <span
+                        style={{
+                          color: '#2e7d32',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                        }}
+                      >
+                        + 💰 Rs {point.details.incomes.toLocaleString()}
+                      </span>
+                    )}
+                    {point.details.expenses > 0 && (
+                      <span
+                        style={{
+                          color: '#d32f2f',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                        }}
+                      >
+                        - 💸 Rs {point.details.expenses.toLocaleString()}
+                      </span>
+                    )}
+                    {point.details.loansToRecover > 0 && (
+                      <span
+                        style={{
+                          color: '#2e7d32',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                        }}
+                      >
+                        + 🏦 Rs {point.details.loansToRecover.toLocaleString()}
+                      </span>
+                    )}
+                    {point.details.loansToPay > 0 && (
+                      <span
+                        style={{
+                          color: '#d32f2f',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                        }}
+                      >
+                        - 🔄 Rs {point.details.loansToPay.toLocaleString()}
+                      </span>
+                    )}
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </Box>
+    );
+  };
+
   return (
     <Box sx={{ p: 4 }}>
-      <Typography variant="h6" gutterBottom>
-        Financial Timeline
-      </Typography>
-
+      {/* Header with View Toggle */}
       <Box
         sx={{
           display: 'flex',
-          gap: 2,
-          overflowX: 'auto',
-          scrollbarWidth: 'thin',
-          pb: 1,
-          '&::-webkit-scrollbar': { height: 8 },
-          '&::-webkit-scrollbar-thumb': {
-            backgroundColor: '#ccc',
-            borderRadius: 4,
-          },
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
         }}
       >
-        {dynamicCheckpoints.map((point, index) => (
-          <Card
-            key={index}
-            onClick={() => setSelectedPoint(point)}
-            sx={{
-              minWidth: { xs: 160, sm: 220 },
-              maxWidth: { xs: 160, sm: 220 },
-              flexShrink: 0,
-              borderRadius: 2,
-              boxShadow: 3,
-              textAlign: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <CardContent>
-              <Typography
-                variant="subtitle1"
-                fontWeight="bold"
-                sx={{
-                  background:
-                    'linear-gradient(45deg, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4, #FFEAA7)',
-                  backgroundSize: '300% 300%',
-                  backgroundClip: 'text',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  animation: 'gradientShift 3s ease infinite',
-                  '@keyframes gradientShift': {
-                    '0%': { backgroundPosition: '0% 50%' },
-                    '50%': { backgroundPosition: '100% 50%' },
-                    '100%': { backgroundPosition: '0% 50%' },
-                  },
-                }}
-              >
-                {point.title}
-              </Typography>
-              <Typography
-                variant="h6"
-                sx={{ color: point.color, fontWeight: 'bold' }}
-              >
-                ₨{point.amount.toLocaleString()}
-              </Typography>
-              <Typography variant="body2">{point.status}</Typography>
-            </CardContent>
-          </Card>
-        ))}
+        <Typography variant="h6">Financial Timeline</Typography>
+
+        <ToggleButtonGroup
+          value={viewMode}
+          exclusive
+          onChange={(_, newMode) => newMode && setViewMode(newMode)}
+          size="small"
+          sx={{
+            '& .MuiToggleButton-root': {
+              px: 2,
+              py: 0.5,
+              fontSize: '0.875rem',
+            },
+          }}
+        >
+          <ToggleButton value="cards">📊 Cards View</ToggleButton>
+          <ToggleButton value="sheet">📋 Sheet View</ToggleButton>
+        </ToggleButtonGroup>
       </Box>
+
+      {/* Conditional Rendering based on view mode */}
+      {viewMode === 'cards' ? (
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 2,
+            overflowX: 'auto',
+            scrollbarWidth: 'thin',
+            pb: 1,
+            '&::-webkit-scrollbar': { height: 8 },
+            '&::-webkit-scrollbar-thumb': {
+              backgroundColor: '#ccc',
+              borderRadius: 4,
+            },
+          }}
+        >
+          {dynamicCheckpoints.map((point, index) => (
+            <Card
+              key={index}
+              onClick={() => setSelectedPoint(point)}
+              sx={{
+                minWidth: { xs: 160, sm: 220 },
+                maxWidth: { xs: 160, sm: 220 },
+                flexShrink: 0,
+                borderRadius: 2,
+                boxShadow: 3,
+                textAlign: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <CardContent>
+                <Typography
+                  variant="subtitle1"
+                  fontWeight="bold"
+                  sx={{
+                    background:
+                      'linear-gradient(45deg, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4, #FFEAA7)',
+                    backgroundSize: '300% 300%',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    animation: 'gradientShift 3s ease infinite',
+                    '@keyframes gradientShift': {
+                      '0%': { backgroundPosition: '0% 50%' },
+                      '50%': { backgroundPosition: '100% 50%' },
+                      '100%': { backgroundPosition: '0% 50%' },
+                    },
+                  }}
+                >
+                  {point.title}
+                </Typography>
+                <Typography
+                  variant="h6"
+                  sx={{ color: point.color, fontWeight: 'bold' }}
+                >
+                  ₨{point.amount.toLocaleString()}
+                </Typography>
+                <Typography variant="body2">{point.status}</Typography>
+              </CardContent>
+            </Card>
+          ))}
+        </Box>
+      ) : (
+        <SheetView />
+      )}
 
       {/* Dialog for details */}
       <Dialog
