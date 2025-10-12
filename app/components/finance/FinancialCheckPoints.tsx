@@ -672,7 +672,7 @@ export default function FinancialTimeline() {
 
       // Prefer using the stage title (point.title) if available — this avoids
       // an "unused parameter" lint error while keeping a readable header.
-      if (point?.title) {
+      if (point?.title && index > 0) {
         return `After ${index * 15} Days — ${point.title}`;
       }
 
@@ -699,7 +699,28 @@ export default function FinancialTimeline() {
     };
 
     return (
-      <Box sx={{ mt: 2 }}>
+      <Box
+        sx={{
+          mt: 2,
+          height: '500px', // Fixed height
+          overflowY: 'auto', // Vertical scrolling
+          pr: 1, // Padding for scrollbar
+          '&::-webkit-scrollbar': {
+            width: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: '#f1f1f1',
+            borderRadius: '4px',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#c1c1c1',
+            borderRadius: '4px',
+            '&:hover': {
+              background: '#a8a8a8',
+            },
+          },
+        }}
+      >
         {dynamicCheckpoints.map((point, index) => {
           const totalDays = (index + 1) * 15;
           const previousAmount =
@@ -710,10 +731,10 @@ export default function FinancialTimeline() {
           );
 
           return (
-            <Card key={index} sx={{ mb: 3, borderRadius: 2, boxShadow: 2 }}>
-              <CardContent sx={{ p: 3 }}>
+            <Card key={index} sx={{ mb: 2, borderRadius: 2, boxShadow: 2 }}>
+              <CardContent sx={{ p: 2 }}>
                 {/* Stage Header */}
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
                   <Typography
                     variant="h6"
                     fontWeight="bold"
@@ -752,13 +773,13 @@ export default function FinancialTimeline() {
 
                 {/* Expected/Payable Expenses */}
                 {point.items.expenses.length > 0 && (
-                  <Box sx={{ mb: 2 }}>
+                  <Box sx={{ mb: 1.5 }}>
                     <Typography
                       variant="subtitle1"
                       sx={{
                         color: 'error.main',
                         fontWeight: 'bold',
-                        mb: 1,
+                        mb: 0.5,
                         display: 'flex',
                         alignItems: 'center',
                         gap: 1,
@@ -767,7 +788,7 @@ export default function FinancialTimeline() {
                       💸 Expected/Payable Expenses:
                     </Typography>
                     {point.items.expenses.map((expense, expIndex) => (
-                      <Box key={expIndex} sx={{ ml: 2, mb: 0.5 }}>
+                      <Box key={expIndex} sx={{ ml: 2, mb: 0.25 }}>
                         <Typography
                           variant="body2"
                           sx={{
@@ -805,13 +826,13 @@ export default function FinancialTimeline() {
 
                 {/* Expected/Recoverable Income */}
                 {point.items.incomes.length > 0 && (
-                  <Box sx={{ mb: 2 }}>
+                  <Box sx={{ mb: 1.5 }}>
                     <Typography
                       variant="subtitle1"
                       sx={{
                         color: 'success.main',
                         fontWeight: 'bold',
-                        mb: 1,
+                        mb: 0.5,
                         display: 'flex',
                         alignItems: 'center',
                         gap: 1,
@@ -820,7 +841,7 @@ export default function FinancialTimeline() {
                       💰 Expected/Recoverable Income:
                     </Typography>
                     {point.items.incomes.map((income, incIndex) => (
-                      <Box key={incIndex} sx={{ ml: 2, mb: 0.5 }}>
+                      <Box key={incIndex} sx={{ ml: 2, mb: 0.25 }}>
                         <Typography
                           variant="body2"
                           sx={{
@@ -848,13 +869,13 @@ export default function FinancialTimeline() {
 
                 {/* Loans */}
                 {point.items.loans.length > 0 && (
-                  <Box sx={{ mb: 2 }}>
+                  <Box sx={{ mb: 1.5 }}>
                     <Typography
                       variant="subtitle1"
                       sx={{
                         color: 'info.main',
                         fontWeight: 'bold',
-                        mb: 1,
+                        mb: 0.5,
                         display: 'flex',
                         alignItems: 'center',
                         gap: 1,
@@ -863,7 +884,7 @@ export default function FinancialTimeline() {
                       🏦 Loans:
                     </Typography>
                     {point.items.loans.map((loan, loanIndex) => (
-                      <Box key={loanIndex} sx={{ ml: 2, mb: 0.5 }}>
+                      <Box key={loanIndex} sx={{ ml: 2, mb: 0.25 }}>
                         <Typography
                           variant="body2"
                           sx={{
@@ -894,7 +915,7 @@ export default function FinancialTimeline() {
                 )}
 
                 {/* Stage Summary */}
-                <Divider sx={{ my: 2 }} />
+                <Divider sx={{ my: 1 }} />
                 <Box
                   sx={{
                     display: 'flex',
@@ -904,7 +925,7 @@ export default function FinancialTimeline() {
                       point.amount > initialAmount
                         ? 'rgba(76, 175, 80, 0.1)'
                         : 'rgba(244, 67, 54, 0.1)',
-                    p: 2,
+                    p: 1,
                     borderRadius: 1,
                     border: `1px solid ${
                       point.amount > initialAmount ? '#4caf50' : '#f44336'
@@ -916,7 +937,9 @@ export default function FinancialTimeline() {
                     fontWeight="bold"
                     sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
                   >
-                    🎯 End of {totalDays} days:
+                    {index === 0
+                      ? '🎯 Current Amount:'
+                      : `🎯 End of ${totalDays} days:`}
                   </Typography>
                   <Typography
                     variant="h6"
@@ -937,71 +960,6 @@ export default function FinancialTimeline() {
                       ? '⚠️'
                       : '💳'}{' '}
                     Rs {point.amount.toLocaleString()}
-                  </Typography>
-                </Box>
-
-                {/* Show calculation breakdown */}
-                <Box
-                  sx={{ mt: 1, fontSize: '0.85em', color: 'text.secondary' }}
-                >
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.5,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    🧮 Calculation: Current Amount
-                    {point.details.incomes > 0 && (
-                      <span
-                        style={{
-                          color: '#2e7d32',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                        }}
-                      >
-                        + 💰 Rs {point.details.incomes.toLocaleString()}
-                      </span>
-                    )}
-                    {point.details.expenses > 0 && (
-                      <span
-                        style={{
-                          color: '#d32f2f',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                        }}
-                      >
-                        - 💸 Rs {point.details.expenses.toLocaleString()}
-                      </span>
-                    )}
-                    {point.details.loansToRecover > 0 && (
-                      <span
-                        style={{
-                          color: '#2e7d32',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                        }}
-                      >
-                        + 🏦 Rs {point.details.loansToRecover.toLocaleString()}
-                      </span>
-                    )}
-                    {point.details.loansToPay > 0 && (
-                      <span
-                        style={{
-                          color: '#d32f2f',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                        }}
-                      >
-                        - 🔄 Rs {point.details.loansToPay.toLocaleString()}
-                      </span>
-                    )}
                   </Typography>
                 </Box>
               </CardContent>

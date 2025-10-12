@@ -5,10 +5,8 @@ import {
   Button,
   CircularProgress,
   Collapse,
-  IconButton,
   Slider,
   Stack,
-  Tooltip,
   Typography,
   useTheme,
   Fade,
@@ -16,8 +14,7 @@ import {
   CardContent,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
-import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
-import CloseIcon from '@mui/icons-material/Close';
+
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -31,7 +28,7 @@ export default function Mood() {
   const theme = useTheme();
   const { user } = useAuth();
 
-  const [showMoodSelector, setShowMoodSelector] = useState(true); // Changed to true by default
+  const [showMoodSelector, setShowMoodSelector] = useState(true); // Always true for center-aligned layout
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null);
   const [moodLevel, setMoodLevel] = useState<number>(5);
   const [loading, setLoading] = useState(false);
@@ -62,16 +59,7 @@ export default function Mood() {
     }
   }, []);
 
-  const toggleMoodSelector = () => {
-    setShowMoodSelector((prev) => {
-      if (prev) {
-        // Reset states when closing
-        setSelectedMood(null);
-        setMoodLevel(5);
-      }
-      return !prev;
-    });
-  };
+  // Removed toggle functionality for center-aligned layout
 
   const handleMoodSubmit = async () => {
     if (!selectedMood || !user?.uid) return;
@@ -116,8 +104,8 @@ export default function Mood() {
       <Box mt={4} className="px-4">
         <Card className="rounded-xl shadow-md transition mb-4">
           <CardContent>
-            {/* Header (same width/structure as OverdueTasks header) */}
-            <Box className="flex justify-between items-start mb-2">
+            {/* Header - Center aligned */}
+            <Box className="flex justify-center items-center mb-2">
               <Typography
                 variant="h6"
                 fontWeight="700"
@@ -131,20 +119,6 @@ export default function Mood() {
               >
                 How are you feeling today?
               </Typography>
-
-              <Stack direction="row" spacing={1}>
-                <Tooltip
-                  title={
-                    showMoodSelector ? 'Hide Mood Picker' : 'Show Mood Picker'
-                  }
-                >
-                  <span>
-                    <IconButton onClick={toggleMoodSelector} size="small">
-                      {showMoodSelector ? <CloseIcon /> : <EmojiEmotionsIcon />}
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </Stack>
             </Box>
 
             {/* Body */}

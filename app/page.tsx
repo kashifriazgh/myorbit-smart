@@ -5,17 +5,25 @@ import { useAuth } from './lib/context/userContext';
 import { useCustomTheme } from './lib/context/themeContext';
 import { CircularProgress, Box } from '@mui/material';
 import GuestUserBanner from './components/global/GuestUserBanner';
+import HomepageHeader from './components/homepage/HomepageHeader';
+import SkeletonLoader from './components/global/SkeletonLoader';
+import {
+  ShoppingListPlaceholder,
+  GoalsPlaceholder,
+  StreaksPlaceholder,
+} from './components/homepage/PlaceholderComponents';
+import Schedules from './components/homepage/Schedules';
 
 // Lazy load components for better performance
 // const TimeTableNotifier = lazy(
 //   () => import('./components/homepage/TimeTableNotifier')
 // );
-const WelcomeGreeting = lazy(
-  () => import('./components/homepage/WelcomeGreeting')
-);
-const RemainingTasks = lazy(
-  () => import('./components/homepage/RemainingTasks')
-);
+// const WelcomeGreeting = lazy(
+//   () => import('./components/homepage/WelcomeGreeting')
+// );
+// const RemainingTasks = lazy(
+//   () => import('./components/homepage/RemainingTasks')
+// );
 const FinancialCheckPoints = lazy(
   () => import('./components/finance/FinancialCheckPoints')
 );
@@ -38,12 +46,12 @@ const MostProductiveDay = lazy(
   () => import('./components/homepage/MostProductiveDay')
 );
 
-// Loading component
-const ComponentLoader = () => (
-  <Box display="flex" justifyContent="center" p={2}>
-    <CircularProgress size={24} />
-  </Box>
-);
+// Loading component with skeleton
+const ComponentLoader = ({
+  variant = 'card',
+}: {
+  variant?: 'card' | 'list' | 'text';
+}) => <SkeletonLoader variant={variant} />;
 export default function Homepage() {
   const { user, loading } = useAuth();
   const { theme } = useCustomTheme();
@@ -66,66 +74,93 @@ export default function Homepage() {
   return (
     <IncomeSourcesProvider userId={user.uid}>
       <div
-        className="p-2 mx-auto flex-col flex max-w-2xl my-10 justify-center"
+        className="p-4 mx-auto max-w-7xl"
         style={{
-          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+          backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#f8fafc',
           color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
           minHeight: '100vh',
-          borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
         }}
       >
         <GuestUserBanner />
-        {/* <OnBoardingInitializer /> */}
-        {/* <Suspense fallback={<ComponentLoader />}>
-          <TimeTableNotifier />
-        </Suspense> */}
 
-        {/* Welcome Greeting - Top of homepage */}
-        <Suspense fallback={<ComponentLoader />}>
-          <WelcomeGreeting />
+        {/* 1. Header Section - Full Width */}
+        <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
+          <HomepageHeader />
         </Suspense>
 
-        <Suspense fallback={<ComponentLoader />}>
-          <ImportantTasks />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <OverdueTasks />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <FinancialCheckPoints />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <ExpectedExpenses />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <ExpectedIncome />
-        </Suspense>
-        {/* <Suspense fallback={<ComponentLoader />}>
-          <OnGoingStreaks />
-        </Suspense> */}
-        <Suspense fallback={<ComponentLoader />}>
-          <Mood />
-        </Suspense>
+        {/* 2. Three Column Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+          {/* Column 1 - Schedules */}
+          <div className="lg:col-span-3">
+            <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
+              <Schedules />
+            </Suspense>
+          </div>
 
-        <Suspense fallback={<ComponentLoader />}>
-          <JournalMemory />
-        </Suspense>
-        <Suspense fallback={<ComponentLoader />}>
-          <MostProductiveDay />
-        </Suspense>
+          {/* Column 2 - Tasks */}
+          <div className="lg:col-span-5 space-y-4">
+            <Suspense fallback={<ComponentLoader variant="list" />}>
+              <ImportantTasks />
+            </Suspense>
+            <Suspense fallback={<ComponentLoader variant="list" />}>
+              <OverdueTasks />
+            </Suspense>
+          </div>
 
-        {/* Remaining Tasks - End of homepage */}
-        <Suspense fallback={<ComponentLoader />}>
-          <RemainingTasks />
-        </Suspense>
+          {/* Column 3 - Shopping & Finance */}
+          <div className="lg:col-span-4 space-y-4">
+            <ShoppingListPlaceholder />
+            <div className="space-y-4">
+              <Suspense fallback={<ComponentLoader variant="card" />}>
+                <ExpectedExpenses />
+              </Suspense>
+              <Suspense fallback={<ComponentLoader variant="card" />}>
+                <ExpectedIncome />
+              </Suspense>
+            </div>
+          </div>
+        </div>
 
-        {/* <MostFocusedTime
-          data={{
-            hourStart: 21,
-            hourEnd: 22,
-            day: 'Sunday',
-          }}
-        /> */}
+        {/* 3. Full Width Financial Section */}
+        <div className="mb-8">
+          <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
+            <FinancialCheckPoints />
+          </Suspense>
+        </div>
+
+        {/* 4. Goals & Streaks - 50/50 Split */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <GoalsPlaceholder />
+          <StreaksPlaceholder />
+        </div>
+
+        {/* 5. Additional Components */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <Suspense fallback={<ComponentLoader variant="card" />}>
+            <Mood />
+          </Suspense>
+          <Suspense fallback={<ComponentLoader variant="card" />}>
+            <JournalMemory />
+          </Suspense>
+        </div>
+
+        {/* 6. Bottom Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <Suspense fallback={<ComponentLoader variant="card" />}>
+            <MostProductiveDay />
+          </Suspense>
+          <div className="flex items-center justify-center">
+            <a
+              href="/1/plans-remaining"
+              className="inline-flex items-center justify-center px-6 py-3 text-base font-medium text-white bg-blue-600 border border-transparent rounded-lg shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+              style={{
+                backgroundColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
+              }}
+            >
+              See All Remaining Plans
+            </a>
+          </div>
+        </div>
       </div>
     </IncomeSourcesProvider>
   );
