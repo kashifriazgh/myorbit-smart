@@ -8,10 +8,10 @@ import GuestUserBanner from './components/global/GuestUserBanner';
 import HomepageHeader from './components/homepage/HomepageHeader';
 import SkeletonLoader from './components/global/SkeletonLoader';
 import {
-  ShoppingListPlaceholder,
   GoalsPlaceholder,
   StreaksPlaceholder,
 } from './components/homepage/PlaceholderComponents';
+import ShoppingList from './components/homepage/ShoppingList';
 import Schedules from './components/homepage/Schedules';
 
 // Lazy load components for better performance
@@ -109,7 +109,9 @@ export default function Homepage() {
 
           {/* Column 3 - Shopping & Finance */}
           <div className="lg:col-span-4 space-y-4">
-            <ShoppingListPlaceholder />
+            <Suspense fallback={<ComponentLoader variant="card" />}>
+              <ShoppingList />
+            </Suspense>
             <div className="space-y-4">
               <Suspense fallback={<ComponentLoader variant="card" />}>
                 <ExpectedExpenses />

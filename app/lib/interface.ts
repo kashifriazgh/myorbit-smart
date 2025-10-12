@@ -693,3 +693,19 @@ export interface SchedulesProps {
   createdAt?: Timestamp | Date;
   updatedAt?: Timestamp | Date;
 }
+
+// Shopping List for Current Month
+export interface ShoppingListItem {
+  id?: string;
+  userId: string;
+  title: string; // e.g. "Wooden Bars"
+  qty: string; // e.g. "6 x bars"
+  proposedPrice: number; // budget/estimated price
+  icon?: string; // emoji or icon
+  dateOfBuy?: Date | Timestamp; // when to buy
+  purchased: boolean; // default false
+  purchasedPrice: number; // actual price paid, default 0
+  month: string; // 'YYYY-MM' format for filtering
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
+}
