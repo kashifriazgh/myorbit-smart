@@ -709,3 +709,90 @@ export interface ShoppingListItem {
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
+
+// Goals Feature
+export interface GoalStep {
+  id: string;
+  title: string;
+  description?: string;
+  targetValue?: number; // e.g., 1000 (Rs) or 1 (kg)
+  unit?: string; // e.g., "Rs", "kg"
+  startDate?: Timestamp | Date;
+  endDate?: Timestamp | Date;
+  completed: boolean;
+  actualValue?: number; // what user actually achieved
+}
+
+export type GoalType = 'finance' | 'health' | 'learning' | 'habit' | 'custom';
+export type GoalPriority = 'Low' | 'Medium' | 'High';
+export type GoalStatus =
+  | 'Not Started'
+  | 'In Progress'
+  | 'Completed'
+  | 'On Track'
+  | 'At Risk'
+  | 'Off Track';
+
+export interface FinanceMetrics {
+  totalTarget: number;
+  totalSaved: number;
+  currency: string;
+  frequency?: 'daily' | 'weekly' | 'monthly';
+}
+
+export interface HealthMetrics {
+  targetWeightLoss: number;
+  currentWeight?: number;
+  unit: 'kg' | 'lb';
+}
+
+export interface LearningMetrics {
+  totalHoursGoal: number;
+  hoursCompleted: number;
+  topic?: string;
+}
+
+export interface HabitMetrics {
+  streakGoal: number;
+  streakCompleted: number;
+}
+
+export interface CustomMetrics {
+  [key: string]: unknown;
+}
+
+export type DynamicMetrics =
+  | FinanceMetrics
+  | HealthMetrics
+  | LearningMetrics
+  | HabitMetrics
+  | CustomMetrics;
+
+export interface Goal {
+  id?: string;
+  title: string;
+  type: GoalType;
+  description?: string;
+  category?: string; // optional grouping
+  createdAt: Timestamp | Date;
+  dueDate: Timestamp | Date;
+  timeline?: string; // e.g. "3 months"
+  progress: number; // 0–100
+  priority: GoalPriority;
+  status: GoalStatus;
+  steps: GoalStep[]; // universal structure
+  metrics?: DynamicMetrics; // type-specific metrics
+  reflections?: string[]; // link to journal ids
+  aiSummary?: string;
+  userId: string;
+  authorName?: string;
+  sharedWith?: string[];
+  privacy?: 'private' | 'public' | 'specific';
+  pinned?: boolean;
+  isArchived?: boolean;
+  updatedAt?: Timestamp | Date;
+  completedAt?: Timestamp | Date | null;
+  notes?: string;
+  tags?: string[];
+  color?: string; // for UI color coding
+}

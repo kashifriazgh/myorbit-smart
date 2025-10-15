@@ -13,6 +13,7 @@ import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
+import FlagIcon from '@mui/icons-material/Flag';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -146,6 +147,10 @@ export default function BottomNav() {
         transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <List sx={{ minWidth: 200 }}>
+          <ListItemButton disabled={!user} component={Link} href="/goals">
+            <FlagIcon sx={{ mr: 1 }} />
+            <ListItemText primary="Goals" />
+          </ListItemButton>
           <ListItemButton disabled={!user} component={Link} href="/ideas">
             <LightbulbIcon sx={{ mr: 1 }} />
             <ListItemText primary="Ideas" />

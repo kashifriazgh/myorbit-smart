@@ -1,101 +1,106 @@
 'use client';
 
 import React from 'react';
-import { Checkbox, Button, Chip } from '@mui/material';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined';
+import { Card, CardContent, Typography, Box } from '@mui/material';
 
-const items = [
-  { name: 'Avocados', qty: '2 pc', emoji: '🥑', checked: true },
-  { name: 'Salmon fillets', qty: '2 x 150g', emoji: '🐟', checked: true },
-  { name: 'Yogurt', qty: '200g', emoji: '🍶', checked: false, ai: true },
-  { name: 'Dark chocolate almonds', qty: '50g', emoji: '🍫', checked: false },
-  { name: 'Red Onion', qty: '1/4 piece', emoji: '🧅', checked: false },
-  { name: 'Lettuce', qty: '2 pc', emoji: '🥬', checked: false },
-];
+interface Goal {
+  title: string;
+  progress: string;
+  goal: string;
+  color: string; // main gradient color
+  progressPercent?: number; // optional for wave height
+}
 
-export default function ShoppingList() {
-  const [list, setList] = React.useState(items);
-
-  const toggleCheck = (index: number) => {
-    const updated = [...list];
-    updated[index].checked = !updated[index].checked;
-    setList(updated);
-  };
+const GoalsReport = () => {
+  const goals: Goal[] = [
+    {
+      title: 'Water',
+      progress: '2500ml',
+      goal: '3.1L',
+      color: '#3B82F6',
+      progressPercent: 80,
+    },
+    {
+      title: 'Weight',
+      progress: '62kg',
+      goal: '56kg',
+      color: '#F59E0B',
+      progressPercent: 60,
+    },
+    {
+      title: 'BPM',
+      progress: '95bpm',
+      goal: '90',
+      color: '#10B981',
+      progressPercent: 50,
+    },
+    {
+      title: 'Calories',
+      progress: '320kcal',
+      goal: '1950',
+      color: '#F87171',
+      progressPercent: 20,
+    },
+  ];
 
   return (
-    <div className="max-w-xs mx-auto rounded-2xl bg-white shadow-md border border-gray-100 p-4">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-800">Shopping list</h2>
-        <span className="text-gray-400 cursor-pointer text-xl hover:text-gray-600">
-          ↗
+    <Box className="p-4">
+      <Typography variant="h6" className="font-semibold mb-3 text-gray-700">
+        Report{' '}
+        <span className="text-gray-400 text-sm font-normal">
+          Goals this week
         </span>
-      </div>
+      </Typography>
 
-      {/* List */}
-      <ul className="space-y-2">
-        {list.map((item, index) => (
-          <li
+      <div className="grid grid-cols-2 gap-4">
+        {goals.map((goal, index) => (
+          <Card
             key={index}
-            className="flex items-center justify-between bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-2 transition"
+            className="relative overflow-hidden rounded-3xl shadow-sm hover:shadow-md transition-all duration-300 bg-white"
+            sx={{
+              width: '160px',
+              height: '160px',
+              borderRadius: '1.5rem',
+            }}
           >
-            <div className="flex items-center gap-2">
-              <Checkbox
-                icon={<CircleOutlinedIcon />}
-                checkedIcon={<CheckCircleIcon className="text-green-500" />}
-                checked={item.checked}
-                onChange={() => toggleCheck(index)}
-                size="small"
-              />
-              <span className="text-xl">{item.emoji}</span>
-              <div className="flex flex-col leading-tight">
-                <span
-                  className={`text-sm font-medium ${
-                    item.checked
-                      ? 'line-through text-gray-400'
-                      : 'text-gray-800'
-                  }`}
-                >
-                  {item.name}
-                </span>
-                <div className="flex items-center gap-1">
-                  {item.ai && (
-                    <Chip
-                      label="AI Suggested"
-                      size="small"
-                      sx={{
-                        fontSize: '0.65rem',
-                        color: '#2563EB',
-                        backgroundColor: '#EFF6FF',
-                        borderRadius: '6px',
-                      }}
-                    />
-                  )}
-                  <span className="text-xs text-gray-500">{item.qty}</span>
-                </div>
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
+            <CardContent className="p-4 h-full flex flex-col justify-between relative z-10">
+              {/* Title */}
+              <Typography
+                variant="subtitle1"
+                className="text-gray-800 font-semibold tracking-tight"
+              >
+                {goal.title}
+              </Typography>
 
-      {/* Footer */}
-      <Button
-        variant="contained"
-        fullWidth
-        sx={{
-          marginTop: 3,
-          textTransform: 'none',
-          backgroundColor: '#FACC15',
-          color: '#000',
-          fontWeight: 600,
-          borderRadius: '9999px',
-          '&:hover': { backgroundColor: '#EAB308' },
-        }}
-      >
-        🛒 Shop Now
-      </Button>
-    </div>
+              {/* Bottom section */}
+              <div className="flex justify-between items-end text-white font-semibold text-sm">
+                <Typography
+                  variant="h6"
+                  className="text-lg font-bold text-white"
+                >
+                  {goal.progress}
+                </Typography>
+                <Typography className="opacity-90 text-sm">
+                  Goal {goal.goal}
+                </Typography>
+              </div>
+            </CardContent>
+
+            {/* Wave background */}
+            <div
+              className="absolute bottom-0 left-0 w-full transition-all duration-700"
+              style={{
+                height: `${goal.progressPercent ?? 50}%`,
+                background: `linear-gradient(180deg, ${goal.color}80 0%, ${goal.color}FF 100%)`,
+                clipPath:
+                  'path("M0,100 Q40,80 80,100 T160,100 L160,160 L0,160 Z")',
+              }}
+            />
+          </Card>
+        ))}
+      </div>
+    </Box>
   );
-}
+};
+
+export default GoalsReport;
