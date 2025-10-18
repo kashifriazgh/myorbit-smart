@@ -13,357 +13,66 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Chip,
   IconButton,
   Fab,
 } from '@mui/material';
-import {
-  Search,
-  Add,
-  FilterList,
-  TrendingUp,
-  FitnessCenter,
-  School,
-  Psychology,
-  Category,
-  Visibility,
-  MoreVert,
-} from '@mui/icons-material';
+import { Search, Add, FilterList } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGoals, GoalsProvider } from '../lib/context/GoalsContext';
 import { useAuth } from '../lib/context/userContext';
 import { useCustomTheme } from '../lib/context/themeContext';
-import { Goal, GoalType, GoalPriority, GoalStatus } from '../lib/interface';
+import { GoalType, GoalPriority, GoalStatus } from '../lib/interface';
 import GoalModal from '../components/goals/GoalModal';
+import GoalSimpleCard from '../components/goals/GoalSimpleCard';
 import { useRouter } from 'next/navigation';
+import moment from 'moment';
 
-const getGoalTypeIcon = (type: GoalType) => {
-  switch (type) {
-    case 'finance':
-      return <TrendingUp />;
-    case 'health':
-      return <FitnessCenter />;
-    case 'learning':
-      return <School />;
-    case 'habit':
-      return <Psychology />;
-    default:
-      return <Category />;
-  }
-};
+/* ---------- TYPES & UTILITIES ---------- */
 
-const getGoalTypeColor = (type: GoalType) => {
-  switch (type) {
-    case 'finance':
-      return '#10B981';
-    case 'health':
-      return '#F59E0B';
-    case 'learning':
-      return '#3B82F6';
-    case 'habit':
-      return '#8B5CF6';
-    default:
-      return '#6B7280';
-  }
-};
+type FirestoreLikeDate =
+  | Date
+  | string
+  | { seconds: number; nanoseconds: number }
+  | { toDate: () => Date };
 
-const getPriorityColor = (priority: GoalPriority) => {
-  switch (priority) {
-    case 'High':
-      return '#EF4444';
-    case 'Medium':
-      return '#F59E0B';
-    case 'Low':
-      return '#10B981';
-    default:
-      return '#6B7280';
-  }
-};
+const getDueDate = (rawDate: FirestoreLikeDate | undefined): Date | null => {
+  if (!rawDate) return null;
 
-const getStatusColor = (status: GoalStatus) => {
-  switch (status) {
-    case 'On Track':
-      return '#10B981';
-    case 'At Risk':
-      return '#F59E0B';
-    case 'Off Track':
-      return '#EF4444';
-    case 'Completed':
-      return '#3B82F6';
-    default:
-      return '#6B7280';
-  }
-};
+  if (rawDate instanceof Date) return rawDate;
 
-const getDaysLeft = (dueDate) => {
-  const now = new Date();
-  if (!dueDate) return 0;
-
-  let due: Date;
-  if (typeof dueDate?.toDate === 'function') {
-    // Firestore Timestamp
-    due = dueDate.toDate();
-  } else if (dueDate?.seconds && dueDate?.nanoseconds !== undefined) {
-    // Firestore Timestamp object with seconds/nanoseconds
-    due = new Date(dueDate.seconds * 1000 + dueDate.nanoseconds / 1000000);
-  } else {
-    // Regular Date or other format
-    due = new Date(dueDate);
+  if (typeof rawDate === 'string') {
+    const parsed = new Date(rawDate);
+    return isNaN(parsed.getTime()) ? null : parsed;
   }
 
-  if (isNaN(due.getTime())) return 0;
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  // Safely check for Firestore Timestamp-like object
+  if (
+    typeof rawDate === 'object' &&
+    rawDate !== null &&
+    'toDate' in rawDate &&
+    typeof (rawDate as { toDate: unknown }).toDate === 'function'
+  ) {
+    return (rawDate as { toDate: () => Date }).toDate();
+  }
+
+  // Handle Firestore timestamp literal
+  if (
+    typeof rawDate === 'object' &&
+    rawDate !== null &&
+    'seconds' in rawDate &&
+    'nanoseconds' in rawDate
+  ) {
+    const { seconds, nanoseconds } = rawDate as {
+      seconds: number;
+      nanoseconds: number;
+    };
+    return new Date(seconds * 1000 + nanoseconds / 1_000_000);
+  }
+
+  return null;
 };
 
-interface GoalCardProps {
-  goal: Goal;
-  onView: (goalId: string) => void;
-}
-
-const GoalCard: React.FC<GoalCardProps> = ({ goal, onView }) => {
-  const { theme } = useCustomTheme();
-  const daysLeft = getDaysLeft(goal.dueDate);
-  const isOverdue = daysLeft < 0;
-  const typeColor = getGoalTypeColor(goal.type);
-  const priorityColor = getPriorityColor(goal.priority);
-  const statusColor = getStatusColor(goal.status);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      whileHover={{ y: -4 }}
-    >
-      <Card
-        className="relative overflow-hidden rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer h-full"
-        sx={{
-          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-          border: `2px solid ${typeColor}20`,
-          '&:hover': {
-            border: `2px solid ${typeColor}40`,
-            transform: 'translateY(-4px)',
-          },
-        }}
-        onClick={() => onView(goal.id!)}
-      >
-        {/* Priority Color Bar */}
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '4px',
-            backgroundColor: priorityColor,
-          }}
-        />
-
-        <CardContent className="p-6 h-full flex flex-col">
-          {/* Header */}
-          <Box className="flex items-start justify-between mb-4">
-            <Box className="flex items-center gap-3">
-              <Box
-                sx={{
-                  color: typeColor,
-                  display: 'flex',
-                  alignItems: 'center',
-                  backgroundColor: `${typeColor}20`,
-                  borderRadius: '50%',
-                  p: 1,
-                }}
-              >
-                {getGoalTypeIcon(goal.type)}
-              </Box>
-              <Box>
-                <Chip
-                  label={goal.type}
-                  size="small"
-                  sx={{
-                    backgroundColor: `${typeColor}20`,
-                    color: typeColor,
-                    fontWeight: 600,
-                    fontSize: '0.75rem',
-                  }}
-                />
-                <Chip
-                  label={goal.priority}
-                  size="small"
-                  sx={{
-                    backgroundColor: `${priorityColor}20`,
-                    color: priorityColor,
-                    fontWeight: 600,
-                    fontSize: '0.75rem',
-                    ml: 1,
-                  }}
-                />
-              </Box>
-            </Box>
-            <IconButton size="small" sx={{ color: '#6B7280' }}>
-              <MoreVert />
-            </IconButton>
-          </Box>
-
-          {/* Title */}
-          <Typography
-            variant="h6"
-            className="font-semibold mb-3 text-gray-800 flex-1"
-            sx={{
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-              fontSize: '1.1rem',
-              lineHeight: 1.4,
-              minHeight: '2.8rem',
-            }}
-          >
-            {goal.title}
-          </Typography>
-
-          {/* Description */}
-          {goal.description && (
-            <Typography
-              variant="body2"
-              className="mb-4 text-gray-600"
-              sx={{
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                fontSize: '0.875rem',
-                lineHeight: 1.5,
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}
-            >
-              {goal.description}
-            </Typography>
-          )}
-
-          {/* Progress Section */}
-          <Box className="mb-4">
-            <Box className="flex justify-between items-center mb-2">
-              <Typography
-                variant="body2"
-                sx={{
-                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                }}
-              >
-                Progress
-              </Typography>
-              <Typography
-                variant="body2"
-                className="font-bold"
-                sx={{
-                  color: typeColor,
-                  fontSize: '0.875rem',
-                }}
-              >
-                {goal.progress}%
-              </Typography>
-            </Box>
-            <Box
-              sx={{
-                width: '100%',
-                height: '8px',
-                backgroundColor: theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-                borderRadius: '4px',
-                overflow: 'hidden',
-              }}
-            >
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${goal.progress}%` }}
-                transition={{ duration: 1, delay: 0.2 }}
-                style={{
-                  height: '100%',
-                  backgroundColor: typeColor,
-                  borderRadius: '4px',
-                }}
-              />
-            </Box>
-          </Box>
-
-          {/* Status and Days Left */}
-          <Box className="flex justify-between items-center mb-4">
-            <Chip
-              label={goal.status}
-              size="small"
-              sx={{
-                backgroundColor: `${statusColor}20`,
-                color: statusColor,
-                fontSize: '0.7rem',
-                height: '24px',
-                fontWeight: 600,
-              }}
-            />
-            <Typography
-              variant="body2"
-              sx={{
-                color: isOverdue
-                  ? '#EF4444'
-                  : theme?.mode === 'dark'
-                  ? '#94a3b8'
-                  : '#6b7280',
-                fontSize: '0.75rem',
-                fontWeight: isOverdue ? 600 : 400,
-              }}
-            >
-              {isOverdue
-                ? `${Math.abs(daysLeft)} days overdue`
-                : `${daysLeft} days left`}
-            </Typography>
-          </Box>
-
-          {/* Steps Count */}
-          <Box className="flex justify-between items-center mb-4">
-            <Typography
-              variant="body2"
-              sx={{
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                fontSize: '0.75rem',
-              }}
-            >
-              {goal.steps.filter((s) => s.completed).length} of{' '}
-              {goal.steps.length} steps completed
-            </Typography>
-            {goal.timeline && (
-              <Typography
-                variant="body2"
-                sx={{
-                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                  fontSize: '0.75rem',
-                }}
-              >
-                {goal.timeline}
-              </Typography>
-            )}
-          </Box>
-
-          {/* View Button */}
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<Visibility />}
-            fullWidth
-            sx={{
-              borderColor: typeColor,
-              color: typeColor,
-              fontSize: '0.75rem',
-              textTransform: 'none',
-              fontWeight: 600,
-              '&:hover': {
-                backgroundColor: `${typeColor}10`,
-                borderColor: typeColor,
-              },
-            }}
-          >
-            View Details
-          </Button>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-};
+/* ---------- MAIN COMPONENT ---------- */
 
 const GoalsPageInner: React.FC = () => {
   const { goals, loading } = useGoals();
@@ -477,9 +186,7 @@ const GoalsPageInner: React.FC = () => {
             onClick={() => setCreateModalOpen(true)}
             sx={{
               backgroundColor: '#3B82F6',
-              '&:hover': {
-                backgroundColor: '#2563eb',
-              },
+              '&:hover': { backgroundColor: '#2563eb' },
             }}
           >
             Create Goal
@@ -617,9 +324,7 @@ const GoalsPageInner: React.FC = () => {
                   onClick={() => setCreateModalOpen(true)}
                   sx={{
                     backgroundColor: '#3B82F6',
-                    '&:hover': {
-                      backgroundColor: '#2563eb',
-                    },
+                    '&:hover': { backgroundColor: '#2563eb' },
                   }}
                 >
                   Create Your First Goal
@@ -638,7 +343,11 @@ const GoalsPageInner: React.FC = () => {
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.3, delay: index * 0.1 }}
                 >
-                  <GoalCard goal={goal} onView={handleViewGoal} />
+                  <GoalSimpleCard
+                    goal={goal}
+                    index={index}
+                    onClick={() => handleViewGoal(goal.id!)}
+                  />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -718,6 +427,7 @@ const GoalsPageInner: React.FC = () => {
                 </CardContent>
               </Card>
 
+              {/* ✅ Overdue (moment-based + type-safe) */}
               <Card className="rounded-xl">
                 <CardContent className="p-4 text-center">
                   <Typography
@@ -727,8 +437,11 @@ const GoalsPageInner: React.FC = () => {
                   >
                     {
                       goals.filter((g) => {
-                        const daysLeft = getDaysLeft(g.dueDate);
-                        return daysLeft < 0 && g.status !== 'Completed';
+                        const due = getDueDate(g.dueDate);
+                        if (!due) return false;
+                        const now = moment();
+                        const diffDays = moment(due).diff(now, 'days');
+                        return diffDays < 0 && g.status !== 'Completed';
                       }).length
                     }
                   </Typography>
@@ -767,9 +480,7 @@ const GoalsPageInner: React.FC = () => {
           bottom: 24,
           right: 24,
           backgroundColor: '#3B82F6',
-          '&:hover': {
-            backgroundColor: '#2563eb',
-          },
+          '&:hover': { backgroundColor: '#2563eb' },
         }}
       >
         <Add />
@@ -778,6 +489,7 @@ const GoalsPageInner: React.FC = () => {
   );
 };
 
+/* ---------- WRAPPER ---------- */
 const GoalsPage: React.FC = () => {
   const { user } = useAuth();
   if (!user) return null;

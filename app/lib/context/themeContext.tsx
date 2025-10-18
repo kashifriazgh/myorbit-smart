@@ -65,7 +65,7 @@ export function CustomThemeProvider({
 
     const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
 
-    // First, immediately fetch the user's theme from Firestore to update localStorage
+    // Fetch the user's theme from Firestore to update localStorage
     const ref = doc(db, 'theme', user.uid);
     getDoc(ref).then((docSnap) => {
       if (docSnap.exists()) {
@@ -75,7 +75,7 @@ export function CustomThemeProvider({
         localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(theme)); // Also update global cache
         setThemeData(theme);
       } else {
-        // Only create default theme if user has no cached theme
+        // Only set a default theme locally if user has no cached theme (avoid Firestore write)
         const userCached = localStorage.getItem(userCacheKey);
         if (!userCached) {
           const defaultTheme: Theme = {
@@ -85,7 +85,7 @@ export function CustomThemeProvider({
             mode: 'light',
             userId: user.uid,
           };
-          setDoc(ref, defaultTheme);
+          // Avoid setDoc here to minimize writes; persist only on explicit user change
           localStorage.setItem(userCacheKey, JSON.stringify(defaultTheme));
           localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(defaultTheme));
           setThemeData(defaultTheme);
@@ -109,6 +109,7 @@ export function CustomThemeProvider({
   const setThemeMode = useCallback(
     async (mode: 'light' | 'dark') => {
       if (!themeData || !user) return;
+      if (themeData.mode === mode) return; // no-op if unchanged to avoid writes
       const ref = doc(db, 'theme', user.uid);
       const newTheme = { ...themeData, mode };
       await setDoc(ref, newTheme, { merge: true });
@@ -134,6 +135,7 @@ export function CustomThemeProvider({
   };
 
   // 🔹 Listen to system dark mode changes (Battery Saver triggers this)
+  // Avoid persisting to Firestore unless the user explicitly changes the theme
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia || !user) return;
 
@@ -141,7 +143,19 @@ export function CustomThemeProvider({
 
     const applySystemTheme = (isDark: boolean) => {
       if (!hasUserInteracted) {
-        setThemeMode(isDark ? 'dark' : 'light');
+        const mode = isDark ? 'dark' : 'light';
+        // Update local state and caches only; do not write to Firestore
+        setThemeData((prev) => {
+          if (!prev || prev.mode === mode) return prev;
+          const updated = { ...prev, mode } as Theme;
+          try {
+            const globalKey = THEME_CACHE_KEY;
+            localStorage.setItem(globalKey, JSON.stringify(updated));
+            const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
+            localStorage.setItem(userCacheKey, JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
       }
     };
 
@@ -166,7 +180,7 @@ export function CustomThemeProvider({
         media.removeListener(listener);
       }
     };
-  }, [hasUserInteracted, user, setThemeMode]);
+  }, [hasUserInteracted, user]);
 
   const setThemeModeWithOverride = async (mode: 'light' | 'dark') => {
     setHasUserInteracted(true); // ✅ stop listening to system changes after first manual change

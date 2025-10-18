@@ -23,9 +23,7 @@ import Schedules from './components/homepage/Schedules';
 // const RemainingTasks = lazy(
 //   () => import('./components/homepage/RemainingTasks')
 // );
-const FinancialCheckPoints = lazy(
-  () => import('./components/finance/FinancialCheckPoints')
-);
+
 const ImportantTasks = lazy(
   () => import('./components/homepage/ImportantTasks')
 );
@@ -33,17 +31,17 @@ const OverdueTasks = lazy(() => import('./components/homepage/OverdueTasks'));
 // const OnGoingStreaks = lazy(
 //   () => import('./components/homepage/OnGoingStreaks')
 // );
-const Mood = lazy(() => import('./components/homepage/Mood'));
+// const Mood = lazy(() => import('./components/homepage/Mood'));
 const ExpectedExpenses = lazy(
   () => import('./components/homepage/ExpectedExpenses')
 );
 const ExpectedIncome = lazy(
   () => import('./components/homepage/ExpectedIncomes')
 );
-const JournalMemory = lazy(() => import('./components/homepage/JournalMemory'));
-const MostProductiveDay = lazy(
-  () => import('./components/homepage/MostProductiveDay')
-);
+// const JournalMemory = lazy(() => import('./components/homepage/JournalMemory'));
+// const MostProductiveDay = lazy(
+//   () => import('./components/homepage/MostProductiveDay')
+// );
 
 // Loading component with skeleton
 const ComponentLoader = ({
@@ -126,11 +124,11 @@ export default function Homepage() {
           </div>
 
           {/* 3. Full Width Financial Section */}
-          <div className="mb-8">
+          {/* <div className="mb-8">
             <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
               <FinancialCheckPoints />
             </Suspense>
-          </div>
+          </div> */}
 
           {/* 4. Goals & Streaks - 50/50 Split */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -141,20 +139,20 @@ export default function Homepage() {
           </div>
 
           {/* 5. Additional Components */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <Suspense fallback={<ComponentLoader variant="card" />}>
               <Mood />
             </Suspense>
             <Suspense fallback={<ComponentLoader variant="card" />}>
               <JournalMemory />
             </Suspense>
-          </div>
+          </div> */}
 
           {/* 6. Bottom Section */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            <Suspense fallback={<ComponentLoader variant="card" />}>
+            {/* <Suspense fallback={<ComponentLoader variant="card" />}>
               <MostProductiveDay />
-            </Suspense>
+            </Suspense> */}
             <div className="flex items-center justify-center">
               <a
                 href="/1/plans-remaining"
