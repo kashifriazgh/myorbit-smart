@@ -27,6 +27,10 @@
     "@mui/lab": "^7.0.0-beta.16",
     "@mui/material": "^7.1.2",
     "@mui/x-date-pickers": "^8.10.0",
+    "@tiptap/extension-mention": "^3.10.7",
+    "@tiptap/react": "^3.10.7",
+    "@tiptap/starter-kit": "^3.10.7",
+    "@tiptap/suggestion": "^3.10.7",
     "chart.js": "^4.5.0",
     "compromise": "^14.14.4",
     "dexie": "^4.0.11",
@@ -47,6 +51,7 @@
     "react-dom": "^19.0.0",
     "recharts": "^3.1.0",
     "round-slider": "^1.6.1",
+    "tippy.js": "^6.3.7",
     "wink-nlp": "^2.4.0"
   },
   "devDependencies": {

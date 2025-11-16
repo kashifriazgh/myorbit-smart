@@ -24,3 +24,27 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Make the editor area look like a proper textarea / note box */
+.ProseMirror {
+  min-height: 120px; /* multi-line by default */
+  padding: 16px; /* inner padding */
+  outline: none; /* remove focus outline */
+  border-radius: 0.75rem; /* match outer rounded corners if needed */
+  width: 100%; /* fill container */
+  box-sizing: border-box; /* include padding in width */
+  line-height: 1.5; /* readable line spacing */
+  white-space: pre-wrap; /* preserve line breaks */
+  word-break: break-word; /* wrap long words */
+}
+
+/* Optional: style mentions inside the editor */
+/* highlight all mentions inside the editor */
+.ProseMirror .mention {
+  font-size: 1.125rem; /* larger text */
+  color: #2563eb; /* blue-600 */
+  background-color: #dbeafe; /* light blue background */
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 600;
+}

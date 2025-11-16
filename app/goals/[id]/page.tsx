@@ -20,6 +20,7 @@ import {
   FormControlLabel,
   Checkbox,
   Avatar,
+  TextField,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -33,6 +34,8 @@ import {
   CheckCircle,
   RadioButtonUnchecked,
   Schedule,
+  WorkOutline,
+  SelfImprovement,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGoals, GoalsProvider } from '../../lib/context/GoalsContext';
@@ -40,6 +43,48 @@ import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { Goal, GoalType } from '../../lib/interface';
 import GoalModal from '../../components/goals/GoalModal';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+
+const NEAR_DUE_THRESHOLD_DAYS = 3;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+const toPlainDate = (value: unknown): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'toDate' in value &&
+    typeof (value as { toDate: unknown }).toDate === 'function'
+  ) {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'seconds' in value &&
+    'nanoseconds' in value
+  ) {
+    const { seconds, nanoseconds } = value as {
+      seconds: number;
+      nanoseconds: number;
+    };
+    return new Date(seconds * 1000 + nanoseconds / 1_000_000);
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+};
+
+const addDays = (date: Date, days: number): Date =>
+  new Date(date.getTime() + days * DAY_IN_MS);
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -73,6 +118,10 @@ const getGoalTypeIcon = (type: GoalType) => {
       return <School />;
     case 'habit':
       return <Psychology />;
+    case 'work':
+      return <WorkOutline />;
+    case 'lifestyle':
+      return <SelfImprovement />;
     default:
       return <Category />;
   }
@@ -88,6 +137,10 @@ const getGoalTypeColor = (type: GoalType) => {
       return '#3B82F6';
     case 'habit':
       return '#8B5CF6';
+    case 'work':
+      return '#0ea5e9';
+    case 'lifestyle':
+      return '#F472B6';
     default:
       return '#6B7280';
   }
@@ -183,7 +236,13 @@ const formatStepDate = (date) => {
 const GoalDetailInner: React.FC = () => {
   const params = useParams();
   const router = useRouter();
-  const { goals, updateStepStatus, deleteGoal } = useGoals();
+  const {
+    goals,
+    updateStepStatus,
+    deleteGoal,
+    setStepSkipped,
+    extendGoalDueDate,
+  } = useGoals();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
 
@@ -191,6 +250,11 @@ const GoalDetailInner: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [extendDialogOpen, setExtendDialogOpen] = useState(false);
+  const [extendDueDate, setExtendDueDate] = useState<Date | null>(null);
+  const [additionalMilestones, setAdditionalMilestones] = useState<number>(1);
+  const [extendError, setExtendError] = useState<string | null>(null);
+  const [extendLoading, setExtendLoading] = useState(false);
 
   const goal = goals.find((g) => g.id === params.id);
 
@@ -212,6 +276,50 @@ const GoalDetailInner: React.FC = () => {
     [goal?.dueDate]
   );
   const isOverdue = daysLeft < 0;
+  const createdDate = useMemo(
+    () => (goal ? toPlainDate(goal.createdAt) : null),
+    [goal?.createdAt]
+  );
+  const dueDateDate = useMemo(
+    () => (goal ? toPlainDate(goal.dueDate) : null),
+    [goal?.dueDate]
+  );
+  const timelineMetrics = useMemo(() => {
+    if (!createdDate || !dueDateDate) {
+      return {
+        hasTimeline: false,
+        totalDays: 0,
+        elapsedDays: 0,
+        percent: 0,
+      };
+    }
+    const totalMs = dueDateDate.getTime() - createdDate.getTime();
+    if (totalMs <= 0) {
+      return {
+        hasTimeline: false,
+        totalDays: 0,
+        elapsedDays: 0,
+        percent: 0,
+      };
+    }
+    const now = Date.now();
+    const elapsedMs = clamp(now - createdDate.getTime(), 0, totalMs);
+    const totalDays = Math.ceil(totalMs / DAY_IN_MS);
+    const elapsedDays = Math.floor(elapsedMs / DAY_IN_MS);
+    const percent = Math.round((elapsedMs / totalMs) * 100);
+    return {
+      hasTimeline: true,
+      totalDays,
+      elapsedDays,
+      percent: clamp(percent, 0, 100),
+    };
+  }, [createdDate, dueDateDate]);
+
+  const shouldAllowExtension =
+    !!goal &&
+    goal.progress < 100 &&
+    !!dueDateDate &&
+    (isOverdue || daysLeft <= NEAR_DUE_THRESHOLD_DAYS);
 
   useEffect(() => {
     if (!goal && goals.length > 0) {
@@ -247,6 +355,14 @@ const GoalDetailInner: React.FC = () => {
     }
   };
 
+  const handleSkipStep = async (stepId: string, skipped: boolean) => {
+    try {
+      await setStepSkipped(goal.id!, stepId, skipped);
+    } catch (error) {
+      console.error('Error updating skipped status:', error);
+    }
+  };
+
   const handleDeleteGoal = async () => {
     setLoading(true);
     try {
@@ -257,6 +373,42 @@ const GoalDetailInner: React.FC = () => {
     } finally {
       setLoading(false);
       setDeleteDialogOpen(false);
+    }
+  };
+
+  const handleOpenExtendDialog = () => {
+    const base =
+      dueDateDate && dueDateDate > new Date() ? dueDateDate : new Date();
+    setExtendDialogOpen(true);
+    setExtendError(null);
+    setAdditionalMilestones(1);
+    setExtendDueDate(addDays(base, 7));
+  };
+
+  const handleExtendSubmit = async () => {
+    if (!extendDueDate) {
+      setExtendError('Please choose a new due date.');
+      return;
+    }
+
+    setExtendLoading(true);
+    setExtendError(null);
+    try {
+      await extendGoalDueDate(
+        goal.id!,
+        extendDueDate,
+        Math.max(0, Math.floor(additionalMilestones))
+      );
+      setExtendDialogOpen(false);
+    } catch (error) {
+      console.error('Error extending due date:', error);
+      setExtendError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to extend the due date. Please try again.'
+      );
+    } finally {
+      setExtendLoading(false);
     }
   };
 
@@ -465,15 +617,66 @@ const GoalDetailInner: React.FC = () => {
               >
                 Timeline
               </Typography>
-              <Typography
-                variant="body1"
-                className="font-semibold"
-                sx={{
-                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-                }}
-              >
-                {goal.timeline || 'Not specified'}
-              </Typography>
+              {timelineMetrics.hasTimeline ? (
+                <Box className="space-y-2 text-left">
+                  <LinearProgress
+                    variant="determinate"
+                    value={timelineMetrics.percent}
+                    sx={{
+                      height: 10,
+                      borderRadius: 999,
+                      backgroundColor:
+                        theme?.mode === 'dark' ? '#1f2937' : '#e5e7eb',
+                      '& .MuiLinearProgress-bar': {
+                        borderRadius: 999,
+                        backgroundImage: `linear-gradient(90deg, ${typeColor} 0%, ${typeColor}cc 100%)`,
+                      },
+                    }}
+                  />
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {timelineMetrics.elapsedDays} of {timelineMetrics.totalDays}{' '}
+                    days passed
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                    }}
+                  >
+                    Started on {formatDateSafe(goal.createdAt)}
+                  </Typography>
+                  {shouldAllowExtension && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={handleOpenExtendDialog}
+                      sx={{
+                        borderColor: typeColor,
+                        color: typeColor,
+                        textTransform: 'none',
+                      }}
+                    >
+                      Extend due date
+                    </Button>
+                  )}
+                </Box>
+              ) : (
+                <Typography
+                  variant="body1"
+                  className="font-semibold"
+                  sx={{
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                  }}
+                >
+                  Not specified
+                </Typography>
+              )}
             </Box>
           </Box>
 
@@ -588,132 +791,239 @@ const GoalDetailInner: React.FC = () => {
         </Card>
       ) : (
         <AnimatePresence>
-          {goal.steps.map((step) => (
-            <motion.div
-              key={step.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.1 }}
-            >
-              <Card
-                sx={{
-                  backgroundColor:
-                    theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-                  borderRadius: '1rem',
-                  border: step.completed
-                    ? `2px solid ${typeColor}40`
-                    : `1px solid ${
-                        theme?.mode === 'dark' ? '#374151' : '#e5e7eb'
-                      }`,
-                }}
+          {goal.steps.map((step) => {
+            const endDateObj = toPlainDate(step.endDate);
+            const isPastEndDate =
+              !!endDateObj && endDateObj.getTime() < Date.now();
+            const isSkipped = Boolean(step.skipped);
+
+            return (
+              <motion.div
+                key={step.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.1 }}
               >
-                <CardContent className="p-4">
-                  <Box className="flex items-start gap-3">
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={step.completed}
-                          onChange={(e) =>
-                            handleStepToggle(step.id, e.target.checked)
-                          }
-                          icon={<RadioButtonUnchecked />}
-                          checkedIcon={<CheckCircle />}
-                          sx={{
-                            color: typeColor,
-                            '&.Mui-checked': {
+                <Card
+                  sx={{
+                    backgroundColor:
+                      theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+                    borderRadius: '1rem',
+                    border: step.completed
+                      ? `2px solid ${typeColor}40`
+                      : `1px solid ${
+                          theme?.mode === 'dark' ? '#374151' : '#e5e7eb'
+                        }`,
+                  }}
+                >
+                  <CardContent className="p-4">
+                    <Box className="flex items-start gap-3">
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={step.completed}
+                            onChange={(e) =>
+                              handleStepToggle(step.id, e.target.checked)
+                            }
+                            icon={<RadioButtonUnchecked />}
+                            checkedIcon={<CheckCircle />}
+                            disabled={isSkipped}
+                            sx={{
                               color: typeColor,
-                            },
-                          }}
-                        />
-                      }
-                      label=""
-                    />
-
-                    <Box className="flex-1">
-                      <Typography
-                        variant="h6"
-                        className={`font-semibold ${
-                          step.completed ? 'line-through opacity-60' : ''
-                        }`}
-                        sx={{
-                          color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-                        }}
-                      >
-                        {step.title}
-                      </Typography>
-
-                      {step.description && (
-                        <Typography
-                          variant="body2"
-                          className="mt-1"
-                          sx={{
-                            color:
-                              theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                          }}
-                        >
-                          {step.description}
-                        </Typography>
-                      )}
-
-                      {(step.targetValue || step.unit) && (
-                        <Box className="flex items-center gap-2 mt-2">
-                          <Chip
-                            label={`Target: ${step.targetValue} ${step.unit}`}
-                            size="small"
-                            variant="outlined"
+                              '&.Mui-checked': {
+                                color: typeColor,
+                              },
+                            }}
                           />
-                          {step.actualValue && (
+                        }
+                        label=""
+                      />
+
+                      <Box className="flex-1">
+                        <Box className="flex flex-wrap items-center gap-2">
+                          <Typography
+                            variant="h6"
+                            className={`font-semibold ${
+                              step.completed ? 'line-through opacity-60' : ''
+                            }`}
+                            sx={{
+                              color:
+                                theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                            }}
+                          >
+                            {step.title}
+                          </Typography>
+                          {isSkipped && (
                             <Chip
-                              label={`Actual: ${step.actualValue} ${step.unit}`}
+                              label="Skipped"
                               size="small"
                               sx={{
-                                backgroundColor:
-                                  step.actualValue >= (step.targetValue || 0)
-                                    ? '#10B98120'
-                                    : '#F59E0B20',
-                                color:
-                                  step.actualValue >= (step.targetValue || 0)
-                                    ? '#10B981'
-                                    : '#F59E0B',
+                                backgroundColor: '#f9731620',
+                                color: '#f97316',
+                              }}
+                            />
+                          )}
+                          {isPastEndDate && !step.completed && !isSkipped && (
+                            <Chip
+                              label="Past due"
+                              size="small"
+                              sx={{
+                                backgroundColor: '#ef444420',
+                                color: '#ef4444',
                               }}
                             />
                           )}
                         </Box>
-                      )}
 
-                      {(step.startDate || step.endDate) && (
-                        <Box className="flex items-center gap-2 mt-2">
-                          <Schedule
-                            sx={{
-                              fontSize: 16,
-                              color:
-                                theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                            }}
-                          />
+                        {step.description && (
                           <Typography
-                            variant="caption"
+                            variant="body2"
+                            className="mt-1"
                             sx={{
                               color:
                                 theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
                             }}
                           >
-                            {step.startDate && (
-                              <>Start: {formatStepDate(step.startDate)}</>
-                            )}
-                            {step.startDate && step.endDate && ' • '}
-                            {step.endDate && (
-                              <>End: {formatStepDate(step.endDate)}</>
-                            )}
+                            {step.description}
                           </Typography>
+                        )}
+
+                        {(step.targetValue || step.unit) && (
+                          <Box className="flex items-center gap-2 mt-2">
+                            <Chip
+                              label={`Target: ${step.targetValue ?? '—'} ${
+                                step.unit ?? ''
+                              }`}
+                              size="small"
+                              variant="outlined"
+                            />
+                            {step.actualValue != null && (
+                              <Chip
+                                label={`Actual: ${step.actualValue} ${
+                                  step.unit ?? ''
+                                }`}
+                                size="small"
+                                sx={{
+                                  backgroundColor:
+                                    step.actualValue >= (step.targetValue || 0)
+                                      ? '#10B98120'
+                                      : '#F59E0B20',
+                                  color:
+                                    step.actualValue >= (step.targetValue || 0)
+                                      ? '#10B981'
+                                      : '#F59E0B',
+                                }}
+                              />
+                            )}
+                          </Box>
+                        )}
+
+                        {(step.startDate || step.endDate) && (
+                          <Box className="flex items-center gap-2 mt-2">
+                            <Schedule
+                              sx={{
+                                fontSize: 16,
+                                color:
+                                  theme?.mode === 'dark'
+                                    ? '#94a3b8'
+                                    : '#6b7280',
+                              }}
+                            />
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color:
+                                  theme?.mode === 'dark'
+                                    ? '#94a3b8'
+                                    : '#6b7280',
+                              }}
+                            >
+                              {step.startDate && (
+                                <>Start: {formatStepDate(step.startDate)}</>
+                              )}
+                              {step.startDate && step.endDate && ' • '}
+                              {step.endDate && (
+                                <>End: {formatStepDate(step.endDate)}</>
+                              )}
+                            </Typography>
+                          </Box>
+                        )}
+
+                        <Box className="flex flex-wrap gap-2 mt-3">
+                          {isPastEndDate && !step.completed && !isSkipped && (
+                            <Button
+                              size="small"
+                              variant="contained"
+                              onClick={() => handleStepToggle(step.id, true)}
+                              sx={{
+                                backgroundColor: typeColor,
+                                '&:hover': {
+                                  backgroundColor: typeColor,
+                                },
+                                textTransform: 'none',
+                              }}
+                            >
+                              Date is over, have you accomplished?
+                            </Button>
+                          )}
+                          {!step.completed && !isSkipped && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleSkipStep(step.id, true)}
+                              sx={{
+                                textTransform: 'none',
+                                borderColor: '#f97316',
+                                color: '#f97316',
+                                '&:hover': {
+                                  borderColor: '#ea580c',
+                                  color: '#ea580c',
+                                },
+                              }}
+                            >
+                              Mark as skipped
+                            </Button>
+                          )}
+                          {isSkipped && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleSkipStep(step.id, false)}
+                              sx={{
+                                textTransform: 'none',
+                                borderColor: typeColor,
+                                color: typeColor,
+                                '&:hover': {
+                                  borderColor: typeColor,
+                                  color: typeColor,
+                                },
+                              }}
+                            >
+                              Undo skip
+                            </Button>
+                          )}
+                          {isSkipped && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color:
+                                  theme?.mode === 'dark'
+                                    ? '#94a3b8'
+                                    : '#6b7280',
+                              }}
+                            >
+                              Skipped milestones are excluded from progress.
+                            </Typography>
+                          )}
                         </Box>
-                      )}
+                      </Box>
                     </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       )}
     </Box>
@@ -835,6 +1145,94 @@ const GoalDetailInner: React.FC = () => {
           />
         </GoalsProvider>
       )}
+
+      {/* Extend Due Date Dialog */}
+      <LocalizationProvider dateAdapter={AdapterDateFns}>
+        <Dialog
+          open={extendDialogOpen}
+          onClose={() => setExtendDialogOpen(false)}
+          PaperProps={{
+            sx: {
+              backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+              borderRadius: '1rem',
+            },
+          }}
+        >
+          <DialogTitle>
+            <Typography
+              variant="h6"
+              className="font-semibold"
+              sx={{
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+              }}
+            >
+              Extend Due Date
+            </Typography>
+          </DialogTitle>
+          <DialogContent className="space-y-4">
+            <Typography
+              variant="body2"
+              sx={{
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+              }}
+            >
+              Choose a new due date and optionally add extra milestones to
+              spread the extended work.
+            </Typography>
+            <DatePicker
+              label="New due date"
+              value={extendDueDate}
+              minDate={
+                dueDateDate ? addDays(dueDateDate, 1) : addDays(new Date(), 1)
+              }
+              onChange={(date: Date | null) => {
+                setExtendError(null);
+                setExtendDueDate(date);
+              }}
+              slotProps={{
+                textField: { fullWidth: true, size: 'small' },
+              }}
+            />
+            <TextField
+              type="number"
+              label="Additional milestones"
+              fullWidth
+              size="small"
+              value={additionalMilestones}
+              onChange={(e) => {
+                setExtendError(null);
+                const value = Number(e.target.value);
+                setAdditionalMilestones(Number.isNaN(value) ? 0 : value);
+              }}
+              helperText="Set to 0 if you only want to extend the deadline."
+              inputProps={{ min: 0 }}
+            />
+            {extendError && (
+              <Typography
+                variant="body2"
+                sx={{ color: '#ef4444', fontWeight: 500 }}
+              >
+                {extendError}
+              </Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setExtendDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleExtendSubmit}
+              disabled={extendLoading}
+              sx={{
+                color: typeColor,
+                '&:hover': {
+                  backgroundColor: `${typeColor}15`,
+                },
+              }}
+            >
+              {extendLoading ? 'Updating...' : 'Extend'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </LocalizationProvider>
 
       {/* Delete Confirmation Dialog */}
       <Dialog

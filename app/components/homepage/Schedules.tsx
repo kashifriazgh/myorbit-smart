@@ -155,6 +155,47 @@ const Schedules: React.FC = () => {
     fetchSchedules();
   }, [selectedDate, user]);
 
+  // Listen for schedule creation events from QuickEditor
+  useEffect(() => {
+    const handleScheduleCreated = (event: CustomEvent) => {
+      const createdDate = event.detail?.date;
+      // Refresh if the created schedule is for the currently selected date
+      if (createdDate === selectedDate && user) {
+        const refreshSchedules = async () => {
+          if (selectedDate && user) {
+            try {
+              const fetchedSchedules = await getSchedulesByUserAndDate(
+                user.uid,
+                selectedDate
+              );
+              setSchedules(fetchedSchedules);
+              setSnackbar({
+                open: true,
+                message: 'Schedule created successfully',
+                severity: 'success',
+              });
+            } catch (error) {
+              console.error('Error refreshing schedules:', error);
+            }
+          }
+        };
+        refreshSchedules();
+      }
+    };
+
+    window.addEventListener(
+      'scheduleCreated',
+      handleScheduleCreated as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        'scheduleCreated',
+        handleScheduleCreated as EventListener
+      );
+    };
+  }, [selectedDate, user]);
+
   const formatTime = (time: string) => {
     const [hours, minutes] = time.split(':');
     const hour = parseInt(hours);

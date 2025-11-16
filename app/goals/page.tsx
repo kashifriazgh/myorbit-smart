@@ -111,6 +111,8 @@ const GoalsPageInner: React.FC = () => {
     { value: 'health', label: 'Health' },
     { value: 'learning', label: 'Learning' },
     { value: 'habit', label: 'Habit' },
+    { value: 'work', label: 'Work' },
+    { value: 'lifestyle', label: 'Lifestyle' },
     { value: 'custom', label: 'Custom' },
   ];
 

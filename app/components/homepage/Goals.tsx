@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { Card, Typography, Box, Button } from '@mui/material';
+import React, { useMemo, useState } from 'react';
+import { Card, Typography, Box, Button, useMediaQuery } from '@mui/material';
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
@@ -10,19 +10,22 @@ import { Add } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import 'keen-slider/keen-slider.min.css';
 import { useKeenSlider } from 'keen-slider/react';
+import GoalModal from '../goals/GoalModal';
 
 const Goals: React.FC = () => {
   const { goals, loading } = useGoals();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const router = useRouter();
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const isMobile = useMediaQuery('(max-width:639px)', { noSsr: true });
 
   const handleViewGoal = (goalId: string) => {
     router.push(`/goals/${goalId}`);
   };
 
   const handleCreateGoal = () => {
-    router.push('/goals/create');
+    setCreateModalOpen(true);
   };
 
   // Filter by logged-in user, status In Progress/Not Started, sort by priority High > Medium > Low
@@ -162,19 +165,21 @@ const Goals: React.FC = () => {
           </Box>
 
           {/* Mobile view: slider */}
-          <div ref={sliderRef} className="sm:hidden keen-slider">
-            {displayGoals.map((goal, i) => (
-              <div key={goal.id} className="keen-slider__slide">
-                <div className="pr-3">
-                  <GoalSimpleCard
-                    goal={goal}
-                    index={i}
-                    onClick={() => handleViewGoal(goal.id!)}
-                  />
+          {isMobile && (
+            <div ref={sliderRef} className="keen-slider">
+              {displayGoals.map((goal, i) => (
+                <div key={goal.id} className="keen-slider__slide">
+                  <div className="pr-3">
+                    <GoalSimpleCard
+                      goal={goal}
+                      index={i}
+                      onClick={() => handleViewGoal(goal.id!)}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -194,6 +199,13 @@ const Goals: React.FC = () => {
             View All Goals ({filteredGoals.length})
           </Button>
         </Box>
+      )}
+
+      {user && (
+        <GoalModal
+          open={createModalOpen}
+          onClose={() => setCreateModalOpen(false)}
+        />
       )}
     </Card>
   );

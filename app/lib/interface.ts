@@ -720,10 +720,18 @@ export interface GoalStep {
   startDate?: Timestamp | Date;
   endDate?: Timestamp | Date;
   completed: boolean;
+  skipped?: boolean;
   actualValue?: number; // what user actually achieved
 }
 
-export type GoalType = 'finance' | 'health' | 'learning' | 'habit' | 'custom';
+export type GoalType =
+  | 'finance'
+  | 'health'
+  | 'learning'
+  | 'habit'
+  | 'work'
+  | 'lifestyle'
+  | 'custom';
 export type GoalPriority = 'Low' | 'Medium' | 'High';
 export type GoalStatus =
   | 'Not Started'

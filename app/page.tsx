@@ -12,6 +12,7 @@ import { StreaksPlaceholder } from './components/homepage/PlaceholderComponents'
 import Goals from './components/homepage/Goals';
 import ShoppingList from './components/homepage/ShoppingList';
 import Schedules from './components/homepage/Schedules';
+import ProductivityEditor from './components/global/QuickEditor';
 
 // Lazy load components for better performance
 // const TimeTableNotifier = lazy(
@@ -80,6 +81,13 @@ export default function Homepage() {
           }}
         >
           <GuestUserBanner />
+
+          {/* 0. Quick Editor Section - Full Width at Top */}
+          <div className="mb-6">
+            <Suspense fallback={<SkeletonLoader variant="card" height={200} />}>
+              <ProductivityEditor />
+            </Suspense>
+          </div>
 
           {/* 1. Header Section - Full Width */}
           <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>

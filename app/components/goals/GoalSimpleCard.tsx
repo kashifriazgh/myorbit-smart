@@ -46,6 +46,12 @@ const accentEnd: string[] = [
   '#84cc16', // lime-500
 ];
 
+// Dark mode palette using accent colors
+const paletteDark = accentStart.map((color, index) => ({
+  bg: `linear-gradient(135deg, ${color}26 0%, rgba(15,23,42,0.92) 85%)`,
+  border: `${accentEnd[index]}55`,
+}));
+
 function sum(values: (number | undefined)[]) {
   return values.reduce((acc, v) => acc + (typeof v === 'number' ? v : 0), 0);
 }
@@ -54,7 +60,10 @@ function getUnit(goal: Goal): string | undefined {
   // Prefer a consistent unit across steps
   const stepUnits = Array.from(
     new Set(
-      (goal.steps || []).map((s) => (s.unit || '').trim()).filter(Boolean)
+      (goal.steps || [])
+        .filter((step) => !step.skipped)
+        .map((s) => (s.unit || '').trim())
+        .filter(Boolean)
     )
   );
   if (stepUnits.length === 1) return stepUnits[0];
@@ -73,7 +82,7 @@ function getUnit(goal: Goal): string | undefined {
 }
 
 function calculateTargets(goal: Goal) {
-  const steps: GoalStep[] = goal.steps || [];
+  const steps: GoalStep[] = (goal.steps || []).filter((step) => !step.skipped);
 
   const totalTarget = sum(steps.map((s) => s.targetValue));
   const totalActual = sum(steps.map((s) => s.actualValue));
@@ -110,7 +119,8 @@ const PillLinearProgress = styled(LinearProgress)(({ theme }) => ({
   height: 12,
   borderRadius: 9999,
   [`&.${lpc.colorPrimary}`]: {
-    backgroundColor: theme.palette.mode === 'dark' ? '#1f2937' : '#e5e7eb', // slate-800 / gray-200
+    backgroundColor:
+      theme.palette.mode === 'dark' ? 'rgba(148, 163, 184, 0.2)' : '#e5e7eb', // slate-500/20 vs gray-200
   },
   [`& .${lpc.bar}`]: {
     borderRadius: 9999,
@@ -131,6 +141,7 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
   variant = 'inspired',
 }) => {
   const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
 
   const unit = getUnit(goal);
   const { totalTarget, progressActual } = calculateTargets(goal);
@@ -148,7 +159,8 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
   // Choose palette: stable pseudo-random by goal id/title in light mode; neutral in dark mode
   const key = goal.id || goal.title || String(index);
   const paletteIndex = hashStringToIndex(key, paletteHex.length);
-  const palette = paletteHex[paletteIndex];
+  const paletteLight = paletteHex[paletteIndex];
+  const paletteNight = paletteDark[paletteIndex];
 
   // Formatters
   const formatVal = (v: number | undefined) => {
@@ -165,7 +177,7 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
       <div className="mb-2">
         <h3
           className={`text-left font-semibold leading-snug line-clamp-1 ${
-            theme?.mode === 'dark' ? 'text-slate-100' : 'text-slate-800'
+            isDark ? 'text-slate-100' : 'text-slate-800'
           }`}
         >
           {title}
@@ -176,6 +188,9 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
       <div className="relative rounded-lg overflow-hidden h-16 sm:h-20 mb-3 flex items-center">
         {/* Subtle gradient gloss */}
         <div className="absolute inset-0 bg-gradient-to-tr from-white/60 via-white/10 to-transparent opacity-60 pointer-events-none" />
+        {isDark && (
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-transparent to-transparent opacity-70 pointer-events-none" />
+        )}
         <div className="w-full px-2">
           <PillLinearProgress
             variant="determinate"
@@ -184,10 +199,7 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
               [`& .${linearProgressClasses.bar}`]: {
                 backgroundImage: `linear-gradient(90deg, ${accentStart[paletteIndex]}, ${accentEnd[paletteIndex]})`,
               },
-              boxShadow:
-                theme?.mode === 'dark'
-                  ? 'none'
-                  : 'inset 0 1px 2px rgba(0,0,0,0.06)',
+              boxShadow: isDark ? 'none' : 'inset 0 1px 2px rgba(0,0,0,0.06)',
             }}
           />
         </div>
@@ -198,14 +210,14 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
         <div className="flex flex-col min-w-0">
           <span
             className={`text-[10px] uppercase tracking-wider ${
-              theme?.mode === 'dark' ? 'text-slate-400' : 'text-slate-500'
+              isDark ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
             Target
           </span>
           <span
             className={`font-bold ${
-              theme?.mode === 'dark' ? 'text-slate-100' : 'text-slate-900'
+              isDark ? 'text-slate-100' : 'text-slate-900'
             } text-2xl leading-none truncate`}
           >
             {formatVal(totalTarget || 0)}
@@ -215,14 +227,14 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
         <div className="text-right min-w-0">
           <span
             className={`text-[10px] uppercase tracking-wider ${
-              theme?.mode === 'dark' ? 'text-slate-400' : 'text-slate-500'
+              isDark ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
             Progress
           </span>
           <div
             className={`${
-              theme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-700'
+              isDark ? 'text-slate-200' : 'text-slate-700'
             } text-lg font-semibold leading-none truncate`}
           >
             {totalTarget > 0
@@ -240,7 +252,7 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
       <div className="mb-6">
         <h3
           className={`text-left font-semibold leading-snug line-clamp-2 ${
-            theme?.mode === 'dark' ? 'text-slate-100' : 'text-slate-800'
+            isDark ? 'text-slate-100' : 'text-slate-800'
           }`}
         >
           {title}
@@ -252,14 +264,14 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
         <div className="flex flex-col min-w-0">
           <span
             className={`text-xs uppercase tracking-wider ${
-              theme?.mode === 'dark' ? 'text-slate-400' : 'text-slate-500'
+              isDark ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
             Target
           </span>
           <span
             className={`font-bold ${
-              theme?.mode === 'dark' ? 'text-slate-100' : 'text-slate-900'
+              isDark ? 'text-slate-100' : 'text-slate-900'
             } text-2xl sm:text-[1.6rem] leading-none truncate`}
           >
             {formatVal(totalTarget || 0)}
@@ -269,14 +281,14 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
         <div className="text-right min-w-0">
           <span
             className={`text-xs uppercase tracking-wider ${
-              theme?.mode === 'dark' ? 'text-slate-400' : 'text-slate-500'
+              isDark ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
             Progress
           </span>
           <div
             className={`${
-              theme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-700'
+              isDark ? 'text-slate-200' : 'text-slate-700'
             } text-lg font-semibold leading-none truncate`}
           >
             {totalTarget > 0
@@ -299,20 +311,34 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
     >
       <Card
         className={`rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 h-full overflow-hidden`}
-        sx={{
-          borderRadius: '1rem',
-          backgroundColor: theme?.mode === 'dark' ? '#1f2937' : palette.bg,
-          border: `1px solid ${
-            theme?.mode === 'dark' ? '#334155' : palette.border
-          }`,
-        }}
+        sx={
+          isDark
+            ? {
+                borderRadius: '1rem',
+                background: paletteNight.bg,
+                border: `1px solid ${paletteNight.border}`,
+                boxShadow: '0 18px 40px rgba(15,23,42,0.35)',
+              }
+            : {
+                borderRadius: '1rem',
+                backgroundColor: paletteLight.bg,
+                border: `1px solid ${paletteLight.border}`,
+              }
+        }
       >
         {/* Optional subtle inner gradient to emulate the reference style */}
         <div className="relative h-full">
-          <div className="pointer-events-none absolute inset-0 opacity-[0.35]">
-            <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-white/40 blur-2xl" />
-            <div className="absolute -bottom-10 -right-10 w-44 h-44 rounded-full bg-white/30 blur-2xl" />
-          </div>
+          {isDark ? (
+            <div className="pointer-events-none absolute inset-0 opacity-[0.45]">
+              <div className="absolute -top-12 -left-16 w-48 h-48 rounded-full bg-white/10 blur-3xl" />
+              <div className="absolute -bottom-16 -right-12 w-52 h-52 rounded-full bg-white/5 blur-3xl" />
+            </div>
+          ) : (
+            <div className="pointer-events-none absolute inset-0 opacity-[0.35]">
+              <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-white/40 blur-2xl" />
+              <div className="absolute -bottom-10 -right-10 w-44 h-44 rounded-full bg-white/30 blur-2xl" />
+            </div>
+          )}
 
           {variant === 'inspired' ? InspiredLayout : MinimalLayout}
         </div>

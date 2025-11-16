@@ -36,6 +36,16 @@ interface GoalsContextType {
     stepId: string,
     completed: boolean
   ) => Promise<void>;
+  setStepSkipped: (
+    goalId: string,
+    stepId: string,
+    skipped: boolean
+  ) => Promise<void>;
+  extendGoalDueDate: (
+    goalId: string,
+    newDueDate: Date,
+    additionalMilestones: number
+  ) => Promise<void>;
   getGoalsByType: (type: Goal['type']) => Goal[];
   getGoalsByStatus: (status: Goal['status']) => Goal[];
   getOverdueGoals: () => Goal[];
@@ -98,6 +108,168 @@ export const GoalsProvider: React.FC<GoalsProviderProps> = ({
 
     return () => unsubscribe();
   }, [userId]);
+
+  const toDateSafe = (value: unknown): Date | null => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'toDate' in value &&
+      typeof (value as { toDate: unknown }).toDate === 'function'
+    ) {
+      return (value as { toDate: () => Date }).toDate();
+    }
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'seconds' in value &&
+      'nanoseconds' in value
+    ) {
+      const { seconds, nanoseconds } = value as {
+        seconds: number;
+        nanoseconds: number;
+      };
+      return new Date(seconds * 1000 + nanoseconds / 1_000_000);
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    return null;
+  };
+
+  const setStepSkipped = async (
+    goalId: string,
+    stepId: string,
+    skipped: boolean
+  ): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === goalId);
+      if (!goal) throw new Error('Goal not found');
+
+      const updatedSteps = goal.steps.map((step) =>
+        step.id === stepId
+          ? {
+              ...step,
+              skipped,
+              completed: skipped ? false : step.completed,
+            }
+          : step
+      );
+
+      const activeSteps = updatedSteps.filter((s) => !s.skipped);
+      const completedSteps = activeSteps.filter((s) => s.completed).length;
+      const nextProgress =
+        activeSteps.length > 0
+          ? Math.round((completedSteps / activeSteps.length) * 100)
+          : goal.progress ?? 0;
+
+      await updateGoal(goalId, {
+        steps: updatedSteps,
+        progress: nextProgress,
+        status: deriveStatusFromProgress(nextProgress),
+      });
+    } catch (err) {
+      console.error('Error updating step skipped status:', err);
+      throw err;
+    }
+  };
+
+  const extendGoalDueDate = async (
+    goalId: string,
+    newDueDate: Date,
+    additionalMilestones: number
+  ): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === goalId);
+      if (!goal) throw new Error('Goal not found');
+
+      const currentDueDate = toDateSafe(goal.dueDate);
+      const targetDueDate = toDateSafe(newDueDate) ?? new Date(newDueDate);
+
+      if (!targetDueDate || Number.isNaN(targetDueDate.getTime())) {
+        throw new Error('Invalid due date');
+      }
+
+      if (
+        currentDueDate &&
+        targetDueDate.getTime() <= currentDueDate.getTime()
+      ) {
+        throw new Error('New due date must be after current due date');
+      }
+
+      const baseSteps = goal.steps || [];
+      const extraCount = Math.max(0, Math.floor(additionalMilestones));
+
+      let allSteps = baseSteps;
+      if (extraCount > 0) {
+        const extensionStart =
+          currentDueDate && currentDueDate < targetDueDate
+            ? currentDueDate
+            : new Date();
+        const totalMs = Math.max(
+          0,
+          targetDueDate.getTime() - extensionStart.getTime()
+        );
+        const segmentMs = extraCount > 0 ? totalMs / extraCount : 0;
+
+        const generated = Array.from({ length: extraCount }).map((_, idx) => {
+          const startDate =
+            segmentMs > 0
+              ? new Date(extensionStart.getTime() + idx * segmentMs)
+              : extensionStart;
+          const endDate =
+            segmentMs > 0
+              ? idx === extraCount - 1
+                ? targetDueDate
+                : new Date(extensionStart.getTime() + (idx + 1) * segmentMs)
+              : targetDueDate;
+
+          const uniqueId =
+            typeof crypto !== 'undefined' &&
+            typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+          return {
+            id: uniqueId,
+            title: `Extended Milestone ${baseSteps.length + idx + 1}`,
+            description: 'Added during due date extension',
+            startDate,
+            endDate,
+            completed: false,
+            skipped: false,
+          };
+        });
+
+        allSteps = [...baseSteps, ...generated];
+      }
+
+      const activeSteps = allSteps.filter((s) => !s.skipped);
+      const completedSteps = activeSteps.filter((s) => s.completed).length;
+      const recalculatedProgress =
+        activeSteps.length > 0
+          ? Math.round((completedSteps / activeSteps.length) * 100)
+          : goal.progress ?? 0;
+
+      await updateGoal(goalId, {
+        dueDate: targetDueDate,
+        steps: allSteps,
+        progress: recalculatedProgress,
+        status: deriveStatusFromProgress(recalculatedProgress),
+      });
+    } catch (err) {
+      console.error('Error extending goal due date:', err);
+      throw err;
+    }
+  };
+
+  const deriveStatusFromProgress = (progress: number): Goal['status'] => {
+    if (progress >= 100) return 'Completed';
+    if (progress > 0) return 'In Progress';
+    return 'Not Started';
+  };
 
   const addGoal = async (
     goalData: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>
@@ -243,23 +415,27 @@ export const GoalsProvider: React.FC<GoalsProviderProps> = ({
       if (!goal) throw new Error('Goal not found');
 
       const updatedSteps = goal.steps.map((step) =>
-        step.id === stepId ? { ...step, completed } : step
+        step.id === stepId
+          ? {
+              ...step,
+              completed,
+              skipped: false,
+            }
+          : step
       );
 
-      const completedSteps = updatedSteps.filter((s) => s.completed).length;
-      const totalSteps = updatedSteps.length;
+      const activeSteps = updatedSteps.filter((s) => !s.skipped);
+      const completedSteps = activeSteps.filter((s) => s.completed).length;
+      const totalSteps = activeSteps.length;
       const newProgress =
-        totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+        totalSteps > 0
+          ? Math.round((completedSteps / totalSteps) * 100)
+          : goal.progress ?? 0;
 
       await updateGoal(goalId, {
         steps: updatedSteps,
         progress: newProgress,
-        status:
-          newProgress === 100
-            ? 'Completed'
-            : newProgress > 0
-            ? 'In Progress'
-            : 'Not Started',
+        status: deriveStatusFromProgress(newProgress),
         completedAt: newProgress === 100 ? new Date() : null,
       });
     } catch (err) {
@@ -294,6 +470,8 @@ export const GoalsProvider: React.FC<GoalsProviderProps> = ({
     deleteGoal,
     updateGoalProgress,
     updateStepStatus,
+    setStepSkipped,
+    extendGoalDueDate,
     getGoalsByType,
     getGoalsByStatus,
     getOverdueGoals,
