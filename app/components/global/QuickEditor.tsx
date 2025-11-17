@@ -9,8 +9,16 @@ import Mention from '@tiptap/extension-mention';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import { Button, Box, Alert } from '@mui/material';
+import {
+  addDoc,
+  collection,
+  serverTimestamp,
+  Timestamp,
+} from 'firebase/firestore';
+import { db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
+import { FirestoreUser } from '@/app/lib/interface';
 import ScheduleDraftModal from '../homepage/ScheduleDraftModal';
 import TaskDraftModal from '../to-do/TaskDraftModal';
 import JournalDraftModal from '../journal/JournalDraftModal';
@@ -28,14 +36,189 @@ import {
   ContentType,
 } from '@/app/lib/utils/mentionDetector';
 
-export default function ProductivityEditor() {
+const MENTION_OPTIONS = [
+  { id: 'task', label: 'Task' },
+  { id: 'journal', label: 'Journal' },
+  { id: 'schedule', label: 'Schedule' },
+  { id: 'expense', label: 'Expense' },
+  { id: 'shopping', label: 'Shopping' },
+  { id: 'income', label: 'Income' },
+  { id: 'streak', label: 'Streak' },
+  { id: 'timetable', label: 'Time Table' },
+  { id: 'idea', label: 'Idea' },
+  { id: 'goal', label: 'Goal' },
+  { id: 'money', label: 'Add Money' },
+];
+
+const KEYWORD_TRIGGER_WORDS = [
+  'task',
+  'todo',
+  'journal',
+  'schedule',
+  'expense',
+  'shopping',
+  'income',
+  'streak',
+  'timetable',
+  'time table',
+  'idea',
+  'goal',
+  'money',
+  'addmoney',
+  'add money',
+];
+
+const PLACEHOLDER_LINES = [
+  '@task Call local store tomorrow 11',
+  '@schedule Meeting with team members at 12:30 pm',
+  '@goal Finish quarterly planning before Friday',
+  '@idea Launch creative marketing hook for summer campaign',
+];
+
+interface ParsedTaskQuickSave {
+  title?: string;
+  description?: string;
+  priority?: 'routine' | 'urgent' | 'critical';
+  dueDate?: string;
+}
+
+const parseAiJson = <T,>(result: string): Partial<T> => {
+  if (!result || typeof result !== 'string') {
+    return {};
+  }
+
+  const cleaned = result
+    .trim()
+    .replace(/```json\n?/gi, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch (error) {
+    console.log(error);
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        const fixed = match[0].replace(/,(\s*[}\]])/g, '$1');
+        return JSON.parse(fixed) as T;
+      } catch {
+        return {};
+      }
+    }
+  }
+  return {};
+};
+
+const getTomorrowDate = () => {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow;
+};
+
+const quickSaveTask = async (rawText: string, user: FirestoreUser) => {
+  const prompt = `
+You are a productivity assistant. Analyze the following user input and extract task information. Return ONLY a valid JSON object with the following structure. Do not include any explanation, markdown code blocks, or additional text - just the raw JSON object:
+
+{
+  "title": "string (required, extract from text or create a meaningful title)",
+  "description": "string (optional, extract description if mentioned, otherwise empty string)",
+  "priority": "routine" | "urgent" | "critical" (determine based on urgency keywords in text, default "routine"),
+  "dueDate": "YYYY-MM-DD format (extract from text, default to tomorrow if not specified)"
+}
+
+Guidelines for extraction:
+- Title: Extract the main task or create a meaningful title based on the activity
+- Description: Extract additional details if mentioned, otherwise use empty string
+- Priority: 
+  * "critical" or "urgent" or "asap" or "emergency" → critical
+  * "important" or "high priority" or "soon" → urgent
+  * Default → routine
+- DueDate: Look for keywords like "today", "tomorrow", "Monday", specific dates. If not found, use tomorrow.
+
+Current date context: ${new Date().toISOString().split('T')[0]}
+Tomorrow date: ${getTomorrowDate().toISOString().split('T')[0]}
+
+User input: "${rawText}"
+
+CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional text.
+`.trim();
+
+  const response = await fetch('/api/ideas/improve-idea', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      value: rawText,
+      instructions: prompt,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI request failed (${response.status}).`);
+  }
+
+  const data = await response.json();
+  const result = data.result || '';
+  const parsed = parseAiJson<ParsedTaskQuickSave>(result);
+
+  const dueDate =
+    parsed.dueDate && !Number.isNaN(new Date(parsed.dueDate).getTime())
+      ? new Date(parsed.dueDate)
+      : getTomorrowDate();
+
+  const docData = {
+    title: parsed.title?.trim() || rawText.substring(0, 50) || 'Untitled Task',
+    description: parsed.description || '',
+    priority: parsed.priority || 'routine',
+    status: 'in_progress',
+    progressPercent: 0,
+    pinned: false,
+    isArchived: false,
+    authorId: user.uid,
+    authorName: user.firstName || '',
+    assignedUsers: [],
+    sharedWith: [],
+    startDate: Timestamp.fromDate(new Date()),
+    dueDate: Timestamp.fromDate(dueDate),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    privacy: 'private',
+    isImportant: false,
+    steps: [],
+  };
+
+  await addDoc(collection(db, 'todos'), docData);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('taskCreated'));
+  }
+
+  return docData.title;
+};
+
+interface ProductivityEditorProps {
+  variant?: 'default' | 'compact';
+}
+
+export default function ProductivityEditor({
+  variant = 'default',
+}: ProductivityEditorProps) {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [rawText, setRawText] = useState('');
   const [mentionType, setMentionType] = useState<ContentType>(null);
   const [draftModalType, setDraftModalType] = useState<ContentType>(null);
   const [showMentionError, setShowMentionError] = useState(false);
+  const [placeholderContent, setPlaceholderContent] = useState('');
+  const [placeholderLineIndex, setPlaceholderLineIndex] = useState(0);
+  const [placeholderCharIndex, setPlaceholderCharIndex] = useState(0);
+  const [showKeywordSuggestions, setShowKeywordSuggestions] = useState(false);
+  const [keywordSuggestionUsed, setKeywordSuggestionUsed] = useState(false);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickSaveMessage, setQuickSaveMessage] = useState<string | null>(null);
+  const [quickSaveError, setQuickSaveError] = useState<string | null>(null);
   const { theme } = useCustomTheme();
   const { user } = useAuth();
+  const isCompact = variant === 'compact';
 
   useEffect(() => {
     // --- Custom Mention Extension to style mentions properly ---
@@ -61,24 +244,9 @@ export default function ProductivityEditor() {
         CustomMention.configure({
           suggestion: {
             items: ({ query }) => {
-              const options = [
-                { id: 'task', label: 'Task' },
-                { id: 'journal', label: 'Journal' },
-                { id: 'schedule', label: 'Schedule' },
-                { id: 'expense', label: 'Expense' },
-                { id: 'shopping', label: 'Shopping' },
-                { id: 'income', label: 'Income' },
-                { id: 'streak', label: 'Streak' },
-                { id: 'timetable', label: 'Time Table' },
-                { id: 'idea', label: 'Idea' },
-                { id: 'goal', label: 'Goal' },
-                { id: 'money', label: 'Add Money' },
-              ];
-              return options
-                .filter((item) =>
-                  item.label.toLowerCase().includes(query.toLowerCase())
-                )
-                .slice(0, 10);
+              return MENTION_OPTIONS.filter((item) =>
+                item.label.toLowerCase().includes(query.toLowerCase())
+              ).slice(0, 10);
             },
             render: () => {
               let popup: ReturnType<typeof tippy> | null = null;
@@ -191,6 +359,140 @@ export default function ProductivityEditor() {
     };
   }, [editor]);
 
+  useEffect(() => {
+    if (!isCompact || rawText) {
+      if (placeholderContent) {
+        setPlaceholderContent('');
+      }
+      if (placeholderLineIndex !== 0) {
+        setPlaceholderLineIndex(0);
+      }
+      if (placeholderCharIndex !== 0) {
+        setPlaceholderCharIndex(0);
+      }
+      return;
+    }
+
+    const currentLine = PLACEHOLDER_LINES[placeholderLineIndex] || '';
+    let typingTimeout: ReturnType<typeof setTimeout>;
+
+    if (placeholderCharIndex < currentLine.length) {
+      typingTimeout = setTimeout(() => {
+        setPlaceholderContent(
+          (prev) => prev + currentLine[placeholderCharIndex]
+        );
+        setPlaceholderCharIndex((prev) => prev + 1);
+      }, 75);
+    } else {
+      typingTimeout = setTimeout(
+        () => {
+          if (placeholderLineIndex < PLACEHOLDER_LINES.length - 1) {
+            setPlaceholderContent((prev) =>
+              prev.endsWith('\n') ? prev : `${prev}\n`
+            );
+            setPlaceholderLineIndex((prev) => prev + 1);
+            setPlaceholderCharIndex(0);
+          } else {
+            setPlaceholderContent('');
+            setPlaceholderLineIndex(0);
+            setPlaceholderCharIndex(0);
+          }
+        },
+        placeholderLineIndex === PLACEHOLDER_LINES.length - 1 ? 1500 : 300
+      );
+    }
+
+    return () => {
+      if (typingTimeout) {
+        clearTimeout(typingTimeout);
+      }
+    };
+  }, [
+    isCompact,
+    rawText,
+    placeholderCharIndex,
+    placeholderLineIndex,
+    placeholderContent,
+  ]);
+
+  useEffect(() => {
+    if (!editor || keywordSuggestionUsed) {
+      if (showKeywordSuggestions) {
+        setShowKeywordSuggestions(false);
+      }
+      return;
+    }
+
+    const handleKeywordSuggestions = () => {
+      if (!editor) return;
+
+      const text = editor.getText();
+      if (text.includes('@')) {
+        if (showKeywordSuggestions) {
+          setShowKeywordSuggestions(false);
+        }
+        return;
+      }
+
+      const { from } = editor.state.selection;
+      const textUntilCursor = editor.state.doc.textBetween(0, from, '\n', '\n');
+      const lastWordMatch = textUntilCursor.match(/(\w{3,})$/);
+      const lastWord = lastWordMatch ? lastWordMatch[1].toLowerCase() : '';
+      const lastTwoWordsMatch = textUntilCursor.match(/(\w+\s+\w+)$/);
+      const lastTwoWords = lastTwoWordsMatch
+        ? lastTwoWordsMatch[1].toLowerCase().trim()
+        : '';
+      const lastTwoWordsNoSpace = lastTwoWords.replace(/\s+/g, '');
+
+      if (
+        KEYWORD_TRIGGER_WORDS.includes(lastWord) ||
+        KEYWORD_TRIGGER_WORDS.includes(lastTwoWords) ||
+        KEYWORD_TRIGGER_WORDS.includes(lastTwoWordsNoSpace)
+      ) {
+        setShowKeywordSuggestions(true);
+      } else if (showKeywordSuggestions) {
+        setShowKeywordSuggestions(false);
+      }
+    };
+
+    editor.on('update', handleKeywordSuggestions);
+    return () => {
+      editor.off('update', handleKeywordSuggestions);
+    };
+  }, [editor, keywordSuggestionUsed, showKeywordSuggestions]);
+
+  useEffect(() => {
+    if (!rawText.trim()) {
+      setKeywordSuggestionUsed(false);
+      setShowKeywordSuggestions(false);
+    }
+  }, [rawText]);
+
+  const handleKeywordSuggestionSelect = (itemId: string) => {
+    if (!editor) return;
+
+    const { from } = editor.state.selection;
+    let start = from;
+
+    while (start > 0) {
+      const char = editor.state.doc.textBetween(start - 1, start, '\n', '\n');
+      if (/\s/.test(char)) {
+        break;
+      }
+      start -= 1;
+    }
+
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from: start, to: from })
+      .insertContent(`@${itemId} `)
+      .run();
+
+    setKeywordSuggestionUsed(true);
+    setShowKeywordSuggestions(false);
+  };
+
   const handleShowDraft = () => {
     const text = editor?.getText() || '';
     if (!text.trim()) {
@@ -222,9 +524,37 @@ export default function ProductivityEditor() {
       return;
     }
 
-    // Quick Save: Route to draft modal for now (will be enhanced to save directly in future)
-    // For now, showing draft allows users to review and edit before saving
-    setDraftModalType(detectedType);
+    setQuickSaving(true);
+    setQuickSaveError(null);
+    setQuickSaveMessage(null);
+
+    try {
+      const cleanedText = cleanContentForAI(text);
+
+      switch (detectedType) {
+        case 'task': {
+          const savedTitle = await quickSaveTask(cleanedText, user);
+          setQuickSaveMessage(`Quick saved task "${savedTitle}".`);
+          handleItemCreated();
+          break;
+        }
+        default: {
+          setQuickSaveError(
+            'Quick Save currently supports @task entries. Use "Show me Draft" for other types.'
+          );
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('Quick save failed:', error);
+      setQuickSaveError(
+        error instanceof Error
+          ? error.message
+          : 'Quick Save failed. Please try again.'
+      );
+    } finally {
+      setQuickSaving(false);
+    }
   };
 
   const handleCloseModal = () => {
@@ -238,6 +568,8 @@ export default function ProductivityEditor() {
       setRawText('');
       setMentionType(null);
     }
+    setKeywordSuggestionUsed(false);
+    setShowKeywordSuggestions(false);
   };
 
   return (
@@ -248,61 +580,114 @@ export default function ProductivityEditor() {
         mx: 'auto',
       }}
     >
-      <Box
-        sx={{
-          position: 'relative',
-          border: `1px solid ${theme?.mode === 'dark' ? '#475569' : '#cbd5e1'}`,
-          borderRadius: 2,
-          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-          minHeight: '100px',
-          maxHeight: '300px',
-          overflowY: 'auto',
-          shadow: 1,
-          transition: 'all 0.2s',
-          '&:focus-within': {
-            borderColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
-            boxShadow: `0 0 0 2px ${
-              theme?.mode === 'dark' ? '#3b82f6' : '#2563eb'
-            }40`,
-          },
-        }}
-      >
-        {!rawText && (
+      <Box sx={{ position: 'relative' }}>
+        <Box
+          sx={{
+            position: 'relative',
+            border: `1px solid ${
+              theme?.mode === 'dark' ? '#475569' : '#cbd5e1'
+            }`,
+            borderRadius: isCompact ? 3 : 2,
+            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+            minHeight: isCompact ? '64px' : '100px',
+            maxHeight: isCompact ? '140px' : '300px',
+            overflowY: isCompact ? 'hidden' : 'auto',
+            boxShadow: isCompact ? '0 8px 24px rgba(15,23,42,0.12)' : undefined,
+            transition: 'all 0.2s',
+            '&:focus-within': {
+              borderColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
+              boxShadow: `0 0 0 2px ${
+                theme?.mode === 'dark' ? '#3b82f6' : '#2563eb'
+              }40`,
+            },
+          }}
+        >
+          {!rawText && (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: isCompact ? '12px' : '16px',
+                left: '16px',
+                color: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
+                pointerEvents: 'none',
+                fontSize: isCompact ? '0.95rem' : '0.875rem',
+                zIndex: 0,
+                whiteSpace: 'pre-line',
+                fontFamily: isCompact ? 'monospace' : 'inherit',
+                lineHeight: 1.4,
+                opacity: 0.9,
+              }}
+            >
+              {isCompact
+                ? placeholderContent || PLACEHOLDER_LINES[0]
+                : 'Type your content and use @ to mention type (Task, Journal, Schedule, Expense, Shopping, Income, Streak, Time Table, Idea, Goal, Money)...'}
+            </Box>
+          )}
+          <Box sx={{ position: 'relative', zIndex: 1 }}>
+            <EditorContent
+              editor={editor}
+              className={`ProseMirror w-full ${
+                isCompact ? 'min-h-[64px] p-3' : 'min-h-[100px] p-4'
+              } outline-none block break-words whitespace-pre-wrap focus:outline-none`}
+              style={{
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+                fontSize: isCompact ? '0.95rem' : '1rem',
+              }}
+            />
+          </Box>
+        </Box>
+
+        {showKeywordSuggestions && !keywordSuggestionUsed && (
           <Box
             sx={{
               position: 'absolute',
-              top: '16px',
-              left: '16px',
-              color: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
-              pointerEvents: 'none',
-              fontSize: '0.875rem',
-              zIndex: 0,
+              top: 'calc(100% + 8px)',
+              left: 0,
+              zIndex: 10,
+              backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#ffffff',
+              border: `1px solid ${
+                theme?.mode === 'dark' ? '#334155' : '#e2e8f0'
+              }`,
+              borderRadius: 2,
+              boxShadow: '0 12px 30px rgba(15,23,42,0.2)',
+              width: isCompact ? '100%' : '280px',
+              overflow: 'hidden',
             }}
           >
-            Type your content and use @ to mention type (Task, Journal,
-            Schedule, Expense, Shopping, Income, Streak, Time Table, Idea, Goal,
-            Money)...
+            <Box
+              sx={{
+                px: 2,
+                py: 1,
+                borderBottom: `1px solid ${
+                  theme?.mode === 'dark' ? '#1f2937' : '#e2e8f0'
+                }`,
+                fontSize: '0.85rem',
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#475569',
+              }}
+            >
+              Quick insert suggestion
+            </Box>
+            {MENTION_OPTIONS.map((item) => (
+              <Box
+                key={item.id}
+                sx={{
+                  px: 2,
+                  py: 1.25,
+                  cursor: 'pointer',
+                  fontSize: '0.95rem',
+                  color: theme?.mode === 'dark' ? '#e2e8f0' : '#1e293b',
+                  '&:hover': {
+                    backgroundColor:
+                      theme?.mode === 'dark' ? '#1f2937' : '#f1f5f9',
+                  },
+                }}
+                onClick={() => handleKeywordSuggestionSelect(item.id)}
+              >
+                @{item.label.toLowerCase()}
+              </Box>
+            ))}
           </Box>
         )}
-        <Box sx={{ position: 'relative', zIndex: 1 }}>
-          <EditorContent
-            editor={editor}
-            className="
-              ProseMirror
-              w-full
-              min-h-[100px]
-              p-4
-              outline-none
-              block
-              break-words
-              whitespace-pre-wrap
-              focus:outline-none
-            "
-            style={{
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
-            }}
-          />
-        </Box>
       </Box>
 
       {showMentionError && (
@@ -328,6 +713,26 @@ export default function ProductivityEditor() {
         </Box>
       )}
 
+      {quickSaveError && (
+        <Alert
+          severity="error"
+          sx={{ mt: 1 }}
+          onClose={() => setQuickSaveError(null)}
+        >
+          {quickSaveError}
+        </Alert>
+      )}
+
+      {quickSaveMessage && (
+        <Alert
+          severity="success"
+          sx={{ mt: 1 }}
+          onClose={() => setQuickSaveMessage(null)}
+        >
+          {quickSaveMessage}
+        </Alert>
+      )}
+
       <Box
         sx={{
           mt: 2,
@@ -340,19 +745,19 @@ export default function ProductivityEditor() {
         <Button
           variant="outlined"
           onClick={handleQuickSave}
-          disabled={!rawText.trim() || !mentionType}
+          disabled={!rawText.trim() || !mentionType || quickSaving}
           size="small"
           sx={{
             textTransform: 'none',
             fontSize: '0.875rem',
           }}
         >
-          Quick Save
+          {quickSaving ? 'Saving...' : 'Quick Save'}
         </Button>
         <Button
           variant="contained"
           onClick={handleShowDraft}
-          disabled={!rawText.trim() || !mentionType}
+          disabled={!rawText.trim() || !mentionType || quickSaving}
           size="small"
           sx={{
             backgroundColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',

@@ -187,7 +187,7 @@ export default function TodoDetailPage() {
     try {
       if (confirmDelete.type === 'todo') {
         await deleteDoc(doc(db, 'todos', todo.id));
-        router.push('/app/todos'); // 🔹 Redirect after deleting the task
+        router.push('/to-do'); // 🔹 Redirect after deleting the task
       } else {
         const updated = [...todo.steps];
         if (confirmDelete.type === 'step') {

@@ -41,7 +41,14 @@ export function detectMentionType(content: string): ContentType {
       '@earnings',
     ],
     streak: ['@streak', '@streaks', '@habit', '@habits'],
-    timetable: ['@timetable', '@timetables', '@schedule', '@routine'],
+    timetable: [
+      '@timetable',
+      '@timetables',
+      '@time table',
+      '@time tables',
+      '@schedule',
+      '@routine',
+    ],
     idea: ['@idea', '@ideas', '@thought', '@thoughts'],
     goal: ['@goal', '@goals', '@target', '@targets'],
     money: ['@money', '@addmoney', '@cash', '@funds'],
@@ -66,7 +73,7 @@ export function cleanContentForAI(content: string): string {
   // Remove @mentions and their labels
   return content
     .replace(
-      /@(task|todo|todos|journal|journals|entry|schedule|schedules|event|meeting|expense|expenditure|expenses|expenditures|shopping|shoppinglist|shop|item|income|incomesource|incomesources|salary|earnings|streak|streaks|habit|habits|timetable|timetables|routine|idea|ideas|thought|thoughts|goal|goals|target|targets|money|addmoney|cash|funds)\b/gi,
+      /@(task|todo|todos|journal|journals|entry|schedule|schedules|event|meeting|expense|expenditure|expenses|expenditures|shopping|shoppinglist|shop|item|income|incomesource|incomesources|salary|earnings|streak|streaks|habit|habits|timetable|timetables|time\s*table|time\s*tables|routine|idea|ideas|thought|thoughts|goal|goals|target|targets|money|addmoney|cash|funds)\b/gi,
       ''
     )
     .trim();

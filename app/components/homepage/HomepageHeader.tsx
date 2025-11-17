@@ -1,14 +1,7 @@
 'use client';
 
 import React, { memo, useEffect, useState, useCallback } from 'react';
-import {
-  Box,
-  Typography,
-  TextField,
-  InputAdornment,
-  Skeleton,
-} from '@mui/material';
-import SearchIcon from '@mui/icons-material/Search';
+import { Box, Typography, Skeleton } from '@mui/material';
 import {
   collection,
   getDocs,
@@ -22,6 +15,7 @@ import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import moment from 'moment';
+import ProductivityEditor from '../global/QuickEditor';
 
 interface HeaderData {
   firstName: string;
@@ -36,7 +30,6 @@ const HomepageHeader = memo(() => {
     totalTasks: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchHeaderData = useCallback(async () => {
     if (!user?.uid) return;
@@ -182,62 +175,7 @@ const HomepageHeader = memo(() => {
             {loading ? (
               <Skeleton variant="rounded" height={56} />
             ) : (
-              <TextField
-                fullWidth
-                placeholder="Search tasks, notes, or anything..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                variant="outlined"
-                size="medium"
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: '16px',
-                    backgroundColor:
-                      theme?.mode === 'dark' ? '#334155' : '#ffffff',
-                    height: '60px',
-                    boxShadow:
-                      theme?.mode === 'dark'
-                        ? '0 4px 6px -1px rgba(0, 0, 0, 0.3)'
-                        : '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                    '& fieldset': {
-                      borderColor:
-                        theme?.mode === 'dark' ? '#475569' : '#d1d5db',
-                      borderWidth: '2px',
-                    },
-                    '&:hover fieldset': {
-                      borderColor:
-                        theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor:
-                        theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
-                      borderWidth: '2px',
-                    },
-                  },
-                  '& .MuiInputBase-input': {
-                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#111827',
-                    fontSize: '1.1rem',
-                    padding: '16px 20px',
-                    '&::placeholder': {
-                      color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                      opacity: 1,
-                      fontSize: '1.1rem',
-                    },
-                  },
-                }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon
-                        sx={{
-                          color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                          fontSize: '1.5rem',
-                        }}
-                      />
-                    </InputAdornment>
-                  ),
-                }}
-              />
+              <ProductivityEditor variant="compact" />
             )}
           </div>
         </div>

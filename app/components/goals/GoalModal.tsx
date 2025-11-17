@@ -19,6 +19,7 @@ import {
   Divider,
   FormControlLabel,
   Switch,
+  useMediaQuery,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -87,6 +88,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
   const { addGoal, updateGoal } = useGoals();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
+  const isMobile = useMediaQuery('(max-width:600px)');
   const [loading, setLoading] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
 
@@ -429,9 +431,9 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
     return result;
   }
 
-  // Trigger NLP only on title blur to avoid running on every keystroke
-  const handleTitleBlur = () => {
-    const t = formData.title?.trim();
+  const handleTitleChange = (value: string) => {
+    handleInputChange('title', value);
+    const t = value.trim();
     if (!t) return;
     const parsed = parseGoalTitle(t);
     setFormData((prev) => {
@@ -660,6 +662,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
         onClose={onClose}
         maxWidth="md"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{
           sx: {
             backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
@@ -700,8 +703,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
                 fullWidth
                 label="Goal Title"
                 value={formData.title}
-                onChange={(e) => handleInputChange('title', e.target.value)}
-                onBlur={handleTitleBlur}
+                onChange={(e) => handleTitleChange(e.target.value)}
                 placeholder="e.g., Save ₹5000 in 5 months"
                 variant="outlined"
               />

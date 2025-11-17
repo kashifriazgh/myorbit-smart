@@ -41,6 +41,7 @@ import AddIcon from '@mui/icons-material/Add';
 
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import moment from 'moment-timezone';
+import nlp from 'compromise';
 
 // Shopping emoji categories
 const shoppingEmojis = {
@@ -72,6 +73,167 @@ const shoppingEmojis = {
   Clothing: ['👕', '👖', '👟', '🧦', '🧥', '👗', '👔', '👓', '👜'],
   'Health & Beauty': ['💊', '🧴', '🪒', '🧴', '💄', '🧴', '🩹', '🌡️'],
   'General Shopping': ['🛒', '🛍️', '💳', '🏪', '🛒', '📦', '🎁', '💝'],
+};
+
+type ShoppingInference = {
+  qty?: string;
+  proposedPrice?: number;
+  icon?: string;
+};
+
+const keywordIconMap: { icon: string; keywords: string[] }[] = [
+  {
+    icon: '🍎',
+    keywords: [
+      'apple',
+      'fruit',
+      'banana',
+      'orange',
+      'vegetable',
+      'veggie',
+      'carrot',
+      'spinach',
+      'potato',
+      'onion',
+      'tomato',
+    ],
+  },
+  {
+    icon: '🥛',
+    keywords: ['milk', 'dairy', 'cheese', 'butter', 'yogurt', 'egg', 'eggs'],
+  },
+  {
+    icon: '🍗',
+    keywords: ['meat', 'chicken', 'beef', 'mutton', 'fish', 'seafood'],
+  },
+  {
+    icon: '🍞',
+    keywords: ['bread', 'bun', 'bakery', 'cake', 'pastry', 'cookie'],
+  },
+  {
+    icon: '🥤',
+    keywords: [
+      'drink',
+      'juice',
+      'cola',
+      'soda',
+      'beverage',
+      'tea',
+      'coffee',
+      'water',
+    ],
+  },
+  { icon: '🍫', keywords: ['snack', 'chips', 'chocolate', 'sweet', 'candy'] },
+  {
+    icon: '🧴',
+    keywords: [
+      'soap',
+      'shampoo',
+      'toothpaste',
+      'lotion',
+      'cleaner',
+      'detergent',
+    ],
+  },
+  {
+    icon: '📱',
+    keywords: ['phone', 'mobile', 'laptop', 'charger', 'gadget', 'earbuds'],
+  },
+  {
+    icon: '👕',
+    keywords: ['shirt', 'clothes', 'dress', 'jeans', 'shoes', 'jacket'],
+  },
+  {
+    icon: '💊',
+    keywords: ['medicine', 'vitamin', 'health', 'mask', 'sanitizer'],
+  },
+  { icon: '🎁', keywords: ['gift', 'present', 'toy'] },
+];
+
+const normalizeUnit = (unit?: string) => {
+  if (!unit) return '';
+  const normalized = unit.toLowerCase();
+  if (['pcs', 'pc', 'piece', 'pieces'].includes(normalized)) return 'pcs';
+  if (['kg', 'kilogram', 'kilograms'].includes(normalized)) return 'kg';
+  if (['g', 'gram', 'grams'].includes(normalized)) return 'g';
+  if (['pack', 'packs', 'packet', 'packets'].includes(normalized))
+    return 'pack';
+  if (['bottle', 'bottles'].includes(normalized)) return 'bottle';
+  if (['bag', 'bags'].includes(normalized)) return 'bag';
+  if (['item', 'items'].includes(normalized)) return 'items';
+  return normalized;
+};
+
+const parseNumberFromMatch = (value?: string) => {
+  if (!value) return undefined;
+  const cleaned = value.replace(/[^0-9.]/g, '');
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : undefined;
+};
+
+const inferShoppingDetails = (title: string): ShoppingInference => {
+  const result: ShoppingInference = {};
+  const lower = title.toLowerCase();
+  const doc = nlp(title);
+
+  const currencyRegexes = [
+    /(rs|pkr|₨|rupees)\s*([0-9][\d,\.]*)/i,
+    /([0-9][\d,\.]*)\s*(rs|pkr|₨|rupees)/i,
+  ];
+
+  for (const regex of currencyRegexes) {
+    const match = lower.match(regex);
+    if (match) {
+      const price = parseNumberFromMatch(match[2] || match[1]);
+      if (price) {
+        result.proposedPrice = Math.round(price);
+        break;
+      }
+    }
+  }
+
+  const qtyRegexes = [
+    /(\d+)\s*[xX]\s*(\w+)?/,
+    /(\d+)\s*(pcs?|pieces?|packs?|kg|g|bags?|bottles?|items?)/i,
+  ];
+
+  for (const regex of qtyRegexes) {
+    const match = title.match(regex);
+    if (match) {
+      const qtyVal = parseNumberFromMatch(match[1]);
+      if (qtyVal) {
+        const unit = normalizeUnit(match[2]);
+        result.qty = unit ? `${qtyVal} ${unit}` : `${qtyVal}`;
+        break;
+      }
+    }
+  }
+
+  if (!result.qty) {
+    const numbers = doc.numbers().out('array') as (string | number)[];
+    if (numbers && numbers.length > 0) {
+      const candidate = Number(String(numbers[0]).replace(/,/g, ''));
+      if (Number.isFinite(candidate) && candidate > 0) {
+        result.qty = `${candidate}`;
+      }
+    }
+  }
+
+  const words = new Set([
+    ...lower.split(/\s+/),
+    ...doc
+      .nouns()
+      .out('array')
+      .map((word: string) => word.toLowerCase()),
+  ]);
+  const iconMatch = keywordIconMap.find((entry) =>
+    entry.keywords.some((keyword) => words.has(keyword))
+  );
+  if (iconMatch) {
+    result.icon = iconMatch.icon;
+  }
+
+  return result;
 };
 
 interface EmojiPickerProps {
@@ -388,6 +550,57 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
   const [proposedPrice, setProposedPrice] = useState(0);
   const [icon, setIcon] = useState('🛒');
   const [loading, setLoading] = useState(false);
+  const muiTheme = useTheme();
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
+  const [touchedFields, setTouchedFields] = useState({
+    qty: false,
+    price: false,
+    icon: false,
+  });
+
+  const handleQtyChange = (value: string) => {
+    setTouchedFields((prev) => ({ ...prev, qty: true }));
+    setQty(value);
+  };
+
+  const handlePriceChange = (value: number) => {
+    setTouchedFields((prev) => ({ ...prev, price: true }));
+    setProposedPrice(value);
+  };
+
+  const handleIconSelect = (emoji: string) => {
+    setTouchedFields((prev) => ({ ...prev, icon: true }));
+    setIcon(emoji);
+  };
+
+  const handleTitleChange = (value: string) => {
+    setTitle(value);
+    if (!value.trim()) return;
+    const suggestions = inferShoppingDetails(value);
+    if (suggestions.qty && !touchedFields.qty) {
+      setQty(suggestions.qty);
+    }
+    if (
+      typeof suggestions.proposedPrice === 'number' &&
+      suggestions.proposedPrice > 0 &&
+      !touchedFields.price
+    ) {
+      setProposedPrice(suggestions.proposedPrice);
+    }
+    if (suggestions.icon && !touchedFields.icon) {
+      setIcon(suggestions.icon);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) {
+      setTitle('');
+      setQty('');
+      setProposedPrice(0);
+      setIcon('🛒');
+      setTouchedFields({ qty: false, price: false, icon: false });
+    }
+  }, [open]);
 
   const handleSubmit = async () => {
     if (!user?.uid || !title.trim()) return;
@@ -424,6 +637,7 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
       setQty('');
       setProposedPrice(0);
       setIcon('🛒');
+      setTouchedFields({ qty: false, price: false, icon: false });
       onClose();
     } catch (error) {
       console.error('Error adding shopping item:', error);
@@ -433,14 +647,20 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      fullScreen={isMobile}
+    >
       <DialogTitle>Add Shopping Item</DialogTitle>
       <DialogContent>
         <Stack spacing={3} sx={{ mt: 1 }}>
           <TextField
             label="Item Title"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => handleTitleChange(e.target.value)}
             fullWidth
             required
             placeholder="e.g. Wooden Bars"
@@ -448,7 +668,7 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
           <TextField
             label="Quantity"
             value={qty}
-            onChange={(e) => setQty(e.target.value)}
+            onChange={(e) => handleQtyChange(e.target.value)}
             fullWidth
             placeholder="e.g. 6 x bars"
           />
@@ -456,7 +676,7 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
             label="Proposed Price"
             type="number"
             value={proposedPrice || ''}
-            onChange={(e) => setProposedPrice(Number(e.target.value) || 0)}
+            onChange={(e) => handlePriceChange(Number(e.target.value) || 0)}
             fullWidth
             placeholder="0"
             InputProps={{
@@ -486,7 +706,10 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
                 Click an emoji below to select
               </Typography> */}
             </Box>
-            <EmojiPicker selectedEmoji={icon} onEmojiSelect={setIcon} />
+            <EmojiPicker
+              selectedEmoji={icon}
+              onEmojiSelect={handleIconSelect}
+            />
           </Box>
         </Stack>
       </DialogContent>
