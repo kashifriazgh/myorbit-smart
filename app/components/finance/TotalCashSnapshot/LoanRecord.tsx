@@ -20,6 +20,7 @@ import {
   Bank,
   LoanRecord,
   TotalCashSnapshot,
+  CustomPaymentHead,
 } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
@@ -42,6 +43,7 @@ const SOURCE_OPTIONS: TransactionSource[] = [
   'easypaisa',
   'jazzcash',
   'other',
+  'custom',
 ];
 
 export default function LoanDialog() {
@@ -55,7 +57,12 @@ export default function LoanDialog() {
   const [dueDate, setDueDate] = useState<string>('');
   const [source, setSource] = useState<TransactionSource>('in_hand');
   const [selectedBank, setSelectedBank] = useState('');
+  const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] =
+    useState('');
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [customPaymentHeads, setCustomPaymentHeads] = useState<
+    CustomPaymentHead[]
+  >([]);
 
   // totals, error, loading
   const [totals, setTotals] = useState({ toPay: 0, toReceive: 0 });
@@ -77,6 +84,24 @@ export default function LoanDialog() {
       setBanks(fetched);
     };
     fetchBanks();
+  }, [user]);
+
+  // fetch custom payment heads
+  useEffect(() => {
+    if (!user) return;
+    const fetchCustom = async () => {
+      const q = query(
+        collection(db, 'customPaymentHeads'),
+        where('userId', '==', user.uid)
+      );
+      const snap = await getDocs(q);
+      const heads: CustomPaymentHead[] = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<CustomPaymentHead, 'id'>),
+      }));
+      setCustomPaymentHeads(heads);
+    };
+    fetchCustom();
   }, [user]);
 
   // fetch loans
@@ -124,9 +149,23 @@ export default function LoanDialog() {
       setError('Due date is required.');
       return;
     }
+    if (source === 'bank' && !selectedBank) {
+      setError('Please select a bank.');
+      return;
+    }
+    if (source === 'custom' && !selectedCustomPaymentHead) {
+      setError('Please select a payment head.');
+      return;
+    }
 
     const bank =
       source === 'bank' ? banks.find((b) => b.id === selectedBank) : undefined;
+    const customName =
+      source === 'custom'
+        ? customPaymentHeads.find(
+            (c) => c.id === selectedCustomPaymentHead
+          )?.name || ''
+        : '';
     setError('');
 
     try {
@@ -156,21 +195,28 @@ export default function LoanDialog() {
               easypaisa: 0,
               jazzcash: 0,
               other: 0,
+              custom: {},
             },
             totalAmount: 0,
             freezeAmount: 0,
             createdAt: new Date(),
+            updatedAt: new Date(),
           };
 
-      // normalize bank object
+      // normalize bank/custom objects
       if (typeof snapshot.sources.bank === 'number')
         snapshot.sources.bank = { Default: snapshot.sources.bank };
+      if (typeof snapshot.sources.custom === 'number')
+        snapshot.sources.custom = { Default: snapshot.sources.custom };
+      if (!snapshot.sources.custom) snapshot.sources.custom = {};
 
       // check available balance
       if (loanType === 'lend') {
         const available =
           source === 'bank' && bank?.name
             ? snapshot.sources.bank?.[bank.name] ?? 0
+            : source === 'custom' && customName
+            ? snapshot.sources.custom?.[customName] ?? 0
             : (snapshot.sources[source] as number) ?? 0;
         if (amount > available)
           throw new Error(
@@ -197,19 +243,50 @@ export default function LoanDialog() {
         createdAt: serverTimestamp(),
         ...(bank?.id ? { bankId: bank.id } : {}),
         ...(bank?.name ? { bankName: bank.name } : {}),
+        ...(source === 'custom' && selectedCustomPaymentHead
+          ? {
+              customPaymentHeadId: selectedCustomPaymentHead,
+              customPaymentHeadName:
+                customPaymentHeads.find(
+                  (c) => c.id === selectedCustomPaymentHead
+                )?.name || '',
+            }
+          : {}),
       });
 
       // update snapshot
       const updatedSources = { ...snapshot.sources };
       if (loanType === 'lend') {
-        if (source === 'bank' && bank?.name)
+        if (source === 'bank' && bank?.name) {
           updatedSources.bank[bank.name] -= amount;
-        else (updatedSources[source] as number) -= amount;
+        } else if (source === 'custom' && selectedCustomPaymentHead) {
+          const customName =
+            customPaymentHeads.find(
+              (c) => c.id === selectedCustomPaymentHead
+            )?.name || '';
+          if (customName) {
+            updatedSources.custom[customName] =
+              (updatedSources.custom[customName] || 0) - amount;
+          }
+        } else {
+          (updatedSources[source] as number) -= amount;
+        }
         snapshot.totalAmount -= amount;
       } else {
-        if (source === 'bank' && bank?.name)
+        if (source === 'bank' && bank?.name) {
           updatedSources.bank[bank.name] += amount;
-        else (updatedSources[source] as number) += amount;
+        } else if (source === 'custom' && selectedCustomPaymentHead) {
+          const customName =
+            customPaymentHeads.find(
+              (c) => c.id === selectedCustomPaymentHead
+            )?.name || '';
+          if (customName) {
+            updatedSources.custom[customName] =
+              (updatedSources.custom[customName] || 0) + amount;
+          }
+        } else {
+          (updatedSources[source] as number) += amount;
+        }
         snapshot.totalAmount += amount;
       }
       await updateDoc(snapshotRef, {
@@ -361,7 +438,12 @@ export default function LoanDialog() {
             <InputLabel>Source</InputLabel>
             <Select
               value={source}
-              onChange={(e) => setSource(e.target.value as TransactionSource)}
+              onChange={(e) => {
+                const val = e.target.value as TransactionSource;
+                setSource(val);
+                setSelectedBank('');
+                setSelectedCustomPaymentHead('');
+              }}
             >
               {SOURCE_OPTIONS.map((mode) => (
                 <MenuItem key={mode} value={mode}>
@@ -387,6 +469,22 @@ export default function LoanDialog() {
             </FormControl>
           )}
 
+          {source === 'custom' && (
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Select Payment Head</InputLabel>
+              <Select
+                value={selectedCustomPaymentHead}
+                onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
+              >
+                {customPaymentHeads.map((head) => (
+                  <MenuItem key={head.id} value={head.id}>
+                    {head.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+
           {/* Error at bottom above Save */}
           {error && (
             <Typography color="error" fontSize={14} sx={{ mt: 2 }}>
@@ -399,7 +497,11 @@ export default function LoanDialog() {
           <Button
             variant="contained"
             onClick={handleCreate}
-            disabled={localSaving || (source === 'bank' && !selectedBank)}
+            disabled={
+              localSaving ||
+              (source === 'bank' && !selectedBank) ||
+              (source === 'custom' && !selectedCustomPaymentHead)
+            }
           >
             {localSaving ? <CircularProgress size={20} /> : 'Save Loan'}
           </Button>

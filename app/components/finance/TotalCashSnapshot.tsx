@@ -59,11 +59,20 @@ export default function TotalCashSnapshotComponent({
           normalizedBank = data.sources.bank || {};
         }
 
+        // 🔥 normalize custom field
+        let normalizedCustom: Record<string, number> = {};
+        if (typeof data.sources.custom === 'number') {
+          normalizedCustom = { Default: data.sources.custom }; // migrate old number into object
+        } else {
+          normalizedCustom = data.sources.custom || {};
+        }
+
         setSnapshot({
           ...data,
           sources: {
             ...data.sources,
             bank: normalizedBank,
+            custom: normalizedCustom,
           },
         });
       } else {
@@ -75,6 +84,7 @@ export default function TotalCashSnapshotComponent({
             easypaisa: 0,
             jazzcash: 0,
             other: 0,
+            custom: {}, // 👈 always object now
           },
           totalAmount: 0,
           freezeAmount: 0,
@@ -94,7 +104,9 @@ export default function TotalCashSnapshotComponent({
     source: TransactionSource,
     isFreezed: boolean,
     bankId?: string,
-    bankName?: string
+    bankName?: string,
+    customPaymentHeadId?: string,
+    customPaymentHeadName?: string
   ) => {
     setSaving(true);
 
@@ -110,6 +122,8 @@ export default function TotalCashSnapshotComponent({
 
     if (bankId && !isFreezed) txn.bankId = bankId;
     if (bankName && !isFreezed) txn.BankName = bankName;
+    if (customPaymentHeadId && !isFreezed) txn.customPaymentHeadId = customPaymentHeadId;
+    if (customPaymentHeadName && !isFreezed) txn.customPaymentHeadName = customPaymentHeadName;
 
     await addDoc(collection(db, 'cashTransactions'), txn);
 
@@ -121,6 +135,7 @@ export default function TotalCashSnapshotComponent({
       easypaisa: snapshot?.sources.easypaisa ?? 0,
       jazzcash: snapshot?.sources.jazzcash ?? 0,
       other: snapshot?.sources.other ?? 0,
+      custom: snapshot?.sources.custom ?? {},
     };
 
     // ✅ Only update sources if NOT freezed
@@ -128,7 +143,10 @@ export default function TotalCashSnapshotComponent({
       if (source === 'bank' && bankName) {
         updatedSources.bank[bankName] =
           (updatedSources.bank[bankName] ?? 0) + amount;
-      } else if (source !== 'bank') {
+      } else if (source === 'custom' && customPaymentHeadName) {
+        updatedSources.custom[customPaymentHeadName] =
+          (updatedSources.custom[customPaymentHeadName] ?? 0) + amount;
+      } else if (source !== 'bank' && source !== 'custom') {
         updatedSources[source] = (updatedSources[source] ?? 0) + amount;
       }
     }
@@ -153,7 +171,9 @@ export default function TotalCashSnapshotComponent({
     source: TransactionSource,
     bankId?: string,
     bankName?: string,
-    fromFreeze: boolean = false
+    fromFreeze: boolean = false,
+    customPaymentHeadId?: string,
+    customPaymentHeadName?: string
   ) => {
     setSaving(true);
 
@@ -172,6 +192,7 @@ export default function TotalCashSnapshotComponent({
       easypaisa: data.sources.easypaisa ?? 0,
       jazzcash: data.sources.jazzcash ?? 0,
       other: data.sources.other ?? 0,
+      custom: data.sources.custom ?? {},
     };
 
     let newFreeze = data.freezeAmount ?? 0;
@@ -196,7 +217,15 @@ export default function TotalCashSnapshotComponent({
           return;
         }
         updatedSources.bank[bankName] = current - amount;
-      } else if (source !== 'bank') {
+      } else if (source === 'custom' && customPaymentHeadName) {
+        const current = updatedSources.custom[customPaymentHeadName] ?? 0;
+        if (amount > current) {
+          alert(`Not enough balance in ${customPaymentHeadName}`);
+          setSaving(false);
+          return;
+        }
+        updatedSources.custom[customPaymentHeadName] = current - amount;
+      } else if (source !== 'bank' && source !== 'custom') {
         const current = (updatedSources[source] as number) ?? 0;
         if (amount > current) {
           alert(`Not enough balance in ${source}`);
@@ -229,6 +258,8 @@ export default function TotalCashSnapshotComponent({
       note: fromFreeze ? 'Deducted from Freezed' : 'Manual deduction',
       bankId: bankId || null,
       BankName: bankName || null,
+      customPaymentHeadId: customPaymentHeadId || null,
+      customPaymentHeadName: customPaymentHeadName || null,
       createdAt: serverTimestamp(),
     });
 
@@ -240,20 +271,24 @@ export default function TotalCashSnapshotComponent({
     amount: number,
     fromSource: TransactionSource,
     bankId?: string,
-    bankName?: string
+    bankName?: string,
+    customPaymentHeadId?: string,
+    customPaymentHeadName?: string
   ) => {
     setSaving(true);
 
     let sourceBalance = 0;
     if (fromSource === 'bank' && bankName) {
       sourceBalance = snapshot?.sources.bank?.[bankName] ?? 0;
+    } else if (fromSource === 'custom' && customPaymentHeadName) {
+      sourceBalance = snapshot?.sources.custom?.[customPaymentHeadName] ?? 0;
     } else {
       sourceBalance = (snapshot?.sources[fromSource] as number) ?? 0;
     }
 
     if (amount > sourceBalance) {
       alert(
-        `Not enough balance in ${fromSource}${bankName ? ` (${bankName})` : ''}`
+        `Not enough balance in ${fromSource}${bankName ? ` (${bankName})` : ''}${customPaymentHeadName ? ` (${customPaymentHeadName})` : ''}`
       );
       setSaving(false);
       return;
@@ -274,12 +309,16 @@ export default function TotalCashSnapshotComponent({
       easypaisa: data.sources.easypaisa ?? 0,
       jazzcash: data.sources.jazzcash ?? 0,
       other: data.sources.other ?? 0,
+      custom: data.sources.custom ?? {},
     };
 
     if (fromSource === 'bank' && bankName) {
       updatedSources.bank[bankName] =
         (updatedSources.bank[bankName] ?? 0) - amount;
-    } else if (fromSource !== 'bank') {
+    } else if (fromSource === 'custom' && customPaymentHeadName) {
+      updatedSources.custom[customPaymentHeadName] =
+        (updatedSources.custom[customPaymentHeadName] ?? 0) - amount;
+    } else if (fromSource !== 'bank' && fromSource !== 'custom') {
       updatedSources[fromSource] = (updatedSources[fromSource] ?? 0) - amount;
     }
 
@@ -300,6 +339,8 @@ export default function TotalCashSnapshotComponent({
       note: 'Transferred to Freezed',
       bankId: bankId || null,
       BankName: bankName || null,
+      customPaymentHeadId: customPaymentHeadId || null,
+      customPaymentHeadName: customPaymentHeadName || null,
       createdAt: serverTimestamp(),
     });
 

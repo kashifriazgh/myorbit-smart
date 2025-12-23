@@ -11,21 +11,30 @@ import {
   Button,
   Stack,
   CircularProgress,
-  useTheme as useMuiTheme,
+  
   InputAdornment,
+  Chip,
+  useMediaQuery,
 } from '@mui/material';
 import {
   CheckCircleOutline,
   KeyboardArrowLeft,
   KeyboardArrowRight,
+  AccessTime,
+  LocalFireDepartment,
+  Edit,
+  Save,
 } from '@mui/icons-material';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { StreakProps } from '@/app/lib/interface';
 import { useStreaks } from '@/app/lib/context/StreaksContext';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import moment from 'moment';
 import Link from 'next/link';
 import { Timestamp } from 'firebase/firestore';
+import 'keen-slider/keen-slider.min.css';
+import { useKeenSlider } from 'keen-slider/react';
 
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -48,18 +57,36 @@ function convertToDate(date: Timestamp | string | Date): Date {
   }
 }
 
+// Calculate time difference in minutes from current time
+function getTimeDifferenceInMinutes(reminderTime: string | undefined): number {
+  if (!reminderTime) return Infinity; // No reminder = lowest priority
+
+  const [hours, minutes] = reminderTime.split(':').map(Number);
+  const reminderMoment = moment().hours(hours).minutes(minutes).seconds(0);
+  const now = moment();
+
+  // If reminder time has passed today, consider it for tomorrow
+  if (reminderMoment.isBefore(now)) {
+    reminderMoment.add(1, 'day');
+  }
+
+  return Math.abs(reminderMoment.diff(now, 'minutes'));
+}
+
 const OnGoingStreaks = () => {
-  const theme = useMuiTheme();
+  
+  const { theme } = useCustomTheme();
   const { streaks, markStreakDone, updateRemarks } = useStreaks();
   const { user } = useAuth();
+  const isMobile = useMediaQuery('(max-width:639px)', { noSsr: true });
 
   const [activeStep, setActiveStep] = useState(0);
   const [progressModalOpen, setProgressModalOpen] = useState(false);
   const [selectedStreakId, setSelectedStreakId] = useState<string | null>(null);
-
   const [currentProgress, setCurrentProgress] = useState('');
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [savingProgress, setSavingProgress] = useState(false);
 
   const lastSavedRef = useRef<string>('');
 
@@ -69,16 +96,26 @@ const OnGoingStreaks = () => {
     return streaks.filter((s) => s.userId === user.uid);
   }, [streaks, user?.uid]);
 
-  // streaks not yet done today
+  // streaks not yet done today, sorted by reminder time proximity
   const filteredStreaks = useMemo(() => {
-    return userStreaks.filter((s) => {
+    const notDoneToday = userStreaks.filter((s) => {
       if (!s.attendance || s.attendance.length === 0) return true;
       const today = moment().startOf('day');
       return !s.attendance.some((a) => {
-        // Handle both Timestamp and string dates
         const date = convertToDate(a.date);
         return moment(date).isSame(today, 'day');
       });
+    });
+
+    // Sort by reminder time proximity (closest to current time first)
+    return notDoneToday.sort((a, b) => {
+      const timeA = a.reminder?.time || a.reminderTime || '';
+      const timeB = b.reminder?.time || b.reminderTime || '';
+
+      const diffA = getTimeDifferenceInMinutes(timeA);
+      const diffB = getTimeDifferenceInMinutes(timeB);
+
+      return diffA - diffB;
     });
   }, [userStreaks]);
 
@@ -95,7 +132,7 @@ const OnGoingStreaks = () => {
 
   const debouncedProgress = useDebounce(currentProgress, 1000);
 
-  // auto-save remarks
+  // auto-save remarks (progress only, not marking done)
   useEffect(() => {
     if (!progressModalOpen || !selectedStreakId || !dirty) return;
     if (debouncedProgress === lastSavedRef.current) return;
@@ -103,18 +140,18 @@ const OnGoingStreaks = () => {
     let cancelled = false;
     (async () => {
       try {
-        setSaving(true);
-        await updateRemarks(
-          { id: selectedStreakId } as StreakProps,
-          debouncedProgress
-        );
-        if (!cancelled) {
-          lastSavedRef.current = debouncedProgress;
+        setSavingProgress(true);
+        const streak = filteredStreaks.find((s) => s.id === selectedStreakId);
+        if (streak) {
+          await updateRemarks(streak, debouncedProgress);
+          if (!cancelled) {
+            lastSavedRef.current = debouncedProgress;
+          }
         }
       } catch (err) {
-        console.error('Failed to auto-save remarks:', err);
+        console.error('Failed to auto-save progress:', err);
       } finally {
-        if (!cancelled) setSaving(false);
+        if (!cancelled) setSavingProgress(false);
       }
     })();
 
@@ -127,7 +164,30 @@ const OnGoingStreaks = () => {
     progressModalOpen,
     selectedStreakId,
     updateRemarks,
+    filteredStreaks,
   ]);
+
+  // Keen Slider for mobile
+  const [sliderRef, instanceRef] = useKeenSlider<HTMLDivElement>({
+    slides: { perView: 1.1, spacing: 12 },
+    breakpoints: {
+      '(min-width: 640px)': { slides: { perView: 2, spacing: 16 } },
+    },
+    loop: false,
+    drag: true,
+    rubberband: true,
+    initial: activeStep,
+    slideChanged: (slider) => {
+      setActiveStep(slider.track.details.abs);
+    },
+  });
+
+  // Sync slider with activeStep changes
+  useEffect(() => {
+    if (instanceRef.current) {
+      instanceRef.current.moveToIdx(activeStep);
+    }
+  }, [activeStep, instanceRef]);
 
   // if no user → render nothing
   if (!user?.uid) return null;
@@ -137,20 +197,7 @@ const OnGoingStreaks = () => {
   const currentStreak = filteredStreaks[activeStep];
   if (!currentStreak) return null;
 
-  const timeFormatted = currentStreak.reminder?.time
-    ? moment(currentStreak.reminder.time, 'HH:mm').format('hh:mm A')
-    : null;
-
-  // Get the last progress entry from attendance
-  const lastProgressEntry = currentStreak.attendance
-    ?.filter((entry) => entry.progress)
-    ?.sort((a, b) => {
-      const dateA = convertToDate(a.date);
-      const dateB = convertToDate(b.date);
-      return moment(dateB).diff(moment(dateA));
-    })?.[0];
-
-  const openMarkUpdate = (streak: StreakProps) => {
+  const openProgressModal = (streak: StreakProps) => {
     setSelectedStreakId(streak.id!);
     const initial = streak.currentProgress ?? '';
     setCurrentProgress(initial);
@@ -159,20 +206,54 @@ const OnGoingStreaks = () => {
     setProgressModalOpen(true);
   };
 
-  const saveAndMarkDone = async () => {
+  const handleSaveProgressOnly = async () => {
     if (!selectedStreakId) return;
     setSaving(true);
     try {
-      // Find the full streak object to preserve existing attendance
-      const fullStreak = streaks.find((s) => s.id === selectedStreakId);
-      if (!fullStreak) {
-        console.error('Streak not found');
-        return;
+      const streak = filteredStreaks.find((s) => s.id === selectedStreakId);
+      if (streak) {
+        await updateRemarks(streak, currentProgress);
+        lastSavedRef.current = currentProgress;
+        setDirty(false);
       }
+    } catch (err) {
+      console.error('Failed to save progress:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
-      await markStreakDone(fullStreak, currentProgress);
-      setProgressModalOpen(false);
-      setSelectedStreakId(null);
+  const handleMarkDone = async (streakId?: string, progress?: string) => {
+    const targetStreakId = streakId || selectedStreakId;
+    if (!targetStreakId) return;
+
+    setSaving(true);
+    try {
+      const streak = filteredStreaks.find((s) => s.id === targetStreakId);
+      if (streak) {
+        const progressToSave =
+          progress !== undefined ? progress : currentProgress;
+        await markStreakDone(streak, progressToSave);
+
+        if (progressModalOpen) {
+          setProgressModalOpen(false);
+        }
+        setSelectedStreakId(null);
+        setCurrentProgress('');
+        setDirty(false);
+
+        // Move to next streak if available
+        const currentIndex = filteredStreaks.findIndex(
+          (s) => s.id === targetStreakId
+        );
+        if (currentIndex !== -1) {
+          if (currentIndex < filteredStreaks.length - 1) {
+            setActiveStep(currentIndex + 1);
+          } else if (currentIndex > 0) {
+            setActiveStep(currentIndex - 1);
+          }
+        }
+      }
     } catch (err) {
       console.error('Failed to mark streak done:', err);
     } finally {
@@ -180,78 +261,172 @@ const OnGoingStreaks = () => {
     }
   };
 
-  return (
-    <Box className="p-4 w-full max-w-4xl mx-auto">
-      <Box className="flex justify-between items-center mb-3">
-        <Typography variant="subtitle1" fontWeight="bold">
-          🔥 Todays Streaks
-        </Typography>
-        <Link href="/streaks" className="text-sm text-sky-600 hover:underline">
-          See all
-        </Link>
-      </Box>
+  const handlePrevious = () => {
+    if (activeStep > 0) {
+      setActiveStep(activeStep - 1);
+    }
+  };
 
-      <Box className="flex items-center relative">
-        <IconButton
-          size="small"
-          onClick={() => setActiveStep((prev) => prev - 1)}
-          disabled={activeStep === 0}
-          className="bg-white dark:bg-gray-800 shadow"
-          sx={{ mr: 2 }}
+  const handleNext = () => {
+    if (activeStep < filteredStreaks.length - 1) {
+      setActiveStep(activeStep + 1);
+    }
+  };
+
+  const getTimeStatusColor = (reminderTime: string | undefined): string => {
+    if (!reminderTime) return theme?.mode === 'dark' ? '#64748b' : '#94a3b8';
+
+    const diffMinutes = getTimeDifferenceInMinutes(reminderTime);
+
+    if (diffMinutes <= 30) return '#ef4444'; // Red - very soon
+    if (diffMinutes <= 60) return '#f59e0b'; // Orange - soon
+    if (diffMinutes <= 120) return '#3b82f6'; // Blue - upcoming
+    return theme?.mode === 'dark' ? '#64748b' : '#94a3b8'; // Gray - later
+  };
+
+  const StreakCard = ({
+    streak,
+  }: {
+    streak: StreakProps;
+    index: number;
+  }) => {
+    const reminderTime = streak.reminder?.time || streak.reminderTime;
+    const timeFormatted = reminderTime
+      ? moment(reminderTime, 'HH:mm').format('hh:mm A')
+      : null;
+
+    const lastProgressEntry = streak.attendance
+      ?.filter((entry) => entry.progress)
+      ?.sort((a, b) => {
+        const dateA = convertToDate(a.date);
+        const dateB = convertToDate(b.date);
+        return moment(dateB).diff(moment(dateA));
+      })?.[0];
+
+    return (
+      <Card
+        sx={{
+          height: '100%',
+          minHeight: 200,
+          background:
+            theme?.mode === 'dark'
+              ? 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'
+              : 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+          border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
+          borderRadius: 3,
+          boxShadow:
+            '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          transition: 'all 0.3s ease',
+          '&:hover': {
+            transform: 'translateY(-2px)',
+            boxShadow:
+              '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+          },
+        }}
+      >
+        <CardContent
+          sx={{
+            p: 3,
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
         >
-          <KeyboardArrowLeft />
-        </IconButton>
-
-        <Card className="flex-1 rounded-xl shadow-sm" sx={{ height: 160 }}>
-          <CardContent className="flex flex-col justify-between h-full">
+          {/* Header */}
+          <Box sx={{ mb: 2 }}>
             <Typography
-              variant="subtitle1"
-              fontWeight="medium"
-              gutterBottom
+              variant="h6"
+              fontWeight={700}
+              sx={{
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+                mb: 1,
+                fontSize: '1.25rem',
+                lineHeight: 1.3,
+              }}
               noWrap
             >
-              {currentStreak.title}
+              {streak.title}
             </Typography>
 
-            <Stack direction="row" spacing={1} mb={1} flexWrap="wrap">
-              <Box className="text-xs text-gray-600 dark:text-gray-300">
-                {currentStreak.habitType.toUpperCase()}
-              </Box>
-              <Box className="text-xs text-gray-500 dark:text-gray-400">
-                {timeFormatted ? `at ${timeFormatted}` : ''}
-              </Box>
-              <Box className="text-xs text-sky-600 dark:text-sky-400">
-                {currentStreak.streaksCount}🔥
-              </Box>
-            </Stack>
-
-            {currentStreak.currentProgress && (
-              <Typography
-                variant="body2"
+            <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
+              <Chip
+                label={streak.habitType.toUpperCase()}
+                size="small"
                 sx={{
-                  fontStyle: 'italic',
-                  color: theme.palette.text.secondary,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  mb: 1,
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#475569' : '#e2e8f0',
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
+                  fontWeight: 600,
+                  fontSize: '0.7rem',
+                  height: 22,
                 }}
-                title={currentStreak.currentProgress}
-              >
-                {currentStreak.currentProgress}
-              </Typography>
-            )}
+              />
+              {timeFormatted && (
+                <Chip
+                  icon={<AccessTime sx={{ fontSize: '0.875rem !important' }} />}
+                  label={timeFormatted}
+                  size="small"
+                  sx={{
+                    backgroundColor: getTimeStatusColor(reminderTime) + '20',
+                    color: getTimeStatusColor(reminderTime),
+                    fontWeight: 600,
+                    fontSize: '0.7rem',
+                    height: 22,
+                    border: `1px solid ${getTimeStatusColor(reminderTime)}40`,
+                  }}
+                />
+              )}
+              <Chip
+                icon={
+                  <LocalFireDepartment
+                    sx={{ fontSize: '0.875rem !important' }}
+                  />
+                }
+                label={`${streak.streaksCount}🔥`}
+                size="small"
+                sx={{
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#7f1d1d' : '#fee2e2',
+                  color: theme?.mode === 'dark' ? '#fca5a5' : '#991b1b',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  height: 22,
+                }}
+              />
+            </Stack>
+          </Box>
 
-            {lastProgressEntry && !currentStreak.currentProgress && (
+          {/* Progress Display */}
+          <Box sx={{ flexGrow: 1, mb: 2 }}>
+            {streak.currentProgress ? (
               <Typography
                 variant="body2"
                 sx={{
                   fontStyle: 'italic',
-                  color: theme.palette.text.secondary,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
                   mb: 1,
+                  lineHeight: 1.6,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+                title={streak.currentProgress}
+              >
+                {streak.currentProgress}
+              </Typography>
+            ) : lastProgressEntry ? (
+              <Typography
+                variant="body2"
+                sx={{
+                  fontStyle: 'italic',
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                  mb: 1,
+                  lineHeight: 1.6,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
                 }}
                 title={`Last progress (${moment(
                   convertToDate(lastProgressEntry.date)
@@ -259,96 +434,328 @@ const OnGoingStreaks = () => {
               >
                 Last: {lastProgressEntry.progress}
               </Typography>
+            ) : (
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
+                  fontStyle: 'italic',
+                }}
+              >
+                No progress recorded yet
+              </Typography>
             )}
+          </Box>
 
+          {/* Actions */}
+          <Stack direction="row" spacing={1}>
             <Button
               variant="outlined"
               size="small"
-              startIcon={<CheckCircleOutline />}
-              onClick={() => openMarkUpdate(currentStreak)}
+              startIcon={<Edit />}
+              onClick={() => openProgressModal(streak)}
+              sx={{
+                flex: 1,
+                textTransform: 'none',
+                borderColor: theme?.mode === 'dark' ? '#475569' : '#cbd5e1',
+                color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
+                '&:hover': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#334155' : '#f1f5f9',
+                },
+              }}
             >
-              Mark / Update
+              Update
             </Button>
-          </CardContent>
-        </Card>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<CheckCircleOutline />}
+              onClick={() =>
+                handleMarkDone(streak.id!, streak.currentProgress || '')
+              }
+              disabled={saving}
+              sx={{
+                flex: 1,
+                textTransform: 'none',
+                backgroundColor: '#10b981',
+                '&:hover': {
+                  backgroundColor: '#059669',
+                },
+                '&:disabled': {
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#374151' : '#9ca3af',
+                },
+              }}
+            >
+              Done
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
+    );
+  };
 
-        <IconButton
-          size="small"
-          onClick={() => setActiveStep((prev) => prev + 1)}
-          disabled={activeStep === filteredStreaks.length - 1}
-          className="bg-white dark:bg-gray-800 shadow"
-          sx={{ ml: 2 }}
+  return (
+    <Card
+      sx={{
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        borderRadius: '1rem',
+        p: 3,
+      }}
+    >
+      <Box className="flex justify-between items-center mb-4">
+        <Typography
+          variant="h6"
+          fontWeight={700}
+          sx={{
+            color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+          }}
         >
-          <KeyboardArrowRight />
-        </IconButton>
+          🔥 Today&#39;s Streaks
+        </Typography>
+        <Link
+          href="/streaks"
+          style={{
+            fontSize: '0.875rem',
+            color: theme?.mode === 'dark' ? '#60a5fa' : '#2563eb',
+            textDecoration: 'none',
+          }}
+          className="hover:underline"
+        >
+          See all
+        </Link>
       </Box>
 
-      {/* Modal */}
+      {filteredStreaks.length === 0 ? (
+        <Box className="text-center py-8">
+          <Typography
+            variant="body1"
+            sx={{
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+              mb: 2,
+            }}
+          >
+            All streaks completed for today! 🎉
+          </Typography>
+        </Box>
+      ) : (
+        <>
+          {/* Desktop view: 2 cards per row */}
+          <Box className="hidden sm:grid grid-cols-2 gap-4">
+            {filteredStreaks.slice(0, 4).map((streak, index) => (
+              <StreakCard key={streak.id} streak={streak} index={index} />
+            ))}
+          </Box>
+
+          {/* Mobile view: slider */}
+          {isMobile && (
+            <Box sx={{ position: 'relative' }}>
+              <div ref={sliderRef} className="keen-slider">
+                {filteredStreaks.map((streak, index) => (
+                  <div key={streak.id} className="keen-slider__slide">
+                    <div className="pr-3">
+                      <StreakCard streak={streak} index={index} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Navigation arrows */}
+              {filteredStreaks.length > 1 && (
+                <>
+                  <IconButton
+                    size="small"
+                    onClick={handlePrevious}
+                    disabled={activeStep === 0}
+                    sx={{
+                      position: 'absolute',
+                      left: -12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      backgroundColor:
+                        theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                      border: `1px solid ${
+                        theme?.mode === 'dark' ? '#475569' : '#e2e8f0'
+                      }`,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      zIndex: 2,
+                      '&:hover': {
+                        backgroundColor:
+                          theme?.mode === 'dark' ? '#475569' : '#f1f5f9',
+                      },
+                      '&:disabled': {
+                        opacity: 0.3,
+                      },
+                    }}
+                  >
+                    <KeyboardArrowLeft />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    onClick={handleNext}
+                    disabled={activeStep === filteredStreaks.length - 1}
+                    sx={{
+                      position: 'absolute',
+                      right: -12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      backgroundColor:
+                        theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                      border: `1px solid ${
+                        theme?.mode === 'dark' ? '#475569' : '#e2e8f0'
+                      }`,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      zIndex: 2,
+                      '&:hover': {
+                        backgroundColor:
+                          theme?.mode === 'dark' ? '#475569' : '#f1f5f9',
+                      },
+                      '&:disabled': {
+                        opacity: 0.3,
+                      },
+                    }}
+                  >
+                    <KeyboardArrowRight />
+                  </IconButton>
+                </>
+              )}
+            </Box>
+          )}
+        </>
+      )}
+
+      {/* Progress Modal */}
       <Modal
         open={progressModalOpen}
-        onClose={() => setProgressModalOpen(false)}
+        onClose={() => {
+          setProgressModalOpen(false);
+          setSelectedStreakId(null);
+          setDirty(false);
+        }}
       >
         <Box
           sx={{
             p: 3,
-            backgroundColor:
-              theme.palette.mode === 'dark' ? '#1e1e1e' : 'white',
-            color: theme.palette.text.primary,
-            borderRadius: 2,
-            width: 360,
+            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+            color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+            borderRadius: 3,
+            width: { xs: '90%', sm: 420 },
+            maxWidth: 420,
             mx: 'auto',
-            mt: '20%',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+            mt: { xs: '10%', sm: '15%' },
+            boxShadow:
+              '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
           }}
         >
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            mb={2}
-          >
-            <Typography fontWeight={600}>Update Progress</Typography>
-            {saving && <CircularProgress size={16} />}
-          </Stack>
+          <Stack spacing={2}>
+            <Box>
+              <Typography fontWeight={700} variant="h6" sx={{ mb: 0.5 }}>
+                Update Progress
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                }}
+              >
+                {currentStreak.title}
+              </Typography>
+            </Box>
 
-          <TextField
-            fullWidth
-            size="small"
-            value={currentProgress}
-            onChange={(e) => {
-              setCurrentProgress(e.target.value);
-              setDirty(true);
-            }}
-            placeholder="Remarks (optional)"
-            inputProps={{ maxLength: 100 }}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  {saving ? <CircularProgress size={16} /> : null}
-                </InputAdornment>
-              ),
-            }}
-          />
+            <TextField
+              fullWidth
+              multiline
+              rows={4}
+              value={currentProgress}
+              onChange={(e) => {
+                setCurrentProgress(e.target.value);
+                setDirty(true);
+              }}
+              placeholder="Add your progress or remarks (optional)..."
+              inputProps={{ maxLength: 200 }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#0f172a' : '#f8fafc',
+                },
+              }}
+              InputProps={{
+                endAdornment: savingProgress && (
+                  <InputAdornment position="end">
+                    <CircularProgress size={16} />
+                  </InputAdornment>
+                ),
+              }}
+            />
 
-          <Stack direction="row" spacing={1} justifyContent="flex-end" mt={2}>
-            <Button onClick={() => setProgressModalOpen(false)}>
-              Save & Close
-            </Button>
-            <Button
-              variant="contained"
-              disabled={saving}
-              onClick={saveAndMarkDone}
-            >
-              {saving ? (
-                <CircularProgress size={18} sx={{ color: 'white' }} />
-              ) : (
-                'Mark as Done'
-              )}
-            </Button>
+            {dirty && debouncedProgress !== lastSavedRef.current && (
+              <Typography
+                variant="caption"
+                sx={{
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                  fontStyle: 'italic',
+                }}
+              >
+                Auto-saving...
+              </Typography>
+            )}
+
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <Button
+                onClick={() => {
+                  setProgressModalOpen(false);
+                  setSelectedStreakId(null);
+                  setDirty(false);
+                }}
+                disabled={saving}
+                sx={{
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<Save />}
+                onClick={handleSaveProgressOnly}
+                disabled={saving || savingProgress}
+                sx={{
+                  borderColor: theme?.mode === 'dark' ? '#475569' : '#cbd5e1',
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
+                  '&:hover': {
+                    borderColor: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
+                    backgroundColor:
+                      theme?.mode === 'dark' ? '#334155' : '#f1f5f9',
+                  },
+                }}
+              >
+                {savingProgress ? 'Saving...' : 'Save Progress'}
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<CheckCircleOutline />}
+                onClick={() => handleMarkDone()}
+                disabled={saving}
+                sx={{
+                  backgroundColor: '#10b981',
+                  '&:hover': {
+                    backgroundColor: '#059669',
+                  },
+                }}
+              >
+                {saving ? (
+                  <CircularProgress size={18} sx={{ color: 'white' }} />
+                ) : (
+                  'Mark Done'
+                )}
+              </Button>
+            </Stack>
           </Stack>
         </Box>
       </Modal>
-    </Box>
+    </Card>
   );
 };
 

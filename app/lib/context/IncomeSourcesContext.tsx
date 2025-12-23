@@ -30,7 +30,8 @@ interface IncomeSourcesContextType {
     income: IncomeSource,
     updateMainFund: boolean,
     fundSource?: TransactionSource,
-    bankId?: string
+    bankId?: string,
+    customPaymentHeadId?: string
   ) => Promise<void>;
   rescheduleIncome: (incomeId: string, newDate: Date) => Promise<void>;
   updateIncomeAmount: (incomeId: string, amount: number) => Promise<void>;
@@ -140,7 +141,8 @@ export const IncomeSourcesProvider = ({
     income: IncomeSource,
     updateMainFund: boolean,
     fundSource: TransactionSource = 'in_hand',
-    bankId?: string
+    bankId?: string,
+    customPaymentHeadId?: string
   ) => {
     if (!income.id) return;
 
@@ -163,10 +165,20 @@ export const IncomeSourcesProvider = ({
 
       if (updateMainFund) {
         let bankName: string | undefined;
+        let customPaymentHeadName: string | undefined;
 
         if (fundSource === 'bank' && bankId) {
           const bank = banks.find((b) => b.id === bankId);
           bankName = bank?.name;
+        }
+
+        if (fundSource === 'custom' && customPaymentHeadId) {
+          const customDoc = await getDoc(
+            doc(db, 'customPaymentHeads', customPaymentHeadId)
+          );
+          customPaymentHeadName = customDoc.exists()
+            ? (customDoc.data() as { name?: string }).name
+            : undefined;
         }
 
         // Add to cash transactions
@@ -179,6 +191,8 @@ export const IncomeSourcesProvider = ({
           note: `Income received: ${income.title}`,
           bankId: bankId || null,
           BankName: bankName || null,
+          customPaymentHeadId: customPaymentHeadId || null,
+          customPaymentHeadName: customPaymentHeadName || null,
           createdAt: serverTimestamp(),
         });
 
@@ -187,12 +201,19 @@ export const IncomeSourcesProvider = ({
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as TotalCashSnapshot;
-          const updatedSources = { ...data.sources };
+          const updatedSources = {
+            ...data.sources,
+            custom: data.sources.custom ?? {},
+          };
 
           if (fundSource === 'bank' && bankName) {
             updatedSources.bank[bankName] =
               (updatedSources.bank[bankName] || 0) + income.amount;
-          } else if (fundSource !== 'bank') {
+          } else if (fundSource === 'custom' && customPaymentHeadName) {
+            updatedSources.custom[customPaymentHeadName] =
+              (updatedSources.custom[customPaymentHeadName] || 0) +
+              income.amount;
+          } else if (fundSource !== 'bank' && fundSource !== 'custom') {
             updatedSources[fundSource] =
               (updatedSources[fundSource] as number) + income.amount;
           }

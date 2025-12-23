@@ -107,12 +107,19 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
   const handleMarkAsReceived = async (
     updateMainFund: boolean,
     fundSource?: TransactionSource,
-    bankId?: string
+    bankId?: string,
+    customPaymentHeadId?: string
   ) => {
     if (!selectedIncome) return;
     setActionLoading(true);
     try {
-      await markAsReceived(selectedIncome, updateMainFund, fundSource, bankId);
+      await markAsReceived(
+        selectedIncome,
+        updateMainFund,
+        fundSource,
+        bankId,
+        customPaymentHeadId
+      );
       setConfirmDialogOpen(false);
       setSelectedIncome(null);
     } catch (error) {

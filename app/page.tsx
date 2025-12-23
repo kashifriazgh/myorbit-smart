@@ -8,7 +8,6 @@ import { CircularProgress, Box } from '@mui/material';
 import GuestUserBanner from './components/global/GuestUserBanner';
 import HomepageHeader from './components/homepage/HomepageHeader';
 import SkeletonLoader from './components/global/SkeletonLoader';
-import { StreaksPlaceholder } from './components/homepage/PlaceholderComponents';
 import Goals from './components/homepage/Goals';
 import ShoppingList from './components/homepage/ShoppingList';
 import Schedules from './components/homepage/Schedules';
@@ -29,9 +28,9 @@ const ImportantTasks = lazy(
   () => import('./components/homepage/ImportantTasks')
 );
 const OverdueTasks = lazy(() => import('./components/homepage/OverdueTasks'));
-// const OnGoingStreaks = lazy(
-//   () => import('./components/homepage/OnGoingStreaks')
-// );
+const OnGoingStreaks = lazy(
+  () => import('./components/homepage/OnGoingStreaks')
+);
 // const Mood = lazy(() => import('./components/homepage/Mood'));
 const ExpectedExpenses = lazy(
   () => import('./components/homepage/ExpectedExpenses')
@@ -143,7 +142,9 @@ export default function Homepage() {
             <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
               <Goals />
             </Suspense>
-            <StreaksPlaceholder />
+            <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
+              <OnGoingStreaks />
+            </Suspense>
           </div>
 
           {/* 5. Additional Components */}

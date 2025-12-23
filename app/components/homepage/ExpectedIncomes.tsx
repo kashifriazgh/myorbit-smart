@@ -79,12 +79,19 @@ export default function ExpectedIncome() {
   const handleMarkAsReceivedConfirm = async (
     updateMainFund: boolean,
     fundSource?: TransactionSource,
-    bankId?: string
+  bankId?: string,
+  customPaymentHeadId?: string
   ) => {
     if (!selectedIncome) return;
     setActionLoading(true);
     try {
-      await markAsReceived(selectedIncome, updateMainFund, fundSource, bankId);
+    await markAsReceived(
+      selectedIncome,
+      updateMainFund,
+      fundSource,
+      bankId,
+      customPaymentHeadId
+    );
       setMarkAsReceivedOpen(false);
       setSelectedIncome(null);
 

@@ -71,6 +71,47 @@ export default function AccountBreakdown({
               );
             }
 
+            // if source is "custom", we expect amt to be an object {Custom1: 5000, Custom2: 6000}
+            if (name === 'custom' && typeof amt === 'object') {
+              return (
+                <Box key={name} mb={1}>
+                  <Typography
+                    fontSize="0.82rem"
+                    fontWeight={600}
+                    color="text.secondary"
+                    sx={{ mb: 0.5 }}
+                  >
+                    Custom Payment Heads
+                  </Typography>
+                  {Object.entries(amt as Record<string, number>).map(
+                    ([customName, customAmt]) => (
+                      <Box
+                        key={customName}
+                        display="flex"
+                        justifyContent="space-between"
+                        alignItems="center"
+                        py={0.3}
+                        px={1}
+                        sx={{
+                          fontSize: '0.8rem',
+                          borderBottom: '1px dashed',
+                          borderColor: isDark ? '#374151' : '#e0e0e0',
+                          '&:last-child': { borderBottom: 'none' },
+                        }}
+                      >
+                        <Typography fontSize="0.8rem" fontWeight={500}>
+                          {customName}
+                        </Typography>
+                        <Typography fontSize="0.8rem" fontWeight={600}>
+                          {formatCurrency(customAmt, currency)}
+                        </Typography>
+                      </Box>
+                    )
+                  )}
+                </Box>
+              );
+            }
+
             // default (normal field like in_hand, easypaisa, etc.)
             return (
               <Box

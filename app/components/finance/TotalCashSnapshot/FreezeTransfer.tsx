@@ -12,7 +12,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { useState, useEffect } from 'react';
-import { TransactionSource, Bank } from '@/app/lib/interface';
+import { TransactionSource, Bank, CustomPaymentHead } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
   collection,
@@ -30,6 +30,7 @@ const SOURCE_OPTIONS: TransactionSource[] = [
   'easypaisa',
   'jazzcash',
   'other',
+  'custom',
 ];
 
 interface Props {
@@ -37,7 +38,9 @@ interface Props {
     amount: number,
     fromSource: TransactionSource,
     bankId?: string,
-    bankName?: string
+    bankName?: string,
+    customPaymentHeadId?: string,
+    customPaymentHeadName?: string
   ) => Promise<void>;
   saving: boolean;
 }
@@ -53,6 +56,11 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
   const [selectedBank, setSelectedBank] = useState('');
   const [newBankName, setNewBankName] = useState('');
 
+  // custom payment head state
+  const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
+  const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] = useState('');
+  const [newCustomPaymentHeadName, setNewCustomPaymentHeadName] = useState('');
+
   useEffect(() => {
     if (!user) return;
     const fetchBanks = async () => {
@@ -65,6 +73,20 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
       setBanks(fetched);
     };
     fetchBanks();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchCustomPaymentHeads = async () => {
+      const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
+      const snap = await getDocs(q);
+      const fetched: CustomPaymentHead[] = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<CustomPaymentHead, 'id'>),
+      }));
+      setCustomPaymentHeads(fetched);
+    };
+    fetchCustomPaymentHeads();
   }, [user]);
 
   const handleAddBank = async () => {
@@ -85,6 +107,24 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
     setNewBankName('');
   };
 
+  const handleAddCustomPaymentHead = async () => {
+    if (!user || !newCustomPaymentHeadName.trim()) return;
+    const docRef = await addDoc(collection(db, 'customPaymentHeads'), {
+      userId: user.uid,
+      name: newCustomPaymentHeadName.trim(),
+      createdAt: Timestamp.now(),
+    });
+    const newCustomPaymentHead: CustomPaymentHead = {
+      id: docRef.id,
+      userId: user.uid,
+      name: newCustomPaymentHeadName.trim(),
+      createdAt: Timestamp.now(),
+    };
+    setCustomPaymentHeads((prev) => [...prev, newCustomPaymentHead]);
+    setSelectedCustomPaymentHead(newCustomPaymentHead.id!);
+    setNewCustomPaymentHeadName('');
+  };
+
   const handleFreezeClick = async () => {
     if (!freezeAmount || freezeAmount <= 0) return;
 
@@ -93,12 +133,25 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
         ? banks.find((b) => b.id === selectedBank)
         : undefined;
 
-    await onFreeze(Number(freezeAmount), freezeFrom, bank?.id, bank?.name);
+    const customPaymentHead =
+      freezeFrom === 'custom'
+        ? customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
+        : undefined;
+
+    await onFreeze(
+      Number(freezeAmount),
+      freezeFrom,
+      bank?.id,
+      bank?.name,
+      customPaymentHead?.id,
+      customPaymentHead?.name
+    );
 
     setShowFreezeModal(false);
     setFreezeAmount('');
     setFreezeFrom('in_hand');
     setSelectedBank('');
+    setSelectedCustomPaymentHead('');
   };
 
   return (
@@ -179,13 +232,53 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
               </Button>
             </>
           )}
+
+          {/* Custom payment head select if source = custom */}
+          {freezeFrom === 'custom' && (
+            <>
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Select Payment Head</InputLabel>
+                <Select
+                  value={selectedCustomPaymentHead}
+                  onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
+                  label="Payment Head"
+                >
+                  {customPaymentHeads.map((head) => (
+                    <MenuItem key={head.id} value={head.id}>
+                      {head.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                fullWidth
+                label="New Payment Head Name"
+                value={newCustomPaymentHeadName}
+                onChange={(e) => setNewCustomPaymentHeadName(e.target.value)}
+                margin="normal"
+              />
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleAddCustomPaymentHead}
+                disabled={!newCustomPaymentHeadName.trim()}
+              >
+                + Add Payment Head
+              </Button>
+            </>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowFreezeModal(false)}>Cancel</Button>
           <Button
             variant="contained"
             onClick={handleFreezeClick}
-            disabled={saving || (freezeFrom === 'bank' && !selectedBank)}
+            disabled={
+              saving ||
+              (freezeFrom === 'bank' && !selectedBank) ||
+              (freezeFrom === 'custom' && !selectedCustomPaymentHead)
+            }
           >
             {saving ? <CircularProgress size={20} /> : 'Confirm Transfer'}
           </Button>

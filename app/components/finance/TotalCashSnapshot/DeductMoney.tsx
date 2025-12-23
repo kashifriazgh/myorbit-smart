@@ -16,6 +16,7 @@ import {
   TransactionSource,
   Bank,
   TotalCashSnapshot,
+  CustomPaymentHead,
 } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -28,7 +29,9 @@ interface Props {
     source: TransactionSource,
     bankId?: string,
     bankName?: string,
-    fromFreeze?: boolean
+    fromFreeze?: boolean,
+    customPaymentHeadId?: string,
+    customPaymentHeadName?: string
   ) => Promise<void>;
   saving: boolean;
 }
@@ -42,6 +45,8 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
   const [fromFreeze, setFromFreeze] = useState(false);
 
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
+  const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] = useState('');
 
   // 🔹 Fetch banks for current user
   useEffect(() => {
@@ -58,11 +63,28 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
     fetchBanks();
   }, [user]);
 
+  // 🔹 Fetch custom payment heads for current user
+  useEffect(() => {
+    if (!user) return;
+    const fetchCustomPaymentHeads = async () => {
+      const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
+      const snap = await getDocs(q);
+      const fetched: CustomPaymentHead[] = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<CustomPaymentHead, 'id'>),
+      }));
+      setCustomPaymentHeads(fetched);
+    };
+    fetchCustomPaymentHeads();
+  }, [user]);
+
   const handleSaveClick = async () => {
     if (!amount || amount <= 0) return;
 
     let bankId: string | undefined;
     let bankName: string | undefined;
+    let customPaymentHeadId: string | undefined;
+    let customPaymentHeadName: string | undefined;
 
     if (source === 'bank') {
       bankId = selectedBank;
@@ -70,12 +92,27 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
       if (!bankId || !bankName) return;
     }
 
-    await onDeduct(Number(amount), source, bankId, bankName, fromFreeze);
+    if (source === 'custom') {
+      customPaymentHeadId = selectedCustomPaymentHead;
+      customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+      if (!customPaymentHeadId || !customPaymentHeadName) return;
+    }
+
+    await onDeduct(
+      Number(amount),
+      source,
+      bankId,
+      bankName,
+      fromFreeze,
+      customPaymentHeadId,
+      customPaymentHeadName
+    );
 
     setShowModal(false);
     setAmount('');
     setSource('in_hand');
     setSelectedBank('');
+    setSelectedCustomPaymentHead('');
     setFromFreeze(false);
   };
 
@@ -88,7 +125,12 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
     balance = selectedBankName
       ? snapshot.sources.bank?.[selectedBankName] ?? 0
       : 0; // key by bank name in snapshot
-  } else if (source !== 'bank') {
+  } else if (source === 'custom' && selectedCustomPaymentHead) {
+    const selectedCustomPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+    balance = selectedCustomPaymentHeadName
+      ? snapshot.sources.custom?.[selectedCustomPaymentHeadName] ?? 0
+      : 0; // key by custom payment head name in snapshot
+  } else if (source !== 'bank' && source !== 'custom') {
     balance = (snapshot.sources[source] as number) ?? 0;
   }
 
@@ -146,6 +188,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
                   <MenuItem value="easypaisa">Easypaisa</MenuItem>
                   <MenuItem value="jazzcash">JazzCash</MenuItem>
                   <MenuItem value="other">Other</MenuItem>
+                  <MenuItem value="custom">Custom Payment Head</MenuItem>
                 </Select>
               </FormControl>
 
@@ -169,6 +212,27 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
                   </Select>
                 </FormControl>
               )}
+
+              {source === 'custom' && (
+                <FormControl fullWidth margin="normal">
+                  <InputLabel>Select Payment Head</InputLabel>
+                  <Select
+                    value={selectedCustomPaymentHead}
+                    onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
+                    label="Payment Head"
+                  >
+                    {customPaymentHeads.length > 0 ? (
+                      customPaymentHeads.map((head) => (
+                        <MenuItem key={head.id} value={head.id}>
+                          {head.name}
+                        </MenuItem>
+                      ))
+                    ) : (
+                      <MenuItem disabled>No Payment Heads Available</MenuItem>
+                    )}
+                  </Select>
+                </FormControl>
+              )}
             </>
           )}
 
@@ -183,7 +247,12 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
             variant="contained"
             color="error"
             onClick={handleSaveClick}
-            disabled={saving || (amount !== '' && Number(amount) > balance)}
+            disabled={
+              saving ||
+              (amount !== '' && Number(amount) > balance) ||
+              (source === 'bank' && !selectedBank) ||
+              (source === 'custom' && !selectedCustomPaymentHead)
+            }
           >
             {saving ? 'Saving...' : 'Deduct'}
           </Button>

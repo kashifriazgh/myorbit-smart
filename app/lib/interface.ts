@@ -255,6 +255,7 @@ export interface TotalCashSnapshot {
     jazzcash: number;
     other: number;
     bank: { [bankName: string]: number }; // 👈 nested object for banks
+    custom: { [customName: string]: number }; // 👈 nested object for custom payment heads
   };
 
   totalAmount: number;
@@ -274,6 +275,14 @@ export interface Bank {
   name: string;
   createdAt: Date | Timestamp;
 }
+
+export interface CustomPaymentHead {
+  id?: string;
+  userId: string;
+  name: string;
+  createdAt: Date | Timestamp;
+}
+
 export type TransactionType =
   | 'add'
   | 'deduct'
@@ -285,7 +294,8 @@ export type TransactionSource =
   | 'bank'
   | 'easypaisa'
   | 'jazzcash'
-  | 'other';
+  | 'other'
+  | 'custom';
 export type TransactionCategory =
   | 'income'
   | 'expenditure'
@@ -305,6 +315,8 @@ export interface CashTransaction {
   referenceId?: string;
   bankId?: string;
   BankName?: string;
+  customPaymentHeadId?: string;
+  customPaymentHeadName?: string;
   createdAt: Date | Timestamp;
 }
 export interface LoanRecord {

@@ -19,6 +19,7 @@ import {
   useMediaQuery,
   Stack,
   Avatar,
+  Container,
 } from '@mui/material';
 import {
   collection,
@@ -39,9 +40,9 @@ import { ShoppingListItem } from '@/app/lib/interface';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined';
 import AddIcon from '@mui/icons-material/Add';
-
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Link from 'next/link';
 import moment from 'moment-timezone';
 import nlp from 'compromise';
@@ -292,7 +293,6 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({
 
         {!searchTerm && (
           <Box sx={{ display: 'flex', height: 300, gap: 1 }}>
-            {/* Categories Column - 40% */}
             <Box
               sx={{
                 width: '40%',
@@ -335,7 +335,6 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({
               </Box>
             </Box>
 
-            {/* Emojis Column - 60% */}
             <Box
               sx={{
                 width: '60%',
@@ -451,7 +450,6 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({
     );
   }
 
-  // Desktop layout
   return (
     <Box>
       <TextField
@@ -635,7 +633,6 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
 
       onItemAdded(createdItem);
 
-      // Reset form
       setTitle('');
       setQty('');
       setProposedPrice(0);
@@ -705,14 +702,8 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
               >
                 {icon}
               </Box>
-              {/* <Typography variant="body2" color="text.secondary">
-                Click an emoji below to select
-              </Typography> */}
             </Box>
-            <EmojiPicker
-              selectedEmoji={icon}
-              onEmojiSelect={handleIconSelect}
-            />
+            <EmojiPicker selectedEmoji={icon} onEmojiSelect={handleIconSelect} />
           </Box>
         </Stack>
       </DialogContent>
@@ -750,7 +741,6 @@ const PurchasePriceModal: React.FC<PurchasePriceModalProps> = ({
 }) => {
   const [purchasedPrice, setPurchasedPrice] = useState(proposedPrice);
 
-  // Reset to proposed price when modal opens
   React.useEffect(() => {
     if (open) {
       setPurchasedPrice(proposedPrice);
@@ -793,7 +783,7 @@ const PurchasePriceModal: React.FC<PurchasePriceModalProps> = ({
   );
 };
 
-const ShoppingList: React.FC = () => {
+export default function MonthlyShoppingPage() {
   const { user } = useAuth();
   const { onboarding } = useOnboarding();
   const { theme: customTheme } = useCustomTheme();
@@ -808,39 +798,23 @@ const ShoppingList: React.FC = () => {
   const [lastFetchedMonth, setLastFetchedMonth] = useState<string | null>(null);
   const isFetchingRef = useRef(false);
 
-  // Calculate current month based on user's start of month preference
   const getCurrentMonth = useCallback(() => {
     const now = moment();
     const startOfMonth = onboarding?.startOfMonth?.value || 1;
 
-    console.log(
-      '📅 Calculating month - Current date:',
-      now.format('YYYY-MM-DD'),
-      'Start of month:',
-      startOfMonth
-    );
-
-    // If current day is before start of month, we're still in the current month
-    // The "start of month" is when the new month begins, not when the previous month ends
     if (now.date() < startOfMonth) {
-      const result = now.format('YYYY-MM');
-      console.log('📅 Using current month (before start date):', result);
-      return result;
+      return now.format('YYYY-MM');
     }
-    const result = now.format('YYYY-MM');
-    console.log('📅 Using current month (after start date):', result);
-    return result;
+    return now.format('YYYY-MM');
   }, [onboarding?.startOfMonth?.value]);
 
   const fetchItems = useCallback(async () => {
     if (!user?.uid) {
-      console.log('No user UID available');
       setLoading(false);
       return;
     }
 
     if (isFetchingRef.current) {
-      console.log('Already fetching, skipping...');
       return;
     }
 
@@ -849,9 +823,6 @@ const ShoppingList: React.FC = () => {
 
     try {
       const currentMonth = getCurrentMonth();
-      console.log('🔄 FETCH START - Month:', currentMonth, 'User:', user.uid);
-      console.log('🔄 Last fetched month:', lastFetchedMonth);
-      console.log('🔄 Current items count:', items.length);
 
       const q = query(
         collection(db, 'shoppingListOfMonth'),
@@ -859,11 +830,9 @@ const ShoppingList: React.FC = () => {
       );
 
       const snapshot = await getDocs(q);
-      console.log('📊 Firebase snapshot size:', snapshot.docs.length);
 
       const docs = snapshot.docs.map((doc) => {
         const data = doc.data() as ShoppingListItem;
-        console.log('📄 Raw doc data:', data);
         return {
           ...data,
           id: doc.id,
@@ -872,49 +841,26 @@ const ShoppingList: React.FC = () => {
         };
       });
 
-      console.log('📋 All docs:', docs);
-
-      // Filter by current user and sort by createdAt on client side
       const userItems = docs
         .filter((item) => item.userId === user.uid)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-      console.log('✅ Filtered user items:', userItems);
-      console.log('✅ Setting items to state...');
-
-      // Only update items if we have results or if we're clearing them intentionally
       if (userItems.length > 0 || currentMonth !== lastFetchedMonth) {
         setItems(userItems);
         setLastFetchedMonth(currentMonth);
-        console.log('✅ Items set successfully');
-      } else {
-        console.log(
-          '⚠️ Skipping empty items update to prevent clearing existing data'
-        );
       }
     } catch (error) {
-      console.error('❌ Error fetching shopping items:', error);
+      console.error('Error fetching shopping items:', error);
     } finally {
       setLoading(false);
       isFetchingRef.current = false;
-      console.log('🏁 Fetch completed');
     }
-  }, [user?.uid, getCurrentMonth]);
+  }, [user?.uid, getCurrentMonth, lastFetchedMonth]);
 
   useEffect(() => {
-    console.log('🚀 useEffect triggered');
-    console.log('🚀 user?.uid:', user?.uid);
-    console.log(
-      '🚀 onboarding?.startOfMonth?.value:',
-      onboarding?.startOfMonth?.value
-    );
-    console.log('🚀 onboarding object:', onboarding);
-
     if (user?.uid) {
-      console.log('🚀 Calling fetchItems...');
       fetchItems();
     } else {
-      console.log('🚀 No user UID, setting loading to false');
       setLoading(false);
       setItems([]);
     }
@@ -922,10 +868,8 @@ const ShoppingList: React.FC = () => {
 
   const handleTogglePurchase = (item: ShoppingListItem) => {
     if (item.purchased) {
-      // If already purchased, just toggle back
       handleUpdatePurchase(item, false, 0);
     } else {
-      // If not purchased, show price input modal
       setPurchaseModal({ open: true, item });
     }
   };
@@ -976,38 +920,36 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  // Calculate budget totals
   const purchasedTotal = items
     .filter((item) => item.purchased)
     .reduce((sum, item) => sum + item.purchasedPrice, 0);
 
+  const proposedTotal = items.reduce(
+    (sum, item) => sum + item.proposedPrice,
+    0
+  );
+
   if (loading) {
     return (
-      <Card
-        sx={{
-          backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-          color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-        }}
-      >
-        <CardContent>
-          <Box
-            display="flex"
-            justifyContent="center"
-            alignItems="center"
-            minHeight={200}
-          >
-            <CircularProgress />
-          </Box>
-        </CardContent>
-      </Card>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Box
+          display="flex"
+          justifyContent="center"
+          alignItems="center"
+          minHeight={400}
+        >
+          <CircularProgress />
+        </Box>
+      </Container>
     );
   }
 
   return (
-    <>
+    <Container maxWidth="md" sx={{ py: 4 }}>
       <Card
         sx={{
-          backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+          backgroundColor:
+            customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
           color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
         }}
       >
@@ -1019,9 +961,19 @@ const ShoppingList: React.FC = () => {
             alignItems="center"
             mb={3}
           >
-            <Typography variant="h6" fontWeight="bold">
-              Shopping List
-            </Typography>
+            <Box display="flex" alignItems="center" gap={2}>
+              <Link href="/" style={{ textDecoration: 'none' }}>
+                <Button
+                  startIcon={<ArrowBackIcon />}
+                  sx={{ color: 'text.primary' }}
+                >
+                  Back
+                </Button>
+              </Link>
+              <Typography variant="h5" fontWeight="bold">
+                Monthly Shopping List
+              </Typography>
+            </Box>
             <Button
               onClick={() => setOpenModal(true)}
               variant="contained"
@@ -1044,22 +996,27 @@ const ShoppingList: React.FC = () => {
               <Box
                 display="flex"
                 alignItems="center"
-                gap={1}
+                gap={3}
                 justifyContent="center"
+                flexWrap="wrap"
               >
-                <Avatar sx={{ bgcolor: 'success.main', width: 32, height: 32 }}>
-                  <CheckCircleIcon sx={{ fontSize: 18 }} />
-                </Avatar>
-                <Box>
-                  <Typography
-                    variant="h6"
-                    fontWeight="bold"
-                    sx={{ lineHeight: 1.2 }}
-                  >
+                <Box textAlign="center">
+                  <Avatar sx={{ bgcolor: 'success.main', width: 32, height: 32, mx: 'auto', mb: 1 }}>
+                    <CheckCircleIcon sx={{ fontSize: 18 }} />
+                  </Avatar>
+                  <Typography variant="h6" fontWeight="bold">
                     Rs {purchasedTotal.toLocaleString()}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     Total Spent
+                  </Typography>
+                </Box>
+                <Box textAlign="center">
+                  <Typography variant="h6" fontWeight="bold">
+                    Rs {proposedTotal.toLocaleString()}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Total Budget
                   </Typography>
                 </Box>
               </Box>
@@ -1085,7 +1042,7 @@ const ShoppingList: React.FC = () => {
             </Box>
           ) : (
             <Box>
-              {items.slice(0, 7).map((item) => (
+              {items.map((item) => (
                 <Box
                   key={item.id}
                   sx={{
@@ -1203,27 +1160,6 @@ const ShoppingList: React.FC = () => {
               ))}
             </Box>
           )}
-
-          {/* Footer */}
-          {items.length > 7 && (
-            <Box mt={3}>
-              <Link href="/1/monthly-shopping" style={{ textDecoration: 'none' }}>
-                <Button
-                  variant="contained"
-                  fullWidth
-                  sx={{
-                    backgroundColor: '#FACC15',
-                    color: '#000',
-                    fontWeight: 600,
-                    borderRadius: '9999px',
-                    '&:hover': { backgroundColor: '#EAB308' },
-                  }}
-                >
-                  🛒 Shop Now
-                </Button>
-              </Link>
-            </Box>
-          )}
         </CardContent>
       </Card>
 
@@ -1242,8 +1178,7 @@ const ShoppingList: React.FC = () => {
         itemTitle={purchaseModal.item?.title || ''}
         proposedPrice={purchaseModal.item?.proposedPrice || 0}
       />
-    </>
+    </Container>
   );
-};
+}
 
-export default ShoppingList;

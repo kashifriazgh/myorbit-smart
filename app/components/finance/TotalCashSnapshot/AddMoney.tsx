@@ -13,7 +13,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
-import { TransactionSource, Bank } from '@/app/lib/interface';
+import { TransactionSource, Bank, CustomPaymentHead } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
   collection,
@@ -31,6 +31,7 @@ const SOURCE_OPTIONS: TransactionSource[] = [
   'easypaisa',
   'jazzcash',
   'other',
+  'custom',
 ];
 
 interface Props {
@@ -39,7 +40,9 @@ interface Props {
     source: TransactionSource,
     isFreezed: boolean,
     bankId?: string,
-    bankName?: string
+    bankName?: string,
+    customPaymentHeadId?: string,
+    customPaymentHeadName?: string
   ) => Promise<void>;
   saving: boolean;
 }
@@ -56,6 +59,11 @@ export default function AddMoney({ onSave, saving }: Props) {
   const [selectedBank, setSelectedBank] = useState<string>('');
   const [newBankName, setNewBankName] = useState('');
 
+  // Custom payment head state
+  const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
+  const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] = useState<string>('');
+  const [newCustomPaymentHeadName, setNewCustomPaymentHeadName] = useState('');
+
   useEffect(() => {
     if (!user) return;
     const fetchBanks = async () => {
@@ -68,6 +76,20 @@ export default function AddMoney({ onSave, saving }: Props) {
       setBanks(fetched);
     };
     fetchBanks();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchCustomPaymentHeads = async () => {
+      const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
+      const snap = await getDocs(q);
+      const fetched: CustomPaymentHead[] = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<CustomPaymentHead, 'id'>),
+      }));
+      setCustomPaymentHeads(fetched);
+    };
+    fetchCustomPaymentHeads();
   }, [user]);
 
   const handleAddBank = async () => {
@@ -88,13 +110,33 @@ export default function AddMoney({ onSave, saving }: Props) {
     setNewBankName('');
   };
 
+  const handleAddCustomPaymentHead = async () => {
+    if (!user || !newCustomPaymentHeadName.trim()) return;
+    const docRef = await addDoc(collection(db, 'customPaymentHeads'), {
+      userId: user.uid,
+      name: newCustomPaymentHeadName.trim(),
+      createdAt: Timestamp.now(),
+    });
+    const newCustomPaymentHead: CustomPaymentHead = {
+      id: docRef.id,
+      userId: user.uid,
+      name: newCustomPaymentHeadName.trim(),
+      createdAt: Timestamp.now(),
+    };
+    setCustomPaymentHeads((prev) => [...prev, newCustomPaymentHead]);
+    setSelectedCustomPaymentHead(newCustomPaymentHead.id!);
+    setNewCustomPaymentHeadName('');
+  };
+
   const handleSaveClick = async () => {
     if (!newAmount || newAmount <= 0) return;
 
     let bankId: string | undefined;
     let bankName: string | undefined;
+    let customPaymentHeadId: string | undefined;
+    let customPaymentHeadName: string | undefined;
 
-    // ✅ Ignore source/bank if freezed
+    // ✅ Ignore source/bank/custom if freezed
     const sourceToSave: TransactionSource = isFreezed
       ? 'in_hand' // dummy fallback
       : newMode;
@@ -105,7 +147,21 @@ export default function AddMoney({ onSave, saving }: Props) {
       if (!bankId || !bankName) return; // require valid selection
     }
 
-    await onSave(Number(newAmount), sourceToSave, isFreezed, bankId, bankName);
+    if (!isFreezed && newMode === 'custom') {
+      customPaymentHeadId = selectedCustomPaymentHead;
+      customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+      if (!customPaymentHeadId || !customPaymentHeadName) return; // require valid selection
+    }
+
+    await onSave(
+      Number(newAmount),
+      sourceToSave,
+      isFreezed,
+      bankId,
+      bankName,
+      customPaymentHeadId,
+      customPaymentHeadName
+    );
 
     // reset state
     setShowModal(false);
@@ -113,6 +169,7 @@ export default function AddMoney({ onSave, saving }: Props) {
     setNewMode('in_hand');
     setIsFreezed(false);
     setSelectedBank('');
+    setSelectedCustomPaymentHead('');
   };
 
   return (
@@ -188,6 +245,43 @@ export default function AddMoney({ onSave, saving }: Props) {
             </>
           )}
 
+          {/* Custom payment head select if source = custom and not freezed */}
+          {!isFreezed && newMode === 'custom' && (
+            <>
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Select Payment Head</InputLabel>
+                <Select
+                  value={selectedCustomPaymentHead}
+                  onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
+                  label="Payment Head"
+                >
+                  {customPaymentHeads.map((head) => (
+                    <MenuItem key={head.id} value={head.id}>
+                      {head.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              {/* Add new custom payment head */}
+              <TextField
+                fullWidth
+                label="New Payment Head Name"
+                value={newCustomPaymentHeadName}
+                onChange={(e) => setNewCustomPaymentHeadName(e.target.value)}
+                margin="normal"
+              />
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleAddCustomPaymentHead}
+                disabled={!newCustomPaymentHeadName.trim()}
+              >
+                + Add Payment Head
+              </Button>
+            </>
+          )}
+
           <Checkbox
             size="small"
             checked={isFreezed}
@@ -196,9 +290,10 @@ export default function AddMoney({ onSave, saving }: Props) {
               setIsFreezed(checked);
 
               if (checked) {
-                // ✅ reset source & bank when freezed
+                // ✅ reset source & bank & custom when freezed
                 setNewMode('in_hand');
                 setSelectedBank('');
+                setSelectedCustomPaymentHead('');
               }
             }}
           />
@@ -212,7 +307,9 @@ export default function AddMoney({ onSave, saving }: Props) {
             variant="contained"
             onClick={handleSaveClick}
             disabled={
-              saving || (!isFreezed && newMode === 'bank' && !selectedBank)
+              saving ||
+              (!isFreezed && newMode === 'bank' && !selectedBank) ||
+              (!isFreezed && newMode === 'custom' && !selectedCustomPaymentHead)
             }
           >
             {saving ? 'Saving...' : 'Save'}
