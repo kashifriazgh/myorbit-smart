@@ -1,6 +1,6 @@
 'use client';
 
-import { Box, Typography, CircularProgress, IconButton } from '@mui/material';
+import { Box, Typography, CircularProgress, IconButton, Button } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useEffect, useState } from 'react';
 import { db } from '@/app/lib/firebase';
@@ -26,6 +26,7 @@ import FreezeTransfer from './TotalCashSnapshot/FreezeTransfer';
 import AddMoney from './TotalCashSnapshot/AddMoney';
 import DeductMoney from './TotalCashSnapshot/DeductMoney';
 import LoanDialog from './TotalCashSnapshot/LoanRecord';
+import TransactionHistory from './TotalCashSnapshot/TransactionHistory';
 
 export default function TotalCashSnapshotComponent({
   userId,
@@ -40,6 +41,7 @@ export default function TotalCashSnapshotComponent({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showFreeze, setShowFreeze] = useState(false);
+  const [showTransactionHistory, setShowTransactionHistory] = useState(false);
 
   const currency = 'PKR';
 
@@ -399,6 +401,26 @@ export default function TotalCashSnapshotComponent({
         <FreezeTransfer onFreeze={handleFreezeTransfer} saving={saving} />
         <LoanDialog />
       </Box>
+
+      <Box mt={3} display="flex" justifyContent="center">
+        <Button
+          variant="outlined"
+          onClick={() => setShowTransactionHistory(true)}
+          sx={{
+            textTransform: 'none',
+            fontWeight: 600,
+            px: 3,
+          }}
+        >
+          See Transaction History
+        </Button>
+      </Box>
+
+      <TransactionHistory
+        open={showTransactionHistory}
+        onClose={() => setShowTransactionHistory(false)}
+        userId={userId}
+      />
     </Box>
   );
 }

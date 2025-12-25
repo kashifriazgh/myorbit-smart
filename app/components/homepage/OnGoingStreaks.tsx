@@ -89,6 +89,7 @@ const OnGoingStreaks = () => {
   const [savingProgress, setSavingProgress] = useState(false);
 
   const lastSavedRef = useRef<string>('');
+  const isSavingRef = useRef<boolean>(false);
 
   // 🔑 filter for user-specific streaks
   const userStreaks = useMemo(() => {
@@ -136,35 +137,46 @@ const OnGoingStreaks = () => {
   useEffect(() => {
     if (!progressModalOpen || !selectedStreakId || !dirty) return;
     if (debouncedProgress === lastSavedRef.current) return;
+    if (isSavingRef.current) return; // Prevent concurrent saves
 
     let cancelled = false;
+    isSavingRef.current = true;
+    
     (async () => {
       try {
         setSavingProgress(true);
-        const streak = filteredStreaks.find((s) => s.id === selectedStreakId);
-        if (streak) {
-          await updateRemarks(streak, debouncedProgress);
+        // Access streaks directly from closure - don't include in dependencies
+        // to prevent infinite loop when context updates after save
+        const currentStreak = streaks.find((s) => s.userId === user?.uid && s.id === selectedStreakId);
+        if (currentStreak) {
+          await updateRemarks(currentStreak, debouncedProgress);
           if (!cancelled) {
             lastSavedRef.current = debouncedProgress;
+            setDirty(false);
           }
         }
       } catch (err) {
         console.error('Failed to auto-save progress:', err);
       } finally {
-        if (!cancelled) setSavingProgress(false);
+        if (!cancelled) {
+          setSavingProgress(false);
+          isSavingRef.current = false;
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      isSavingRef.current = false;
     };
   }, [
     debouncedProgress,
     dirty,
     progressModalOpen,
     selectedStreakId,
-    updateRemarks,
-    filteredStreaks,
+    // Don't include streaks, userStreaks, or updateRemarks in dependencies
+    // as they cause infinite loops when context updates after save
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   ]);
 
   // Keen Slider for mobile
@@ -633,6 +645,8 @@ const OnGoingStreaks = () => {
           setProgressModalOpen(false);
           setSelectedStreakId(null);
           setDirty(false);
+          setSavingProgress(false);
+          isSavingRef.current = false;
         }}
       >
         <Box
@@ -708,6 +722,8 @@ const OnGoingStreaks = () => {
                   setProgressModalOpen(false);
                   setSelectedStreakId(null);
                   setDirty(false);
+                  setSavingProgress(false);
+                  isSavingRef.current = false;
                 }}
                 disabled={saving}
                 sx={{

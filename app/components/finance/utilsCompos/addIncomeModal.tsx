@@ -559,7 +559,7 @@ export default function AddIncomeModal({
           onClick={handleSave}
           startIcon={saving ? <CircularProgress size={16} /> : null}
         >
-          {saving ? 'Saving...' : 'Save Income Source'}
+          {saving ? 'Saving...' : 'Save'}
         </Button>
       </DialogActions>
     </Dialog>

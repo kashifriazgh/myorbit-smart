@@ -12,6 +12,8 @@ import {
   Collapse,
   Slider,
   Chip,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useState } from 'react';
 import { db } from '@/app/lib/firebase';
@@ -21,10 +23,11 @@ import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import moment from 'moment';
-import { useMediaQuery, useTheme } from '@mui/material';
-import MoodSelector from './moodSelector';
 import SaveIcon from '@mui/icons-material/Save';
+import moment from 'moment';
+import MoodSelector from './moodSelector';
+import { useRef } from 'react';
+
 
 type Props = {
   open: boolean;
@@ -49,6 +52,9 @@ export default function JournalModal({ open, onClose }: Props) {
 
   const currentDate = moment().format('D MMMM YY, dddd h:mm A');
   const defaultTitle = moment().format('dddd, DD MMMM YYYY'); // e.g., Monday, 11 August 2025
+
+  const tagInputRef = useRef<HTMLInputElement>(null);
+
 
   const handleSave = async () => {
     const finalTitle = title.trim() || defaultTitle;
@@ -75,6 +81,9 @@ export default function JournalModal({ open, onClose }: Props) {
       setTags([...tags, clean]);
     }
     setTagInput('');
+  
+    // Keep the input focused
+    tagInputRef.current?.focus();
   };
 
   const handleDeleteTag = (index: number) => {
@@ -88,18 +97,69 @@ export default function JournalModal({ open, onClose }: Props) {
       maxWidth="md"
       fullWidth
       fullScreen={fullScreen}
+      PaperProps={{
+        sx: {
+          display: 'flex',
+          flexDirection: 'column',
+          bgcolor: theme.mode === 'dark' ? '#1e293b' : '#fff',
+        },
+      }}
     >
-      <DialogTitle>📔 Today&#39;s Reflection</DialogTitle>
+      {/* Dialog Title with top Save button on mobile */}
+      <DialogTitle
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          px: 2,
+          py: 1.5,
+          borderBottom: fullScreen ? '2px solid red' : undefined,
+          position: fullScreen ? 'fixed' : 'sticky',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1301,
+          bgcolor: theme.mode === 'dark' ? '#1e293b' : '#fff',
+        }}
+      >
+        <Typography fontWeight="bold">📔 Today&#39;s Reflection</Typography>
+
+        {fullScreen && (
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={loading}
+            startIcon={<SaveIcon />}
+            sx={{
+              borderRadius: '30px',
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              fontWeight: 'bold',
+              background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+              ':hover': {
+                background: 'linear-gradient(90deg, #4f46e5, #7c3aed)',
+              },
+            }}
+          >
+            {loading ? 'Saving...' : 'Save Entry'}
+          </Button>
+        )}
+      </DialogTitle>
+
       <DialogContent
-        sx={{ bgcolor: theme.mode === 'dark' ? '#1e293b' : '#fff' }}
+        sx={{
+          pt: fullScreen ? 10 : 3, // extra padding for fixed title
+          bgcolor: theme.mode === 'dark' ? '#1e293b' : '#fff',
+        }}
       >
         <Stack spacing={3}>
+          {/* Display Current Date/Time below mood selector */}
+          <MoodSelector selectedMood={mood} onSelect={(val) => setMood(val)} />
+
           <Typography variant="h5" textAlign="center" fontWeight="bold">
             {currentDate}
           </Typography>
-
-          {/* Mood Icons */}
-          <MoodSelector selectedMood={mood} onSelect={(val) => setMood(val)} />
 
           {/* Mood Level Slider */}
           {mood && (
@@ -148,14 +208,16 @@ export default function JournalModal({ open, onClose }: Props) {
 
           {/* Tags */}
           <Stack direction="row" spacing={1} alignItems="center">
-            <TextField
-              label="Add Tag"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
-            />
-            <Button onClick={handleAddTag}>Add</Button>
-          </Stack>
+  <TextField
+    inputRef={tagInputRef} // <-- attach ref here
+    label="Add Tag"
+    value={tagInput}
+    onChange={(e) => setTagInput(e.target.value)}
+    onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+  />
+  <Button onClick={handleAddTag}>Add</Button>
+</Stack>
+
           <Stack direction="row" spacing={1} flexWrap="wrap">
             {tags.map((tag, idx) => (
               <Chip
@@ -172,29 +234,43 @@ export default function JournalModal({ open, onClose }: Props) {
           </Stack>
         </Stack>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} color="inherit">
-          Cancel
-        </Button>
+
+      {/* DialogActions: Bottom Cancel only, full width on mobile */}
+      <DialogActions sx={{ px: 2, py: 1 }}>
         <Button
-          variant="contained"
-          onClick={handleSave}
-          disabled={loading}
-          startIcon={<SaveIcon />}
+          onClick={onClose}
+          color="inherit"
+          fullWidth={fullScreen}
           sx={{
-            borderRadius: '30px',
+            border: fullScreen ? '1px solid #f87171' : undefined, // dim red border on mobile
             textTransform: 'none',
-            px: 3,
-            py: 1,
-            fontWeight: 'bold',
-            background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
-            ':hover': {
-              background: 'linear-gradient(90deg, #4f46e5, #7c3aed)',
-            },
           }}
         >
-          {loading ? 'Saving...' : 'Save Entry'}
+          Cancel
         </Button>
+
+        {/* Hide bottom Save on mobile */}
+        {!fullScreen && (
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={loading}
+            startIcon={<SaveIcon />}
+            sx={{
+              borderRadius: '30px',
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              fontWeight: 'bold',
+              background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+              ':hover': {
+                background: 'linear-gradient(90deg, #4f46e5, #7c3aed)',
+              },
+            }}
+          >
+            {loading ? 'Saving...' : 'Save Entry'}
+          </Button>
+        )}
       </DialogActions>
     </Dialog>
   );

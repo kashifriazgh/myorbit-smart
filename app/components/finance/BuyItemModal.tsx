@@ -20,6 +20,7 @@ import {
   Divider,
   Chip,
   IconButton,
+  Collapse,
 } from '@mui/material';
 import { Add, Delete } from '@mui/icons-material';
 import { useState } from 'react';
@@ -64,6 +65,7 @@ export default function BuyItemModal({
   const [priority, setPriority] = useState<BuyItemEntry['priority']>('needed');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+  const [addItemOpen, setAddItemOpen] = useState(false); // Collapsible section state
 
   const totalEstimate = items.reduce((sum, i) => sum + i.estimatedPrice, 0);
 
@@ -83,7 +85,6 @@ export default function BuyItemModal({
           budgetLimit || 0
         ).toLocaleString()}`
       );
-
       return;
     }
 
@@ -109,8 +110,20 @@ export default function BuyItemModal({
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const resetForm = () => {
+    setPlanTitle('');
+    setBudgetLimit('');
+    setItems([]);
+    setItemTitle('');
+    setEstimatedPrice('');
+    setPriority('needed');
+    setNotes('');
+    setError('');
+    setAddItemOpen(false);
+  };
+
   const handleSavePlan = async () => {
-    if (!planTitle || items.length === 0 || !user) return;
+    if (!planTitle || budgetLimit === '' || !user) return;
 
     const now = new Date();
     const newPlan: BuyItem = {
@@ -122,7 +135,7 @@ export default function BuyItemModal({
       sharedWith: [],
       createdAt: now,
       updatedAt: now,
-      budgetLimit: budgetLimit === '' ? undefined : Number(budgetLimit), // ✅ Add here
+      budgetLimit: typeof budgetLimit === 'number' ? budgetLimit : Number(budgetLimit),
     };
 
     const docRef = await addDoc(collection(db, 'buyItems'), {
@@ -135,22 +148,19 @@ export default function BuyItemModal({
       onItemCreated({ ...newPlan, id: docRef.id });
     }
 
-    // Reset
-    setPlanTitle('');
-    setBudgetLimit('');
-    setItems([]);
-    setItemTitle('');
-    setEstimatedPrice('');
-    setPriority('needed');
-    setNotes('');
-    setError('');
+    resetForm();
+    onClose();
+  };
+
+  const handleCancel = () => {
+    resetForm();
     onClose();
   };
 
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={handleCancel}
       fullWidth
       maxWidth={isMobile ? 'sm' : 'md'}
       fullScreen={isMobile}
@@ -197,7 +207,7 @@ export default function BuyItemModal({
             size={isMobile ? 'medium' : 'medium'}
             sx={{
               '& .MuiInputBase-input': {
-                fontSize: isMobile ? '16px' : '14px', // Prevents zoom on iOS
+                fontSize: isMobile ? '16px' : '14px',
               },
             }}
           />
@@ -223,108 +233,108 @@ export default function BuyItemModal({
 
         <Divider sx={{ my: 3 }} />
 
-        {/* New Item Section */}
+        {/* Collapsible Add Item Section */}
         <Box>
-          <Typography
-            variant="h6"
-            fontWeight="bold"
-            mb={2}
-            sx={{
-              fontSize: isMobile ? '1.1rem' : '1.25rem',
-            }}
+          <Button
+            variant="outlined"
+            onClick={() => setAddItemOpen((prev) => !prev)}
+            startIcon={<Add />}
+            sx={{ mb: 1 }}
           >
-            Add Item
-          </Typography>
+            {addItemOpen ? 'Hide Add Item Section' : 'Add Item'}
+          </Button>
 
-          <Stack spacing={2}>
-            <TextField
-              label="Item Title"
-              fullWidth
-              value={itemTitle}
-              onChange={(e) => setItemTitle(e.target.value)}
-              size={isMobile ? 'medium' : 'medium'}
-              sx={{
-                '& .MuiInputBase-input': {
-                  fontSize: isMobile ? '16px' : '14px',
-                },
-              }}
-            />
-
-            <TextField
-              label="Estimated Price (Rs)"
-              fullWidth
-              type="number"
-              value={estimatedPrice}
-              onChange={(e) =>
-                setEstimatedPrice(
-                  e.target.value === '' ? '' : Number(e.target.value)
-                )
-              }
-              size={isMobile ? 'medium' : 'medium'}
-              sx={{
-                '& .MuiInputBase-input': {
-                  fontSize: isMobile ? '16px' : '14px',
-                },
-              }}
-            />
-
-            <FormControl fullWidth size={isMobile ? 'medium' : 'medium'}>
-              <InputLabel>Priority</InputLabel>
-              <Select
-                value={priority}
-                label="Priority"
-                onChange={(e) =>
-                  setPriority(e.target.value as BuyItemEntry['priority'])
-                }
+          <Collapse in={addItemOpen}>
+            <Stack spacing={2}>
+              <TextField
+                label="Item Title"
+                fullWidth
+                value={itemTitle}
+                onChange={(e) => setItemTitle(e.target.value)}
+                size={isMobile ? 'medium' : 'medium'}
                 sx={{
-                  '& .MuiSelect-select': {
+                  '& .MuiInputBase-input': {
                     fontSize: isMobile ? '16px' : '14px',
                   },
                 }}
-              >
-                {PRIORITIES.map((p) => (
-                  <MenuItem
-                    key={p}
-                    value={p}
-                    sx={{ fontSize: isMobile ? '16px' : '14px' }}
-                  >
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+              />
 
-            <TextField
-              label="Notes (optional)"
-              fullWidth
-              multiline
-              rows={isMobile ? 3 : 2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              size={isMobile ? 'medium' : 'medium'}
-              sx={{
-                '& .MuiInputBase-input': {
+              <TextField
+                label="Estimated Price (Rs)"
+                fullWidth
+                type="number"
+                value={estimatedPrice}
+                onChange={(e) =>
+                  setEstimatedPrice(
+                    e.target.value === '' ? '' : Number(e.target.value)
+                  )
+                }
+                size={isMobile ? 'medium' : 'medium'}
+                sx={{
+                  '& .MuiInputBase-input': {
+                    fontSize: isMobile ? '16px' : '14px',
+                  },
+                }}
+              />
+
+              <FormControl fullWidth size={isMobile ? 'medium' : 'medium'}>
+                <InputLabel>Priority</InputLabel>
+                <Select
+                  value={priority}
+                  label="Priority"
+                  onChange={(e) =>
+                    setPriority(e.target.value as BuyItemEntry['priority'])
+                  }
+                  sx={{
+                    '& .MuiSelect-select': {
+                      fontSize: isMobile ? '16px' : '14px',
+                    },
+                  }}
+                >
+                  {PRIORITIES.map((p) => (
+                    <MenuItem
+                      key={p}
+                      value={p}
+                      sx={{ fontSize: isMobile ? '16px' : '14px' }}
+                    >
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                label="Notes (optional)"
+                fullWidth
+                multiline
+                rows={isMobile ? 3 : 2}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                size={isMobile ? 'medium' : 'medium'}
+                sx={{
+                  '& .MuiInputBase-input': {
+                    fontSize: isMobile ? '16px' : '14px',
+                  },
+                }}
+              />
+
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleAddItem}
+                disabled={estimatedPrice === '' || itemTitle === ''}
+                startIcon={<Add />}
+                size={isMobile ? 'large' : 'medium'}
+                sx={{
+                  py: isMobile ? 1.5 : 1,
                   fontSize: isMobile ? '16px' : '14px',
-                },
-              }}
-            />
-
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleAddItem}
-              disabled={estimatedPrice === '' || itemTitle === ''}
-              startIcon={<Add />}
-              size={isMobile ? 'large' : 'medium'}
-              sx={{
-                py: isMobile ? 1.5 : 1,
-                fontSize: isMobile ? '16px' : '14px',
-                fontWeight: 'bold',
-              }}
-            >
-              Add Item
-            </Button>
-          </Stack>
+                  fontWeight: 'bold',
+                }}
+              >
+                Add Item
+              </Button>
+            </Stack>
+          </Collapse>
         </Box>
 
         {/* Error */}
@@ -460,7 +470,7 @@ export default function BuyItemModal({
         }}
       >
         <Button
-          onClick={onClose}
+          onClick={handleCancel}
           size={isMobile ? 'large' : 'medium'}
           sx={{
             width: isMobile ? '100%' : 'auto',
@@ -474,7 +484,7 @@ export default function BuyItemModal({
           onClick={handleSavePlan}
           variant="contained"
           color="success"
-          disabled={!planTitle || items.length === 0}
+          disabled={!planTitle || !budgetLimit}
           size={isMobile ? 'large' : 'medium'}
           sx={{
             width: isMobile ? '100%' : 'auto',

@@ -15,6 +15,8 @@ import {
   Select,
   MenuItem,
   IconButton,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import { Close as CloseIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useAuth } from '../../lib/context/userContext';
@@ -42,18 +44,20 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
 }) => {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
+  const muiTheme = useTheme();
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
 
   // Get current time for default values
-  const getCurrentTime = () => {
-    const now = new Date();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    return `${hours}:${minutes}`;
-  };
+  // const getCurrentTime = () => {
+  //   const now = new Date();
+  //   const hours = now.getHours().toString().padStart(2, '0');
+  //   const minutes = now.getMinutes().toString().padStart(2, '0');
+  //   return `${hours}:${minutes}`;
+  // };
 
   const [formData, setFormData] = useState<Partial<SchedulesProps>>({
     title: '',
-    startTime: getCurrentTime(),
+    startTime: '',
     endTime: '',
     objective: '',
     duration: 0,
@@ -107,7 +111,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
       } else {
         setFormData({
           title: '',
-          startTime: getCurrentTime(),
+          startTime: '',
           endTime: '',
           objective: '',
           duration: 0,
@@ -218,6 +222,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
       onClose={onClose}
       maxWidth="sm"
       fullWidth
+      fullScreen={isMobile}
       PaperProps={{
         sx: {
           backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
@@ -333,24 +338,26 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
               sx={{ flex: 1, minWidth: '150px' }}
             />
 
-            <TextField
-              label="End Time"
-              type="time"
-              value={formData.endTime}
-              onChange={(e) => {
-                handleInputChange('endTime', e.target.value);
-                if (formData.startTime) {
-                  handleDurationChange(formData.startTime, e.target.value);
+            {formData.startTime && (
+              <TextField
+                label="End Time"
+                type="time"
+                value={formData.endTime}
+                onChange={(e) => {
+                  handleInputChange('endTime', e.target.value);
+                  if (formData.startTime) {
+                    handleDurationChange(formData.startTime, e.target.value);
+                  }
+                }}
+                variant="outlined"
+                size="medium"
+                InputLabelProps={{ shrink: true }}
+                sx={{ flex: 1, minWidth: '150px' }}
+                helperText={
+                  formData.duration ? `${formData.duration} minutes` : 'Optional'
                 }
-              }}
-              variant="outlined"
-              size="medium"
-              InputLabelProps={{ shrink: true }}
-              sx={{ flex: 1, minWidth: '150px' }}
-              helperText={
-                formData.duration ? `${formData.duration} minutes` : 'Optional'
-              }
-            />
+              />
+            )}
           </Box>
 
           {/* Objective */}

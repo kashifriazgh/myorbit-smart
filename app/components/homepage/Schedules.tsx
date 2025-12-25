@@ -362,11 +362,12 @@ const Schedules: React.FC = () => {
             View today&#39;s schedule
           </Typography>
           <IconButton
-            size="small"
-            onClick={() => console.log('Edit schedules')}
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
+  size="small"
+  onClick={handleAddSchedule}
+>
+  <EditIcon fontSize="small" />
+</IconButton>
+
         </Box>
 
         {/* Date Picker */}

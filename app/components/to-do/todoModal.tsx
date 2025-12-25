@@ -131,6 +131,25 @@ export default function ToDoModal({ open, onClose }: Props) {
     );
     setSteps(updated);
   };
+  // reset the form
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setShowDescription(false);
+    setPriority('routine');
+    setPrivacy('private');
+    setDueDate(new Date());
+    setIsImportant(false);
+    setSteps([]);
+    setAiStepModalOpen(false);
+    setLoading(false);
+  };
+  // handle cancle
+  const handleCancel = () => {
+    resetForm();
+    onClose();
+  };
+    
 
   const handleSave = async () => {
     if (!title.trim()) return;
@@ -174,22 +193,66 @@ export default function ToDoModal({ open, onClose }: Props) {
 
     await addDoc(collection(db, 'todos'), docData);
     setLoading(false);
+    resetForm();
     onClose();
   };
 
   return (
     <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
-      fullScreen={isMobile}
-    >
-      <DialogTitle>📝 New To-Do</DialogTitle>
+  open={open}
+  onClose={handleCancel}
+  maxWidth="md"
+  fullWidth
+  fullScreen={isMobile}
+  PaperProps={{
+    sx: {
+      display: 'flex',
+      flexDirection: 'column',
+      maxHeight: '100dvh', // important on mobile
+    },
+  }}
+>
+
+<DialogTitle
+  sx={{
+    position: isMobile ? 'fixed' : 'sticky',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: theme.zIndex.modal + 1,
+    bgcolor: theme.palette.background.paper,
+    borderBottom: `1px solid ${theme.palette.divider}`,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 1,
+  }}
+>
+
+  <Typography fontWeight={600}>📝 New To-Do</Typography>
+
+  {isMobile && (
+  <Button
+    variant="contained"
+    size="small"
+    onClick={handleSave}
+    disabled={loading || !title.trim()}
+  >
+    {loading ? 'Saving…' : 'Save'}
+  </Button>
+)}
+</DialogTitle>
+
+
+
       <DialogContent
         dividers
-        sx={{ bgcolor: theme.palette.background.default }}
-      >
+        sx={{
+          flex: 1,
+          overflowY: 'auto',
+          bgcolor: theme.palette.background.default,
+          pt: isMobile ? 9 : 3, // header height compensation
+        }}      >
         <Stack spacing={2}>
           <TextField
             label="Title"
@@ -521,19 +584,33 @@ export default function ToDoModal({ open, onClose }: Props) {
         </Stack>
       </DialogContent>
 
-      <DialogActions>
-        <Button variant="outlined" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleSave}
-          disabled={loading}
-        >
-          {loading ? 'Saving...' : 'Save'}
-        </Button>
-      </DialogActions>
+      <DialogActions
+  sx={{
+    position: isMobile ? 'static' : 'sticky',
+    bottom: 0,
+    zIndex: 10,
+    bgcolor: theme.palette.background.paper,
+    borderTop: `1px solid ${theme.palette.divider}`,
+    py: 1.5,
+  }}
+>
+  <Button variant="outlined" onClick={handleCancel} disabled={loading}>
+    Cancel
+  </Button>
+
+  {!isMobile && (
+    <Button
+      variant="contained"
+      color="primary"
+      onClick={handleSave}
+      disabled={loading || !title.trim()}
+    >
+      {loading ? 'Saving...' : 'Save'}
+    </Button>
+  )}
+</DialogActions>
+
+
 
       {/* AI Step Generator Modal */}
       <AIStepGeneratorModal

@@ -555,6 +555,7 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
   const [loading, setLoading] = useState(false);
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
+  
   const [touchedFields, setTouchedFields] = useState({
     qty: false,
     price: false,
@@ -801,6 +802,7 @@ const ShoppingList: React.FC = () => {
   const [items, setItems] = useState<ShoppingListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [openModal, setOpenModal] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [purchaseModal, setPurchaseModal] = useState<{
     open: boolean;
     item: ShoppingListItem | null;
@@ -968,13 +970,25 @@ const ShoppingList: React.FC = () => {
 
   const handleDeleteItem = async (itemId: string) => {
     if (!itemId) return;
-    try {
-      await deleteDoc(doc(db, 'shoppingListOfMonth', itemId));
-      setItems((prev) => prev.filter((item) => item.id !== itemId));
-    } catch (error) {
-      console.error('Error deleting shopping item:', error);
-    }
+  
+    // Step 1: trigger animation
+    setDeletingItemId(itemId);
+  
+    // Step 2: wait for animation to finish
+    setTimeout(async () => {
+      try {
+        await deleteDoc(doc(db, 'shoppingListOfMonth', itemId));
+  
+        // Step 3: remove from UI
+        setItems((prev) => prev.filter((item) => item.id !== itemId));
+      } catch (error) {
+        console.error('Error deleting shopping item:', error);
+      } finally {
+        setDeletingItemId(null);
+      }
+    }, 300); // must match CSS transition duration
   };
+  
 
   // Calculate budget totals
   const purchasedTotal = items
@@ -1086,28 +1100,42 @@ const ShoppingList: React.FC = () => {
           ) : (
             <Box>
               {items.slice(0, 7).map((item) => (
-                <Box
-                  key={item.id}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    p: 2,
-                    mb: 1,
-                    backgroundColor:
-                      customTheme?.mode === 'dark' ? '#334155' : '#f8fafc',
-                    borderRadius: 2,
-                    transition: 'all 0.2s ease',
-                    position: 'relative',
-                    '&:hover': {
-                      backgroundColor:
-                        customTheme?.mode === 'dark' ? '#475569' : '#e2e8f0',
-                      '& .delete-button': {
-                        opacity: 1,
-                      },
-                    },
-                  }}
-                >
+               <Box
+               key={item.id}
+               sx={{
+                 display: 'flex',
+                 alignItems: 'center',
+                 justifyContent: 'space-between',
+                 p: 2,
+                 mb: 1,
+                 backgroundColor:
+                   customTheme?.mode === 'dark' ? '#334155' : '#f8fafc',
+                 borderRadius: 2,
+                 position: 'relative',
+             
+                 /* animation */
+                 transition: 'all 0.3s ease',
+                 overflow: 'hidden',
+             
+                 ...(deletingItemId === item.id && {
+                   opacity: 0,
+                   transform: 'scale(0.95)',
+                   maxHeight: 0,
+                   paddingTop: 0,
+                   paddingBottom: 0,
+                   marginBottom: 0,
+                 }),
+             
+                 '&:hover': {
+                   backgroundColor:
+                     customTheme?.mode === 'dark' ? '#475569' : '#e2e8f0',
+                   '& .delete-button': {
+                     opacity: 1,
+                   },
+                 },
+               }}
+             >
+             
                   <Box display="flex" alignItems="center" gap={2} flex={1}>
                     <Checkbox
                       icon={<CircleOutlinedIcon />}
@@ -1184,20 +1212,26 @@ const ShoppingList: React.FC = () => {
                       ml: 1,
                     }}
                   >
-                    <Button
-                      onClick={() => item.id && handleDeleteItem(item.id)}
-                      size="small"
-                      color="error"
-                      sx={{
-                        minWidth: 'auto',
-                        p: 0.5,
-                        '&:hover': {
-                          backgroundColor: 'error.light',
-                        },
-                      }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </Button>
+                <Button
+  onClick={() => item.id && handleDeleteItem(item.id)}
+  size="small"
+  color="error"
+  disabled={deletingItemId === item.id}
+  sx={{
+    minWidth: 'auto',
+    p: 0.5,
+    '&:hover': {
+      backgroundColor: 'error.light',
+    },
+  }}
+>
+  {deletingItemId === item.id ? (
+    <CircularProgress size={16} color="error" />
+  ) : (
+    <DeleteIcon fontSize="small" />
+  )}
+</Button>
+
                   </Box>
                 </Box>
               ))}
