@@ -717,6 +717,8 @@ export interface ShoppingListItem {
   dateOfBuy?: Date | Timestamp; // when to buy
   purchased: boolean; // default false
   purchasedPrice: number; // actual price paid, default 0
+  archived?: boolean; // when true, hidden from UI but included in totals
+  movedToPlanId?: string | null; // when set, item was moved to a shopping plan
   month: string; // 'YYYY-MM' format for filtering
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;

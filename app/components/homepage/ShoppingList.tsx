@@ -20,6 +20,7 @@ import {
   Stack,
   Avatar,
 } from '@mui/material';
+import MenuItem from '@mui/material/MenuItem';
 import {
   collection,
   getDocs,
@@ -30,12 +31,13 @@ import {
   query,
   where,
   Timestamp,
+  getDoc,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useOnboarding } from '@/app/lib/context/onBoardingContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { ShoppingListItem } from '@/app/lib/interface';
+import { BuyItem, ShoppingListItem } from '@/app/lib/interface';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined';
 import AddIcon from '@mui/icons-material/Add';
@@ -620,6 +622,8 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
         icon: icon.trim() || '🛒',
         purchased: false,
         purchasedPrice: 0,
+        archived: false,
+        movedToPlanId: null,
         month: currentMonth,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -803,12 +807,24 @@ const ShoppingList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [openModal, setOpenModal] = useState(false);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const [confirmDeleteItem, setConfirmDeleteItem] = useState<ShoppingListItem | null>(null);
   const [purchaseModal, setPurchaseModal] = useState<{
     open: boolean;
     item: ShoppingListItem | null;
   }>({ open: false, item: null });
   const [lastFetchedMonth, setLastFetchedMonth] = useState<string | null>(null);
   const isFetchingRef = useRef(false);
+  const [visibleCount, setVisibleCount] = useState(4);
+
+  const [moveDialog, setMoveDialog] = useState<{
+    open: boolean;
+    items: ShoppingListItem[];
+  }>({ open: false, items: [] });
+  const [plans, setPlans] = useState<BuyItem[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [newPlanTitle, setNewPlanTitle] = useState('');
+  const [newPlanBudget, setNewPlanBudget] = useState<number | ''>('');
+  const [moveLoading, setMoveLoading] = useState(false);
 
   // Calculate current month based on user's start of month preference
   const getCurrentMonth = useCallback(() => {
@@ -924,8 +940,31 @@ const ShoppingList: React.FC = () => {
 
   const handleTogglePurchase = (item: ShoppingListItem) => {
     if (item.purchased) {
-      // If already purchased, just toggle back
-      handleUpdatePurchase(item, false, 0);
+      // Optimistic unmark: update UI first, then sync to Firestore
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, purchased: false, purchasedPrice: 0, updatedAt: new Date() }
+            : i
+        )
+      );
+      if (item.id) {
+        updateDoc(doc(db, 'shoppingListOfMonth', item.id), {
+          purchased: false,
+          purchasedPrice: 0,
+          updatedAt: new Date(),
+        }).catch((error) => {
+          console.error('Error updating purchase status:', error);
+          // Revert on error
+          setItems((prev) =>
+            prev.map((i) =>
+              i.id === item.id
+                ? { ...i, purchased: true, purchasedPrice: item.purchasedPrice }
+                : i
+            )
+          );
+        });
+      }
     } else {
       // If not purchased, show price input modal
       setPurchaseModal({ open: true, item });
@@ -988,12 +1027,133 @@ const ShoppingList: React.FC = () => {
       }
     }, 300); // must match CSS transition duration
   };
-  
 
-  // Calculate budget totals
+  const handleArchiveItem = async (item: ShoppingListItem) => {
+    if (!item.id || !item.purchased) return;
+    try {
+      await updateDoc(doc(db, 'shoppingListOfMonth', item.id), {
+        archived: true,
+        updatedAt: new Date(),
+      });
+      setItems((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, archived: true, updatedAt: new Date() } : i))
+      );
+    } catch (error) {
+      console.error('Error archiving shopping item:', error);
+    }
+  };
+
+  const ensurePlansLoaded = useCallback(async () => {
+    if (!user?.uid) return;
+    if (plans.length > 0) return;
+    try {
+      const snapshot = await getDocs(collection(db, 'buyItems'));
+      const docs = snapshot.docs.map((d) => {
+        const data = d.data() as BuyItem;
+        return {
+          ...data,
+          id: d.id,
+        };
+      });
+      setPlans(docs.filter((p) => p.userId === user.uid && !p.archived));
+    } catch (error) {
+      console.error('Error loading shopping plans:', error);
+    }
+  }, [plans.length, user?.uid]);
+
+  const openMoveDialogForItems = async (itemsToMove: ShoppingListItem[]) => {
+    await ensurePlansLoaded();
+    setMoveDialog({ open: true, items: itemsToMove });
+    setSelectedPlanId('');
+    setNewPlanTitle('');
+    setNewPlanBudget('');
+  };
+
+  const handleConfirmMoveToPlan = async () => {
+    if (!user?.uid || moveDialog.items.length === 0) return;
+    if (!selectedPlanId && !newPlanTitle.trim()) return;
+
+    setMoveLoading(true);
+    try {
+      let targetPlanId = selectedPlanId;
+
+      const itemsForPlan = moveDialog.items.map((item) => ({
+        estimatedPrice: item.proposedPrice || 0,
+        purchasedPrice: item.purchased ? item.purchasedPrice : undefined,
+        title: item.title,
+        isPurchased: item.purchased,
+      }));
+
+      if (!targetPlanId) {
+        const now = new Date();
+        const budget =
+          typeof newPlanBudget === 'number'
+            ? newPlanBudget
+            : itemsForPlan.reduce((sum, i) => sum + (i.estimatedPrice || 0), 0);
+
+        const newPlan: Omit<BuyItem, 'id'> = {
+          userId: user.uid,
+          title: newPlanTitle.trim(),
+          items: itemsForPlan,
+          archived: false,
+          pinned: false,
+          sharedWith: [],
+          createdAt: now,
+          updatedAt: now,
+          budgetLimit: budget,
+        };
+
+        const docRef = await addDoc(collection(db, 'buyItems'), newPlan);
+        targetPlanId = docRef.id;
+        setPlans((prev) => [...prev, { ...newPlan, id: docRef.id }]);
+      } else {
+        const planRef = doc(db, 'buyItems', targetPlanId);
+        const snap = await getDoc(planRef);
+        if (snap.exists()) {
+          const data = snap.data() as BuyItem;
+          const updatedItems = [...(data.items || []), ...itemsForPlan];
+          await updateDoc(planRef, {
+            items: updatedItems,
+            updatedAt: new Date(),
+          });
+        }
+      }
+
+      await Promise.all(
+        moveDialog.items
+          .filter((item) => item.id)
+          .map((item) =>
+            updateDoc(doc(db, 'shoppingListOfMonth', item.id as string), {
+              movedToPlanId: targetPlanId,
+              updatedAt: new Date(),
+            })
+          )
+      );
+
+      setItems((prev) =>
+        prev.map((i) =>
+          moveDialog.items.some((m) => m.id === i.id)
+            ? { ...i, movedToPlanId: targetPlanId, updatedAt: new Date() }
+            : i
+        )
+      );
+
+      setMoveDialog({ open: false, items: [] });
+    } catch (error) {
+      console.error('Error moving items to shopping plan:', error);
+    } finally {
+      setMoveLoading(false);
+    }
+  };
+
+  // Calculate budget totals (include archived/moved items)
   const purchasedTotal = items
     .filter((item) => item.purchased)
     .reduce((sum, item) => sum + item.purchasedPrice, 0);
+
+  const visibleItems = items.filter(
+    (item) => !item.archived && !item.movedToPlanId
+  );
 
   if (loading) {
     return (
@@ -1081,7 +1241,7 @@ const ShoppingList: React.FC = () => {
           )}
 
           {/* Items List */}
-          {items.length === 0 ? (
+          {visibleItems.length === 0 ? (
             <Box textAlign="center" py={4}>
               <ShoppingCartIcon
                 sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }}
@@ -1099,147 +1259,189 @@ const ShoppingList: React.FC = () => {
             </Box>
           ) : (
             <Box>
-              {items.slice(0, 7).map((item) => (
-               <Box
-               key={item.id}
-               sx={{
-                 display: 'flex',
-                 alignItems: 'center',
-                 justifyContent: 'space-between',
-                 p: 2,
-                 mb: 1,
-                 backgroundColor:
-                   customTheme?.mode === 'dark' ? '#334155' : '#f8fafc',
-                 borderRadius: 2,
-                 position: 'relative',
-             
-                 /* animation */
-                 transition: 'all 0.3s ease',
-                 overflow: 'hidden',
-             
-                 ...(deletingItemId === item.id && {
-                   opacity: 0,
-                   transform: 'scale(0.95)',
-                   maxHeight: 0,
-                   paddingTop: 0,
-                   paddingBottom: 0,
-                   marginBottom: 0,
-                 }),
-             
-                 '&:hover': {
-                   backgroundColor:
-                     customTheme?.mode === 'dark' ? '#475569' : '#e2e8f0',
-                   '& .delete-button': {
-                     opacity: 1,
-                   },
-                 },
-               }}
-             >
-             
-                  <Box display="flex" alignItems="center" gap={2} flex={1}>
-                    <Checkbox
-                      icon={<CircleOutlinedIcon />}
-                      checkedIcon={
-                        <CheckCircleIcon className="text-green-500" />
-                      }
-                      checked={item.purchased}
-                      onChange={() => handleTogglePurchase(item)}
-                      size="small"
-                    />
-                    <Typography sx={{ fontSize: '1.5rem' }}>
-                      {item.icon || '🛒'}
-                    </Typography>
-                    <Box flex={1}>
-                      <Typography
-                        variant="body1"
-                        fontWeight="medium"
+              {visibleItems.slice(0, Math.min(visibleCount, visibleItems.length)).map((item) => (
+                <Box
+                  key={item.id}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    p: 2,
+                    mb: 1,
+                    backgroundColor:
+                      customTheme?.mode === 'dark' ? '#334155' : '#f8fafc',
+                    borderRadius: 2,
+                    position: 'relative',
+                    transition: 'all 0.3s ease',
+                    overflow: 'hidden',
+                    ...(deletingItemId === item.id && {
+                      opacity: 0,
+                      transform: 'scale(0.95)',
+                      maxHeight: 0,
+                      paddingTop: 0,
+                      paddingBottom: 0,
+                      marginBottom: 0,
+                    }),
+                    '&:hover': {
+                      backgroundColor:
+                        customTheme?.mode === 'dark' ? '#475569' : '#e2e8f0',
+                      '& .delete-button': {
+                        opacity: 1,
+                      },
+                    },
+                  }}
+                >
+                  <Box flex={1} display="flex" flexDirection="column" gap={0.5}>
+                    <Box display="flex" alignItems="center" gap={2}>
+                      <Checkbox
+                        icon={<CircleOutlinedIcon />}
+                        checkedIcon={
+                          <CheckCircleIcon className="text-green-500" />
+                        }
+                        checked={item.purchased}
+                        onChange={() => handleTogglePurchase(item)}
+                        size="small"
+                      />
+                      <Typography sx={{ fontSize: '1.4rem' }}>
+                        {item.icon || '🛒'}
+                      </Typography>
+                      <Box flex={1}>
+                        <Typography
+                          variant="body2"
+                          fontWeight="medium"
+                          sx={{
+                            textDecoration: item.purchased
+                              ? 'line-through'
+                              : 'none',
+                            color: item.purchased
+                              ? 'text.secondary'
+                              : 'text.primary',
+                          }}
+                        >
+                          {item.title}
+                        </Typography>
+                        <Box
+                          display="flex"
+                          alignItems="center"
+                          gap={1}
+                          mt={0.25}
+                        >
+                          <Typography variant="caption" color="text.secondary">
+                            {item.qty}
+                          </Typography>
+                          {item.proposedPrice > 0 && (
+                            <>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                •
+                              </Typography>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                Rs {item.proposedPrice.toLocaleString()}
+                              </Typography>
+                            </>
+                          )}
+                          {item.purchased && item.purchasedPrice > 0 && (
+                            <>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                •
+                              </Typography>
+                              <Typography
+                                variant="caption"
+                                color="success.main"
+                                fontWeight="bold"
+                              >
+                                Paid: Rs {item.purchasedPrice.toLocaleString()}
+                              </Typography>
+                            </>
+                          )}
+                        </Box>
+                      </Box>
+                    </Box>
+                    <Box
+                      mt={0.25}
+                      display="flex"
+                      justifyContent="flex-end"
+                      alignItems="center"
+                      gap={0.5}
+                      flexWrap="wrap"
+                    >
+                      {item.purchased && !item.archived && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleArchiveItem(item)}
+                          sx={{ fontSize: '0.65rem', px: 1, py: 0.25 }}
+                        >
+                          Archive
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => openMoveDialogForItems([item])}
+                        sx={{ fontSize: '0.65rem', px: 1, py: 0.25 }}
+                      >
+                        Move to Plan
+                      </Button>
+                      <Box
+                        className="delete-button"
                         sx={{
-                          textDecoration: item.purchased
-                            ? 'line-through'
-                            : 'none',
-                          color: item.purchased
-                            ? 'text.secondary'
-                            : 'text.primary',
+                          opacity: 0,
+                          transition: 'opacity 0.2s ease',
+                          ml: 0.5,
                         }}
                       >
-                        {item.title}
-                      </Typography>
-                      <Box display="flex" alignItems="center" gap={1} mt={0.5}>
-                        <Typography variant="caption" color="text.secondary">
-                          {item.qty}
-                        </Typography>
-                        {item.proposedPrice > 0 && (
-                          <>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              •
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              Rs {item.proposedPrice.toLocaleString()}
-                            </Typography>
-                          </>
-                        )}
-                        {item.purchased && item.purchasedPrice > 0 && (
-                          <>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              •
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              color="success.main"
-                              fontWeight="bold"
-                            >
-                              Paid: Rs {item.purchasedPrice.toLocaleString()}
-                            </Typography>
-                          </>
-                        )}
+                        <Button
+                          onClick={() => setConfirmDeleteItem(item)}
+                          size="small"
+                          color="error"
+                          disabled={deletingItemId === item.id}
+                          sx={{
+                            minWidth: 'auto',
+                            p: 0.5,
+                            '&:hover': {
+                              backgroundColor: 'error.light',
+                            },
+                          }}
+                        >
+                          {deletingItemId === item.id ? (
+                            <CircularProgress size={16} color="error" />
+                          ) : (
+                            <DeleteIcon fontSize="small" />
+                          )}
+                        </Button>
                       </Box>
                     </Box>
                   </Box>
-                  <Box
-                    className="delete-button"
-                    sx={{
-                      opacity: 0,
-                      transition: 'opacity 0.2s ease',
-                      ml: 1,
-                    }}
-                  >
-                <Button
-  onClick={() => item.id && handleDeleteItem(item.id)}
-  size="small"
-  color="error"
-  disabled={deletingItemId === item.id}
-  sx={{
-    minWidth: 'auto',
-    p: 0.5,
-    '&:hover': {
-      backgroundColor: 'error.light',
-    },
-  }}
->
-  {deletingItemId === item.id ? (
-    <CircularProgress size={16} color="error" />
-  ) : (
-    <DeleteIcon fontSize="small" />
-  )}
-</Button>
-
-                  </Box>
                 </Box>
               ))}
+              {visibleItems.length > visibleCount && (
+                <Box mt={2} textAlign="center">
+                  <Button
+                    variant="text"
+                    onClick={() =>
+                      setVisibleCount((prev) =>
+                        Math.min(prev + 4, visibleItems.length)
+                      )
+                    }
+                  >
+                    View more items
+                  </Button>
+                </Box>
+              )}
             </Box>
           )}
 
           {/* Footer */}
-          {items.length > 7 && (
+          {items.length > 0 && (
             <Box mt={3}>
               <Link href="/1/monthly-shopping" style={{ textDecoration: 'none' }}>
                 <Button
@@ -1253,7 +1455,7 @@ const ShoppingList: React.FC = () => {
                     '&:hover': { backgroundColor: '#EAB308' },
                   }}
                 >
-                  🛒 Shop Now
+                  🛒 View More
                 </Button>
               </Link>
             </Box>
@@ -1276,6 +1478,130 @@ const ShoppingList: React.FC = () => {
         itemTitle={purchaseModal.item?.title || ''}
         proposedPrice={purchaseModal.item?.proposedPrice || 0}
       />
+      {/* Confirm Delete Dialog */}
+      <Dialog
+        open={!!confirmDeleteItem}
+        onClose={() => setConfirmDeleteItem(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Delete item?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Are you sure you want to delete{' '}
+            <strong>{confirmDeleteItem?.title}</strong> from this month&apos;s
+            shopping list? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDeleteItem(null)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (confirmDeleteItem?.id) {
+                handleDeleteItem(confirmDeleteItem.id);
+              }
+              setConfirmDeleteItem(null);
+            }}
+            color="error"
+            variant="contained"
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Move to Plan Dialog */}
+      <Dialog
+        open={moveDialog.open}
+        onClose={() => setMoveDialog({ open: false, items: [] })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Move to Shopping Plan</DialogTitle>
+        <DialogContent sx={{ mt: 1 }}>
+          <Stack spacing={2}>
+            <Typography variant="body2" color="text.secondary">
+              Select an existing plan or create a new one to move the selected
+              item(s).
+            </Typography>
+
+            {plans.length > 0 && (
+              <TextField
+                select
+                label="Existing Plans"
+                value={selectedPlanId}
+                onChange={(e) => {
+                  setSelectedPlanId(e.target.value);
+                  // If user picked an existing plan, we hide new-plan fields
+                }}
+                fullWidth
+                SelectProps={{ native: false }}
+              >
+                <MenuItem value="">
+                  <em>Select a plan</em>
+                </MenuItem>
+                {plans.map((plan) => (
+                  <MenuItem key={plan.id} value={plan.id}>
+                    {plan.title}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+
+            {/* New plan section - collapsible when existing plan selected */}
+            {plans.length === 0 || !selectedPlanId ? (
+              <>
+                {plans.length > 0 && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ mt: 1 }}
+                  >
+                    Or create new plan:
+                  </Typography>
+                )}
+                <TextField
+                  label="New Plan Title"
+                  value={newPlanTitle}
+                  onChange={(e) => setNewPlanTitle(e.target.value)}
+                  fullWidth
+                />
+                <TextField
+                  label="New Plan Budget (optional)"
+                  type="number"
+                  value={newPlanBudget}
+                  onChange={(e) =>
+                    setNewPlanBudget(
+                      e.target.value === '' ? '' : Number(e.target.value)
+                    )
+                  }
+                  fullWidth
+                />
+              </>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setMoveDialog({ open: false, items: [] })}
+            disabled={moveLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmMoveToPlan}
+            variant="contained"
+            disabled={
+              moveLoading ||
+              (!selectedPlanId && !newPlanTitle.trim()) ||
+              moveDialog.items.length === 0
+            }
+            startIcon={moveLoading ? <CircularProgress size={16} /> : undefined}
+          >
+            {moveLoading ? 'Moving...' : 'Move'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };

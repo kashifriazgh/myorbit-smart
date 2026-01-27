@@ -12,7 +12,7 @@ import {
   Typography,
   CircularProgress,
   Box,
-  Skeleton,
+  Grow,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import {
@@ -26,7 +26,6 @@ import { db } from '@/app/lib/firebase';
 import {
   collection,
   addDoc,
-  getDocs,
   query,
   where,
   Timestamp,
@@ -34,8 +33,11 @@ import {
   doc,
   getDoc,
   updateDoc,
+  getDocs,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
+import Link from 'next/link';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 const SOURCE_OPTIONS: TransactionSource[] = [
   'bank',
@@ -64,12 +66,9 @@ export default function LoanDialog() {
     CustomPaymentHead[]
   >([]);
 
-  // totals, error, loading
-  const [totals, setTotals] = useState({ toPay: 0, toReceive: 0 });
+  // error, loading
   const [error, setError] = useState('');
   const [localSaving, setLocalSaving] = useState(false);
-  const [loadingLoans, setLoadingLoans] = useState(false);
-  const [activeLoans, setActiveLoans] = useState<LoanRecord[]>([]);
 
   // fetch banks
   useEffect(() => {
@@ -104,40 +103,6 @@ export default function LoanDialog() {
     fetchCustom();
   }, [user]);
 
-  // fetch loans
-  useEffect(() => {
-    if (!user || !showModal) return;
-    setLoadingLoans(true);
-    const fetchLoans = async () => {
-      try {
-        const q = query(
-          collection(db, 'loans'),
-          where('userId', '==', user.uid)
-        );
-        const snap = await getDocs(q);
-        const loans: LoanRecord[] = snap.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Omit<LoanRecord, 'id'>),
-        }));
-        // filter only active/unsettled loans
-        const outstanding = loans.filter((l) => !l.isSettled);
-        setActiveLoans(outstanding);
-
-        const toPay = outstanding
-          .filter((l) => l.type === 'lend')
-          .reduce((sum, l) => sum + (l.amount || 0), 0);
-        const toReceive = outstanding
-          .filter((l) => l.type === 'borrow')
-          .reduce((sum, l) => sum + (l.amount || 0), 0);
-        setTotals({ toPay, toReceive });
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoadingLoans(false);
-      }
-    };
-    fetchLoans();
-  }, [user, showModal]);
 
   // validate and create loan
   const handleCreate = async () => {
@@ -324,59 +289,54 @@ export default function LoanDialog() {
         open={showModal}
         onClose={() => setShowModal(false)}
         fullWidth
-        maxWidth="sm"
+        maxWidth="md"
+        TransitionComponent={Grow}
+        TransitionProps={{
+          timeout: 300,
+          mountOnEnter: true,
+          unmountOnExit: true,
+        }}
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+          },
+        }}
       >
-        <DialogTitle>Outstanding Loan</DialogTitle>
+        <DialogTitle>Add Outstanding Loan</DialogTitle>
         <DialogContent>
-          {/* Totals */}
-          {loadingLoans ? (
-            <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-              <Skeleton width={120} height={20} />
-              <Skeleton width={120} height={20} />
-            </Box>
-          ) : (
-            <>
-              <Typography color="error" fontSize={14}>
-                Total To Pay Back: ₨{totals.toPay.toLocaleString()}
+          {/* Link to Loan Records Page */}
+          <Box
+            sx={{
+              mb: 3,
+              p: 2,
+              backgroundColor: '#e3f2fd',
+              borderRadius: 1,
+              border: '1px solid #90caf9',
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                View all loan records and totals
               </Typography>
-              <Typography color="success.main" fontSize={14}>
-                Total To Receive: ₨{totals.toReceive.toLocaleString()}
-              </Typography>
-            </>
-          )}
-
-          {/* Active Loans List */}
-          {!loadingLoans && activeLoans.length > 0 && (
-            <Box sx={{ mt: 2, mb: 2 }}>
-              <Typography variant="h6" fontSize={16} fontWeight="bold" mb={1}>
-                Active Loans ({activeLoans.length})
-              </Typography>
-              {activeLoans.map((loan) => (
-                <Box
-                  key={loan.id}
-                  sx={{
-                    p: 1.5,
-                    mb: 1,
-                    border: '1px solid #e0e0e0',
-                    borderRadius: 1,
-                    backgroundColor:
-                      loan.type === 'borrow' ? '#fff3e0' : '#e8f5e8',
-                  }}
+              <Link href="/finance/loans" passHref>
+                <Button
+                  variant="contained"
+                  size="small"
+                  endIcon={<ArrowForwardIcon />}
+                  onClick={() => setShowModal(false)}
+                  sx={{ textTransform: 'none' }}
                 >
-                  <Typography variant="body2" fontWeight="bold">
-                    {loan.counterparty} - ₨{loan.amount?.toLocaleString()}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {loan.type === 'borrow' ? 'You borrowed' : 'You lent'} •
-                    Due:{' '}
-                    {loan.dueDate instanceof Date
-                      ? loan.dueDate.toLocaleDateString()
-                      : loan.dueDate?.toDate?.()?.toLocaleDateString() || 'N/A'}
-                  </Typography>
-                </Box>
-              ))}
+                  View Loan Records
+                </Button>
+              </Link>
             </Box>
-          )}
+          </Box>
 
           {/* Loan form */}
           <TextField
