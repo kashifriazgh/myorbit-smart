@@ -23,6 +23,8 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
   const [dueDateOpen, setDueDateOpen] = useState(false);
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [newAssignee, setNewAssignee] = useState<string>(todo.assignee || '');
 
   const updateDueDate = async () => {
     if (!todo.id || !newDueDate) return;
@@ -41,9 +43,30 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
     }
   };
 
+  const updateAssignee = async () => {
+    if (!todo.id) return;
+    try {
+      await updateDoc(doc(db, 'todos', todo.id), {
+        assignee: newAssignee.trim() || null,
+        updatedAt: new Date(),
+      });
+      onUpdate({ assignee: newAssignee.trim() || undefined });
+      setAssigneeOpen(false);
+    } catch (err) {
+      console.error('❌ Failed to update assignee:', err);
+    }
+  };
+
   return (
     <>
       <Stack direction="row" spacing={1} mt={1} flexWrap="wrap" useFlexGap>
+        <Chip
+          label={todo.assignee ? `${todo.assignee}` : 'Set Assignee'}
+          onClick={() => setAssigneeOpen(true)}
+          sx={{
+            bgcolor: theme?.mode === 'dark' ? '#0f172a' : '#e5e7eb',
+          }}
+        />
         <Chip
           label={` ${todo.priority}`}
           onClick={() => setPriorityOpen(true)}
@@ -255,6 +278,49 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
               ) : (
                 'Save'
               )}
+            </Button>
+          </Stack>
+        </Box>
+      </Modal>
+
+      {/* Assignee Modal */}
+      <Modal open={assigneeOpen} onClose={() => setAssigneeOpen(false)}>
+        <Box
+          className="absolute rounded-lg p-6 shadow-lg"
+          sx={{
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            minWidth: 320,
+            outline: 'none',
+            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+            color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+            border:
+              theme?.mode === 'dark'
+                ? '1px solid #334155'
+                : '1px solid #e5e7eb',
+          }}
+        >
+          <Typography
+            variant="h6"
+            gutterBottom
+            sx={{
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+            }}
+          >
+            Task Assignee
+          </Typography>
+          <TextField
+            fullWidth
+            label="Assignee name (optional)"
+            value={newAssignee}
+            onChange={(e) => setNewAssignee(e.target.value)}
+            sx={{ mt: 1, mb: 3 }}
+          />
+          <Stack direction="row" justifyContent="flex-end" spacing={2}>
+            <Button onClick={() => setAssigneeOpen(false)}>Cancel</Button>
+            <Button variant="contained" onClick={updateAssignee}>
+              Save
             </Button>
           </Stack>
         </Box>

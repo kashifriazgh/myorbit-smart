@@ -67,6 +67,10 @@ export interface ToDoStep {
   done: boolean;
   status: StepStatus;
   subSteps?: SubStep[];
+  assignee?: string;
+  dueDate?: Timestamp | Date;
+  weightPercent?: number; // 0–100, optional weighting for progress
+  precedence?: 'routine' | 'urgent' | 'critical';
 }
 
 export interface Todo {
@@ -87,12 +91,17 @@ export interface Todo {
   authorName?: string;
   assignedUsers: string[]; // users responsible (max 5)
   sharedWith?: string[]; // users who can view/edit
+  assignee?: string; // optional primary assignee for the whole task
   // Checklist (subtasks)
   steps?: {
     text: string;
     description: string;
     done: boolean;
     status: 'in_progress' | 'completed' | 'hold' | 'left-over';
+    assignee?: string;
+    dueDate?: Timestamp | Date;
+    weightPercent?: number;
+    precedence?: 'routine' | 'urgent' | 'critical';
     subSteps?: {
       text: string;
       description: string;
@@ -636,6 +645,14 @@ export interface InitialOnBoarding {
   incomeType?: OnBoardingField<'monthly' | 'weekly' | 'irregular'>;
   startOfMonth?: OnBoardingField<number>; // Day of month: 1–31
   startOfWeek?: OnBoardingField<number>; // Day of week: 0 = Sunday, 1 = Monday, etc.
+}
+
+export interface QuickNote {
+  id?: string;
+  userId: string;
+  content: string;
+  createdAt: Date | Timestamp;
+  updatedAt?: Date | Timestamp;
 }
 
 export interface StreakProps {

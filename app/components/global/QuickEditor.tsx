@@ -8,7 +8,7 @@ import Text from '@tiptap/extension-text';
 import Mention from '@tiptap/extension-mention';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
-import { Button, Box, Alert } from '@mui/material';
+import { Button, Box, Alert, Tabs, Tab, TextField, CircularProgress, Fade } from '@mui/material';
 import {
   addDoc,
   collection,
@@ -18,7 +18,7 @@ import {
 import { db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
-import { FirestoreUser } from '@/app/lib/interface';
+import { FirestoreUser, QuickNote } from '@/app/lib/interface';
 import ScheduleDraftModal from '../homepage/ScheduleDraftModal';
 import TaskDraftModal from '../to-do/TaskDraftModal';
 import JournalDraftModal from '../journal/JournalDraftModal';
@@ -203,6 +203,11 @@ interface ProductivityEditorProps {
 export default function ProductivityEditor({
   variant = 'default',
 }: ProductivityEditorProps) {
+  const [activeTab, setActiveTab] = useState<'notes' | 'editor'>('notes');
+  const [noteContent, setNoteContent] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+  
   const [editor, setEditor] = useState<Editor | null>(null);
   const [rawText, setRawText] = useState('');
   const [mentionType, setMentionType] = useState<ContentType>(null);
@@ -572,6 +577,38 @@ export default function ProductivityEditor({
     setShowKeywordSuggestions(false);
   };
 
+  const handleSaveNote = async () => {
+    if (!noteContent.trim() || !user?.uid || savingNote) return;
+
+    setSavingNote(true);
+    setNoteSaved(false);
+
+    try {
+      const noteData: Omit<QuickNote, 'id'> = {
+        userId: user.uid,
+        content: noteContent.trim(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      await addDoc(collection(db, 'notes'), {
+        ...noteData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setNoteSaved(true);
+      setTimeout(() => {
+        setNoteContent('');
+        setNoteSaved(false);
+      }, 1500);
+    } catch (error) {
+      console.error('Error saving note:', error);
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -580,6 +617,172 @@ export default function ProductivityEditor({
         mx: 'auto',
       }}
     >
+      {/* Tabs */}
+      <Tabs
+        value={activeTab}
+        onChange={(_, newValue) => setActiveTab(newValue)}
+        sx={{
+          mb: 2,
+          '& .MuiTab-root': {
+            textTransform: 'none',
+            fontSize: '0.875rem',
+            fontWeight: 600,
+            minHeight: 40,
+          },
+        }}
+      >
+        <Tab label="Quick Notes" value="notes" />
+        <Tab label="Quick Editor" value="editor" />
+      </Tabs>
+
+      {/* Quick Notes Tab */}
+      {activeTab === 'notes' && (
+        <Box>
+          <TextField
+            multiline
+            rows={isCompact ? 3 : 6}
+            fullWidth
+            placeholder="Start typing your note..."
+            value={noteContent}
+            onChange={(e) => setNoteContent(e.target.value)}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+                fontSize: '1.125rem',
+                fontWeight: 500,
+                lineHeight: 1.7,
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                '& fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#475569' : '#cbd5e1',
+                },
+                '&:hover fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
+                },
+              },
+              '& .MuiInputBase-input': {
+                '&::placeholder': {
+                  color: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
+                  opacity: 0.7,
+                },
+              },
+            }}
+          />
+          
+          {/* Saving Indicator */}
+          {savingNote && (
+            <Fade in={savingNote}>
+              <Box
+                sx={{
+                  mt: 2,
+                  p: 3,
+                  borderRadius: 2,
+                  background: theme?.mode === 'dark'
+                    ? 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'
+                    : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+                  border: `1px solid ${theme?.mode === 'dark' ? '#475569' : '#cbd5e1'}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 2,
+                }}
+              >
+                <CircularProgress size={32} />
+                <Box sx={{ textAlign: 'center' }}>
+                  <Box
+                    component="span"
+                    sx={{
+                      fontSize: '1rem',
+                      fontWeight: 600,
+                      color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+                      display: 'block',
+                      mb: 0.5,
+                    }}
+                  >
+                    Saving your note...
+                  </Box>
+                  <Box
+                    component="span"
+                    sx={{
+                      fontSize: '0.875rem',
+                      color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                    }}
+                  >
+                    Please wait a moment
+                  </Box>
+                </Box>
+              </Box>
+            </Fade>
+          )}
+
+          {/* Success Indicator */}
+          {noteSaved && (
+            <Fade in={noteSaved}>
+              <Box
+                sx={{
+                  mt: 2,
+                  p: 3,
+                  borderRadius: 2,
+                  background: theme?.mode === 'dark'
+                    ? 'linear-gradient(135deg, #065f46 0%, #047857 100%)'
+                    : 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)',
+                  border: `1px solid ${theme?.mode === 'dark' ? '#059669' : '#10b981'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1.5,
+                }}
+              >
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '1.5rem',
+                  }}
+                >
+                  ✓
+                </Box>
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '1rem',
+                    fontWeight: 600,
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#065f46',
+                  }}
+                >
+                  Note saved successfully!
+                </Box>
+              </Box>
+            </Fade>
+          )}
+
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              variant="contained"
+              onClick={handleSaveNote}
+              disabled={!noteContent.trim() || savingNote}
+              sx={{
+                backgroundColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
+                '&:hover': {
+                  backgroundColor: theme?.mode === 'dark' ? '#2563eb' : '#1d4ed8',
+                },
+                textTransform: 'none',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                px: 3,
+              }}
+            >
+              {savingNote ? 'Saving...' : 'Save Notes'}
+            </Button>
+          </Box>
+        </Box>
+      )}
+
+      {/* Quick Editor Tab */}
+      {activeTab === 'editor' && (
+        <Box>
       <Box sx={{ position: 'relative' }}>
         <Box
           sx={{
@@ -854,6 +1057,8 @@ export default function ProductivityEditor({
 
       {/* Add Money Draft Modal - Note: This requires onSave prop from parent */}
       {/* For now, we'll show a message that this needs to be done from the finance page */}
+        </Box>
+      )}
     </Box>
   );
 }

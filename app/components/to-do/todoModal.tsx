@@ -58,6 +58,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [isImportant, setIsImportant] = useState(false);
   const [aiStepModalOpen, setAiStepModalOpen] = useState(false);
+  const [assignee, setAssignee] = useState('');
 
   const [steps, setSteps] = useState<
     {
@@ -140,6 +141,7 @@ export default function ToDoModal({ open, onClose }: Props) {
     setPrivacy('private');
     setDueDate(new Date());
     setIsImportant(false);
+    setAssignee('');
     setSteps([]);
     setAiStepModalOpen(false);
     setLoading(false);
@@ -183,6 +185,7 @@ export default function ToDoModal({ open, onClose }: Props) {
       authorName: user!.firstName || '',
       assignedUsers: [],
       sharedWith: [],
+      assignee: assignee.trim() || null,
       startDate: Timestamp.fromDate(new Date()),
       dueDate: Timestamp.fromDate(dueDate || new Date()),
       createdAt: serverTimestamp(),
@@ -364,6 +367,14 @@ export default function ToDoModal({ open, onClose }: Props) {
               wrapperClassName="date-picker-wrapper"
             />
           </Paper>
+
+          <TextField
+            label="Assignee (optional)"
+            fullWidth
+            size="small"
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value)}
+          />
 
           <Divider />
           <Typography fontWeight={600}>Task Steps</Typography>

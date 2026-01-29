@@ -20,6 +20,7 @@ import {
   DialogContentText,
   DialogActions,
 } from '@mui/material';
+import PersonIcon from '@mui/icons-material/Person';
 import { useEffect, useState } from 'react';
 import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
@@ -252,6 +253,23 @@ export default function TodoDetailPage() {
         borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
       }}
     >
+      {todo.assignee && (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            mb: 1,
+            gap: 1,
+          }}
+        >
+          <PersonIcon fontSize="small" />
+          <Typography variant="subtitle1" fontWeight={700}>
+            {todo.assignee}
+          </Typography>
+        </Box>
+      )}
+
       <TodoHeader title={todo.title} description={todo.description} />
 
       <Divider sx={{ my: 2 }} />
@@ -284,16 +302,96 @@ export default function TodoDetailPage() {
                   sx={{
                     position: 'relative',
                     '&:hover .step-delete': { opacity: 1 },
+                    backgroundColor:
+                      step.precedence === 'critical'
+                        ? '#fee2e2'
+                        : step.precedence === 'urgent'
+                        ? '#ffedd5'
+                        : '#e5e7eb',
+                    borderRadius: 1,
+                    px: 1.5,
+                    py: 0.75,
+                    border:
+                      step.precedence === 'critical'
+                        ? '1px solid #ef4444'
+                        : step.precedence === 'urgent'
+                        ? '1px solid #f97316'
+                        : '1px solid #9ca3af',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 0.25,
                   }}
                 >
-                  {`${step.text}`}
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 1,
+                    }}
+                  >
+                    <Typography variant="body2" fontWeight={600}>
+                      {step.text}
+                    </Typography>
+                    <Box display="flex" alignItems="center" gap={1} sx={{ pr: 3 }}>
+                      {step.assignee && (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontStyle: 'italic',
+                            fontWeight: 600,
+                            px: 0.75,
+                            py: 0.25,
+                            borderRadius: 999,
+                            backgroundColor: 'rgba(15,23,42,0.05)',
+                          }}
+                        >
+                          {step.assignee}
+                        </Typography>
+                      )}
+                      {step.dueDate && (
+                        <Typography variant="caption" color="text.secondary">
+                          {new Date(
+                            step.dueDate instanceof Date
+                              ? step.dueDate
+                              : step.dueDate.toDate()
+                          ).toLocaleDateString()}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                  {typeof step.weightPercent === 'number' && step.weightPercent >= 0 && (
+                    <Box
+                      sx={{
+                        mt: 0.25,
+                        width: '100%',
+                        height: 4,
+                        borderRadius: 999,
+                        backgroundColor: 'rgba(148,163,184,0.4)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: `${Math.min(Math.max(step.weightPercent, 0), 100)}%`,
+                          height: '100%',
+                          background:
+                            step.precedence === 'critical'
+                              ? '#ef4444'
+                              : step.precedence === 'urgent'
+                              ? '#f97316'
+                              : '#3b82f6',
+                        }}
+                      />
+                    </Box>
+                  )}
                   <IconButton
                     size="small"
                     className="step-delete"
                     sx={{
                       position: 'absolute',
-                      right: -40,
-                      top: -8,
+                      right: 4,
+                      top: 4,
                       opacity: 0,
                       transition: 'opacity 0.2s',
                     }}
@@ -337,6 +435,7 @@ export default function TodoDetailPage() {
                     >
                       + Add Sub-step
                     </Button>
+                    {/* Small inline editor for meta fields could be added here later */}
                   </Stack>
                 </Box>
 
