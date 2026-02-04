@@ -110,7 +110,7 @@ export default function TodosList() {
       completed: 3,
       'left-over': 4,
     }),
-    []
+    [],
   );
 
   const getDueDateColor = (dueDate: Date) => {
@@ -154,7 +154,7 @@ export default function TodosList() {
 
     const q = query(
       collection(db, 'todos'),
-      where('createdAt', '>=', thirtyDaysAgoTS)
+      where('createdAt', '>=', thirtyDaysAgoTS),
     );
 
     const unsubscribe = onSnapshot(
@@ -177,7 +177,7 @@ export default function TodosList() {
           .filter(
             (todo) =>
               todo.authorId === user.uid &&
-              (todo.status === 'in_progress' || todo.status === 'hold')
+              (todo.status === 'in_progress' || todo.status === 'hold'),
           )
           .sort((a, b) => {
             const statusDiff =
@@ -199,7 +199,7 @@ export default function TodosList() {
       (err) => {
         console.error('❌ Error loading todos:', err);
         setLoading(false);
-      }
+      },
     );
 
     // Clean up listener on unmount or user change
@@ -208,7 +208,7 @@ export default function TodosList() {
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
     );
   };
 
@@ -216,11 +216,11 @@ export default function TodosList() {
     setDeleting(true);
     try {
       const deletePromises = selectedIds.map((id) =>
-        deleteDoc(doc(db, 'todos', id))
+        deleteDoc(doc(db, 'todos', id)),
       );
       await Promise.all(deletePromises);
       setTodos((prev) =>
-        prev.filter((todo) => !selectedIds.includes(todo.id!))
+        prev.filter((todo) => !selectedIds.includes(todo.id!)),
       );
       setSelectedIds([]);
       setDeleteDialogOpen(false);
@@ -547,6 +547,25 @@ export default function TodosList() {
                                   color: getDueDateColor(dueDate).text,
                                 },
                               }}
+                            />
+                          )}
+                          {/* Assignee (overall task) */}
+                          {todo.assignee && (
+                            <Chip
+                              label={todo.assignee}
+                              size="small"
+                              variant="outlined"
+                              avatar={
+                                <Avatar
+                                  sx={{ width: 20, height: 20, fontSize: 12 }}
+                                >
+                                  {String(todo.assignee)
+                                    .trim()
+                                    .charAt(0)
+                                    .toUpperCase()}
+                                </Avatar>
+                              }
+                              sx={{ fontWeight: 600 }}
                             />
                           )}
                         </Stack>

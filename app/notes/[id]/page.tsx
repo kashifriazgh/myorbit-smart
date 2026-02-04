@@ -9,24 +9,41 @@ import {
   CircularProgress,
   Container,
   Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  deleteDoc,
+  Timestamp,
+} from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { QuickNote } from '@/app/lib/interface';
 import { useParams, useRouter } from 'next/navigation';
 import moment from 'moment-timezone';
+
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import NoteIcon from '@mui/icons-material/Note';
 
+// Lucide icon
+import Trash2Icon from '@mui/icons-material/Delete';
 export default function NoteDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const { user } = useAuth();
   const { theme: customTheme } = useCustomTheme();
+
   const [note, setNote] = useState<QuickNote | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // delete states
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const fetchNote = async () => {
@@ -56,7 +73,7 @@ export default function NoteDetailPage() {
               : undefined,
           };
 
-          // Verify ownership
+          // ownership check
           if (fetchedNote.userId !== user.uid) {
             router.push('/notes');
             return;
@@ -77,6 +94,22 @@ export default function NoteDetailPage() {
     fetchNote();
   }, [id, user?.uid, router]);
 
+  const handleDelete = async () => {
+    if (!id) return;
+
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'notes', id as string));
+      router.push('/notes');
+    } catch (error) {
+      console.error('Error deleting note:', error);
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  };
+
+  /* ---------------- LOADING ---------------- */
   if (loading) {
     return (
       <Container maxWidth="md" sx={{ py: 4 }}>
@@ -92,6 +125,7 @@ export default function NoteDetailPage() {
     );
   }
 
+  /* ---------------- NOT FOUND ---------------- */
   if (!note) {
     return (
       <Container maxWidth="md" sx={{ py: 4 }}>
@@ -122,25 +156,46 @@ export default function NoteDetailPage() {
     );
   }
 
+  /* ---------------- MAIN ---------------- */
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
-      <Box mb={3}>
+      {/* Header */}
+      <Box
+        mb={3}
+        display="flex"
+        alignItems="center"
+        justifyContent="space-between"
+      >
+        <Box>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            onClick={() => router.push('/notes')}
+            sx={{ color: 'text.primary', mb: 1 }}
+          >
+            Back to Notes
+          </Button>
+
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', fontSize: '0.875rem' }}
+          >
+            {moment(note.createdAt).format('MMMM D, YYYY [at] h:mm A')}
+          </Typography>
+        </Box>
+
+        {/* Delete button */}
         <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => router.push('/notes')}
-          sx={{ color: 'text.primary', mb: 2 }}
+          color="error"
+          variant="outlined"
+          startIcon={<Trash2Icon  fontSize="small" />}
+          onClick={() => setDeleteOpen(true)}
         >
-          Back to Notes
+          Delete
         </Button>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: 'block', fontSize: '0.875rem' }}
-        >
-          {moment(note.createdAt).format('MMMM D, YYYY [at] h:mm A')}
-        </Typography>
       </Box>
 
+      {/* Content */}
       <Card
         sx={{
           backgroundColor:
@@ -166,8 +221,38 @@ export default function NoteDetailPage() {
           </Typography>
         </CardContent>
       </Card>
+
+      {/* DELETE CONFIRMATION DIALOG */}
+      <Dialog
+        open={deleteOpen}
+        onClose={() => !deleting && setDeleteOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Delete Note?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This action cannot be undone. Are you sure you want to delete this
+            note?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setDeleteOpen(false)}
+            disabled={deleting}
+          >
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }
-
-

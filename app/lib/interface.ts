@@ -655,6 +655,19 @@ export interface QuickNote {
   updatedAt?: Date | Timestamp;
 }
 
+export interface DailyCheckout {
+  id?: string;
+  userId: string;
+  title: string; // required
+  dayOrDate: string; // required - can be day name (e.g., "Sunday", "Monday") or date string (e.g., "2025-01-29")
+  category?: string; // optional but recommended
+  time?: string; // optional but recommended - format: "HH:mm" (e.g., "09:00", "14:30")
+  duration?: string; // optional - e.g., "30 mins", "1 hour"
+  done: boolean; // default false
+  createdAt: Date | Timestamp;
+  updatedAt?: Date | Timestamp;
+}
+
 export interface StreakProps {
   id?: string; // Firestore doc ID
   userId: string; // linked to auth user

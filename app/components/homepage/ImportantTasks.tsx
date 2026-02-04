@@ -104,7 +104,7 @@ const ImportantTasks = () => {
     setNewDueDate(
       task.dueDate instanceof Timestamp
         ? task.dueDate.toDate()
-        : new Date(task.dueDate)
+        : new Date(task.dueDate),
     );
     setRescheduleOpen(true);
   };
@@ -307,8 +307,8 @@ const ImportantTasks = () => {
                       task.priority === 'critical'
                         ? 'error'
                         : task.priority === 'urgent'
-                        ? 'warning'
-                        : 'success'
+                          ? 'warning'
+                          : 'success'
                     }
                     variant={
                       task.priority === 'routine' ? 'outlined' : 'filled'
@@ -319,6 +319,15 @@ const ImportantTasks = () => {
                     label={task.status.replace('_', ' ')}
                     variant="outlined"
                   />
+                  {/* Show overall task assignee for quick glance */}
+                  {task.assignee && (
+                    <Chip
+                      size="small"
+                      label={task.assignee}
+                      variant="outlined"
+                      sx={{ ml: 0.5, fontWeight: 600 }}
+                    />
+                  )}
                 </Stack>
 
                 {/* Mobile action bar (bottom) */}

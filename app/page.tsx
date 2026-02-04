@@ -11,6 +11,7 @@ import SkeletonLoader from './components/global/SkeletonLoader';
 import Goals from './components/homepage/Goals';
 import ShoppingList from './components/homepage/ShoppingList';
 import Schedules from './components/homepage/Schedules';
+import DailyCheckouts from './components/homepage/DailyCheckouts';
 // import ProductivityEditor from './components/global/QuickEditor';
 
 // Lazy load components for better performance
@@ -25,18 +26,18 @@ import Schedules from './components/homepage/Schedules';
 // );
 
 const ImportantTasks = lazy(
-  () => import('./components/homepage/ImportantTasks')
+  () => import('./components/homepage/ImportantTasks'),
 );
 const OverdueTasks = lazy(() => import('./components/homepage/OverdueTasks'));
 const OnGoingStreaks = lazy(
-  () => import('./components/homepage/OnGoingStreaks')
+  () => import('./components/homepage/OnGoingStreaks'),
 );
 // const Mood = lazy(() => import('./components/homepage/Mood'));
 const ExpectedExpenses = lazy(
-  () => import('./components/homepage/ExpectedExpenses')
+  () => import('./components/homepage/ExpectedExpenses'),
 );
 const ExpectedIncome = lazy(
-  () => import('./components/homepage/ExpectedIncomes')
+  () => import('./components/homepage/ExpectedIncomes'),
 );
 // const JournalMemory = lazy(() => import('./components/homepage/JournalMemory'));
 // const MostProductiveDay = lazy(
@@ -91,6 +92,11 @@ export default function Homepage() {
           {/* 1. Header Section - Full Width */}
           <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
             <HomepageHeader />
+          </Suspense>
+
+          {/* Daily Checkout - Right after header/editor */}
+          <Suspense fallback={<SkeletonLoader variant="card" height={200} />}>
+            <DailyCheckouts />
           </Suspense>
 
           {/* 2. Three Column Layout */}

@@ -16,6 +16,7 @@ import {
   MobileStepper,
   CircularProgress,
   Fade,
+  Chip,
 } from '@mui/material';
 import {
   Done,
@@ -66,10 +67,10 @@ export default function OverdueTasks() {
       const now = moment().tz('Asia/Karachi').startOf('day');
 
       const filtered = snap.docs
-        .map((doc) => ({ ...doc.data(), id: doc.id } as Todo))
+        .map((doc) => ({ ...doc.data(), id: doc.id }) as Todo)
         .filter((t) => {
           const due = moment(
-            (t.dueDate as Timestamp)?.toDate?.() || t.dueDate
+            (t.dueDate as Timestamp)?.toDate?.() || t.dueDate,
           ).startOf('day');
           return (
             t.authorId === user.uid &&
@@ -80,7 +81,7 @@ export default function OverdueTasks() {
         .sort(
           (a, b) =>
             moment(a.dueDate as Timestamp).valueOf() -
-            moment(b.dueDate as Timestamp).valueOf()
+            moment(b.dueDate as Timestamp).valueOf(),
         )
         .slice(0, 6);
 
@@ -246,8 +247,8 @@ export default function OverdueTasks() {
                               completingId === activeTask.id
                                 ? 'gray'
                                 : theme?.mode === 'dark'
-                                ? '#cbd5e1'
-                                : 'gray',
+                                  ? '#cbd5e1'
+                                  : 'gray',
                           }}
                         >
                           {completingId === activeTask.id ? (
@@ -262,19 +263,37 @@ export default function OverdueTasks() {
                 </Box>
 
                 <Box className="flex flex-wrap gap-2 mt-1 text-xs">
-                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-700">
-                    {activeTask.status}
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 capitalize">
-                    {activeTask.priority}
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-800">
-                    Due:{' '}
-                    {moment(
+                  <Chip
+                    label={activeTask.status}
+                    size="small"
+                    sx={{ bgcolor: 'transparent', border: 'none', px: 0 }}
+                  />
+                  <Chip
+                    label={activeTask.priority}
+                    size="small"
+                    sx={{
+                      bgcolor: 'transparent',
+                      border: 'none',
+                      px: 0,
+                      textTransform: 'capitalize',
+                    }}
+                  />
+                  <Chip
+                    label={`Due: ${moment(
                       (activeTask.dueDate as Timestamp)?.toDate?.() ||
-                        activeTask.dueDate
-                    ).format('MMM D')}
-                  </span>
+                        activeTask.dueDate,
+                    ).format('MMM D')}`}
+                    size="small"
+                    variant="outlined"
+                  />
+                  {/* Show overall task assignee */}
+                  {activeTask.assignee && (
+                    <Chip
+                      size="small"
+                      label={activeTask.assignee}
+                      variant="outlined"
+                    />
+                  )}
                 </Box>
               </CardContent>
             </Card>
