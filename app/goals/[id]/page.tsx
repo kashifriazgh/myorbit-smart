@@ -5,49 +5,23 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
-  Tabs,
-  Tab,
   Button,
   Chip,
-  LinearProgress,
   IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  FormControlLabel,
-  Checkbox,
-  Avatar,
   TextField,
 } from '@mui/material';
-import {
-  ArrowBack,
-  Edit,
-  Delete,
-  TrendingUp,
-  FitnessCenter,
-  School,
-  Psychology,
-  Category,
-  CheckCircle,
-  RadioButtonUnchecked,
-  Schedule,
-  WorkOutline,
-  SelfImprovement,
-} from '@mui/icons-material';
+import { ArrowBack, Edit, Delete } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGoals, GoalsProvider } from '../../lib/context/GoalsContext';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
-import { Goal, GoalType } from '../../lib/interface';
+import { GoalType } from '../../lib/interface';
 import GoalModal from '../../components/goals/GoalModal';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 
-const NEAR_DUE_THRESHOLD_DAYS = 3;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const toPlainDate = (value: unknown): Date | null => {
@@ -77,53 +51,33 @@ const toPlainDate = (value: unknown): Date | null => {
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
-  return null;
+  try {
+    const parsed = new Date(value as unknown as string | number | Date);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  } catch {
+    return null;
+  }
 };
 
 const addDays = (date: Date, days: number): Date =>
   new Date(date.getTime() + days * DAY_IN_MS);
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
-
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`goal-tabpanel-${index}`}
-      aria-labelledby={`goal-tab-${index}`}
-      {...other}
-    >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
-    </div>
-  );
-}
-
-const getGoalTypeIcon = (type: GoalType) => {
+const getGoalTypeIcon = (type: GoalType): string => {
   switch (type) {
     case 'finance':
-      return <TrendingUp />;
+      return '💰';
     case 'health':
-      return <FitnessCenter />;
+      return '🏃';
     case 'learning':
-      return <School />;
+      return '📚';
     case 'habit':
-      return <Psychology />;
+      return '🎯';
     case 'work':
-      return <WorkOutline />;
+      return '💼';
     case 'lifestyle':
-      return <SelfImprovement />;
+      return '🌟';
     default:
-      return <Category />;
+      return '✨';
   }
 };
 
@@ -146,180 +100,40 @@ const getGoalTypeColor = (type: GoalType) => {
   }
 };
 
-const getPriorityColor = (priority: Goal['priority']) => {
-  switch (priority) {
-    case 'High':
-      return '#EF4444';
-    case 'Medium':
-      return '#F59E0B';
-    case 'Low':
-      return '#10B981';
-    default:
-      return '#6B7280';
-  }
-};
-
-const getStatusColor = (status: Goal['status']) => {
-  switch (status) {
-    case 'On Track':
-      return '#10B981';
-    case 'At Risk':
-      return '#F59E0B';
-    case 'Off Track':
-      return '#EF4444';
-    case 'Completed':
-      return '#3B82F6';
-    default:
-      return '#6B7280';
-  }
-};
-
-const getDaysLeft = (dueDate) => {
-  const now = new Date();
-  if (!dueDate) return 0;
-
-  let due: Date;
-  if (typeof dueDate?.toDate === 'function') {
-    // Firestore Timestamp
-    due = dueDate.toDate();
-  } else if (dueDate?.seconds && dueDate?.nanoseconds !== undefined) {
-    // Firestore Timestamp object with seconds/nanoseconds
-    due = new Date(dueDate.seconds * 1000 + dueDate.nanoseconds / 1000000);
-  } else {
-    // Regular Date or other format
-    due = new Date(dueDate);
-  }
-
-  if (isNaN(due.getTime())) return 0;
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-};
-
-const formatDateSafe = (d) => {
-  if (!d) return '';
-
-  let date: Date;
-  if (typeof d?.toDate === 'function') {
-    // Firestore Timestamp
-    date = d.toDate();
-  } else if (d?.seconds && d?.nanoseconds !== undefined) {
-    // Firestore Timestamp object with seconds/nanoseconds
-    date = new Date(d.seconds * 1000 + d.nanoseconds / 1000000);
-  } else {
-    // Regular Date or other format
-    date = new Date(d);
-  }
-
-  if (isNaN(date.getTime())) return 'Invalid Date';
-  return date.toLocaleDateString();
-};
-
-const formatStepDate = (date) => {
-  if (!date) return '';
-
-  let d: Date;
-  if (typeof date?.toDate === 'function') {
-    // Firestore Timestamp
-    d = date.toDate();
-  } else if (date?.seconds && date?.nanoseconds !== undefined) {
-    // Firestore Timestamp object with seconds/nanoseconds
-    d = new Date(date.seconds * 1000 + date.nanoseconds / 1000000);
-  } else if (date instanceof Date) {
-    d = date;
-  } else {
-    d = new Date(date);
-  }
-
-  if (isNaN(d.getTime())) return 'Invalid Date';
-  return d.toLocaleDateString();
-};
-
 const GoalDetailInner: React.FC = () => {
   const params = useParams();
   const router = useRouter();
-  const {
-    goals,
-    updateStepStatus,
-    deleteGoal,
-    setStepSkipped,
-    extendGoalDueDate,
-  } = useGoals();
-  const { user } = useAuth();
+  const { goals, updateStepStatus, deleteGoal, updateGoal } = useGoals();
   const { theme } = useCustomTheme();
 
-  const [tabValue, setTabValue] = useState(0);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [extendDialogOpen, setExtendDialogOpen] = useState(false);
-  const [extendDueDate, setExtendDueDate] = useState<Date | null>(null);
-  const [additionalMilestones, setAdditionalMilestones] = useState<number>(1);
-  const [extendError, setExtendError] = useState<string | null>(null);
-  const [extendLoading, setExtendLoading] = useState(false);
+  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
+  const [newMilestoneTitle, setNewMilestoneTitle] = useState('');
+  const [newMilestoneEndDate, setNewMilestoneEndDate] = useState('');
+  const [newMilestoneTargetValue, setNewMilestoneTargetValue] = useState('');
 
   const goal = goals.find((g) => g.id === params.id);
-
-  // Move all useMemo hooks before early return to maintain hook order
   const typeColor = useMemo(
     () => (goal ? getGoalTypeColor(goal.type) : '#6B7280'),
-    [goal?.type]
+    [goal?.type],
   );
-  const priorityColor = useMemo(
-    () => (goal ? getPriorityColor(goal.priority) : '#6B7280'),
-    [goal?.priority]
-  );
-  const statusColor = useMemo(
-    () => (goal ? getStatusColor(goal.status) : '#6B7280'),
-    [goal?.status]
-  );
-  const daysLeft = useMemo(
-    () => (goal ? getDaysLeft(goal.dueDate) : 0),
-    [goal?.dueDate]
-  );
-  const isOverdue = daysLeft < 0;
-  const createdDate = useMemo(
-    () => (goal ? toPlainDate(goal.createdAt) : null),
-    [goal?.createdAt]
-  );
+
   const dueDateDate = useMemo(
     () => (goal ? toPlainDate(goal.dueDate) : null),
-    [goal?.dueDate]
+    [goal?.dueDate],
   );
-  const timelineMetrics = useMemo(() => {
-    if (!createdDate || !dueDateDate) {
-      return {
-        hasTimeline: false,
-        totalDays: 0,
-        elapsedDays: 0,
-        percent: 0,
-      };
-    }
-    const totalMs = dueDateDate.getTime() - createdDate.getTime();
-    if (totalMs <= 0) {
-      return {
-        hasTimeline: false,
-        totalDays: 0,
-        elapsedDays: 0,
-        percent: 0,
-      };
-    }
-    const now = Date.now();
-    const elapsedMs = clamp(now - createdDate.getTime(), 0, totalMs);
-    const totalDays = Math.ceil(totalMs / DAY_IN_MS);
-    const elapsedDays = Math.floor(elapsedMs / DAY_IN_MS);
-    const percent = Math.round((elapsedMs / totalMs) * 100);
-    return {
-      hasTimeline: true,
-      totalDays,
-      elapsedDays,
-      percent: clamp(percent, 0, 100),
-    };
-  }, [createdDate, dueDateDate]);
 
-  const shouldAllowExtension =
-    !!goal &&
-    goal.progress < 100 &&
-    !!dueDateDate &&
-    (isOverdue || daysLeft <= NEAR_DUE_THRESHOLD_DAYS);
+  const createdDate = useMemo(() => (goal ? new Date() : null), [goal]);
+
+  const daysLeft = useMemo(() => {
+    if (!dueDateDate) return 0;
+    const now = new Date();
+    return Math.ceil(
+      (dueDateDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+    );
+  }, [dueDateDate]);
 
   useEffect(() => {
     if (!goal && goals.length > 0) {
@@ -343,23 +157,11 @@ const GoalDetailInner: React.FC = () => {
     );
   }
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-
   const handleStepToggle = async (stepId: string, completed: boolean) => {
     try {
       await updateStepStatus(goal.id!, stepId, completed);
     } catch (error) {
       console.error('Error updating step:', error);
-    }
-  };
-
-  const handleSkipStep = async (stepId: string, skipped: boolean) => {
-    try {
-      await setStepSkipped(goal.id!, stepId, skipped);
-    } catch (error) {
-      console.error('Error updating skipped status:', error);
     }
   };
 
@@ -376,894 +178,742 @@ const GoalDetailInner: React.FC = () => {
     }
   };
 
-  const handleOpenExtendDialog = () => {
-    const base =
-      dueDateDate && dueDateDate > new Date() ? dueDateDate : new Date();
-    setExtendDialogOpen(true);
-    setExtendError(null);
-    setAdditionalMilestones(1);
-    setExtendDueDate(addDays(base, 7));
-  };
-
-  const handleExtendSubmit = async () => {
-    if (!extendDueDate) {
-      setExtendError('Please choose a new due date.');
-      return;
-    }
-
-    setExtendLoading(true);
-    setExtendError(null);
+  const handleCreateMilestone = async () => {
     try {
-      await extendGoalDueDate(
-        goal.id!,
-        extendDueDate,
-        Math.max(0, Math.floor(additionalMilestones))
-      );
-      setExtendDialogOpen(false);
-    } catch (error) {
-      console.error('Error extending due date:', error);
-      setExtendError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to extend the due date. Please try again.'
-      );
-    } finally {
-      setExtendLoading(false);
+      const title =
+        newMilestoneTitle.trim() ||
+        `Milestone ${(goal.steps || []).length + 1}`;
+
+      // determine start date: after last step end or createdDate or today
+      let start: Date;
+      if (goal.steps && goal.steps.length > 0) {
+        const last = goal.steps[goal.steps.length - 1];
+        const lastEnd =
+          toPlainDate(last.endDate) || toPlainDate(last.startDate) || null;
+        start = lastEnd ? addDays(lastEnd, 1) : new Date();
+      } else {
+        start = createdDate || new Date();
+      }
+
+      // Use provided endDate or fallback to default
+      let end: Date;
+      if (newMilestoneEndDate) {
+        end = new Date(newMilestoneEndDate);
+      } else {
+        end = dueDateDate || addDays(start, 7);
+      }
+
+      if (start.getTime() >= end.getTime()) {
+        start = addDays(end, -1);
+      }
+
+      const uniqueId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      const newStep = {
+        id: uniqueId,
+        title,
+        startDate: start,
+        endDate: end,
+        completed: false,
+        skipped: false,
+        targetValue: newMilestoneTargetValue
+          ? parseFloat(newMilestoneTargetValue)
+          : undefined,
+      };
+
+      await updateGoal(goal.id!, { steps: [...(goal.steps || []), newStep] });
+      setMilestoneDialogOpen(false);
+      setNewMilestoneTitle('');
+      setNewMilestoneEndDate('');
+      setNewMilestoneTargetValue('');
+    } catch (err) {
+      console.error('Error creating milestone:', err);
     }
   };
 
-  const OverviewTab = () => (
-    <Box className="space-y-6">
-      {/* Goal Header */}
-      <Card
+  const completedStepsCount =
+    goal.steps?.filter((s) => s.completed).length || 0;
+  const totalStepsCount = goal.steps?.length || 0;
+
+  return (
+    <Box
+      sx={{
+        minHeight: '100vh',
+        backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#f8fafc',
+        py: { xs: 2, sm: 4 },
+        px: { xs: 2, sm: 4 },
+      }}
+    >
+      {/* Header */}
+      <Box
         sx={{
-          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-          borderRadius: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          mb: 4,
         }}
       >
-        <CardContent className="p-6">
-          <Box className="flex items-start justify-between mb-4">
-            <Box className="flex items-center gap-3">
-              <Avatar
+        <IconButton
+          onClick={() => router.push('/goals')}
+          sx={{
+            color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+          }}
+        >
+          <ArrowBack />
+        </IconButton>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <IconButton
+            onClick={() => setEditModalOpen(true)}
+            sx={{ color: '#3B82F6' }}
+          >
+            <Edit />
+          </IconButton>
+          <IconButton
+            onClick={() => setDeleteDialogOpen(true)}
+            sx={{ color: '#EF4444' }}
+          >
+            <Delete />
+          </IconButton>
+        </Box>
+      </Box>
+
+      {/* Main Card Container */}
+      <Box
+        sx={{
+          maxWidth: 'md',
+          mx: 'auto',
+          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+          borderRadius: '2rem',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Top Gradient Section with Circular Progress */}
+        <Box
+          sx={{
+            background: `linear-gradient(135deg, ${typeColor} 0%, ${typeColor}dd 100%)`,
+            px: 3,
+            pt: 3,
+            pb: 8,
+            color: 'white',
+            position: 'relative',
+          }}
+        >
+          <Typography
+            variant="body2"
+            sx={{ opacity: 0.9, mb: 3, fontWeight: 500 }}
+          >
+            {goal.status}
+          </Typography>
+
+          {/* Circular Progress */}
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              position: 'relative',
+              mb: 4,
+            }}
+          >
+            <svg width="160" height="160">
+              {/* Background ring */}
+              <circle
+                cx="80"
+                cy="80"
+                r="70"
+                stroke="rgba(255,255,255,0.2)"
+                strokeWidth="10"
+                fill="none"
+              />
+              {/* Progress ring */}
+              <circle
+                cx="80"
+                cy="80"
+                r="70"
+                stroke="currentColor"
+                strokeWidth="10"
+                strokeDasharray={`${(goal.progress / 100) * 440} 440`}
+                strokeLinecap="round"
+                fill="none"
+                style={{
+                  transform: 'rotate(-90deg)',
+                  transformOrigin: '50% 50%',
+                  transition: 'stroke-dasharray 0.3s ease',
+                }}
+              />
+            </svg>
+
+            {/* Center content */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                textAlign: 'center',
+              }}
+            >
+              <Typography
+                variant="h5"
                 sx={{
-                  backgroundColor: `${typeColor}20`,
-                  color: typeColor,
-                  width: 48,
-                  height: 48,
+                  fontWeight: 'bold',
+                  fontSize: '1.25rem',
                 }}
               >
-                {getGoalTypeIcon(goal.type)}
-              </Avatar>
-              <Box>
+                {goal.progress}
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{ opacity: 0.87, fontSize: '0.75rem' }}
+              >
+                %
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Content Area */}
+        <Box
+          sx={{
+            px: { xs: 2, sm: 4 },
+            pb: 4,
+            mt: -6,
+            pt: 4,
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
+          {/* Goal Title Card */}
+          <Box
+            sx={{
+              backgroundColor: theme?.mode === 'dark' ? '#334155' : '#white',
+              borderRadius: '1.5rem',
+              p: 3,
+              mb: 4,
+              boxShadow:
+                theme?.mode === 'dark' ? 'none' : '0 2px 8px rgba(0,0,0,0.1)',
+              border:
+                theme?.mode === 'dark'
+                  ? `1px solid #475569`
+                  : '1px solid #e5e7eb',
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 2,
+              }}
+            >
+              <Box sx={{ flex: 1 }}>
                 <Typography
-                  variant="h5"
-                  className="font-bold"
+                  variant="body2"
                   sx={{
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    color: typeColor,
+                    mb: 0.5,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  {goal.type}
+                </Typography>
+                <Typography
+                  variant="h6"
+                  sx={{
+                    fontWeight: 600,
                     color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                    mb: 1,
                   }}
                 >
                   {goal.title}
                 </Typography>
-                <Box className="flex items-center gap-2 mt-1">
+              </Box>
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '0.75rem',
+                  backgroundColor: `${typeColor}20`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.5rem',
+                  flexShrink: 0,
+                }}
+              >
+                {getGoalTypeIcon(goal.type)}
+              </Box>
+            </Box>
+
+            {/* Progress Bar */}
+            <Box sx={{ mt: 3 }}>
+              <Box
+                sx={{
+                  height: 6,
+                  width: '100%',
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#1e293b' : '#e5e7eb',
+                  borderRadius: '9999px',
+                  overflow: 'hidden',
+                }}
+              >
+                <Box
+                  sx={{
+                    height: '100%',
+                    width: `${goal.progress}%`,
+                    backgroundColor: typeColor,
+                    borderRadius: '9999px',
+                    transition: 'width 0.3s ease',
+                  }}
+                />
+              </Box>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontSize: '0.75rem',
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                  mt: 1,
+                }}
+              >
+                You have achieved{' '}
+                <span style={{ fontWeight: 600, color: typeColor }}>
+                  {goal.progress}%
+                </span>{' '}
+                of your goal
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Description */}
+          {goal.description && (
+            <Box sx={{ mb: 4 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#6b7280',
+                  lineHeight: 1.6,
+                }}
+              >
+                {goal.description}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Milestones Header */}
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              mb: 3,
+            }}
+          >
+            <Typography
+              variant="body1"
+              sx={{
+                fontWeight: 600,
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+              }}
+            >
+              Steps & Milestones ({completedStepsCount}/{totalStepsCount})
+            </Typography>
+            <Box>
+              <Button
+                size="small"
+                onClick={() => setMilestoneDialogOpen(true)}
+                sx={{ textTransform: 'none' }}
+              >
+                Add Milestone
+              </Button>
+            </Box>
+          </Box>
+
+          {/* Steps List */}
+          <AnimatePresence>
+            {goal.steps && goal.steps.length > 0 ? (
+              <Box sx={{ space: 2 }}>
+                {goal.steps.map((step, index) => (
+                  <motion.div
+                    key={step.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2, delay: index * 0.05 }}
+                  >
+                    <Box
+                      sx={{
+                        backgroundColor:
+                          theme?.mode === 'dark' ? '#334155' : '#f9fafb',
+                        borderRadius: '1.25rem',
+                        p: 3,
+                        mb: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        border:
+                          theme?.mode === 'dark'
+                            ? `1px solid #475569`
+                            : '1px solid #e5e7eb',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          boxShadow:
+                            theme?.mode === 'dark'
+                              ? 'none'
+                              : '0 4px 12px rgba(0,0,0,0.08)',
+                        },
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          gap: 2,
+                          alignItems: 'flex-start',
+                          flex: 1,
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: '0.75rem',
+                            backgroundColor: step.completed
+                              ? `${typeColor}20`
+                              : theme?.mode === 'dark'
+                                ? '#475569'
+                                : '#e5e7eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {step.completed ? (
+                            <Typography
+                              sx={{
+                                fontSize: '1.25rem',
+                              }}
+                            >
+                              ✓
+                            </Typography>
+                          ) : (
+                            <Typography
+                              sx={{
+                                fontSize: '1rem',
+                                color:
+                                  theme?.mode === 'dark'
+                                    ? '#94a3b8'
+                                    : '#9ca3af',
+                              }}
+                            >
+                              {index + 1}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 500,
+                              color: step.completed
+                                ? theme?.mode === 'dark'
+                                  ? '#94a3b8'
+                                  : '#9ca3af'
+                                : theme?.mode === 'dark'
+                                  ? '#f1f5f9'
+                                  : '#1f2937',
+                              textDecoration: step.completed
+                                ? 'line-through'
+                                : 'none',
+                            }}
+                          >
+                            {step.title}
+                          </Typography>
+                          {step.description && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color:
+                                  theme?.mode === 'dark'
+                                    ? '#94a3b8'
+                                    : '#6b7280',
+                                display: 'block',
+                                mt: 0.5,
+                              }}
+                            >
+                              {step.description}
+                            </Typography>
+                          )}
+                          {step.targetValue && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: typeColor,
+                                display: 'block',
+                                mt: 0.5,
+                                fontWeight: 500,
+                              }}
+                            >
+                              Target: {step.targetValue}
+                            </Typography>
+                          )}
+                        </Box>
+                      </Box>
+
+                      {/* Action Button */}
+                      <Button
+                        onClick={() =>
+                          handleStepToggle(step.id, !step.completed)
+                        }
+                        size="small"
+                        sx={{
+                          backgroundColor: step.completed
+                            ? `${typeColor}20`
+                            : theme?.mode === 'dark'
+                              ? '#1e293b'
+                              : '#3B82F6',
+                          color: step.completed ? typeColor : '#ffffff',
+                          fontWeight: 600,
+                          textTransform: 'none',
+                          borderRadius: '0.5rem',
+                          px: 2,
+                          py: 1,
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                          fontSize: '0.75rem',
+                          '&:hover': {
+                            backgroundColor: step.completed
+                              ? `${typeColor}30`
+                              : '#2563eb',
+                          },
+                        }}
+                      >
+                        {step.completed ? 'Completed' : 'Complete'}
+                      </Button>
+                    </Box>
+                  </motion.div>
+                ))}
+              </Box>
+            ) : (
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                  textAlign: 'center',
+                  py: 3,
+                }}
+              >
+                No milestones yet
+              </Typography>
+            )}
+          </AnimatePresence>
+
+          {/* Additional Info */}
+          {goal.notes && (
+            <Box sx={{ mt: 4 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 600,
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                  mb: 1,
+                }}
+              >
+                Notes
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#6b7280',
+                  lineHeight: 1.6,
+                }}
+              >
+                {goal.notes}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Tags */}
+          {goal.tags && goal.tags.length > 0 && (
+            <Box sx={{ mt: 4 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 600,
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                  mb: 1,
+                }}
+              >
+                Tags
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {goal.tags.map((tag) => (
                   <Chip
-                    label={goal.type}
+                    key={tag}
+                    label={tag}
                     size="small"
                     sx={{
                       backgroundColor: `${typeColor}20`,
                       color: typeColor,
-                      fontWeight: 600,
+                      fontWeight: 500,
                     }}
                   />
-                  <Chip
-                    label={goal.priority}
-                    size="small"
-                    sx={{
-                      backgroundColor: `${priorityColor}20`,
-                      color: priorityColor,
-                      fontWeight: 600,
-                    }}
-                  />
-                </Box>
+                ))}
               </Box>
             </Box>
-
-            <Box className="flex gap-2">
-              <IconButton
-                onClick={() => setEditModalOpen(true)}
-                sx={{ color: '#3B82F6' }}
-              >
-                <Edit />
-              </IconButton>
-              <IconButton
-                onClick={() => setDeleteDialogOpen(true)}
-                sx={{ color: '#EF4444' }}
-              >
-                <Delete />
-              </IconButton>
-            </Box>
-          </Box>
-
-          {goal.description && (
-            <Typography
-              variant="body1"
-              className="mb-4"
-              sx={{
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                lineHeight: 1.6,
-              }}
-            >
-              {goal.description}
-            </Typography>
           )}
 
-          {/* Progress Section */}
-          <Box className="mb-4">
-            <Box className="flex justify-between items-center mb-2">
+          {/* Due Date and Priority Info */}
+          <Box
+            sx={{
+              mt: 4,
+              pt: 3,
+              borderTop:
+                theme?.mode === 'dark'
+                  ? '1px solid #475569'
+                  : '1px solid #e5e7eb',
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+              gap: 2,
+            }}
+          >
+            <Box>
               <Typography
-                variant="h6"
-                className="font-semibold"
-                sx={{
-                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-                }}
-              >
-                Progress
-              </Typography>
-              <Typography
-                variant="h6"
-                className="font-bold"
-                sx={{ color: typeColor }}
-              >
-                {goal.progress}%
-              </Typography>
-            </Box>
-            <LinearProgress
-              variant="determinate"
-              value={goal.progress}
-              sx={{
-                height: 12,
-                borderRadius: 6,
-                backgroundColor: theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-                '& .MuiLinearProgress-bar': {
-                  backgroundColor: typeColor,
-                  borderRadius: 6,
-                },
-              }}
-            />
-          </Box>
-
-          {/* Status and Timeline */}
-          <Box className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Box
-              className="text-center p-4 border rounded-lg"
-              sx={{
-                borderColor: theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-              }}
-            >
-              <Typography
-                variant="body2"
+                variant="caption"
                 sx={{
                   color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                  mb: 1,
-                }}
-              >
-                Status
-              </Typography>
-              <Chip
-                label={goal.status}
-                sx={{
-                  backgroundColor: `${statusColor}20`,
-                  color: statusColor,
+                  textTransform: 'uppercase',
+                  fontSize: '0.7rem',
                   fontWeight: 600,
-                }}
-              />
-            </Box>
-
-            <Box
-              className="text-center p-4 border rounded-lg"
-              sx={{
-                borderColor: theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-              }}
-            >
-              <Typography
-                variant="body2"
-                sx={{
-                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                  mb: 1,
                 }}
               >
                 Due Date
               </Typography>
               <Typography
-                variant="body1"
-                className="font-semibold"
-                sx={{
-                  color: isOverdue
-                    ? '#EF4444'
-                    : theme?.mode === 'dark'
-                    ? '#f1f5f9'
-                    : '#1f2937',
-                }}
-              >
-                {formatDateSafe(goal.dueDate)}
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{
-                  color: isOverdue
-                    ? '#EF4444'
-                    : theme?.mode === 'dark'
-                    ? '#94a3b8'
-                    : '#6b7280',
-                }}
-              >
-                {isOverdue
-                  ? `${Math.abs(daysLeft)} days overdue`
-                  : `${daysLeft} days left`}
-              </Typography>
-            </Box>
-
-            <Box
-              className="text-center p-4 border rounded-lg"
-              sx={{
-                borderColor: theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-              }}
-            >
-              <Typography
                 variant="body2"
                 sx={{
-                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                  mb: 1,
+                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                  fontWeight: 500,
+                  mt: 0.5,
                 }}
               >
-                Timeline
+                {dueDateDate ? dueDateDate.toLocaleDateString() : 'Not set'}
               </Typography>
-              {timelineMetrics.hasTimeline ? (
-                <Box className="space-y-2 text-left">
-                  <LinearProgress
-                    variant="determinate"
-                    value={timelineMetrics.percent}
-                    sx={{
-                      height: 10,
-                      borderRadius: 999,
-                      backgroundColor:
-                        theme?.mode === 'dark' ? '#1f2937' : '#e5e7eb',
-                      '& .MuiLinearProgress-bar': {
-                        borderRadius: 999,
-                        backgroundImage: `linear-gradient(90deg, ${typeColor} 0%, ${typeColor}cc 100%)`,
-                      },
-                    }}
-                  />
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {timelineMetrics.elapsedDays} of {timelineMetrics.totalDays}{' '}
-                    days passed
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                    }}
-                  >
-                    Started on {formatDateSafe(goal.createdAt)}
-                  </Typography>
-                  {shouldAllowExtension && (
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={handleOpenExtendDialog}
-                      sx={{
-                        borderColor: typeColor,
-                        color: typeColor,
-                        textTransform: 'none',
-                      }}
-                    >
-                      Extend due date
-                    </Button>
-                  )}
-                </Box>
-              ) : (
+              {dueDateDate && (
                 <Typography
-                  variant="body1"
-                  className="font-semibold"
+                  variant="caption"
                   sx={{
-                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                    color:
+                      daysLeft < 0
+                        ? '#EF4444'
+                        : daysLeft <= 3
+                          ? '#F59E0B'
+                          : typeColor,
+                    display: 'block',
+                    mt: 0.25,
                   }}
                 >
-                  Not specified
+                  {daysLeft < 0
+                    ? `${Math.abs(daysLeft)} days overdue`
+                    : `${daysLeft} days left`}
                 </Typography>
               )}
             </Box>
-          </Box>
 
-          {/* Additional Info */}
-          {(goal.category || goal.tags?.length) && (
-            <Box className="mt-4">
-              {goal.category && (
-                <Box className="mb-2">
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                      mb: 1,
-                    }}
-                  >
-                    Category
-                  </Typography>
-                  <Chip label={goal.category} size="small" variant="outlined" />
-                </Box>
-              )}
-
-              {goal.tags && goal.tags.length > 0 && (
-                <Box>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                      mb: 1,
-                    }}
-                  >
-                    Tags
-                  </Typography>
-                  <Box className="flex flex-wrap gap-1">
-                    {goal.tags.map((tag, index) => (
-                      <Chip
-                        key={index}
-                        label={tag}
-                        size="small"
-                        variant="outlined"
-                      />
-                    ))}
-                  </Box>
-                </Box>
-              )}
-            </Box>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* AI Summary */}
-      {goal.aiSummary && (
-        <Card
-          sx={{
-            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-            borderRadius: '1rem',
-          }}
-        >
-          <CardContent className="p-6">
-            <Typography
-              variant="h6"
-              className="font-semibold mb-3"
-              sx={{
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-              }}
-            >
-              AI Insights
-            </Typography>
-            <Typography
-              variant="body1"
-              sx={{
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                lineHeight: 1.6,
-              }}
-            >
-              {goal.aiSummary}
-            </Typography>
-          </CardContent>
-        </Card>
-      )}
-    </Box>
-  );
-
-  const MilestonesTab = () => (
-    <Box className="space-y-4">
-      <Typography
-        variant="h6"
-        className="font-semibold mb-4"
-        sx={{
-          color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-        }}
-      >
-        Milestones & Steps
-      </Typography>
-
-      {goal.steps.length === 0 ? (
-        <Card
-          sx={{
-            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-            borderRadius: '1rem',
-          }}
-        >
-          <CardContent className="p-6 text-center">
-            <Typography
-              variant="body1"
-              sx={{
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-              }}
-            >
-              No steps added yet. Add milestones to track your progress!
-            </Typography>
-          </CardContent>
-        </Card>
-      ) : (
-        <AnimatePresence>
-          {goal.steps.map((step) => {
-            const endDateObj = toPlainDate(step.endDate);
-            const isPastEndDate =
-              !!endDateObj && endDateObj.getTime() < Date.now();
-            const isSkipped = Boolean(step.skipped);
-
-            return (
-              <motion.div
-                key={step.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.1 }}
-              >
-                <Card
-                  sx={{
-                    backgroundColor:
-                      theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-                    borderRadius: '1rem',
-                    border: step.completed
-                      ? `2px solid ${typeColor}40`
-                      : `1px solid ${
-                          theme?.mode === 'dark' ? '#374151' : '#e5e7eb'
-                        }`,
-                  }}
-                >
-                  <CardContent className="p-4">
-                    <Box className="flex items-start gap-3">
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={step.completed}
-                            onChange={(e) =>
-                              handleStepToggle(step.id, e.target.checked)
-                            }
-                            icon={<RadioButtonUnchecked />}
-                            checkedIcon={<CheckCircle />}
-                            disabled={isSkipped}
-                            sx={{
-                              color: typeColor,
-                              '&.Mui-checked': {
-                                color: typeColor,
-                              },
-                            }}
-                          />
-                        }
-                        label=""
-                      />
-
-                      <Box className="flex-1">
-                        <Box className="flex flex-wrap items-center gap-2">
-                          <Typography
-                            variant="h6"
-                            className={`font-semibold ${
-                              step.completed ? 'line-through opacity-60' : ''
-                            }`}
-                            sx={{
-                              color:
-                                theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-                            }}
-                          >
-                            {step.title}
-                          </Typography>
-                          {isSkipped && (
-                            <Chip
-                              label="Skipped"
-                              size="small"
-                              sx={{
-                                backgroundColor: '#f9731620',
-                                color: '#f97316',
-                              }}
-                            />
-                          )}
-                          {isPastEndDate && !step.completed && !isSkipped && (
-                            <Chip
-                              label="Past due"
-                              size="small"
-                              sx={{
-                                backgroundColor: '#ef444420',
-                                color: '#ef4444',
-                              }}
-                            />
-                          )}
-                        </Box>
-
-                        {step.description && (
-                          <Typography
-                            variant="body2"
-                            className="mt-1"
-                            sx={{
-                              color:
-                                theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                            }}
-                          >
-                            {step.description}
-                          </Typography>
-                        )}
-
-                        {(step.targetValue || step.unit) && (
-                          <Box className="flex items-center gap-2 mt-2">
-                            <Chip
-                              label={`Target: ${step.targetValue ?? '—'} ${
-                                step.unit ?? ''
-                              }`}
-                              size="small"
-                              variant="outlined"
-                            />
-                            {step.actualValue != null && (
-                              <Chip
-                                label={`Actual: ${step.actualValue} ${
-                                  step.unit ?? ''
-                                }`}
-                                size="small"
-                                sx={{
-                                  backgroundColor:
-                                    step.actualValue >= (step.targetValue || 0)
-                                      ? '#10B98120'
-                                      : '#F59E0B20',
-                                  color:
-                                    step.actualValue >= (step.targetValue || 0)
-                                      ? '#10B981'
-                                      : '#F59E0B',
-                                }}
-                              />
-                            )}
-                          </Box>
-                        )}
-
-                        {(step.startDate || step.endDate) && (
-                          <Box className="flex items-center gap-2 mt-2">
-                            <Schedule
-                              sx={{
-                                fontSize: 16,
-                                color:
-                                  theme?.mode === 'dark'
-                                    ? '#94a3b8'
-                                    : '#6b7280',
-                              }}
-                            />
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                color:
-                                  theme?.mode === 'dark'
-                                    ? '#94a3b8'
-                                    : '#6b7280',
-                              }}
-                            >
-                              {step.startDate && (
-                                <>Start: {formatStepDate(step.startDate)}</>
-                              )}
-                              {step.startDate && step.endDate && ' • '}
-                              {step.endDate && (
-                                <>End: {formatStepDate(step.endDate)}</>
-                              )}
-                            </Typography>
-                          </Box>
-                        )}
-
-                        <Box className="flex flex-wrap gap-2 mt-3">
-                          {isPastEndDate && !step.completed && !isSkipped && (
-                            <Button
-                              size="small"
-                              variant="contained"
-                              onClick={() => handleStepToggle(step.id, true)}
-                              sx={{
-                                backgroundColor: typeColor,
-                                '&:hover': {
-                                  backgroundColor: typeColor,
-                                },
-                                textTransform: 'none',
-                              }}
-                            >
-                              Date is over, have you accomplished?
-                            </Button>
-                          )}
-                          {!step.completed && !isSkipped && (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={() => handleSkipStep(step.id, true)}
-                              sx={{
-                                textTransform: 'none',
-                                borderColor: '#f97316',
-                                color: '#f97316',
-                                '&:hover': {
-                                  borderColor: '#ea580c',
-                                  color: '#ea580c',
-                                },
-                              }}
-                            >
-                              Mark as skipped
-                            </Button>
-                          )}
-                          {isSkipped && (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={() => handleSkipStep(step.id, false)}
-                              sx={{
-                                textTransform: 'none',
-                                borderColor: typeColor,
-                                color: typeColor,
-                                '&:hover': {
-                                  borderColor: typeColor,
-                                  color: typeColor,
-                                },
-                              }}
-                            >
-                              Undo skip
-                            </Button>
-                          )}
-                          {isSkipped && (
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                color:
-                                  theme?.mode === 'dark'
-                                    ? '#94a3b8'
-                                    : '#6b7280',
-                              }}
-                            >
-                              Skipped milestones are excluded from progress.
-                            </Typography>
-                          )}
-                        </Box>
-                      </Box>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-      )}
-    </Box>
-  );
-
-  const LinkedItemsTab = () => (
-    <Box className="space-y-4">
-      <Typography
-        variant="h6"
-        className="font-semibold mb-4"
-        sx={{
-          color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-        }}
-      >
-        Linked Items
-      </Typography>
-
-      <Card
-        sx={{
-          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-          borderRadius: '1rem',
-        }}
-      >
-        <CardContent className="p-6 text-center">
-          <Typography
-            variant="body1"
-            sx={{
-              color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-            }}
-          >
-            This feature will be available soon! You&#39;ll be able to link
-            tasks, schedules, and streaks to your goals.
-          </Typography>
-        </CardContent>
-      </Card>
-    </Box>
-  );
-
-  return (
-    <Box
-      sx={{
-        backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#f8fafc',
-        minHeight: '100vh',
-        p: 3,
-      }}
-    >
-      <Box className="max-w-4xl mx-auto">
-        {/* Header */}
-        <Box className="flex items-center gap-4 mb-6">
-          <IconButton
-            onClick={() => router.back()}
-            sx={{
-              backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-            }}
-          >
-            <ArrowBack />
-          </IconButton>
-          <Typography
-            variant="h4"
-            className="font-bold"
-            sx={{
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-            }}
-          >
-            Goal Details
-          </Typography>
-        </Box>
-
-        {/* Tabs */}
-        <Card
-          sx={{
-            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-            borderRadius: '1rem',
-          }}
-        >
-          <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs
-              value={tabValue}
-              onChange={handleTabChange}
-              aria-label="goal tabs"
-              sx={{
-                '& .MuiTab-root': {
+            <Box>
+              <Typography
+                variant="caption"
+                sx={{
                   color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                  '&.Mui-selected': {
+                  textTransform: 'uppercase',
+                  fontSize: '0.7rem',
+                  fontWeight: 600,
+                }}
+              >
+                Priority
+              </Typography>
+              <Box sx={{ mt: 0.5 }}>
+                <Chip
+                  label={goal.priority}
+                  size="small"
+                  sx={{
+                    backgroundColor: `${typeColor}20`,
                     color: typeColor,
-                  },
-                },
-                '& .MuiTabs-indicator': {
-                  backgroundColor: typeColor,
-                },
-              }}
-            >
-              <Tab label="Overview" />
-              <Tab label="Milestones" />
-              <Tab label="Linked Items" />
-            </Tabs>
+                    fontWeight: 600,
+                  }}
+                />
+              </Box>
+            </Box>
           </Box>
-
-          <TabPanel value={tabValue} index={0}>
-            <OverviewTab />
-          </TabPanel>
-          <TabPanel value={tabValue} index={1}>
-            <MilestonesTab />
-          </TabPanel>
-          <TabPanel value={tabValue} index={2}>
-            <LinkedItemsTab />
-          </TabPanel>
-        </Card>
+        </Box>
       </Box>
 
-      {/* Edit Modal */}
-      {user && (
-        <GoalsProvider userId={user.uid}>
-          <GoalModal
-            open={editModalOpen}
-            onClose={() => setEditModalOpen(false)}
-            goal={goal}
-          />
-        </GoalsProvider>
-      )}
-
-      {/* Extend Due Date Dialog */}
-      <LocalizationProvider dateAdapter={AdapterDateFns}>
-        <Dialog
-          open={extendDialogOpen}
-          onClose={() => setExtendDialogOpen(false)}
-          PaperProps={{
-            sx: {
-              backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-              borderRadius: '1rem',
-            },
-          }}
+      {/* Create Milestone Dialog */}
+      <Dialog
+        open={milestoneDialogOpen}
+        onClose={() => setMilestoneDialogOpen(false)}
+      >
+        <DialogTitle>Create Milestone</DialogTitle>
+        <DialogContent
+          sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}
         >
-          <DialogTitle>
-            <Typography
-              variant="h6"
-              className="font-semibold"
-              sx={{
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-              }}
-            >
-              Extend Due Date
-            </Typography>
-          </DialogTitle>
-          <DialogContent className="space-y-4">
-            <Typography
-              variant="body2"
-              sx={{
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-              }}
-            >
-              Choose a new due date and optionally add extra milestones to
-              spread the extended work.
-            </Typography>
-            <DatePicker
-              label="New due date"
-              value={extendDueDate}
-              minDate={
-                dueDateDate ? addDays(dueDateDate, 1) : addDays(new Date(), 1)
-              }
-              onChange={(date: Date | null) => {
-                setExtendError(null);
-                setExtendDueDate(date);
-              }}
-              slotProps={{
-                textField: { fullWidth: true, size: 'small' },
-              }}
-            />
-            <TextField
-              type="number"
-              label="Additional milestones"
-              fullWidth
-              size="small"
-              value={additionalMilestones}
-              onChange={(e) => {
-                setExtendError(null);
-                const value = Number(e.target.value);
-                setAdditionalMilestones(Number.isNaN(value) ? 0 : value);
-              }}
-              helperText="Set to 0 if you only want to extend the deadline."
-              inputProps={{ min: 0 }}
-            />
-            {extendError && (
-              <Typography
-                variant="body2"
-                sx={{ color: '#ef4444', fontWeight: 500 }}
-              >
-                {extendError}
-              </Typography>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setExtendDialogOpen(false)}>Cancel</Button>
-            <Button
-              onClick={handleExtendSubmit}
-              disabled={extendLoading}
-              sx={{
-                color: typeColor,
-                '&:hover': {
-                  backgroundColor: `${typeColor}15`,
-                },
-              }}
-            >
-              {extendLoading ? 'Updating...' : 'Extend'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </LocalizationProvider>
+          <TextField
+            label="Milestone title"
+            fullWidth
+            size="small"
+            value={newMilestoneTitle}
+            onChange={(e) => setNewMilestoneTitle(e.target.value)}
+          />
+          <TextField
+            label="End Date"
+            type="date"
+            fullWidth
+            size="small"
+            value={newMilestoneEndDate}
+            onChange={(e) => setNewMilestoneEndDate(e.target.value)}
+            InputLabelProps={{
+              shrink: true,
+            }}
+          />
+          <TextField
+            label="What you actually want"
+            fullWidth
+            size="small"
+            type="number"
+            value={newMilestoneTargetValue}
+            onChange={(e) => setNewMilestoneTargetValue(e.target.value)}
+            placeholder="e.g., 100 (target value)"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMilestoneDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreateMilestone} sx={{ color: typeColor }}>
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Edit Modal */}
+      <GoalModal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        goal={goal}
+      />
+
+      {/* Delete Dialog */}
       <Dialog
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
-        PaperProps={{
-          sx: {
-            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-            borderRadius: '1rem',
-          },
-        }}
       >
-        <DialogTitle>
-          <Typography
-            variant="h6"
-            className="font-semibold"
-            sx={{
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-            }}
-          >
-            Delete Goal
-          </Typography>
-        </DialogTitle>
+        <DialogTitle>Delete Goal</DialogTitle>
         <DialogContent>
-          <Typography
-            sx={{
-              color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-            }}
-          >
-            Are you sure you want to delete &#39;{goal.title}&#39;? This action
-            cannot be undone.
+          <Typography>
+            Are you sure you want to delete this goal? This action cannot be
+            undone.
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -1271,12 +921,7 @@ const GoalDetailInner: React.FC = () => {
           <Button
             onClick={handleDeleteGoal}
             disabled={loading}
-            sx={{
-              color: '#EF4444',
-              '&:hover': {
-                backgroundColor: '#EF444410',
-              },
-            }}
+            sx={{ color: '#EF4444' }}
           >
             {loading ? 'Deleting...' : 'Delete'}
           </Button>
@@ -1286,14 +931,11 @@ const GoalDetailInner: React.FC = () => {
   );
 };
 
-const GoalDetailPage: React.FC = () => {
+export default function GoalDetailPage() {
   const { user } = useAuth();
-  if (!user) return null;
   return (
-    <GoalsProvider userId={user.uid}>
+    <GoalsProvider userId={user?.uid}>
       <GoalDetailInner />
     </GoalsProvider>
   );
-};
-
-export default GoalDetailPage;
+}

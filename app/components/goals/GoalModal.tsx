@@ -36,6 +36,8 @@ import {
   Category,
   WorkOutline,
   SelfImprovement,
+  ExpandMore,
+  ExpandLess,
 } from '@mui/icons-material';
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useAuth } from '../../lib/context/userContext';
@@ -84,6 +86,93 @@ const getGoalTypeColor = (type: GoalType) => {
   }
 };
 
+// Units configuration by goal type
+const GOAL_UNITS_CONFIG: Record<
+  GoalType,
+  {
+    label: string;
+    units: Array<{ value: string; label: string }>;
+    defaultUnit: string;
+    allowCustomInput?: boolean;
+  }
+> = {
+  finance: {
+    label: 'Finance',
+    units: [
+      { value: 'PKR', label: 'Pakistani Rupees' },
+      { value: 'USD', label: 'US Dollars' },
+      { value: 'EUR', label: 'Euros' },
+      { value: '%', label: 'Percentage' },
+      { value: 'transactions', label: 'Transactions' },
+      { value: 'items', label: 'Items' },
+    ],
+    defaultUnit: 'PKR',
+  },
+  health: {
+    label: 'Health',
+    units: [
+      { value: 'kg', label: 'Kilograms' },
+      { value: 'lbs', label: 'Pounds' },
+      { value: 'steps', label: 'Steps' },
+      { value: 'minutes', label: 'Minutes' },
+      { value: 'hours', label: 'Hours' },
+      { value: 'days', label: 'Days' },
+      { value: '%', label: 'Percentage' },
+    ],
+    defaultUnit: 'kg',
+  },
+  learning: {
+    label: 'Learning',
+    units: [
+      { value: 'minutes', label: 'Minutes' },
+      { value: 'hours', label: 'Hours' },
+      { value: 'lessons', label: 'Lessons' },
+      { value: 'chapters', label: 'Chapters' },
+      { value: 'pages', label: 'Pages' },
+      { value: 'courses', label: 'Courses' },
+    ],
+    defaultUnit: 'hours',
+  },
+  habit: {
+    label: 'Habit',
+    units: [
+      { value: 'days', label: 'Days' },
+      { value: 'times', label: 'Times' },
+      { value: 'streak', label: 'Streak' },
+      { value: 'weeks', label: 'Weeks' },
+    ],
+    defaultUnit: 'days',
+  },
+  work: {
+    label: 'Work',
+    units: [
+      { value: 'tasks', label: 'Tasks' },
+      { value: 'hours', label: 'Hours' },
+      { value: 'projects', label: 'Projects' },
+      { value: '%', label: 'Percentage' },
+      { value: 'clients', label: 'Clients' },
+    ],
+    defaultUnit: 'tasks',
+  },
+  lifestyle: {
+    label: 'Lifestyle',
+    units: [
+      { value: 'days', label: 'Days' },
+      { value: 'sessions', label: 'Sessions' },
+      { value: 'events', label: 'Events' },
+      { value: 'activities', label: 'Activities' },
+      { value: 'hours', label: 'Hours' },
+    ],
+    defaultUnit: 'days',
+  },
+  custom: {
+    label: 'Custom',
+    units: [{ value: 'custom', label: 'Custom Unit' }],
+    defaultUnit: 'custom',
+    allowCustomInput: true,
+  },
+};
+
 const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
   const { addGoal, updateGoal } = useGoals();
   const { user } = useAuth();
@@ -91,6 +180,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
   const isMobile = useMediaQuery('(max-width:600px)');
   const [loading, setLoading] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Form state
   const isTimestampLike = (v: unknown): v is { toDate: () => Date } => {
@@ -109,16 +199,16 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
     return null;
   };
 
+  const defaultUnit = GOAL_UNITS_CONFIG[goal?.type || 'custom'].defaultUnit;
+
   const [formData, setFormData] = useState({
     title: goal?.title || '',
     description: goal?.description || '',
     type: (goal?.type || 'custom') as GoalType,
     priority: (goal?.priority || 'Medium') as GoalPriority,
     dueDate: normalizeToDate(goal?.dueDate),
-    overallTargetValue:
-      (goal?.metrics as { totalTarget: number })?.totalTarget ||
-      ('' as number | ''),
-    overallTargetUnit: (goal?.metrics as { unit: string })?.unit || '',
+    overallTargetValue: (goal?.overallTargetValue || '') as number | '',
+    overallTargetUnit: goal?.overallTargetUnit || defaultUnit,
     steps: goal?.steps || ([] as GoalStep[]),
     pinned: goal?.pinned || false,
   });
@@ -127,12 +217,8 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
     title: '',
     description: '',
     targetValue: '',
-    unit: '',
-    startDate: null as Date | null,
-    endDate: null as Date | null,
   });
 
-  const [showNewStepDescription, setShowNewStepDescription] = useState(false);
   const [stepsMode, setStepsMode] = useState<'auto' | 'manual'>('auto');
   const [milestonesCount, setMilestonesCount] = useState<number>(3);
   const [milestonesUserAdjusted, setMilestonesUserAdjusted] =
@@ -151,6 +237,15 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
   const hasTargetDate = Boolean(formData.dueDate);
   const isMilestonesEnabled = hasTitle && hasTargetValue && hasTargetDate;
 
+  // Auto-set steps mode based on targetValue
+  useMemo(() => {
+    if (hasTargetValue) {
+      setStepsMode('auto');
+    } else {
+      setStepsMode('manual');
+    }
+  }, [hasTargetValue]);
+
   const handleInputChange = (field: string, value: unknown) => {
     // mark fields as user-touched to prevent auto-override on future title blur
     if (field === 'overallTargetValue')
@@ -159,10 +254,15 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
       setTouched((p) => ({ ...p, overallTargetUnit: true }));
     if (field === 'dueDate') setTouched((p) => ({ ...p, dueDate: true }));
 
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value };
+      // When type changes, update unit to the default for that type
+      if (field === 'type') {
+        next.overallTargetUnit =
+          GOAL_UNITS_CONFIG[value as GoalType].defaultUnit;
+      }
+      return next;
+    });
 
     // Auto-calc timeline when dueDate changes
     if (field === 'dueDate' && value) {
@@ -180,8 +280,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
   // Helpers
   const endOfMonth = (date: Date) =>
     new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  const startOfMonth = (date: Date) =>
-    new Date(date.getFullYear(), date.getMonth(), 1);
+
   const addMonths = (date: Date, m: number) => {
     const d = new Date(date);
     d.setMonth(d.getMonth() + m);
@@ -335,7 +434,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
 
     // Priority from keywords
     const hasHigh = tokensLower.some((t) =>
-      /urgent|asap|critical|important|high/.test(t)
+      /urgent|asap|critical|important|high/.test(t),
     );
     const hasMedium = tokensLower.some((t) => /medium|normal|average/.test(t));
     if (hasHigh) result.priority = 'High';
@@ -458,7 +557,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
     const now = new Date();
     const days = Math.max(
       1,
-      Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+      Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
     );
     if (days >= 150) return 6;
     if (days >= 90) return 4;
@@ -477,66 +576,10 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
       (end.getFullYear() - now.getFullYear()) * 12 +
       (end.getMonth() - now.getMonth()) +
       1; // inclusive
-    if (day > 23) months -= 1; // don't count current month
+    if (day > 23)
+      months -= 1; // don't count current month
     else if (day >= 13) return `${Math.max(0, months - 1)}.5 months`;
     return `${Math.max(0, months)} months`;
-  }
-
-  // Quick presets for steps based on due date
-  const stepMonthPresets = useMemo(() => {
-    const presets: { key: string; label: string; start: Date; end: Date }[] =
-      [];
-    if (!formData.dueDate) return presets;
-    const now = new Date();
-    const end = formData.dueDate as Date;
-    // compute number of months between now and due end-of-month
-    const totalMonths =
-      (end.getFullYear() - now.getFullYear()) * 12 +
-      (end.getMonth() - now.getMonth()) +
-      1;
-    if (totalMonths > 2) {
-      for (let i = 0; i < Math.min(totalMonths, 4); i++) {
-        const start = i === 0 ? now : startOfMonth(addMonths(now, i));
-        const endM = endOfMonth(addMonths(now, i));
-        presets.push({
-          key: `m${i + 1}`,
-          label: `${i + 1}${['st', 'nd', 'rd', 'th'][Math.min(i, 3)]} month`,
-          start,
-          end: endM,
-        });
-      }
-    }
-    // weeks presets
-    const thisWeekStart = startOfWeek(now);
-    const thisWeekEnd = addDays(thisWeekStart, 6);
-    const nextWeekStart = addDays(thisWeekStart, 7);
-    const nextWeekEnd = addDays(nextWeekStart, 6);
-    presets.push({
-      key: 'w1',
-      label: 'This week',
-      start: thisWeekStart,
-      end: thisWeekEnd,
-    });
-    presets.push({
-      key: 'w2',
-      label: 'Next week',
-      start: nextWeekStart,
-      end: nextWeekEnd,
-    });
-    return presets;
-  }, [formData.dueDate]);
-
-  function startOfWeek(date: Date) {
-    const d = new Date(date);
-    const diff = d.getDay(); // 0 Sun .. 6 Sat
-    d.setDate(d.getDate() - diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }
-  function addDays(date: Date, days: number) {
-    const d = new Date(date);
-    d.setDate(d.getDate() + days);
-    return d;
   }
 
   const handleAddStep = () => {
@@ -549,11 +592,10 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
       targetValue: newStep.targetValue
         ? parseFloat(newStep.targetValue)
         : undefined,
-      unit: newStep.unit || undefined,
-      startDate: newStep.startDate || undefined,
-      endDate: newStep.endDate || undefined,
       completed: false,
       skipped: false,
+      startDate: new Date(),
+      endDate: formData.dueDate || new Date(),
     };
 
     setFormData((prev) => ({
@@ -565,9 +607,6 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
       title: '',
       description: '',
       targetValue: '',
-      unit: '',
-      startDate: null,
-      endDate: null,
     });
   };
 
@@ -585,49 +624,46 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
     try {
       const now = new Date();
 
-      const goalData = {
+      // Ensure at least 1 milestone is created
+      let stepsToSave = formData.steps;
+      if (stepsToSave.length === 0) {
+        const defaultMilestone: GoalStep = {
+          id: Date.now().toString(),
+          title: `${formData.title} - Phase 1`,
+          description: undefined,
+          targetValue:
+            typeof formData.overallTargetValue === 'number'
+              ? formData.overallTargetValue
+              : undefined,
+          completed: false,
+          skipped: false,
+          startDate: now,
+          endDate: formData.dueDate || now,
+        };
+        stepsToSave = [defaultMilestone];
+      }
+
+      const goalData: Goal = {
         title: formData.title,
         description: formData.description || undefined,
         type: formData.type,
         priority: formData.priority,
         dueDate: formData.dueDate
           ? Timestamp.fromDate(new Date(formData.dueDate))
-          : null,
-        // map overall target to metrics when available
-        metrics:
-          typeof formData.overallTargetValue === 'number' &&
-          formData.overallTargetUnit
-            ? {
-                totalTarget: formData.overallTargetValue,
-                currency: formData.overallTargetUnit,
-              }
+          : Timestamp.fromDate(now),
+        overallTargetValue:
+          typeof formData.overallTargetValue === 'number'
+            ? formData.overallTargetValue
             : undefined,
-        steps: formData.steps.map((step) => ({
-          ...step,
-          startDate: step.startDate
-            ? Timestamp.fromDate(
-                step.startDate instanceof Date
-                  ? step.startDate
-                  : step.startDate.toDate()
-              )
-            : null,
-          endDate: step.endDate
-            ? Timestamp.fromDate(
-                step.endDate instanceof Date
-                  ? step.endDate
-                  : step.endDate.toDate()
-              )
-            : null,
-        })),
+        overallTargetUnit: formData.overallTargetUnit || undefined,
+        steps: stepsToSave,
         pinned: formData.pinned,
         progress: goal?.progress || 0,
         status: goal?.status || 'Not Started',
         userId: user!.uid,
-        authorName: user!.email || 'Anonymous',
-
-        // 🕒 Firestore timestamps
-        createdAt: goal ? goal.createdAt : Timestamp.fromDate(now),
+        createdAt: goal?.createdAt || Timestamp.fromDate(now),
         updatedAt: Timestamp.fromDate(now),
+        authorName: user?.email || 'Anonymous',
       };
 
       if (goal) {
@@ -665,39 +701,80 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
         fullScreen={isMobile}
         PaperProps={{
           sx: {
-            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+            background:
+              theme?.mode === 'dark'
+                ? 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)'
+                : 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
             borderRadius: '1rem',
+            boxShadow:
+              theme?.mode === 'dark'
+                ? '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+                : '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
           },
         }}
       >
-        <DialogTitle className="flex justify-between items-center">
+        <DialogTitle
+          sx={{
+            background:
+              theme?.mode === 'dark'
+                ? 'linear-gradient(135deg, #334155 0%, #1e293b 100%)'
+                : 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+            borderBottom: `1px solid ${theme?.mode === 'dark' ? '#475569' : '#cbd5e1'}`,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
           <Typography
             component="div"
             variant="h6"
             className="font-semibold"
             sx={{
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
             }}
           >
             {goal ? 'Edit Goal' : 'Create New Goal'}
           </Typography>
-          <IconButton onClick={onClose} size="small">
+          <IconButton
+            onClick={onClose}
+            size="small"
+            sx={{ color: theme?.mode === 'dark' ? '#94a3b8' : '#475569' }}
+          >
             <Close />
           </IconButton>
         </DialogTitle>
 
-        <DialogContent className="space-y-4">
-          {/* Fields order: Title, Description, Target Value, Target Unit, Target Date, Steps, Type, Pin */}
-          <Box>
+        <DialogContent sx={{ pt: 3, pb: 3, px: 3 }}>
+          {/* TOP SECTION: Title, Type, Due Date */}
+          <Box
+            sx={{
+              backgroundColor:
+                theme?.mode === 'dark'
+                  ? 'rgba(51, 65, 85, 0.3)'
+                  : 'rgba(226, 232, 240, 0.5)',
+              borderRadius: '1rem',
+              p: 4,
+              border: `1px solid ${
+                theme?.mode === 'dark'
+                  ? 'rgba(71, 85, 105, 0.5)'
+                  : 'rgba(203, 213, 225, 0.5)'
+              }`,
+              mb: 4,
+            }}
+          >
             <Typography
-              variant="subtitle1"
-              className="font-semibold mb-3"
-              sx={{ color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937' }}
+              variant="subtitle2"
+              className="font-semibold mb-4 uppercase"
+              sx={{
+                color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
+                fontSize: '0.75rem',
+                letterSpacing: '0.5px',
+              }}
             >
-              Goal Details
+              Core Goal Settings
             </Typography>
 
-            <Box className="space-y-5">
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {/* i. Title */}
               <TextField
                 fullWidth
@@ -706,587 +783,628 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
                 onChange={(e) => handleTitleChange(e.target.value)}
                 placeholder="e.g., Save ₹5000 in 5 months"
                 variant="outlined"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '0.75rem',
+                    backgroundColor:
+                      theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+                  },
+                }}
               />
 
-              {/* ii. Description (collapsible with slight animation) */}
-              <Box>
-                <AnimatePresence initial={false}>
-                  {showDescription && (
-                    <motion.div
-                      key="desc"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <TextField
-                        fullWidth
-                        multiline
-                        rows={3}
-                        label="Description"
-                        value={formData.description}
-                        onChange={(e) =>
-                          handleInputChange('description', e.target.value)
-                        }
-                        placeholder="Describe your goal in detail..."
-                        variant="outlined"
-                      />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                <Typography
-                  variant="body2"
-                  onClick={() => setShowDescription((s) => !s)}
-                  sx={{
-                    mt: 2,
-                    display: 'inline-block',
-                    px: 1,
-                    py: 0.5,
-                    borderRadius: 1,
-                    cursor: 'pointer',
-                    color: theme?.mode === 'dark' ? '#93c5fd' : '#2563eb',
-                    userSelect: 'none',
-                  }}
-                >
-                  {showDescription ? 'Hide description' : 'Add description'}
-                </Typography>
-              </Box>
-
-              {/* iii. Target Value */}
+              {/* ii. Type & Due Date side by side */}
               <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TextField
-                  fullWidth
-                  label="Target Value"
-                  type="number"
-                  value={formData.overallTargetValue}
-                  onChange={(e) =>
-                    handleInputChange(
-                      'overallTargetValue',
-                      e.target.value === '' ? '' : Number(e.target.value)
-                    )
-                  }
-                  placeholder="e.g., 5000"
-                />
-                {/* iv. Target Unit */}
-                <TextField
-                  fullWidth
-                  label="Target Unit"
-                  value={formData.overallTargetUnit}
-                  onChange={(e) =>
-                    handleInputChange('overallTargetUnit', e.target.value)
-                  }
-                  placeholder="e.g., Rs, kg, hours"
-                />
+                <FormControl fullWidth>
+                  <InputLabel>Goal Type</InputLabel>
+                  <Select
+                    value={formData.type}
+                    onChange={(e) => handleInputChange('type', e.target.value)}
+                    label="Goal Type"
+                    sx={{
+                      borderRadius: '0.75rem',
+                      backgroundColor:
+                        theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+                    }}
+                  >
+                    {goalTypes.map((type) => (
+                      <MenuItem key={type.value} value={type.value}>
+                        <Box className="flex items-center gap-2">
+                          <Box sx={{ color: getGoalTypeColor(type.value) }}>
+                            {type.icon}
+                          </Box>
+                          {type.label}
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <Box>
+                  <DatePicker
+                    label="Target Date"
+                    value={formData.dueDate}
+                    onChange={(date) => handleInputChange('dueDate', date)}
+                    maxDate={maxDueDate}
+                    slotProps={{ textField: { fullWidth: true } }}
+                  />
+                </Box>
               </Box>
 
-              {/* v. Target Date */}
-              <Box>
-                <DatePicker
-                  label="Target Date"
-                  value={formData.dueDate}
-                  onChange={(date) => handleInputChange('dueDate', date)}
-                  maxDate={maxDueDate}
-                  slotProps={{ textField: { fullWidth: true } }}
-                />
-                {/* Redesigned presets */}
-                <Box className="flex flex-wrap gap-2 mt-3">
-                  {monthPresetButtons.map((opt) => (
-                    <Button
-                      key={opt.label}
-                      size="small"
-                      variant="outlined"
-                      onClick={() =>
-                        handleInputChange('dueDate', formatDate(opt.value))
-                      }
-                      sx={{
-                        borderRadius: '9999px',
-                        px: 1.5,
-                        py: 0.5,
-                        textTransform: 'none',
-                        fontWeight: 600,
-                        borderColor:
-                          theme?.mode === 'dark' ? '#334155' : '#cbd5e1',
-                        color: theme?.mode === 'dark' ? '#e2e8f0' : '#0f172a',
-                        backgroundColor:
-                          theme?.mode === 'dark' ? '#0b1220' : '#f8fafc',
-                        '&:hover': {
-                          backgroundColor:
-                            theme?.mode === 'dark' ? '#111827' : '#eef2ff',
-                        },
-                      }}
-                    >
-                      {opt.label}
-                    </Button>
-                  ))}
-                </Box>
+              {/* Quick presets */}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2 }}>
+                {monthPresetButtons.map((opt) => (
+                  <Button
+                    key={opt.label}
+                    size="small"
+                    variant={
+                      formData.dueDate &&
+                      new Date(formData.dueDate).toDateString() ===
+                        opt.value.toDateString()
+                        ? 'contained'
+                        : 'outlined'
+                    }
+                    onClick={() =>
+                      handleInputChange('dueDate', formatDate(opt.value))
+                    }
+                    sx={{
+                      borderRadius: '9999px',
+                      px: 1.5,
+                      py: 0.5,
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      fontSize: '0.75rem',
+                      backgroundColor:
+                        formData.dueDate &&
+                        new Date(formData.dueDate).toDateString() ===
+                          opt.value.toDateString()
+                          ? getGoalTypeColor(formData.type)
+                          : 'transparent',
+                      borderColor:
+                        theme?.mode === 'dark' ? '#475569' : '#cbd5e1',
+                      color:
+                        formData.dueDate &&
+                        new Date(formData.dueDate).toDateString() ===
+                          opt.value.toDateString()
+                          ? '#ffffff'
+                          : theme?.mode === 'dark'
+                            ? '#e2e8f0'
+                            : '#0f172a',
+                      '&:hover': {
+                        backgroundColor: getGoalTypeColor(formData.type) + '20',
+                      },
+                    }}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
               </Box>
             </Box>
           </Box>
 
-          <Divider />
+          <Divider sx={{ my: 4 }} />
 
-          {/* vi. Steps/Milestones */}
-          <Box>
-            <Typography
-              variant="subtitle1"
-              className="font-semibold mb-3"
-              sx={{
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-              }}
-            >
-              Steps & Milestones
-            </Typography>
+          {/* ADVANCED SECTION (Collapsible) */}
+          <Button
+            fullWidth
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            sx={{
+              justifyContent: 'space-between',
+              pt: 3,
+              pb: 3,
+              textTransform: 'none',
+              fontSize: '1.1rem',
+              fontWeight: 600,
+              color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
+              '&:hover': {
+                backgroundColor:
+                  theme?.mode === 'dark'
+                    ? 'rgba(71, 85, 105, 0.2)'
+                    : 'rgba(226, 232, 240, 0.3)',
+              },
+            }}
+          >
+            Advanced Settings
+            {showAdvanced ? <ExpandLess /> : <ExpandMore />}
+          </Button>
 
-            {!isMilestonesEnabled && (
-              <Typography
-                variant="body2"
-                sx={{
-                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                  mb: 2,
-                }}
+          <AnimatePresence initial={false}>
+            {showAdvanced && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
               >
-                Enter a goal title, target value, and target date to unlock
-                milestones.
-              </Typography>
-            )}
-
-            <Box
-              sx={{
-                opacity: isMilestonesEnabled ? 1 : 0.35,
-                pointerEvents: isMilestonesEnabled ? 'auto' : 'none',
-                transition: 'opacity 0.2s ease',
-              }}
-            >
-              {/* Steps mode selector */}
-              <Box className="flex items-center gap-2 mb-3">
-                <Button
-                  size="small"
-                  variant={stepsMode === 'auto' ? 'contained' : 'outlined'}
-                  onClick={() => setStepsMode('auto')}
-                >
-                  Auto
-                </Button>
-                <Button
-                  size="small"
-                  variant={stepsMode === 'manual' ? 'contained' : 'outlined'}
-                  onClick={() => setStepsMode('manual')}
-                >
-                  Manual
-                </Button>
-              </Box>
-
-              {stepsMode === 'auto' ? (
                 <Box
-                  className="border rounded-lg p-4 mb-4"
                   sx={{
-                    borderColor: theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3.5,
+                    pt: 3,
+                    pb: 2,
                   }}
                 >
-                  <Typography variant="body2" className="font-medium mb-3">
-                    Auto-generate milestones
-                  </Typography>
-                  <Box className="flex items-center gap-3 justify-start">
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        setMilestonesUserAdjusted(true);
-                        setMilestonesCount(
-                          Math.max(1, Math.floor(milestonesCount - 1))
-                        );
+                  {/* i. Target Value */}
+                  <TextField
+                    fullWidth
+                    label="What you want to Reach"
+                    type="number"
+                    value={formData.overallTargetValue}
+                    onChange={(e) =>
+                      handleInputChange(
+                        'overallTargetValue',
+                        e.target.value === '' ? '' : Number(e.target.value),
+                      )
+                    }
+                    placeholder="e.g., 5000"
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: '0.75rem',
+                      },
+                    }}
+                  />
+
+                  {/* ii. Target Unit - Dynamic based on Goal Type */}
+                  <FormControl fullWidth>
+                    <InputLabel>How you will measure</InputLabel>
+                    <Select
+                      value={formData.overallTargetUnit}
+                      onChange={(e) =>
+                        handleInputChange('overallTargetUnit', e.target.value)
+                      }
+                      label="How you will measure"
+                      sx={{
+                        borderRadius: '0.75rem',
                       }}
-                      disabled={milestonesCount <= 1}
                     >
-                      <Remove />
-                    </IconButton>
-                    <Typography variant="h4" fontWeight={700}>
-                      {milestonesCount}
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        setMilestonesUserAdjusted(true);
-                        setMilestonesCount(
-                          Math.max(1, Math.floor(milestonesCount + 1))
-                        );
-                      }}
-                    >
-                      <Add />
-                    </IconButton>
+                      {GOAL_UNITS_CONFIG[formData.type].units.map((unit) => (
+                        <MenuItem key={unit.value} value={unit.value}>
+                          {unit.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  {/* Description */}
+                  <Box sx={{ pt: 1 }}>
+                    <AnimatePresence initial={false}>
+                      {showDescription && (
+                        <motion.div
+                          key="desc"
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <TextField
+                            fullWidth
+                            multiline
+                            rows={3}
+                            label="Description"
+                            value={formData.description}
+                            onChange={(e) =>
+                              handleInputChange('description', e.target.value)
+                            }
+                            placeholder="Describe your goal in detail..."
+                            variant="outlined"
+                            sx={{
+                              mb: 2,
+                              '& .MuiOutlinedInput-root': {
+                                borderRadius: '0.75rem',
+                              },
+                            }}
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                     <Button
-                      variant="outlined"
                       size="small"
-                      onClick={() => {
-                        if (!formData.dueDate) return;
-                        let n = Math.max(1, Math.floor(milestonesCount));
-                        if (!milestonesUserAdjusted) {
-                          let suggested: number | undefined;
-                          try {
-                            suggested = parseGoalTitle(
-                              formData.title || ''
-                            ).suggestedMilestones;
-                          } catch {}
-                          if (!suggested) {
-                            suggested = suggestMilestonesBySpan(
-                              formData.dueDate as Date
-                            );
-                          }
-                          if (suggested) n = suggested;
-                        }
-                        const start = new Date();
-                        const end = formData.dueDate as Date;
-                        const totalMs = end.getTime() - start.getTime();
-                        const stepMs = Math.floor(totalMs / n);
-                        const unit = formData.overallTargetUnit || '';
-                        const totalTarget =
-                          typeof formData.overallTargetValue === 'number'
-                            ? formData.overallTargetValue
-                            : 0;
-                        const per =
-                          n > 0 ? Math.floor((totalTarget / n) * 100) / 100 : 0;
-                        const generated: GoalStep[] = Array.from({
-                          length: n,
-                        }).map((_, i) => {
-                          const s = new Date(start.getTime() + i * stepMs);
-                          const e =
-                            i === n - 1
-                              ? new Date(end)
-                              : new Date(
-                                  start.getTime() + (i + 1) * stepMs - 1
-                                );
-                          return {
-                            id: `${Date.now()}_${i}`,
-                            title: `Milestone ${i + 1}`,
-                            description: undefined,
-                            targetValue: per || undefined,
-                            unit: unit || undefined,
-                            startDate: s,
-                            endDate: e,
-                            completed: false,
-                            skipped: false,
-                          };
-                        });
-                        setFormData((prev) => ({ ...prev, steps: generated }));
+                      onClick={() => setShowDescription((s) => !s)}
+                      sx={{
+                        textTransform: 'none',
+                        color: theme?.mode === 'dark' ? '#93c5fd' : '#2563eb',
+                        fontSize: '0.875rem',
                       }}
                     >
-                      Generate
-                    </Button>
-                    <Button size="small" onClick={() => setStepsMode('manual')}>
-                      Create manually
+                      {showDescription ? 'Hide description' : 'Add description'}
                     </Button>
                   </Box>
-                </Box>
-              ) : null}
 
-              {/* Manual: Add New Step */}
-              {stepsMode === 'manual' && (
-                <Box
-                  className="border rounded-lg p-4 mb-4"
-                  sx={{
-                    borderColor: theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-                  }}
-                >
-                  <Typography variant="body2" className="font-medium mb-3">
-                    Add New Step
-                  </Typography>
+                  {/* iii. Priority */}
+                  <FormControl fullWidth>
+                    <InputLabel>Priority</InputLabel>
+                    <Select
+                      value={formData.priority}
+                      onChange={(e) =>
+                        handleInputChange('priority', e.target.value)
+                      }
+                      label="Priority"
+                      sx={{
+                        borderRadius: '0.75rem',
+                      }}
+                    >
+                      <MenuItem value="Low">
+                        <Chip
+                          label="Low"
+                          size="small"
+                          sx={{
+                            backgroundColor: '#10B98120',
+                            color: '#10B981',
+                          }}
+                        />
+                      </MenuItem>
+                      <MenuItem value="Medium">
+                        <Chip
+                          label="Medium"
+                          size="small"
+                          sx={{
+                            backgroundColor: '#F59E0B20',
+                            color: '#F59E0B',
+                          }}
+                        />
+                      </MenuItem>
+                      <MenuItem value="High">
+                        <Chip
+                          label="High"
+                          size="small"
+                          sx={{
+                            backgroundColor: '#EF444420',
+                            color: '#EF4444',
+                          }}
+                        />
+                      </MenuItem>
+                    </Select>
+                  </FormControl>
 
-                  <Box className="space-y-3">
-                    <Box className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <TextField
-                        fullWidth
-                        size="small"
-                        label="Step Title"
-                        value={newStep.title}
-                        onChange={(e) =>
-                          setNewStep((prev) => ({
-                            ...prev,
-                            title: e.target.value,
-                          }))
-                        }
-                        placeholder="e.g., Save ₹1000 in January"
-                      />
-                      <Box>
-                        <AnimatePresence initial={false}>
-                          {showNewStepDescription && (
-                            <motion.div
-                              key="stepdesc"
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.2 }}
+                  <Box>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={formData.pinned}
+                          onChange={(e) =>
+                            handleInputChange('pinned', e.target.checked)
+                          }
+                        />
+                      }
+                      label="Pin to top"
+                      sx={{ mt: 0.5 }}
+                    />
+                  </Box>
+
+                  <Divider sx={{ my: 2.5 }} />
+
+                  {/* iv. Steps & Milestones */}
+                  <Box sx={{ pt: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      className="font-semibold mb-4"
+                      sx={{
+                        color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
+                        fontSize: '1rem',
+                      }}
+                    >
+                      Steps & Milestones
+                    </Typography>
+
+                    {!isMilestonesEnabled && (
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+                          mb: 2,
+                        }}
+                      >
+                        Enter a goal title, target value, and target date to
+                        unlock milestones.
+                      </Typography>
+                    )}
+
+                    <Box
+                      sx={{
+                        opacity: isMilestonesEnabled ? 1 : 0.35,
+                        pointerEvents: isMilestonesEnabled ? 'auto' : 'none',
+                        transition: 'opacity 0.2s ease',
+                      }}
+                    >
+                      {/* Steps mode selector */}
+                      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                        <Button
+                          size="small"
+                          variant={
+                            stepsMode === 'auto' ? 'contained' : 'outlined'
+                          }
+                          onClick={() => setStepsMode('auto')}
+                          sx={{ px: 2.5, py: 1 }}
+                        >
+                          Auto Generate
+                        </Button>
+                        <Button
+                          size="small"
+                          variant={
+                            stepsMode === 'manual' ? 'contained' : 'outlined'
+                          }
+                          onClick={() => setStepsMode('manual')}
+                          sx={{ px: 2.5, py: 1 }}
+                        >
+                          Manual
+                        </Button>
+                      </Box>
+
+                      {stepsMode === 'auto' ? (
+                        <Box
+                          className="border rounded-lg"
+                          sx={{
+                            p: 3,
+                            mb: 4,
+                            borderColor:
+                              theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
+                            backgroundColor:
+                              theme?.mode === 'dark'
+                                ? 'rgba(30, 41, 59, 0.3)'
+                                : 'rgba(248, 250, 252, 0.5)',
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            className="font-medium mb-4"
+                          >
+                            Auto-generate milestones
+                          </Typography>
+                          <Box className="flex items-center gap-3 justify-start">
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setMilestonesUserAdjusted(true);
+                                setMilestonesCount(
+                                  Math.max(1, Math.floor(milestonesCount - 1)),
+                                );
+                              }}
+                              disabled={milestonesCount <= 1}
                             >
+                              <Remove />
+                            </IconButton>
+                            <Typography variant="h4" fontWeight={700}>
+                              {milestonesCount}
+                            </Typography>
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setMilestonesUserAdjusted(true);
+                                setMilestonesCount(
+                                  Math.max(1, Math.floor(milestonesCount + 1)),
+                                );
+                              }}
+                            >
+                              <Add />
+                            </IconButton>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={() => {
+                                if (!formData.dueDate) return;
+                                let n = Math.max(
+                                  1,
+                                  Math.floor(milestonesCount),
+                                );
+                                if (!milestonesUserAdjusted) {
+                                  let suggested: number | undefined;
+                                  try {
+                                    suggested = parseGoalTitle(
+                                      formData.title || '',
+                                    ).suggestedMilestones;
+                                  } catch {}
+                                  if (!suggested) {
+                                    suggested = suggestMilestonesBySpan(
+                                      formData.dueDate as Date,
+                                    );
+                                  }
+                                  if (suggested) n = suggested;
+                                }
+                                const start = new Date();
+                                const end = formData.dueDate as Date;
+                                const totalMs = end.getTime() - start.getTime();
+                                const stepMs = Math.floor(totalMs / n);
+
+                                const totalTarget =
+                                  typeof formData.overallTargetValue ===
+                                  'number'
+                                    ? formData.overallTargetValue
+                                    : 0;
+                                const per =
+                                  n > 0
+                                    ? Math.floor((totalTarget / n) * 100) / 100
+                                    : 0;
+                                const generated: GoalStep[] = Array.from({
+                                  length: n,
+                                }).map((_, i) => {
+                                  const s = new Date(
+                                    start.getTime() + i * stepMs,
+                                  );
+                                  const e =
+                                    i === n - 1
+                                      ? new Date(end)
+                                      : new Date(
+                                          start.getTime() +
+                                            (i + 1) * stepMs -
+                                            1,
+                                        );
+                                  return {
+                                    id: `${Date.now()}_${i}`,
+                                    title: `Milestone ${i + 1}`,
+                                    description: undefined,
+                                    targetValue: per || undefined,
+                                    startDate: s,
+                                    endDate: e,
+                                    completed: false,
+                                    skipped: false,
+                                  } as GoalStep;
+                                });
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  steps: generated,
+                                }));
+                              }}
+                            >
+                              Generate
+                            </Button>
+                            <Button
+                              size="small"
+                              onClick={() => setStepsMode('manual')}
+                            >
+                              Custom
+                            </Button>
+                          </Box>
+                        </Box>
+                      ) : null}
+
+                      {/* Manual: Add New Step */}
+                      {stepsMode === 'manual' && (
+                        <Box
+                          className="border rounded-lg"
+                          sx={{
+                            p: 3,
+                            mb: 4,
+                            borderColor:
+                              theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
+                            backgroundColor:
+                              theme?.mode === 'dark'
+                                ? 'rgba(30, 41, 59, 0.3)'
+                                : 'rgba(248, 250, 252, 0.5)',
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            className="font-medium mb-4"
+                          >
+                            Add New Step
+                          </Typography>
+
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 2.5,
+                            }}
+                          >
+                            <Box className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <TextField
                                 fullWidth
                                 size="small"
-                                label="Description"
-                                value={newStep.description}
+                                label="Step Title"
+                                value={newStep.title}
                                 onChange={(e) =>
                                   setNewStep((prev) => ({
                                     ...prev,
-                                    description: e.target.value,
+                                    title: e.target.value,
                                   }))
                                 }
-                                placeholder="Optional description"
+                                placeholder="e.g., Save PKR 1000 in January"
                               />
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                        <Typography
-                          variant="caption"
-                          onClick={() => setShowNewStepDescription((s) => !s)}
-                          sx={{
-                            mt: 1,
-                            display: 'inline-block',
-                            px: 1,
-                            py: 0.25,
-                            borderRadius: 1,
-                            cursor: 'pointer',
-                            color:
-                              theme?.mode === 'dark' ? '#93c5fd' : '#2563eb',
-                            userSelect: 'none',
-                          }}
-                        >
-                          {showNewStepDescription
-                            ? 'Hide description'
-                            : 'Add description'}
-                        </Typography>
-                      </Box>
-                    </Box>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                label="What you want to reach"
+                                type="number"
+                                value={newStep.targetValue}
+                                onChange={(e) =>
+                                  setNewStep((prev) => ({
+                                    ...prev,
+                                    targetValue: e.target.value,
+                                  }))
+                                }
+                                placeholder="1000"
+                              />
+                            </Box>
 
-                    {/* Quick presets for step dates */}
-                    {stepMonthPresets.length > 0 && (
-                      <Box className="flex flex-wrap gap-2 mb-2">
-                        {stepMonthPresets.map((p) => (
-                          <Button
-                            key={p.key}
-                            size="small"
-                            variant="outlined"
-                            onClick={() =>
-                              setNewStep((prev) => ({
-                                ...prev,
-                                startDate: p.start,
-                                endDate: p.end,
-                              }))
-                            }
+                            <Button
+                              variant="outlined"
+                              startIcon={<Add />}
+                              onClick={handleAddStep}
+                              disabled={!newStep.title.trim()}
+                              size="small"
+                            >
+                              Add Step
+                            </Button>
+                          </Box>
+                        </Box>
+                      )}
+
+                      {/* Existing Steps */}
+                      <AnimatePresence>
+                        {formData.steps.map((step) => (
+                          <motion.div
+                            key={step.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            transition={{ duration: 0.2 }}
                           >
-                            {p.label}
-                          </Button>
+                            <Box
+                              className="flex items-center justify-between p-3 border rounded-lg mb-2"
+                              sx={{
+                                borderColor:
+                                  theme?.mode === 'dark'
+                                    ? '#374151'
+                                    : '#e5e7eb',
+                                backgroundColor:
+                                  theme?.mode === 'dark'
+                                    ? '#37415120'
+                                    : '#f9fafb',
+                              }}
+                            >
+                              <Box className="flex-1">
+                                <Typography
+                                  variant="body2"
+                                  className="font-medium"
+                                >
+                                  {step.title}
+                                </Typography>
+                                {step.targetValue && (
+                                  <Typography
+                                    variant="caption"
+                                    className="block"
+                                  >
+                                    Target: {step.targetValue}
+                                  </Typography>
+                                )}
+                              </Box>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleRemoveStep(step.id)}
+                                sx={{ color: '#EF4444' }}
+                              >
+                                <Delete />
+                              </IconButton>
+                            </Box>
+                          </motion.div>
                         ))}
-                      </Box>
-                    )}
-
-                    <Box className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                      <TextField
-                        fullWidth
-                        size="small"
-                        label="Target Value"
-                        type="number"
-                        value={newStep.targetValue}
-                        onChange={(e) =>
-                          setNewStep((prev) => ({
-                            ...prev,
-                            targetValue: e.target.value,
-                          }))
-                        }
-                        placeholder="1000"
-                      />
-
-                      <TextField
-                        fullWidth
-                        size="small"
-                        label="Unit"
-                        value={newStep.unit}
-                        onChange={(e) =>
-                          setNewStep((prev) => ({
-                            ...prev,
-                            unit: e.target.value,
-                          }))
-                        }
-                        placeholder="Rs, kg, hours"
-                      />
-
-                      <DatePicker
-                        label="Start Date"
-                        value={newStep.startDate}
-                        onChange={(date: Date | null) =>
-                          setNewStep((prev) => ({ ...prev, startDate: date }))
-                        }
-                        slotProps={{
-                          textField: {
-                            size: 'small',
-                            fullWidth: true,
-                          },
-                        }}
-                      />
-
-                      <DatePicker
-                        label="End Date"
-                        value={newStep.endDate}
-                        onChange={(date: Date | null) =>
-                          setNewStep((prev) => ({ ...prev, endDate: date }))
-                        }
-                        slotProps={{
-                          textField: {
-                            size: 'small',
-                            fullWidth: true,
-                          },
-                        }}
-                      />
+                      </AnimatePresence>
                     </Box>
-
-                    <Button
-                      variant="outlined"
-                      startIcon={<Add />}
-                      onClick={handleAddStep}
-                      disabled={!newStep.title.trim()}
-                      size="small"
-                    >
-                      Add Step
-                    </Button>
                   </Box>
                 </Box>
-              )}
-
-              {/* Existing Steps */}
-              <AnimatePresence>
-                {formData.steps.map((step) => (
-                  <motion.div
-                    key={step.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <Box
-                      className="flex items-center justify-between p-3 border rounded-lg mb-2"
-                      sx={{
-                        borderColor:
-                          theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-                        backgroundColor:
-                          theme?.mode === 'dark' ? '#37415120' : '#f9fafb',
-                      }}
-                    >
-                      <Box className="flex-1">
-                        <Typography variant="body2" className="font-medium">
-                          {step.title}
-                        </Typography>
-                        {step.description && (
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              color:
-                                theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                            }}
-                          >
-                            {step.description}
-                          </Typography>
-                        )}
-                        {(step.targetValue || step.unit) && (
-                          <Typography variant="caption" className="block">
-                            Target: {step.targetValue} {step.unit}
-                          </Typography>
-                        )}
-                      </Box>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleRemoveStep(step.id)}
-                        sx={{ color: '#EF4444' }}
-                      >
-                        <Delete />
-                      </IconButton>
-                    </Box>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </Box>
-          </Box>
-
-          <Divider />
-
-          {/* vii. Type & viii. Pin */}
-          <Box>
-            <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormControl fullWidth>
-                <InputLabel>Type</InputLabel>
-                <Select
-                  value={formData.type}
-                  onChange={(e) => handleInputChange('type', e.target.value)}
-                  label="Type"
-                >
-                  {goalTypes.map((type) => (
-                    <MenuItem key={type.value} value={type.value}>
-                      <Box className="flex items-center gap-2">
-                        <Box sx={{ color: getGoalTypeColor(type.value) }}>
-                          {type.icon}
-                        </Box>
-                        {type.label}
-                      </Box>
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth>
-                <InputLabel>Priority</InputLabel>
-                <Select
-                  value={formData.priority}
-                  onChange={(e) =>
-                    handleInputChange('priority', e.target.value)
-                  }
-                  label="Priority"
-                >
-                  <MenuItem value="Low">
-                    <Chip
-                      label="Low"
-                      size="small"
-                      sx={{ backgroundColor: '#10B98120', color: '#10B981' }}
-                    />
-                  </MenuItem>
-                  <MenuItem value="Medium">
-                    <Chip
-                      label="Medium"
-                      size="small"
-                      sx={{ backgroundColor: '#F59E0B20', color: '#F59E0B' }}
-                    />
-                  </MenuItem>
-                  <MenuItem value="High">
-                    <Chip
-                      label="High"
-                      size="small"
-                      sx={{ backgroundColor: '#EF444420', color: '#EF4444' }}
-                    />
-                  </MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
-
-            <Box className="mt-4">
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.pinned}
-                    onChange={(e) =>
-                      handleInputChange('pinned', e.target.checked)
-                    }
-                  />
-                }
-                label="Pin to top"
-              />
-            </Box>
-          </Box>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </DialogContent>
 
-        <DialogActions className="p-4">
+        <DialogActions
+          sx={{
+            p: 3,
+            gap: 2,
+            borderTop: `1px solid ${theme?.mode === 'dark' ? '#475569' : '#cbd5e1'}`,
+          }}
+        >
           <Button onClick={onClose} disabled={loading}>
             Cancel
           </Button>
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={loading || !formData.title.trim() || !formData.dueDate}
+            disabled={loading || !formData.title.trim()}
             sx={{
-              backgroundColor: '#3B82F6',
+              backgroundColor: getGoalTypeColor(formData.type),
               '&:hover': {
-                backgroundColor: '#2563eb',
+                backgroundColor: getGoalTypeColor(formData.type) + 'dd',
               },
             }}
           >

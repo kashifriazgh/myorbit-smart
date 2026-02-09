@@ -91,7 +91,8 @@ export default function DailyCheckouts() {
   const [showPastCheckouts, setShowPastCheckouts] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [checkoutToDelete, setCheckoutToDelete] = useState<DailyCheckout | null>(null);
+  const [checkoutToDelete, setCheckoutToDelete] =
+    useState<DailyCheckout | null>(null);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -117,7 +118,7 @@ export default function DailyCheckouts() {
       // Single field query - no composite index needed
       const q = query(
         collection(db, 'dailyCheckouts'),
-        where('userId', '==', user.uid)
+        where('userId', '==', user.uid),
       );
 
       const snapshot = await getDocs(q);
@@ -161,7 +162,7 @@ export default function DailyCheckouts() {
       if (!a.time && !b.time) return 0;
       if (!a.time) return 1;
       if (!b.time) return -1;
-      
+
       const timeA = moment(a.time, 'HH:mm');
       const timeB = moment(b.time, 'HH:mm');
       return timeA.diff(timeB);
@@ -169,10 +170,10 @@ export default function DailyCheckouts() {
 
     return sorted.map((checkout) => {
       if (!checkout.time) return { ...checkout, status: 'upcoming' };
-      
+
       const checkoutTime = moment(checkout.time, 'HH:mm');
       const diffMinutes = checkoutTime.diff(now, 'minutes');
-      
+
       // Active: within 30 minutes before or after the time
       if (diffMinutes >= -30 && diffMinutes <= 30 && !checkout.done) {
         return { ...checkout, status: 'active' };
@@ -196,9 +197,7 @@ export default function DailyCheckouts() {
       });
 
       setCheckouts((prev) =>
-        prev.map((c) =>
-          c.id === checkout.id ? { ...c, done: !c.done } : c
-        )
+        prev.map((c) => (c.id === checkout.id ? { ...c, done: !c.done } : c)),
       );
     } catch (error) {
       console.error('Error updating checkout:', error);
@@ -224,7 +223,10 @@ export default function DailyCheckouts() {
       // Build data object, only including defined fields
       // Use Partial<DailyCheckout> because some fields (category, time, duration)
       // are optional when creating the doc.
-      const checkoutData: Omit<Partial<DailyCheckout>, 'createdAt' | 'updatedAt'> & {
+      const checkoutData: Omit<
+        Partial<DailyCheckout>,
+        'createdAt' | 'updatedAt'
+      > & {
         createdAt?: Date | Timestamp | ReturnType<typeof serverTimestamp>;
         updatedAt?: Date | Timestamp | ReturnType<typeof serverTimestamp>;
       } = {
@@ -271,7 +273,7 @@ export default function DailyCheckouts() {
   const getCategoryIcon = (category?: string) => {
     if (!category) return DEFAULT_ICON;
     const entry = CATEGORY_ICONS.find(
-      (c) => c.category.toLowerCase() === category.toLowerCase()
+      (c) => c.category.toLowerCase() === category.toLowerCase(),
     );
     return entry ? entry.icon : DEFAULT_ICON;
   };
@@ -284,7 +286,7 @@ export default function DailyCheckouts() {
 
   const pastCount = useMemo(
     () => sortedCheckouts.filter((c) => (c.status as string) === 'past').length,
-    [sortedCheckouts]
+    [sortedCheckouts],
   );
 
   if (loading) {
@@ -428,7 +430,9 @@ export default function DailyCheckouts() {
               ) : (
                 <>
                   <ExpandMoreIcon fontSize="small" />
-                  View more ({displayCheckouts.length - VISIBLE_ITEMS_DEFAULT} more)
+                  View more ({displayCheckouts.length -
+                    VISIBLE_ITEMS_DEFAULT}{' '}
+                  more)
                 </>
               )}
             </button>
@@ -446,7 +450,8 @@ export default function DailyCheckouts() {
         <DialogTitle>Delete checkout?</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete &quot;{checkoutToDelete?.title}&quot;? This cannot be undone.
+            Are you sure you want to delete &quot;{checkoutToDelete?.title}
+            &quot;? This cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -525,7 +530,10 @@ export default function DailyCheckouts() {
                 </TextField>
               ) : (
                 <Box>
-                  <Typography variant="body2" sx={{ mb: 1, color: 'text.secondary' }}>
+                  <Typography
+                    variant="body2"
+                    sx={{ mb: 1, color: 'text.secondary' }}
+                  >
                     Select Date * (up to 1 month ahead)
                   </Typography>
                   <Box
@@ -540,10 +548,12 @@ export default function DailyCheckouts() {
                         }`,
                         borderRadius: '4px',
                         fontSize: '14px',
-                        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+                        backgroundColor:
+                          theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
                         color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
                         '&:focus': {
-                          borderColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
+                          borderColor:
+                            theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
                           outline: 'none',
                         },
                         '&::placeholder': {
@@ -614,9 +624,7 @@ export default function DailyCheckouts() {
             onClick={handleSave}
             variant="contained"
             disabled={
-              !title.trim() ||
-              (!dayOrDate.trim() && !selectedDate) ||
-              saving
+              !title.trim() || (!dayOrDate.trim() && !selectedDate) || saving
             }
             startIcon={saving ? <CircularProgress size={16} /> : null}
           >
@@ -652,12 +660,12 @@ function CheckoutItem({
         ? '#065f46'
         : '#d1fae5'
       : status === 'past'
-      ? theme?.mode === 'dark'
-        ? '#1e293b'
-        : '#f8fafc'
-      : theme?.mode === 'dark'
-      ? '#1e293b'
-      : '#ffffff';
+        ? theme?.mode === 'dark'
+          ? '#1e293b'
+          : '#f8fafc'
+        : theme?.mode === 'dark'
+          ? '#1e293b'
+          : '#ffffff';
 
   const textColor =
     status === 'active'
@@ -665,12 +673,12 @@ function CheckoutItem({
         ? '#f1f5f9'
         : '#065f46'
       : status === 'past'
-      ? theme?.mode === 'dark'
-        ? '#64748b'
-        : '#94a3b8'
-      : theme?.mode === 'dark'
-      ? '#f1f5f9'
-      : '#0f172a';
+        ? theme?.mode === 'dark'
+          ? '#64748b'
+          : '#94a3b8'
+        : theme?.mode === 'dark'
+          ? '#f1f5f9'
+          : '#0f172a';
 
   const categoryColor =
     status === 'active'
@@ -678,8 +686,8 @@ function CheckoutItem({
         ? '#a7f3d0'
         : '#047857'
       : theme?.mode === 'dark'
-      ? '#94a3b8'
-      : '#64748b';
+        ? '#94a3b8'
+        : '#64748b';
 
   return (
     <motion.div
@@ -722,9 +730,7 @@ function CheckoutItem({
         {(checkout.time || checkout.duration) && (
           <div className="text-sm whitespace-nowrap">
             {checkout.time && (
-              <span>
-                {moment(checkout.time, 'HH:mm').format('h:mm A')}
-              </span>
+              <span>{moment(checkout.time, 'HH:mm').format('h:mm A')}</span>
             )}
             {checkout.time && checkout.duration && ' · '}
             {checkout.duration && <span>{checkout.duration}</span>}
@@ -741,12 +747,11 @@ function CheckoutItem({
                   ? 'rgba(255,255,255,0.2)'
                   : 'rgba(255,255,255,0.8)'
                 : 'transparent',
-            color:
-              checkout.done
-                ? theme?.mode === 'dark'
-                  ? '#10b981'
-                  : '#059669'
-                : textColor,
+            color: checkout.done
+              ? theme?.mode === 'dark'
+                ? '#10b981'
+                : '#059669'
+              : textColor,
           }}
         >
           <CheckCircleIcon
@@ -769,7 +774,10 @@ function CheckoutItem({
           className="rounded-full p-1.5 transition min-w-[32px] min-h-[32px] flex items-center justify-center opacity-100 hover:opacity-90 hover:bg-red-100 dark:hover:bg-red-900/40"
           style={{
             color: theme?.mode === 'dark' ? '#f87171' : '#dc2626',
-            backgroundColor: theme?.mode === 'dark' ? 'rgba(248,113,113,0.15)' : 'rgba(220,38,38,0.08)',
+            backgroundColor:
+              theme?.mode === 'dark'
+                ? 'rgba(248,113,113,0.15)'
+                : 'rgba(220,38,38,0.08)',
           }}
           aria-label="Delete checkout"
         >

@@ -6,14 +6,18 @@ import { styled } from '@mui/material/styles';
 import LinearProgress, {
   linearProgressClasses,
 } from '@mui/material/LinearProgress';
-import {
-  Goal,
-  GoalStep,
-  FinanceMetrics,
-  HealthMetrics,
-} from '../../lib/interface';
+import { Goal, GoalStep } from '../../lib/interface';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { motion } from 'framer-motion';
+import {
+  TrendingUp,
+  FitnessCenter,
+  School,
+  Psychology,
+  WorkOutline,
+  SelfImprovement,
+  Category,
+} from '@mui/icons-material';
 
 // Predefined light-mode background palettes (hex) and borders to avoid Tailwind override issues inside MUI
 const paletteHex = [
@@ -25,6 +29,95 @@ const paletteHex = [
   { bg: '#F0FDFA', border: '#99F6E4' }, // teal-50 / teal-200
   { bg: '#F7FEE7', border: '#D9F99D' }, // lime-50 / lime-200
 ];
+
+// Type-based sophisticated lightweight backgrounds
+const typeBackgrounds: Record<
+  string,
+  { light: string; border: string; dark: string; darkBorder: string }
+> = {
+  finance: {
+    light: '#F0FDF4',
+    border: '#BBEF63',
+    dark: 'linear-gradient(135deg, #10b98126 0%, rgba(15,23,42,0.92) 85%)',
+    darkBorder: '#10b98155',
+  },
+  health: {
+    light: '#FFFBEB',
+    border: '#FCD34D',
+    dark: 'linear-gradient(135deg, #f5990b26 0%, rgba(15,23,42,0.92) 85%)',
+    darkBorder: '#f5990b55',
+  },
+  learning: {
+    light: '#EFF6FF',
+    border: '#93C5FD',
+    dark: 'linear-gradient(135deg, #3b82f626 0%, rgba(15,23,42,0.92) 85%)',
+    darkBorder: '#3b82f655',
+  },
+  habit: {
+    light: '#F3E8FF',
+    border: '#D8B4FE',
+    dark: 'linear-gradient(135deg, #a78bfa26 0%, rgba(15,23,42,0.92) 85%)',
+    darkBorder: '#a78bfa55',
+  },
+  work: {
+    light: '#F0F9FF',
+    border: '#7DD3FC',
+    dark: 'linear-gradient(135deg, #06b6d426 0%, rgba(15,23,42,0.92) 85%)',
+    darkBorder: '#06b6d455',
+  },
+  lifestyle: {
+    light: '#FDF2F8',
+    border: '#FBCFE8',
+    dark: 'linear-gradient(135deg, #ec4899a6 0%, rgba(15,23,42,0.92) 85%)',
+    darkBorder: '#ec489955',
+  },
+  custom: {
+    light: '#FFFFFF',
+    border: '#E5E7EB',
+    dark: 'linear-gradient(135deg, #6b728026 0%, rgba(15,23,42,0.92) 85%)',
+    darkBorder: '#6b728055',
+  },
+};
+
+// Get icon for goal type
+const getGoalTypeIcon = (type: string | undefined) => {
+  switch (type) {
+    case 'finance':
+      return <TrendingUp />;
+    case 'health':
+      return <FitnessCenter />;
+    case 'learning':
+      return <School />;
+    case 'habit':
+      return <Psychology />;
+    case 'work':
+      return <WorkOutline />;
+    case 'lifestyle':
+      return <SelfImprovement />;
+    default:
+      return <Category />;
+  }
+};
+
+// Get color for goal type
+const getGoalTypeColor = (type: string | undefined) => {
+  switch (type) {
+    case 'finance':
+      return '#10B981';
+    case 'health':
+      return '#F59E0B';
+    case 'learning':
+      return '#3B82F6';
+    case 'habit':
+      return '#A78BFA';
+    case 'work':
+      return '#06B6D4';
+    case 'lifestyle':
+      return '#EC4899';
+    default:
+      return '#6B7280';
+  }
+};
 
 // Matching accent colors for progress bar gradients
 const accentStart: string[] = [
@@ -57,28 +150,8 @@ function sum(values: (number | undefined)[]) {
 }
 
 function getUnit(goal: Goal): string | undefined {
-  // Prefer a consistent unit across steps
-  const stepUnits = Array.from(
-    new Set(
-      (goal.steps || [])
-        .filter((step) => !step.skipped)
-        .map((s) => (s.unit || '').trim())
-        .filter(Boolean)
-    )
-  );
-  if (stepUnits.length === 1) return stepUnits[0];
-
-  // Fallback to metrics-based hints
-  if (goal.type === 'finance' && goal.metrics) {
-    const m = goal.metrics as FinanceMetrics;
-    if (m.currency) return m.currency; // currency symbol like Rs or $
-  }
-  if (goal.type === 'health' && goal.metrics) {
-    const m = goal.metrics as HealthMetrics;
-    if (m.unit) return m.unit; // kg/lb
-  }
-
-  return undefined; // unknown / mixed units
+  // Return the goal's overall target unit
+  return goal.overallTargetUnit;
 }
 
 function calculateTargets(goal: Goal) {
@@ -146,6 +219,18 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
   const unit = getUnit(goal);
   const { totalTarget, progressActual } = calculateTargets(goal);
 
+  // Get type-based background or use default palette
+  const typeBackground =
+    goal.type && goal.type in typeBackgrounds
+      ? typeBackgrounds[goal.type as keyof typeof typeBackgrounds]
+      : null;
+
+  // Fallback to palette for pseudo-random colors if no type background
+  const key = goal.id || goal.title || String(index);
+  const paletteIndex = hashStringToIndex(key, paletteHex.length);
+  const paletteLight = paletteHex[paletteIndex];
+  const paletteNight = paletteDark[paletteIndex];
+
   // Compute percent for the progress bar
   const percent = (() => {
     if (totalTarget > 0) {
@@ -155,12 +240,6 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
     const p = (goal.progress ?? 0) / 100;
     return Math.max(0, Math.min(1, isFinite(p) ? p : 0));
   })();
-
-  // Choose palette: stable pseudo-random by goal id/title in light mode; neutral in dark mode
-  const key = goal.id || goal.title || String(index);
-  const paletteIndex = hashStringToIndex(key, paletteHex.length);
-  const paletteLight = paletteHex[paletteIndex];
-  const paletteNight = paletteDark[paletteIndex];
 
   // Formatters
   const formatVal = (v: number | undefined) => {
@@ -173,15 +252,39 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
 
   const InspiredLayout = (
     <div className="p-4 flex flex-col h-full select-none">
-      {/* Title */}
-      <div className="mb-2">
-        <h3
-          className={`text-left font-semibold leading-snug line-clamp-1 ${
-            isDark ? 'text-slate-100' : 'text-slate-800'
-          }`}
+      {/* Header with Icon and Title */}
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="flex-1">
+          <h3
+            className={`text-left font-semibold leading-snug line-clamp-2 ${
+              isDark ? 'text-slate-100' : 'text-slate-800'
+            }`}
+          >
+            {title}
+          </h3>
+        </div>
+        <div
+          className="flex-shrink-0 p-1.5 rounded-lg"
+          style={{
+            backgroundColor:
+              isDark || !typeBackground
+                ? 'transparent'
+                : getGoalTypeColor(goal.type) + '15',
+            color: getGoalTypeColor(goal.type),
+          }}
         >
-          {title}
-        </h3>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 20,
+              height: 20,
+            }}
+          >
+            {getGoalTypeIcon(goal.type)}
+          </div>
+        </div>
       </div>
 
       {/* Progress bar area */}
@@ -304,25 +407,40 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
+      whileHover={{ y: -1 }}
       transition={{ duration: 0.25 }}
       onClick={onClick}
       className="cursor-pointer h-full"
     >
       <Card
-        className={`rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 h-full overflow-hidden`}
+        className={`rounded-xl transition-all duration-300 h-full overflow-hidden`}
         sx={
           isDark
             ? {
-                borderRadius: '1rem',
-                background: paletteNight.bg,
-                border: `1px solid ${paletteNight.border}`,
-                boxShadow: '0 18px 40px rgba(15,23,42,0.35)',
+                borderRadius: '0.75rem',
+                background: typeBackground?.dark || paletteNight.bg,
+                border: `1px solid ${typeBackground?.darkBorder || paletteNight.border}`,
+                boxShadow:
+                  '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow:
+                    '0 10px 15px -3px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.08)',
+                },
               }
             : {
-                borderRadius: '1rem',
-                backgroundColor: paletteLight.bg,
-                border: `1px solid ${paletteLight.border}`,
+                borderRadius: '0.75rem',
+                backgroundColor: typeBackground?.light || paletteLight.bg,
+                border: `1px solid ${typeBackground?.border || paletteLight.border}`,
+                boxShadow:
+                  '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow:
+                    '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                },
               }
         }
       >

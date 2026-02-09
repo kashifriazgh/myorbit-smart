@@ -216,7 +216,7 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
           : 'Failed to generate goal draft. Please try again.';
 
       setError(
-        `AI parsing failed: ${errorMessage}. You can edit the fields below.`
+        `AI parsing failed: ${errorMessage}. You can edit the fields below.`,
       );
 
       const defaultDueDate = new Date();
@@ -254,7 +254,7 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
 
   const handleInputChange = (
     field: keyof EditableGoal,
-    value: string | GoalType | GoalPriority | Date | number | '' | GoalStep[]
+    value: string | GoalType | GoalPriority | Date | number | '' | GoalStep[],
   ) => {
     setEditableGoal((prev) => {
       if (!prev) return null;
@@ -291,7 +291,6 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
           title: 'Milestone 1',
           description: undefined,
           targetValue: undefined,
-          unit: undefined,
           startDate: undefined,
           endDate: undefined,
           completed: false,
@@ -312,28 +311,25 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
         type: editableGoal.type || 'custom',
         priority: editableGoal.priority || 'Medium',
         dueDate: Timestamp.fromDate(new Date(editableGoal.dueDate)),
-        metrics:
-          typeof editableGoal.overallTargetValue === 'number' &&
-          editableGoal.overallTargetUnit
-            ? {
-                totalTarget: editableGoal.overallTargetValue,
-                currency: editableGoal.overallTargetUnit,
-              }
+        overallTargetValue:
+          typeof editableGoal.overallTargetValue === 'number'
+            ? editableGoal.overallTargetValue
             : undefined,
+        overallTargetUnit: editableGoal.overallTargetUnit || undefined,
         steps: steps.map((step) => ({
           ...step,
           startDate: step.startDate
             ? Timestamp.fromDate(
                 step.startDate instanceof Date
                   ? step.startDate
-                  : step.startDate.toDate()
+                  : step.startDate.toDate(),
               )
             : undefined,
           endDate: step.endDate
             ? Timestamp.fromDate(
                 step.endDate instanceof Date
                   ? step.endDate
-                  : step.endDate.toDate()
+                  : step.endDate.toDate(),
               )
             : undefined,
         })),
@@ -460,7 +456,7 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
                   onChange={(e) =>
                     handleInputChange(
                       'overallTargetValue',
-                      e.target.value === '' ? '' : Number(e.target.value)
+                      e.target.value === '' ? '' : Number(e.target.value),
                     )
                   }
                   placeholder="e.g., 5000"
@@ -491,7 +487,7 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
                       'dueDate',
                       dateValue instanceof Date
                         ? dateValue
-                        : new Date(dateValue)
+                        : new Date(dateValue),
                     );
                   }
                 }}

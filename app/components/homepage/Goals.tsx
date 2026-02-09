@@ -65,19 +65,29 @@ const Goals: React.FC = () => {
           backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
           borderRadius: '1rem',
           p: 3,
+          border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
+          boxShadow:
+            '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
         }}
       >
-        <Typography variant="h6" className="font-semibold mb-4">
-          Goals
+        <Typography 
+          variant="h6" 
+          className="font-bold mb-4"
+          sx={{
+            color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+          }}
+        >
+          🎯 Your Goals
         </Typography>
         <Box className="grid grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
             <Box
               key={i}
               sx={{
-                height: '140px',
-                backgroundColor: theme?.mode === 'dark' ? '#374151' : '#f3f4f6',
+                height: '200px',
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#f1f5f9',
                 borderRadius: '1rem',
+                border: `1px solid ${theme?.mode === 'dark' ? '#475569' : '#e2e8f0'}`,
                 animation: 'pulse 2s infinite',
               }}
             />
@@ -93,31 +103,47 @@ const Goals: React.FC = () => {
         backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
         borderRadius: '1rem',
         p: 3,
+        border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
+        boxShadow:
+          '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        transition: 'all 0.3s ease',
       }}
     >
-      <Box className="flex justify-between items-center mb-4">
-        <Typography
-          variant="h6"
-          className="font-semibold"
-          sx={{
-            color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-          }}
-        >
-          Goals
-        </Typography>
+      <Box className="flex justify-between items-center mb-6">
+        <Box>
+          <Typography
+            variant="h6"
+            className="font-bold"
+            sx={{
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+              fontSize: '1.1rem',
+              mb: 0.5,
+            }}
+          >
+            🎯 Your Goals
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
+            }}
+          >
+            Track and accomplish your objectives
+          </Typography>
+        </Box>
         <Button
           variant="outlined"
           size="small"
           startIcon={<Add />}
           onClick={handleCreateGoal}
           sx={{
-            borderColor: '#3B82F6',
-            color: '#3B82F6',
+            borderColor: theme?.mode === 'dark' ? '#475569' : '#cbd5e1',
+            color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
             fontSize: '0.75rem',
             textTransform: 'none',
             '&:hover': {
-              backgroundColor: '#3B82F610',
-              borderColor: '#3B82F6',
+              backgroundColor: theme?.mode === 'dark' ? '#334155' : '#f1f5f9',
+              borderColor: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
             },
           }}
         >
@@ -126,15 +152,16 @@ const Goals: React.FC = () => {
       </Box>
 
       {displayGoals.length === 0 ? (
-        <Box className="text-center py-8">
+        <Box className="text-center py-12">
           <Typography
             variant="body1"
             sx={{
               color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-              mb: 2,
+              mb: 3,
+              fontSize: '0.95rem',
             }}
           >
-            No goals yet. Create your first goal to get started!
+            No active goals yet. Create your first goal to get started! 🚀
           </Typography>
           <Button
             variant="contained"
@@ -145,9 +172,10 @@ const Goals: React.FC = () => {
               '&:hover': {
                 backgroundColor: '#2563eb',
               },
+              textTransform: 'none',
             }}
           >
-            Create Goal
+            Create Your First Goal
           </Button>
         </Box>
       ) : (
