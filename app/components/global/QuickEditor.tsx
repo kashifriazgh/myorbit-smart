@@ -8,7 +8,16 @@ import Text from '@tiptap/extension-text';
 import Mention from '@tiptap/extension-mention';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
-import { Button, Box, Alert, Tabs, Tab, TextField, CircularProgress, Fade } from '@mui/material';
+import {
+  Button,
+  Box,
+  Alert,
+  Tabs,
+  Tab,
+  TextField,
+  CircularProgress,
+  Fade,
+} from '@mui/material';
 import {
   addDoc,
   collection,
@@ -207,7 +216,9 @@ export default function ProductivityEditor({
   const [noteContent, setNoteContent] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
-  
+  const [noteFocused, setNoteFocused] = useState(false);
+  const [editorFocused, setEditorFocused] = useState(false);
+
   const [editor, setEditor] = useState<Editor | null>(null);
   const [rawText, setRawText] = useState('');
   const [mentionType, setMentionType] = useState<ContentType>(null);
@@ -250,7 +261,7 @@ export default function ProductivityEditor({
           suggestion: {
             items: ({ query }) => {
               return MENTION_OPTIONS.filter((item) =>
-                item.label.toLowerCase().includes(query.toLowerCase())
+                item.label.toLowerCase().includes(query.toLowerCase()),
               ).slice(0, 10);
             },
             render: () => {
@@ -384,7 +395,7 @@ export default function ProductivityEditor({
     if (placeholderCharIndex < currentLine.length) {
       typingTimeout = setTimeout(() => {
         setPlaceholderContent(
-          (prev) => prev + currentLine[placeholderCharIndex]
+          (prev) => prev + currentLine[placeholderCharIndex],
         );
         setPlaceholderCharIndex((prev) => prev + 1);
       }, 75);
@@ -393,7 +404,7 @@ export default function ProductivityEditor({
         () => {
           if (placeholderLineIndex < PLACEHOLDER_LINES.length - 1) {
             setPlaceholderContent((prev) =>
-              prev.endsWith('\n') ? prev : `${prev}\n`
+              prev.endsWith('\n') ? prev : `${prev}\n`,
             );
             setPlaceholderLineIndex((prev) => prev + 1);
             setPlaceholderCharIndex(0);
@@ -403,7 +414,7 @@ export default function ProductivityEditor({
             setPlaceholderCharIndex(0);
           }
         },
-        placeholderLineIndex === PLACEHOLDER_LINES.length - 1 ? 1500 : 300
+        placeholderLineIndex === PLACEHOLDER_LINES.length - 1 ? 1500 : 300,
       );
     }
 
@@ -545,7 +556,7 @@ export default function ProductivityEditor({
         }
         default: {
           setQuickSaveError(
-            'Quick Save currently supports @task entries. Use "Show me Draft" for other types.'
+            'Quick Save currently supports @task entries. Use "Show me Draft" for other types.',
           );
           break;
         }
@@ -555,7 +566,7 @@ export default function ProductivityEditor({
       setQuickSaveError(
         error instanceof Error
           ? error.message
-          : 'Quick Save failed. Please try again.'
+          : 'Quick Save failed. Please try again.',
       );
     } finally {
       setQuickSaving(false);
@@ -640,10 +651,14 @@ export default function ProductivityEditor({
         <Box>
           <TextField
             multiline
-            rows={isCompact ? 3 : 6}
+            rows={noteFocused ? (isCompact ? 4 : 6) : isCompact ? 1 : 3}
             fullWidth
             placeholder="Start typing your note..."
             value={noteContent}
+            onFocus={() => setNoteFocused(true)}
+            onBlur={() => {
+              if (!noteContent.trim()) setNoteFocused(false);
+            }}
             onChange={(e) => setNoteContent(e.target.value)}
             sx={{
               '& .MuiOutlinedInput-root': {
@@ -652,7 +667,8 @@ export default function ProductivityEditor({
                 fontSize: '1.125rem',
                 fontWeight: 500,
                 lineHeight: 1.7,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                fontFamily:
+                  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
                 '& fieldset': {
                   borderColor: theme?.mode === 'dark' ? '#475569' : '#cbd5e1',
                 },
@@ -664,6 +680,7 @@ export default function ProductivityEditor({
                 },
               },
               '& .MuiInputBase-input': {
+                transition: 'all 0.18s ease',
                 '&::placeholder': {
                   color: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
                   opacity: 0.7,
@@ -671,7 +688,7 @@ export default function ProductivityEditor({
               },
             }}
           />
-          
+
           {/* Saving Indicator */}
           {savingNote && (
             <Fade in={savingNote}>
@@ -680,9 +697,10 @@ export default function ProductivityEditor({
                   mt: 2,
                   p: 3,
                   borderRadius: 2,
-                  background: theme?.mode === 'dark'
-                    ? 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'
-                    : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+                  background:
+                    theme?.mode === 'dark'
+                      ? 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'
+                      : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                   border: `1px solid ${theme?.mode === 'dark' ? '#475569' : '#cbd5e1'}`,
                   display: 'flex',
                   flexDirection: 'column',
@@ -726,9 +744,10 @@ export default function ProductivityEditor({
                   mt: 2,
                   p: 3,
                   borderRadius: 2,
-                  background: theme?.mode === 'dark'
-                    ? 'linear-gradient(135deg, #065f46 0%, #047857 100%)'
-                    : 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)',
+                  background:
+                    theme?.mode === 'dark'
+                      ? 'linear-gradient(135deg, #065f46 0%, #047857 100%)'
+                      : 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)',
                   border: `1px solid ${theme?.mode === 'dark' ? '#059669' : '#10b981'}`,
                   display: 'flex',
                   alignItems: 'center',
@@ -766,7 +785,8 @@ export default function ProductivityEditor({
               sx={{
                 backgroundColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
                 '&:hover': {
-                  backgroundColor: theme?.mode === 'dark' ? '#2563eb' : '#1d4ed8',
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#2563eb' : '#1d4ed8',
                 },
                 textTransform: 'none',
                 fontSize: '0.875rem',
@@ -783,280 +803,291 @@ export default function ProductivityEditor({
       {/* Quick Editor Tab */}
       {activeTab === 'editor' && (
         <Box>
-      <Box sx={{ position: 'relative' }}>
-        <Box
-          sx={{
-            position: 'relative',
-            border: `1px solid ${
-              theme?.mode === 'dark' ? '#475569' : '#cbd5e1'
-            }`,
-            borderRadius: isCompact ? 3 : 2,
-            backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-            minHeight: isCompact ? '64px' : '100px',
-            maxHeight: isCompact ? '140px' : '300px',
-            overflowY: isCompact ? 'hidden' : 'auto',
-            boxShadow: isCompact ? '0 8px 24px rgba(15,23,42,0.12)' : undefined,
-            transition: 'all 0.2s',
-            '&:focus-within': {
-              borderColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
-              boxShadow: `0 0 0 2px ${
-                theme?.mode === 'dark' ? '#3b82f6' : '#2563eb'
-              }40`,
-            },
-          }}
-        >
-          {!rawText && (
+          <Box sx={{ position: 'relative' }}>
             <Box
               sx={{
-                position: 'absolute',
-                top: isCompact ? '12px' : '16px',
-                left: '16px',
-                color: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
-                pointerEvents: 'none',
-                fontSize: isCompact ? '0.95rem' : '0.875rem',
-                zIndex: 0,
-                whiteSpace: 'pre-line',
-                fontFamily: isCompact ? 'monospace' : 'inherit',
-                lineHeight: 1.4,
-                opacity: 0.9,
+                position: 'relative',
+                border: `1px solid ${
+                  theme?.mode === 'dark' ? '#475569' : '#cbd5e1'
+                }`,
+                borderRadius: isCompact ? 3 : 2,
+                backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+                minHeight: isCompact ? '48px' : '100px',
+                maxHeight:
+                  isCompact && editorFocused
+                    ? '250px'
+                    : isCompact
+                      ? '48px'
+                      : '300px',
+                overflowY: 'auto',
+                boxShadow: isCompact
+                  ? '0 8px 24px rgba(15,23,42,0.12)'
+                  : undefined,
+                transition: 'all 0.3s ease',
+                '&:focus-within': {
+                  borderColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
+                  boxShadow: `0 0 0 2px ${
+                    theme?.mode === 'dark' ? '#3b82f6' : '#2563eb'
+                  }40`,
+                },
               }}
+              onFocus={() => isCompact && setEditorFocused(true)}
+              onBlur={() => !rawText && isCompact && setEditorFocused(false)}
             >
-              {isCompact
-                ? placeholderContent || PLACEHOLDER_LINES[0]
-                : 'Type your content and use @ to mention type (Task, Journal, Schedule, Expense, Shopping, Income, Streak, Time Table, Idea, Goal, Money)...'}
+              {!rawText && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: isCompact ? '8px' : '16px',
+                    left: '12px',
+                    color: theme?.mode === 'dark' ? '#64748b' : '#94a3b8',
+                    pointerEvents: 'none',
+                    fontSize: isCompact ? '0.85rem' : '0.875rem',
+                    zIndex: 0,
+                    whiteSpace: 'pre-line',
+                    fontFamily: isCompact ? 'monospace' : 'inherit',
+                    lineHeight: 1.4,
+                    opacity: 0.9,
+                  }}
+                >
+                  {isCompact
+                    ? placeholderContent || PLACEHOLDER_LINES[0]
+                    : 'Type your content and use @ to mention type (Task, Journal, Schedule, Expense, Shopping, Income, Streak, Time Table, Idea, Goal, Money)...'}
+                </Box>
+              )}
+              <Box sx={{ position: 'relative', zIndex: 1 }}>
+                <EditorContent
+                  editor={editor}
+                  className={`ProseMirror w-full ${
+                    isCompact ? 'min-h-[48px] p-2' : 'min-h-[100px] p-4'
+                  } outline-none block break-words whitespace-pre-wrap focus:outline-none`}
+                  style={{
+                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+                    fontSize: isCompact ? '0.9rem' : '1rem',
+                  }}
+                />
+              </Box>
+            </Box>
+
+            {showKeywordSuggestions && !keywordSuggestionUsed && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  zIndex: 10,
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#0f172a' : '#ffffff',
+                  border: `1px solid ${
+                    theme?.mode === 'dark' ? '#334155' : '#e2e8f0'
+                  }`,
+                  borderRadius: 2,
+                  boxShadow: '0 12px 30px rgba(15,23,42,0.2)',
+                  width: isCompact ? '100%' : '280px',
+                  overflow: 'hidden',
+                }}
+              >
+                <Box
+                  sx={{
+                    px: 2,
+                    py: 1,
+                    borderBottom: `1px solid ${
+                      theme?.mode === 'dark' ? '#1f2937' : '#e2e8f0'
+                    }`,
+                    fontSize: '0.85rem',
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#475569',
+                  }}
+                >
+                  Quick insert suggestion
+                </Box>
+                {MENTION_OPTIONS.map((item) => (
+                  <Box
+                    key={item.id}
+                    sx={{
+                      px: 2,
+                      py: 1.25,
+                      cursor: 'pointer',
+                      fontSize: '0.95rem',
+                      color: theme?.mode === 'dark' ? '#e2e8f0' : '#1e293b',
+                      '&:hover': {
+                        backgroundColor:
+                          theme?.mode === 'dark' ? '#1f2937' : '#f1f5f9',
+                      },
+                    }}
+                    onClick={() => handleKeywordSuggestionSelect(item.id)}
+                  >
+                    @{item.label.toLowerCase()}
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Box>
+
+          {showMentionError && (
+            <Alert
+              severity="warning"
+              sx={{ mt: 1 }}
+              onClose={() => setShowMentionError(false)}
+            >
+              Please use @ to mention the content type (e.g., @task, @journal,
+              @schedule, @expense, @shopping, @income, @streak, @timetable,
+              @idea, @goal, @money)
+            </Alert>
+          )}
+
+          {mentionType && (
+            <Box sx={{ mt: 1, mb: 1 }}>
+              <Alert severity="info" sx={{ py: 0.5 }}>
+                Detected:{' '}
+                <strong>
+                  {mentionType.charAt(0).toUpperCase() + mentionType.slice(1)}
+                </strong>
+              </Alert>
             </Box>
           )}
-          <Box sx={{ position: 'relative', zIndex: 1 }}>
-            <EditorContent
-              editor={editor}
-              className={`ProseMirror w-full ${
-                isCompact ? 'min-h-[64px] p-3' : 'min-h-[100px] p-4'
-              } outline-none block break-words whitespace-pre-wrap focus:outline-none`}
-              style={{
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
-                fontSize: isCompact ? '0.95rem' : '1rem',
-              }}
-            />
-          </Box>
-        </Box>
 
-        {showKeywordSuggestions && !keywordSuggestionUsed && (
+          {quickSaveError && (
+            <Alert
+              severity="error"
+              sx={{ mt: 1 }}
+              onClose={() => setQuickSaveError(null)}
+            >
+              {quickSaveError}
+            </Alert>
+          )}
+
+          {quickSaveMessage && (
+            <Alert
+              severity="success"
+              sx={{ mt: 1 }}
+              onClose={() => setQuickSaveMessage(null)}
+            >
+              {quickSaveMessage}
+            </Alert>
+          )}
+
           <Box
             sx={{
-              position: 'absolute',
-              top: 'calc(100% + 8px)',
-              left: 0,
-              zIndex: 10,
-              backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#ffffff',
-              border: `1px solid ${
-                theme?.mode === 'dark' ? '#334155' : '#e2e8f0'
-              }`,
-              borderRadius: 2,
-              boxShadow: '0 12px 30px rgba(15,23,42,0.2)',
-              width: isCompact ? '100%' : '280px',
-              overflow: 'hidden',
+              mt: 2,
+              display: 'flex',
+              gap: 1,
+              justifyContent: 'flex-end',
+              flexWrap: 'wrap',
             }}
           >
-            <Box
+            <Button
+              variant="outlined"
+              onClick={handleQuickSave}
+              disabled={!rawText.trim() || !mentionType || quickSaving}
+              size="small"
               sx={{
-                px: 2,
-                py: 1,
-                borderBottom: `1px solid ${
-                  theme?.mode === 'dark' ? '#1f2937' : '#e2e8f0'
-                }`,
-                fontSize: '0.85rem',
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#475569',
+                textTransform: 'none',
+                fontSize: '0.875rem',
               }}
             >
-              Quick insert suggestion
-            </Box>
-            {MENTION_OPTIONS.map((item) => (
-              <Box
-                key={item.id}
-                sx={{
-                  px: 2,
-                  py: 1.25,
-                  cursor: 'pointer',
-                  fontSize: '0.95rem',
-                  color: theme?.mode === 'dark' ? '#e2e8f0' : '#1e293b',
-                  '&:hover': {
-                    backgroundColor:
-                      theme?.mode === 'dark' ? '#1f2937' : '#f1f5f9',
-                  },
-                }}
-                onClick={() => handleKeywordSuggestionSelect(item.id)}
-              >
-                @{item.label.toLowerCase()}
-              </Box>
-            ))}
+              {quickSaving ? 'Saving...' : 'Quick Save'}
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleShowDraft}
+              disabled={!rawText.trim() || !mentionType || quickSaving}
+              size="small"
+              sx={{
+                backgroundColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
+                '&:hover': {
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#2563eb' : '#1d4ed8',
+                },
+                textTransform: 'none',
+                fontSize: '0.875rem',
+              }}
+            >
+              Show me Draft
+            </Button>
           </Box>
-        )}
-      </Box>
 
-      {showMentionError && (
-        <Alert
-          severity="warning"
-          sx={{ mt: 1 }}
-          onClose={() => setShowMentionError(false)}
-        >
-          Please use @ to mention the content type (e.g., @task, @journal,
-          @schedule, @expense, @shopping, @income, @streak, @timetable, @idea,
-          @goal, @money)
-        </Alert>
-      )}
+          {/* Schedule Draft Modal */}
+          <ScheduleDraftModal
+            open={draftModalType === 'schedule'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onScheduleCreated={handleItemCreated}
+          />
 
-      {mentionType && (
-        <Box sx={{ mt: 1, mb: 1 }}>
-          <Alert severity="info" sx={{ py: 0.5 }}>
-            Detected:{' '}
-            <strong>
-              {mentionType.charAt(0).toUpperCase() + mentionType.slice(1)}
-            </strong>
-          </Alert>
-        </Box>
-      )}
+          {/* Task Draft Modal */}
+          <TaskDraftModal
+            open={draftModalType === 'task'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onTaskCreated={handleItemCreated}
+          />
 
-      {quickSaveError && (
-        <Alert
-          severity="error"
-          sx={{ mt: 1 }}
-          onClose={() => setQuickSaveError(null)}
-        >
-          {quickSaveError}
-        </Alert>
-      )}
+          {/* Journal Draft Modal */}
+          <JournalDraftModal
+            open={draftModalType === 'journal'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onJournalCreated={handleItemCreated}
+          />
 
-      {quickSaveMessage && (
-        <Alert
-          severity="success"
-          sx={{ mt: 1 }}
-          onClose={() => setQuickSaveMessage(null)}
-        >
-          {quickSaveMessage}
-        </Alert>
-      )}
+          {/* Expense Draft Modal */}
+          <ExpenseDraftModal
+            open={draftModalType === 'expense'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onExpenseCreated={handleItemCreated}
+          />
 
-      <Box
-        sx={{
-          mt: 2,
-          display: 'flex',
-          gap: 1,
-          justifyContent: 'flex-end',
-          flexWrap: 'wrap',
-        }}
-      >
-        <Button
-          variant="outlined"
-          onClick={handleQuickSave}
-          disabled={!rawText.trim() || !mentionType || quickSaving}
-          size="small"
-          sx={{
-            textTransform: 'none',
-            fontSize: '0.875rem',
-          }}
-        >
-          {quickSaving ? 'Saving...' : 'Quick Save'}
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleShowDraft}
-          disabled={!rawText.trim() || !mentionType || quickSaving}
-          size="small"
-          sx={{
-            backgroundColor: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
-            '&:hover': {
-              backgroundColor: theme?.mode === 'dark' ? '#2563eb' : '#1d4ed8',
-            },
-            textTransform: 'none',
-            fontSize: '0.875rem',
-          }}
-        >
-          Show me Draft
-        </Button>
-      </Box>
+          {/* Shopping Draft Modal */}
+          <ShoppingDraftModal
+            open={draftModalType === 'shopping'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onShoppingItemCreated={handleItemCreated}
+          />
 
-      {/* Schedule Draft Modal */}
-      <ScheduleDraftModal
-        open={draftModalType === 'schedule'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onScheduleCreated={handleItemCreated}
-      />
+          {/* Income Draft Modal */}
+          <IncomeDraftModal
+            open={draftModalType === 'income'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onIncomeCreated={handleItemCreated}
+          />
 
-      {/* Task Draft Modal */}
-      <TaskDraftModal
-        open={draftModalType === 'task'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onTaskCreated={handleItemCreated}
-      />
+          {/* Streak Draft Modal */}
+          <StreakDraftModal
+            open={draftModalType === 'streak'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onStreakCreated={handleItemCreated}
+          />
 
-      {/* Journal Draft Modal */}
-      <JournalDraftModal
-        open={draftModalType === 'journal'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onJournalCreated={handleItemCreated}
-      />
+          {/* Time Table Draft Modal */}
+          <TimeTableDraftModal
+            open={draftModalType === 'timetable'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onTimeTableCreated={handleItemCreated}
+          />
 
-      {/* Expense Draft Modal */}
-      <ExpenseDraftModal
-        open={draftModalType === 'expense'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onExpenseCreated={handleItemCreated}
-      />
+          {/* Idea Draft Modal */}
+          <IdeaDraftModal
+            open={draftModalType === 'idea'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onIdeaCreated={handleItemCreated}
+          />
 
-      {/* Shopping Draft Modal */}
-      <ShoppingDraftModal
-        open={draftModalType === 'shopping'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onShoppingItemCreated={handleItemCreated}
-      />
+          {/* Goal Draft Modal */}
+          <GoalDraftModal
+            open={draftModalType === 'goal'}
+            onClose={handleCloseModal}
+            rawText={cleanContentForAI(rawText)}
+            onGoalCreated={handleItemCreated}
+          />
 
-      {/* Income Draft Modal */}
-      <IncomeDraftModal
-        open={draftModalType === 'income'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onIncomeCreated={handleItemCreated}
-      />
-
-      {/* Streak Draft Modal */}
-      <StreakDraftModal
-        open={draftModalType === 'streak'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onStreakCreated={handleItemCreated}
-      />
-
-      {/* Time Table Draft Modal */}
-      <TimeTableDraftModal
-        open={draftModalType === 'timetable'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onTimeTableCreated={handleItemCreated}
-      />
-
-      {/* Idea Draft Modal */}
-      <IdeaDraftModal
-        open={draftModalType === 'idea'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onIdeaCreated={handleItemCreated}
-      />
-
-      {/* Goal Draft Modal */}
-      <GoalDraftModal
-        open={draftModalType === 'goal'}
-        onClose={handleCloseModal}
-        rawText={cleanContentForAI(rawText)}
-        onGoalCreated={handleItemCreated}
-      />
-
-      {/* Add Money Draft Modal - Note: This requires onSave prop from parent */}
-      {/* For now, we'll show a message that this needs to be done from the finance page */}
+          {/* Add Money Draft Modal - Note: This requires onSave prop from parent */}
+          {/* For now, we'll show a message that this needs to be done from the finance page */}
         </Box>
       )}
     </Box>

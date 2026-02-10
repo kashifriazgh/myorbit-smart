@@ -27,6 +27,7 @@ import {
   Pause,
   ExpandMore,
   ExpandLess,
+  Add,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -37,6 +38,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { Todo } from '@/app/lib/interface';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import ToDoModal from '@/app/components/to-do/todoModal';
 
 const ImportantTasks = () => {
   const { todos, loading, updateStepStatus } = useTodoContext();
@@ -47,6 +49,7 @@ const ImportantTasks = () => {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [fadeOutId, setFadeOutId] = useState<string | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
+  const [todoModalOpen, setTodoModalOpen] = useState(false);
 
   const PRIORITY_ORDER = { critical: 0, urgent: 1, routine: 2 };
 
@@ -151,9 +154,19 @@ const ImportantTasks = () => {
   if (loading) {
     return (
       <Box className="p-4">
-        <Typography variant="subtitle1" fontWeight="bold" className="mb-3">
-          🚀 On Going Plans
-        </Typography>
+        <Box className="flex justify-between items-center mb-3">
+          <Typography variant="subtitle1" fontWeight="bold">
+            🚀 On Going Plans
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<Add />}
+            onClick={() => setTodoModalOpen(true)}
+          >
+            New Task
+          </Button>
+        </Box>
 
         {/* Skeleton Card */}
         <Card className="rounded-xl shadow-sm mb-2">
@@ -182,17 +195,64 @@ const ImportantTasks = () => {
             </Box>
           </CardContent>
         </Card>
+
+        <ToDoModal
+          open={todoModalOpen}
+          onClose={() => setTodoModalOpen(false)}
+        />
       </Box>
     );
   }
 
-  if (filteredTasks.length === 0) return null;
+  if (filteredTasks.length === 0) {
+    return (
+      <Box className="p-4 flex flex-col items-center justify-center min-h-64">
+        <Typography variant="h6" fontWeight="bold" className="mb-4 text-center">
+          📋 No Tasks Yet
+        </Typography>
+        <Typography
+          variant="body2"
+          color="textSecondary"
+          className="mb-6 text-center"
+        >
+          Create your first task to get started!
+        </Typography>
+        <Button
+          variant="contained"
+          size="large"
+          startIcon={<Add />}
+          onClick={() => setTodoModalOpen(true)}
+          sx={{
+            px: 4,
+            py: 1.5,
+            fontSize: '1.1rem',
+          }}
+        >
+          Create New Task
+        </Button>
+        <ToDoModal
+          open={todoModalOpen}
+          onClose={() => setTodoModalOpen(false)}
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box className="p-4">
-      <Typography variant="subtitle1" fontWeight="bold" className="mb-3">
-        🚀 On Going Plans
-      </Typography>
+      <Box className="flex justify-between items-center mb-3">
+        <Typography variant="subtitle1" fontWeight="bold">
+          🚀 On Going Plans
+        </Typography>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<Add />}
+          onClick={() => setTodoModalOpen(true)}
+        >
+          New Task
+        </Button>
+      </Box>
 
       <Stack spacing={2}>
         {filteredTasks.slice(0, 5).map((task) => (
@@ -497,6 +557,9 @@ const ImportantTasks = () => {
           </Stack>
         </Box>
       </Modal>
+
+      {/* Todo Modal */}
+      <ToDoModal open={todoModalOpen} onClose={() => setTodoModalOpen(false)} />
     </Box>
   );
 };

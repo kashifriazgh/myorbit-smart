@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Alert, AlertTitle, Button, Box, IconButton } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
+import LoginIcon from '@mui/icons-material/Login';
 import Link from 'next/link';
 import { useAuth } from '@/app/lib/context/userContext';
 
@@ -28,39 +29,49 @@ export default function GuestUserBanner() {
           },
         }}
         action={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Button
-              component={Link}
-              href="/user/signup"
-              variant="contained"
-              color="secondary"
-              size="small"
-              startIcon={<PersonAddIcon />}
-              sx={{
-                backgroundColor: 'white',
-                color: '#1976d2',
-                '&:hover': {
-                  backgroundColor: '#f5f5f5',
-                },
-              }}
-            >
-              Sign Up
-            </Button>
-            <IconButton
-              size="small"
-              onClick={() => setDismissed(true)}
-              sx={{ color: 'white' }}
-            >
-              <CloseIcon />
-            </IconButton>
-          </Box>
+          <IconButton
+            size="small"
+            onClick={() => setDismissed(true)}
+            sx={{ color: 'white' }}
+          >
+            <CloseIcon />
+          </IconButton>
         }
       >
         <AlertTitle>👋 Welcome, {user.firstName}!</AlertTitle>
-        You&#39;re using MyOrbit as a guest. Your data is saved locally but
-        won&#39;t sync across devices.
-        <strong> Sign up now</strong> to save your progress permanently and
-        access all features!
+        <strong> Sign up</strong> to save your progress
+        <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+          <Button
+            component={Link}
+            href="/user/signup"
+            variant="contained"
+            color="secondary"
+            size="small"
+            startIcon={<PersonAddIcon />}
+            sx={{
+              backgroundColor: 'white',
+              color: '#1976d2',
+              '&:hover': { backgroundColor: '#f5f5f5' },
+            }}
+          >
+            Sign Up
+          </Button>
+          <Button
+            component={Link}
+            href="/user/login"
+            variant="outlined"
+            color="inherit"
+            size="small"
+            startIcon={<LoginIcon sx={{ color: 'white' }} />}
+            sx={{
+              color: 'white',
+              borderColor: 'rgba(255,255,255,0.7)',
+              '&:hover': { borderColor: 'white' },
+            }}
+          >
+            Sign In
+          </Button>
+        </Box>
       </Alert>
     </Box>
   );
