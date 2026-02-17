@@ -1,6 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import Chip from '@mui/material/Chip';
+import Paper from '@mui/material/Paper';
+import { styled } from '@mui/material/styles';
+// Styled list item for chips
+const ListItem = styled('li')(({ theme }) => ({
+  margin: theme.spacing(0.5),
+}));
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   collection,
@@ -30,6 +37,8 @@ import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import PersonIcon from '@mui/icons-material/Person';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import ListAltIcon from '@mui/icons-material/ListAlt';
+import Apps from '@mui/icons-material/Apps';
+
 import {
   Dialog,
   DialogTitle,
@@ -82,7 +91,15 @@ const CATEGORY_ICONS: { category: string; icon: React.ReactNode }[] = [
 const DEFAULT_ICON = <ListAltIcon />;
 const VISIBLE_ITEMS_DEFAULT = 6;
 
-export default function DailyCheckouts() {
+export default function DailyCheckouts({
+  focusToday = false,
+}: {
+  focusToday?: boolean;
+}) {
+  // Collapsible state for action buttons
+  const [actionsCollapsed, setActionsCollapsed] = useState(true);
+  // UI mode: 'chips' or 'list'
+  const [viewMode, setViewMode] = useState<'chips' | 'list'>('chips');
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const [checkouts, setCheckouts] = useState<DailyCheckout[]>([]);
@@ -308,6 +325,13 @@ export default function DailyCheckouts() {
     );
   }
 
+  // Hide when focus on today is enabled and there are no items or all items are done
+  const shouldHide =
+    focusToday && (checkouts.length === 0 || checkouts.every((c) => c.done));
+  if (shouldHide) {
+    return null;
+  }
+
   const visibleCheckouts = expanded
     ? displayCheckouts
     : displayCheckouts.slice(0, VISIBLE_ITEMS_DEFAULT);
@@ -327,35 +351,60 @@ export default function DailyCheckouts() {
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-5 py-4 border-b"
+          className="px-5 pt-4 pb-2 border-b cursor-pointer select-none"
           style={{
             borderColor: theme?.mode === 'dark' ? '#475569' : '#e5e7eb',
           }}
+          onClick={() => setActionsCollapsed((prev) => !prev)}
+          role="button"
+          tabIndex={0}
         >
-          <div
-            className="flex items-center gap-2 text-lg font-semibold"
-            style={{
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
-            }}
-          >
-            📋 Daily Checkout
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setModalOpen(true)}
-              className="flex items-center gap-1 text-sm hover:opacity-80 transition"
-              style={{
-                color: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
-              }}
+          <div className="flex items-center text-lg font-semibold w-full">
+            <span
+              style={{ color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a' }}
             >
-              <AddIcon fontSize="small" />
-              Add
-            </button>
+              {`Today (${todayDayName}) routines:`}
+            </span>
+            <div style={{ flex: 1 }} />
+            {/* Arrow icon at far right, larger size */}
+            {actionsCollapsed ? (
+              <ExpandMoreIcon sx={{ fontSize: 32 }} />
+            ) : (
+              <ExpandLessIcon sx={{ fontSize: 32 }} />
+            )}
           </div>
+          {/* Collapsible action buttons */}
+          {!actionsCollapsed && (
+            <div className="flex justify-end mt-2 gap-2">
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() =>
+                  setViewMode(viewMode === 'chips' ? 'list' : 'chips')
+                }
+                sx={{ fontWeight: 600, borderRadius: 2, minWidth: 0, px: 1.5 }}
+              >
+                {viewMode === 'chips' ? (
+                  <ListAltIcon fontSize="small" />
+                ) : (
+                  <Apps fontSize="small" />
+                )}
+              </Button>
+              <button
+                onClick={() => setModalOpen(true)}
+                className="flex items-center gap-1 text-sm hover:opacity-80 transition"
+                style={{
+                  color: theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
+                }}
+              >
+                <AddIcon fontSize="small" />
+                Add
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* List */}
+        {/* Chips or List view */}
         {displayCheckouts.length === 0 ? (
           <div className="px-5 py-8 text-center">
             <Typography
@@ -367,6 +416,49 @@ export default function DailyCheckouts() {
               No checkouts for today. Add one to get started!
             </Typography>
           </div>
+        ) : viewMode === 'chips' ? (
+          <Paper
+            sx={{
+              display: 'flex',
+              justifyContent: 'flex-start',
+              flexWrap: 'wrap',
+              listStyle: 'none',
+              p: 2,
+              m: 0,
+              background: 'transparent',
+              boxShadow: 'none',
+              minHeight: 64,
+            }}
+            component="ul"
+          >
+            {visibleCheckouts.map((checkout) => (
+              <ListItem key={checkout.id}>
+                <Chip
+                  label={checkout.title}
+                  color={
+                    checkout.status === 'active'
+                      ? 'success'
+                      : checkout.status === 'past'
+                        ? 'default'
+                        : 'primary'
+                  }
+                  onDelete={() => setCheckoutToDelete(checkout)}
+                  sx={{
+                    fontWeight: 600,
+                    fontSize: '0.8rem',
+                    px: 1.5,
+                    background:
+                      checkout.status === 'active'
+                        ? 'linear-gradient(90deg,#bbf7d0,#22d3ee)'
+                        : checkout.status === 'past'
+                          ? 'linear-gradient(90deg,#f1f5f9,#e0e7ef)'
+                          : 'linear-gradient(90deg,#dbeafe,#f0abfc)',
+                    color: theme?.mode === 'dark' ? '#0f172a' : '#1e293b',
+                  }}
+                />
+              </ListItem>
+            ))}
+          </Paper>
         ) : (
           <div className="flex flex-col divide-y">
             <AnimatePresence>
@@ -440,18 +532,18 @@ export default function DailyCheckouts() {
         )}
       </motion.div>
 
-      {/* Delete confirmation dialog */}
+      {/* Delete confirmation dialog (used for both chips and list) */}
       <Dialog
         open={!!checkoutToDelete}
         onClose={() => setCheckoutToDelete(null)}
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>Delete checkout?</DialogTitle>
+        <DialogTitle>Remove this routine?</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete &quot;{checkoutToDelete?.title}
-            &quot;? This cannot be undone.
+            Are you sure you want to remove &#34;{checkoutToDelete?.title}&#34;
+            from your daily checkouts? This cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -468,7 +560,7 @@ export default function DailyCheckouts() {
               }
             }}
           >
-            Delete
+            Remove
           </Button>
         </DialogActions>
       </Dialog>

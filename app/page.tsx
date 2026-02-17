@@ -5,11 +5,12 @@ import { GoalsProvider } from './lib/context/GoalsContext';
 import { useAuth } from './lib/context/userContext';
 import { useCustomTheme } from './lib/context/themeContext';
 import { CircularProgress, Box } from '@mui/material';
+import Switch from '@mui/material/Switch';
 import GuestUserBanner from './components/global/GuestUserBanner';
 import HomepageHeader from './components/homepage/HomepageHeader';
 import SkeletonLoader from './components/global/SkeletonLoader';
 import Goals from './components/homepage/Goals';
-import ShoppingList from './components/homepage/ShoppingList';
+// import ShoppingList from './components/homepage/ShoppingList';
 import Schedules from './components/homepage/Schedules';
 import DailyCheckouts from './components/homepage/DailyCheckouts';
 // import ProductivityEditor from './components/global/QuickEditor';
@@ -33,12 +34,12 @@ const OnGoingStreaks = lazy(
   () => import('./components/homepage/OnGoingStreaks'),
 );
 // const Mood = lazy(() => import('./components/homepage/Mood'));
-const ExpectedExpenses = lazy(
-  () => import('./components/homepage/ExpectedExpenses'),
-);
-const ExpectedIncome = lazy(
-  () => import('./components/homepage/ExpectedIncomes'),
-);
+// const ExpectedExpenses = lazy(
+//   () => import('./components/homepage/ExpectedExpenses'),
+// );
+// const ExpectedIncome = lazy(
+//   () => import('./components/homepage/ExpectedIncomes'),
+// );
 // const JournalMemory = lazy(() => import('./components/homepage/JournalMemory'));
 // const MostProductiveDay = lazy(
 //   () => import('./components/homepage/MostProductiveDay')
@@ -53,6 +54,21 @@ const ComponentLoader = ({
 export default function Homepage() {
   const { user, loading } = useAuth();
   const { theme } = useCustomTheme();
+
+  // Focus on Today Switch State (persisted in localStorage)
+  const [focusToday, setFocusToday] = React.useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('focusOnToday');
+      return stored === null ? true : stored === 'true';
+    }
+    return true;
+  });
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('focusOnToday', String(focusToday));
+    }
+  }, [focusToday]);
 
   if (loading) {
     return (
@@ -82,105 +98,96 @@ export default function Homepage() {
         >
           <GuestUserBanner />
 
-          {/* 0. Quick Editor Section - Full Width at Top
-          <div className="mb-6">
-            <Suspense fallback={<SkeletonLoader variant="card" height={200} />}>
-              <ProductivityEditor />
+          {/* Focus on Today Switch - Top right on desktop, full width on mobile */}
+          <div className="flex justify-end items-center mb-4 w-full">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-base font-medium text-slate-700 dark:text-slate-200">
+              <span>Focus on Today</span>
+              <Switch
+                checked={focusToday}
+                onChange={(e) => setFocusToday(e.target.checked)}
+                slotProps={{ input: { 'aria-label': 'Focus on Today' } }}
+                color="primary"
+              />
+            </label>
+          </div>
+
+          {/* Top Row: HomepageHeader & DailyCheckouts side-by-side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
+              <HomepageHeader />
             </Suspense>
-          </div> */}
+            <Suspense fallback={<SkeletonLoader variant="card" height={200} />}>
+              <DailyCheckouts focusToday={focusToday} />
+            </Suspense>
+          </div>
 
-          {/* 1. Header Section - Full Width */}
-          <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
-            <HomepageHeader />
-          </Suspense>
-
-          {/* Daily Checkout - Right after header/editor */}
-          <Suspense fallback={<SkeletonLoader variant="card" height={200} />}>
-            <DailyCheckouts />
-          </Suspense>
-
-          {/* 2. Three Column Layout */}
+          {/* Three Column Layout: ImportantTasks, OverdueTasks, Schedules */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
-            {/* Column 1 - Schedules */}
-            <div className="lg:col-span-3">
+            {/* Column 1 - ImportantTasks */}
+            <div className="lg:col-span-4">
+              <Suspense fallback={<ComponentLoader variant="list" />}>
+                <ImportantTasks />
+              </Suspense>
+            </div>
+            {/* Column 2 - OverdueTasks */}
+            <div className="lg:col-span-4">
+              <Suspense fallback={<ComponentLoader variant="list" />}>
+                <OverdueTasks />
+              </Suspense>
+            </div>
+            {/* Column 3 - Schedules */}
+            <div className="lg:col-span-4">
               <Suspense
                 fallback={<SkeletonLoader variant="card" height={400} />}
               >
                 <Schedules />
               </Suspense>
             </div>
+          </div>
 
-            {/* Column 2 - Tasks */}
-            <div className="lg:col-span-5 space-y-4">
-              <Suspense fallback={<ComponentLoader variant="list" />}>
-                <ImportantTasks />
+          {/* Quick Links Section - Full Width Placeholder */}
+          <div className="w-full mb-8 p-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-center">
+            <span className="text-lg font-semibold text-slate-700 dark:text-slate-200">
+              Quick Links (Coming Soon)
+            </span>
+          </div>
+
+          {/* Goals & Streaks - 50/50 Split */}
+          {!focusToday && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <Suspense
+                fallback={<SkeletonLoader variant="card" height={400} />}
+              >
+                <Goals />
               </Suspense>
-              <Suspense fallback={<ComponentLoader variant="list" />}>
-                <OverdueTasks />
+              <Suspense
+                fallback={<SkeletonLoader variant="card" height={400} />}
+              >
+                <OnGoingStreaks />
               </Suspense>
             </div>
+          )}
 
-            {/* Column 3 - Shopping & Finance */}
-            <div className="lg:col-span-4 space-y-4">
+          {/* Temporarily commented out: Monthly Shopping List, Estimated Expenses & Income */}
+          {/**
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+            <div className="lg:col-span-4">
               <Suspense fallback={<ComponentLoader variant="card" />}>
                 <ShoppingList />
               </Suspense>
-              <div className="space-y-4">
-                <Suspense fallback={<ComponentLoader variant="card" />}>
-                  <ExpectedExpenses />
-                </Suspense>
-                <Suspense fallback={<ComponentLoader variant="card" />}>
-                  <ExpectedIncome />
-                </Suspense>
-              </div>
+            </div>
+            <div className="lg:col-span-4">
+              <Suspense fallback={<ComponentLoader variant="card" />}>
+                <ExpectedExpenses />
+              </Suspense>
+            </div>
+            <div className="lg:col-span-4">
+              <Suspense fallback={<ComponentLoader variant="card" />}>
+                <ExpectedIncome />
+              </Suspense>
             </div>
           </div>
-
-          {/* 3. Full Width Financial Section */}
-          {/* <div className="mb-8">
-            <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
-              <FinancialCheckPoints />
-            </Suspense>
-          </div> */}
-
-          {/* 4. Goals & Streaks - 50/50 Split */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
-              <Goals />
-            </Suspense>
-            <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
-              <OnGoingStreaks />
-            </Suspense>
-          </div>
-
-          {/* 5. Additional Components */}
-          {/* <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            <Suspense fallback={<ComponentLoader variant="card" />}>
-              <Mood />
-            </Suspense>
-            <Suspense fallback={<ComponentLoader variant="card" />}>
-              <JournalMemory />
-            </Suspense>
-          </div> */}
-
-          {/* 6. Bottom Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {/* <Suspense fallback={<ComponentLoader variant="card" />}>
-              <MostProductiveDay />
-            </Suspense> */}
-            <div className="flex items-center justify-center">
-              <a
-                href="/1/plans-remaining"
-                className="inline-flex items-center justify-center px-6 py-3 text-base font-medium text-white bg-blue-600 border border-transparent rounded-lg shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
-                style={{
-                  backgroundColor:
-                    theme?.mode === 'dark' ? '#3b82f6' : '#2563eb',
-                }}
-              >
-                See All Remaining Plans
-              </a>
-            </div>
-          </div>
+          */}
         </div>
       </GoalsProvider>
     </IncomeSourcesProvider>

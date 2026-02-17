@@ -30,7 +30,7 @@ import {
   Add,
 } from '@mui/icons-material';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import moment from 'moment';
 import { updateDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
@@ -43,6 +43,7 @@ import ToDoModal from '@/app/components/to-do/todoModal';
 const ImportantTasks = () => {
   const { todos, loading, updateStepStatus } = useTodoContext();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleTask, setRescheduleTask] = useState<Todo | null>(null);
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
@@ -53,24 +54,49 @@ const ImportantTasks = () => {
 
   const PRIORITY_ORDER = { critical: 0, urgent: 1, routine: 2 };
 
-  // Filter and sort todos for display
-  const filteredTasks = todos
-    .filter((t) => {
-      const due = moment(t.dueDate);
-      const today = moment().startOf('day');
-      const rangeEnd = moment().add(2, 'days').endOf('day');
-      return (
-        t.status !== 'completed' && due.isBetween(today, rangeEnd, 'day', '[]')
-      );
-    })
-    .sort((a, b) => {
-      const dueA = moment(a.dueDate);
-      const dueB = moment(b.dueDate);
-      return (
-        PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
-        dueA.diff(dueB)
-      );
-    });
+  // Generate 5 dates starting from today (same as Schedules)
+  const generateDates = () => {
+    const dates = [] as { date: string; day: string; fullDate: string }[];
+    const today = new Date();
+    for (let i = 0; i < 5; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push({
+        date: date.getDate().toString(),
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        fullDate: date.toISOString().split('T')[0],
+      });
+    }
+    return dates;
+  };
+
+  const dates = useMemo(() => generateDates(), []);
+
+  // Set initial selected date to today
+  useEffect(() => {
+    if (dates.length > 0) setSelectedDate(dates[0].fullDate);
+  }, [dates]);
+
+  // Filter and sort todos for display based on selectedDate (today + next 4 days)
+  const filteredTasks = useMemo(() => {
+    if (!selectedDate) return [] as Todo[];
+    const selectedStart = moment(selectedDate).startOf('day');
+    const selectedEnd = moment(selectedDate).endOf('day');
+
+    return todos
+      .filter((t) => {
+        const due = moment(t.dueDate);
+        return t.status !== 'completed' && due.isBetween(selectedStart, selectedEnd, 'day', '[]');
+      })
+      .sort((a, b) => {
+        const dueA = moment(a.dueDate);
+        const dueB = moment(b.dueDate);
+        return (
+          PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+          dueA.diff(dueB)
+        );
+      });
+  }, [todos, selectedDate]);
 
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
@@ -204,40 +230,7 @@ const ImportantTasks = () => {
     );
   }
 
-  if (filteredTasks.length === 0) {
-    return (
-      <Box className="p-4 flex flex-col items-center justify-center min-h-64">
-        <Typography variant="h6" fontWeight="bold" className="mb-4 text-center">
-          📋 No Tasks Yet
-        </Typography>
-        <Typography
-          variant="body2"
-          color="textSecondary"
-          className="mb-6 text-center"
-        >
-          Create your first task to get started!
-        </Typography>
-        <Button
-          variant="contained"
-          size="large"
-          startIcon={<Add />}
-          onClick={() => setTodoModalOpen(true)}
-          sx={{
-            px: 4,
-            py: 1.5,
-            fontSize: '1.1rem',
-          }}
-        >
-          Create New Task
-        </Button>
-        <ToDoModal
-          open={todoModalOpen}
-          onClose={() => setTodoModalOpen(false)}
-        />
-      </Box>
-    );
-  }
-
+  
   return (
     <Box className="p-4">
       <Box className="flex justify-between items-center mb-3">
@@ -254,256 +247,329 @@ const ImportantTasks = () => {
         </Button>
       </Box>
 
-      <Stack spacing={2}>
-        {filteredTasks.slice(0, 5).map((task) => (
-          <Fade in={fadeOutId !== task.id} timeout={400} key={task.id}>
-            <Card className="rounded-xl shadow-sm hover:shadow-md transition">
-              <CardContent>
-                <Box className="flex justify-between items-start gap-2">
-                  <Box className="flex items-center gap-2">
-                    {task.workStarted && (
-                      <Box
-                        sx={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: '50%',
-                          bgcolor: 'success.main',
-                          boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)',
-                          animation: 'pulse 1.2s infinite',
-                          '@keyframes pulse': {
-                            '0%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)' },
-                            '70%': {
-                              boxShadow: '0 0 0 8px rgba(34,197,94, 0)',
+      {/* Date Picker (cloned from Schedules) - Always visible with professional light blue theme */}
+      <Box display="flex" justifyContent="center" mb={2}>
+        <Box display="flex" alignItems="center" gap={1}>
+          {dates.map((dateInfo) => {
+            const isSelected = selectedDate === dateInfo.fullDate;
+            return (
+              <Box
+                key={dateInfo.fullDate}
+                onClick={() => setSelectedDate(dateInfo.fullDate)}
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 48,
+                  height: 64,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease-in-out',
+                  backgroundColor: isSelected ? '#bae6fd' : '#e0f2fe', // selected: sky-200, default: sky-100
+                  border: `1px solid ${isSelected ? '#7dd3fc' : '#bae6fd'}`, // subtle border
+                  boxShadow: isSelected ? 'inset 0 0 0 1px #38bdf8' : 'none',
+                  '&:hover': {
+                    backgroundColor: isSelected ? '#7dd3fc' : '#bae6fd', // hover: sky-300/200
+                  },
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ fontWeight: 700, color: '#0c4a6e' }}
+                >
+                  {dateInfo.date}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ fontSize: '0.7rem', color: '#0369a1' }}
+                >
+                  {dateInfo.day}
+                </Typography>
+              </Box>
+            );
+          })}
+        </Box>
+      </Box>
+
+      {filteredTasks.length === 0 ? (
+        <Box className="p-4 flex flex-col items-center justify-center min-h-64">
+          <Typography variant="h6" fontWeight="bold" className="mb-4 text-center">
+            📋 No Tasks Yet
+          </Typography>
+          <Typography
+            variant="body2"
+            color="textSecondary"
+            className="mb-6 text-center"
+          >
+            Create your first task to get started!
+          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={<Add />}
+            onClick={() => setTodoModalOpen(true)}
+            sx={{
+              px: 4,
+              py: 1.5,
+              fontSize: '1.1rem',
+            }}
+          >
+            Create New Task
+          </Button>
+        </Box>
+      ) : (
+        <Stack spacing={2}>
+          {filteredTasks.slice(0, 5).map((task) => (
+            <Fade in={fadeOutId !== task.id} timeout={400} key={task.id}>
+              <Card className="rounded-xl shadow-sm hover:shadow-md transition">
+                <CardContent>
+                  <Box className="flex justify-between items-start gap-2">
+                    <Box className="flex items-center gap-2">
+                      {task.workStarted && (
+                        <Box
+                          sx={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            bgcolor: 'success.main',
+                            boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)',
+                            animation: 'pulse 1.2s infinite',
+                            '@keyframes pulse': {
+                              '0%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)' },
+                              '70%': {
+                                boxShadow: '0 0 0 8px rgba(34,197,94, 0)',
+                              },
+                              '100%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0)' },
                             },
-                            '100%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0)' },
-                          },
-                        }}
-                      />
-                    )}
-                    <Link href={`/to-do/${task.id}`}>
-                      <Typography variant="subtitle1" fontWeight="medium">
-                        {task?.title}
-                      </Typography>
-                    </Link>
+                          }}
+                        />
+                      )}
+                      <Link href={`/to-do/${task.id}`}>
+                        <Typography variant="subtitle1" fontWeight="medium">
+                          {task?.title}
+                        </Typography>
+                      </Link>
+                    </Box>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      sx={{ display: { xs: 'none', sm: 'flex' } }}
+                    >
+                      <Tooltip
+                        title={
+                          expanded.has(task.id!) ? 'Hide steps' : 'Show steps'
+                        }
+                      >
+                        <IconButton
+                          size="small"
+                          onClick={() => toggleExpanded(task.id)}
+                        >
+                          {expanded.has(task.id!) ? (
+                            <ExpandLess fontSize="small" />
+                          ) : (
+                            <ExpandMore fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip
+                        title={task.workStarted ? 'Stop Work' : 'Work Start'}
+                      >
+                        <IconButton
+                          size="small"
+                          onClick={() => toggleWorkStarted(task)}
+                        >
+                          {task.workStarted ? (
+                            <Pause fontSize="small" />
+                          ) : (
+                            <PlayArrow fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Reschedule">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleReschedule(task)}
+                        >
+                          <Event fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Mark as done">
+                        <IconButton
+                          size="small"
+                          disabled={completingId === task.id}
+                          onClick={() => markCompleted(task)}
+                        >
+                          {completingId === task.id ? (
+                            <CircularProgress size={18} />
+                          ) : (
+                            <CheckCircleOutline fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                   </Box>
+
                   <Stack
                     direction="row"
                     spacing={1}
-                    sx={{ display: { xs: 'none', sm: 'flex' } }}
+                    mb={1.5}
+                    mt={0.5}
+                    pl={1}
+                    flexWrap="wrap"
+                    alignItems="center"
                   >
-                    <Tooltip
-                      title={
-                        expanded.has(task.id!) ? 'Hide steps' : 'Show steps'
-                      }
-                    >
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleExpanded(task.id)}
-                      >
-                        {expanded.has(task.id!) ? (
-                          <ExpandLess fontSize="small" />
-                        ) : (
-                          <ExpandMore fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip
-                      title={task.workStarted ? 'Stop Work' : 'Work Start'}
-                    >
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleWorkStarted(task)}
-                      >
-                        {task.workStarted ? (
-                          <Pause fontSize="small" />
-                        ) : (
-                          <PlayArrow fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Reschedule">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleReschedule(task)}
-                      >
-                        <Event fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Mark as done">
-                      <IconButton
-                        size="small"
-                        disabled={completingId === task.id}
-                        onClick={() => markCompleted(task)}
-                      >
-                        {completingId === task.id ? (
-                          <CircularProgress size={18} />
-                        ) : (
-                          <CheckCircleOutline fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-                </Box>
-
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  mb={1.5}
-                  mt={0.5}
-                  pl={1}
-                  flexWrap="wrap"
-                  alignItems="center"
-                >
-                  <Chip
-                    size="small"
-                    label={`Due: ${moment(task.dueDate).format('MMM D')}`}
-                    variant="outlined"
-                  />
-                  <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-                  <Chip
-                    size="small"
-                    label={task.priority.toUpperCase()}
-                    color={
-                      task.priority === 'critical'
-                        ? 'error'
-                        : task.priority === 'urgent'
-                          ? 'warning'
-                          : 'success'
-                    }
-                    variant={
-                      task.priority === 'routine' ? 'outlined' : 'filled'
-                    }
-                  />
-                  <Chip
-                    size="small"
-                    label={task.status.replace('_', ' ')}
-                    variant="outlined"
-                  />
-                  {/* Show overall task assignee for quick glance */}
-                  {task.assignee && (
                     <Chip
                       size="small"
-                      label={task.assignee}
+                      label={`Due: ${moment(task.dueDate).format('MMM D')}`}
                       variant="outlined"
-                      sx={{ ml: 0.5, fontWeight: 600 }}
                     />
-                  )}
-                </Stack>
-
-                {/* Mobile action bar (bottom) */}
-                <Box
-                  mt={1}
-                  sx={{ display: { xs: 'flex', sm: 'none' } }}
-                  className="justify-end"
-                >
-                  <Stack direction="row" spacing={1}>
-                    <Tooltip
-                      title={
-                        expanded.has(task.id!) ? 'Hide steps' : 'Show steps'
+                    <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+                    <Chip
+                      size="small"
+                      label={task.priority.toUpperCase()}
+                      color={
+                        task.priority === 'critical'
+                          ? 'error'
+                          : task.priority === 'urgent'
+                            ? 'warning'
+                            : 'success'
                       }
-                    >
-                      <IconButton
+                      variant={
+                        task.priority === 'routine' ? 'outlined' : 'filled'
+                      }
+                    />
+                    <Chip
+                      size="small"
+                      label={task.status.replace('_', ' ')}
+                      variant="outlined"
+                    />
+                    {/* Show overall task assignee for quick glance */}
+                    {task.assignee && (
+                      <Chip
                         size="small"
-                        onClick={() => toggleExpanded(task.id)}
-                      >
-                        {expanded.has(task.id!) ? (
-                          <ExpandLess fontSize="small" />
-                        ) : (
-                          <ExpandMore fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip
-                      title={task.workStarted ? 'Stop Work' : 'Work Start'}
-                    >
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleWorkStarted(task)}
-                      >
-                        {task.workStarted ? (
-                          <Pause fontSize="small" />
-                        ) : (
-                          <PlayArrow fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Reschedule">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleReschedule(task)}
-                      >
-                        <Event fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Mark as done">
-                      <IconButton
-                        size="small"
-                        disabled={completingId === task.id}
-                        onClick={() => markCompleted(task)}
-                      >
-                        {completingId === task.id ? (
-                          <CircularProgress size={18} />
-                        ) : (
-                          <CheckCircleOutline fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
+                        label={task.assignee}
+                        variant="outlined"
+                        sx={{ ml: 0.5, fontWeight: 600 }}
+                      />
+                    )}
                   </Stack>
-                </Box>
 
-                {/* Steps (collapsible) */}
-                <Collapse
-                  in={expanded.has(task.id!)}
-                  timeout="auto"
-                  unmountOnExit
-                >
-                  <Box className="pl-2 mt-1">
-                    {task.steps?.map((step, idx) => (
-                      <Box key={idx} className="flex items-start gap-2 my-1">
+                  {/* Mobile action bar (bottom) */}
+                  <Box
+                    mt={1}
+                    sx={{ display: { xs: 'flex', sm: 'none' } }}
+                    className="justify-end"
+                  >
+                    <Stack direction="row" spacing={1}>
+                      <Tooltip
+                        title={
+                          expanded.has(task.id!) ? 'Hide steps' : 'Show steps'
+                        }
+                      >
                         <IconButton
                           size="small"
-                          onClick={() => toggleStepStatus(task, idx)}
+                          onClick={() => toggleExpanded(task.id)}
                         >
-                          {step.status === 'completed' ? (
-                            <CheckCircle
-                              className="text-green-500"
-                              fontSize="small"
-                            />
+                          {expanded.has(task.id!) ? (
+                            <ExpandLess fontSize="small" />
                           ) : (
-                            <RadioButtonUnchecked
-                              className="text-gray-400"
-                              fontSize="small"
-                            />
+                            <ExpandMore fontSize="small" />
                           )}
                         </IconButton>
-                        <Typography
-                          variant="body2"
-                          className={
-                            step.status === 'completed'
-                              ? 'line-through text-gray-400'
-                              : ''
-                          }
-                        >
-                          {step.text}
-                        </Typography>
-                      </Box>
-                    ))}
-                    {!task.steps || task.steps.length === 0 ? (
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        className="pl-9"
+                      </Tooltip>
+                      <Tooltip
+                        title={task.workStarted ? 'Stop Work' : 'Work Start'}
                       >
-                        No steps added
-                      </Typography>
-                    ) : null}
+                        <IconButton
+                          size="small"
+                          onClick={() => toggleWorkStarted(task)}
+                        >
+                          {task.workStarted ? (
+                            <Pause fontSize="small" />
+                          ) : (
+                            <PlayArrow fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Reschedule">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleReschedule(task)}
+                        >
+                          <Event fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Mark as done">
+                        <IconButton
+                          size="small"
+                          disabled={completingId === task.id}
+                          onClick={() => markCompleted(task)}
+                        >
+                          {completingId === task.id ? (
+                            <CircularProgress size={18} />
+                          ) : (
+                            <CheckCircleOutline fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                   </Box>
-                </Collapse>
-              </CardContent>
-            </Card>
-          </Fade>
-        ))}
-      </Stack>
+
+                  {/* Steps (collapsible) */}
+                  <Collapse
+                    in={expanded.has(task.id!)}
+                    timeout="auto"
+                    unmountOnExit
+                  >
+                    <Box className="pl-2 mt-1">
+                      {task.steps?.map((step, idx) => (
+                        <Box key={idx} className="flex items-start gap-2 my-1">
+                          <IconButton
+                            size="small"
+                            onClick={() => toggleStepStatus(task, idx)}
+                          >
+                            {step.status === 'completed' ? (
+                              <CheckCircle
+                                className="text-green-500"
+                                fontSize="small"
+                              />
+                            ) : (
+                              <RadioButtonUnchecked
+                                className="text-gray-400"
+                                fontSize="small"
+                              />
+                            )}
+                          </IconButton>
+                          <Typography
+                            variant="body2"
+                            className={
+                              step.status === 'completed'
+                                ? 'line-through text-gray-400'
+                                : ''
+                            }
+                          >
+                            {step.text}
+                          </Typography>
+                        </Box>
+                      ))}
+                      {!task.steps || task.steps.length === 0 ? (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          className="pl-9"
+                        >
+                          No steps added
+                        </Typography>
+                      ) : null}
+                    </Box>
+                  </Collapse>
+                </CardContent>
+              </Card>
+            </Fade>
+          ))}
+        </Stack>
+      )}
 
       <Box mt={2} display="flex" justifyContent="flex-end">
         <Link href="/to-do" style={{ textDecoration: 'none' }}>

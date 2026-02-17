@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useEffect, useState, useCallback } from 'react';
-import { Box, Typography, Skeleton } from '@mui/material';
+import { Box, Skeleton } from '@mui/material';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import ProductivityEditor from '../global/QuickEditor';
@@ -19,7 +19,7 @@ const HomepageHeader = memo(() => {
     totalTasks: 0,
   });
   const [loading, setLoading] = useState(true);
-
+  console.info(headerData);
   // Populate header data from `user` directly to avoid extra Firestore requests
   const fetchHeaderData = useCallback(() => {
     const getFirstName = () => {
@@ -40,13 +40,6 @@ const HomepageHeader = memo(() => {
     fetchHeaderData();
   }, [fetchHeaderData]);
 
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  };
-
   return (
     <Box className="w-full mb-6">
       <div
@@ -60,31 +53,9 @@ const HomepageHeader = memo(() => {
         }}
       >
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 lg:gap-6">
-          {/* Greeting Section */}
+          {/* Greeting Section hidden */}
           <div className="flex-1 lg:w-[40%]">
-            {loading ? (
-              <div className="space-y-2">
-                <Skeleton variant="text" width={200} height={32} />
-                <Skeleton variant="text" width={160} height={20} />
-              </div>
-            ) : (
-              <div>
-                <Typography
-                  variant="h4"
-                  sx={{
-                    color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
-                    fontSize: { xs: '1.25rem', sm: '1.5rem', md: '1.75rem' },
-                    lineHeight: 1.2,
-                    mb: 0.5,
-                  }}
-                >
-                  {getGreeting()},{' '}
-                  <span style={{ fontWeight: 'bold' }}>
-                    {headerData.firstName}
-                  </span>
-                </Typography>
-              </div>
-            )}
+            {/* Greeting hidden as requested */}
           </div>
 
           {/* Search Section */}

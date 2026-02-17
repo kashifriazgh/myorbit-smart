@@ -33,6 +33,18 @@ export default function NotesPage() {
   const [notes, setNotes] = useState<QuickNote[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Helpers to format title and preview
+  const getNoteTitle = (content: string) => {
+    const firstLine = (content || '').split('\n')[0].trim();
+    if (!firstLine) return 'Untitled';
+    return firstLine.length > 80 ? firstLine.slice(0, 80) + '…' : firstLine;
+  };
+
+  const getNotePreview = (content: string) => {
+    const text = (content || '').replace(/\s+/g, ' ').trim();
+    return text.length > 140 ? text.slice(0, 140) + '…' : text;
+  };
+
   useEffect(() => {
     const fetchNotes = async () => {
       if (!user?.uid) {
@@ -41,22 +53,26 @@ export default function NotesPage() {
       }
 
       try {
-        const thirtyDaysAgo = moment().subtract(30, 'days').startOf('day').toDate();
-        
+        const thirtyDaysAgo = moment()
+          .subtract(30, 'days')
+          .startOf('day')
+          .toDate();
+
         // Query: filter by userId only (single field - no composite index needed)
         const q = query(
           collection(db, 'notes'),
-          where('userId', '==', user.uid)
+          where('userId', '==', user.uid),
         );
 
         const snapshot = await getDocs(q);
         const fetchedNotes = snapshot.docs
           .map((doc) => {
             const data = doc.data();
-            const createdAt = data.createdAt instanceof Timestamp
-              ? data.createdAt.toDate()
-              : new Date(data.createdAt);
-            
+            const createdAt =
+              data.createdAt instanceof Timestamp
+                ? data.createdAt.toDate()
+                : new Date(data.createdAt);
+
             return {
               ...data,
               id: doc.id,
@@ -65,11 +81,12 @@ export default function NotesPage() {
           })
           // Filter client-side for last 30 days and normalize dates
           .map((note) => {
-            const createdAtDate = note.createdAt instanceof Date 
-              ? note.createdAt 
-              : note.createdAt instanceof Timestamp 
-              ? note.createdAt.toDate() 
-              : new Date(note.createdAt);
+            const createdAtDate =
+              note.createdAt instanceof Date
+                ? note.createdAt
+                : note.createdAt instanceof Timestamp
+                  ? note.createdAt.toDate()
+                  : new Date(note.createdAt);
             return { ...note, createdAt: createdAtDate };
           })
           .filter((note) => note.createdAt >= thirtyDaysAgo)
@@ -112,7 +129,10 @@ export default function NotesPage() {
       >
         <Box display="flex" alignItems="center" gap={2}>
           <Link href="/" style={{ textDecoration: 'none' }}>
-            <Button startIcon={<ArrowBackIcon />} sx={{ color: 'text.primary' }}>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              sx={{ color: 'text.primary' }}
+            >
               Back
             </Button>
           </Link>
@@ -170,21 +190,38 @@ export default function NotesPage() {
               >
                 <CardContent>
                   <Typography
-                    variant="body1"
-                    sx={{
-                      fontSize: '1rem',
-                      fontWeight: 500,
-                      lineHeight: 1.7,
-                      mb: 1,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                      fontFamily:
-                        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                    }}
+                    variant="subtitle1"
+                    sx={{ fontWeight: 700, mb: 0.5 }}
                   >
-                    {note.content}
+                    {getNoteTitle(note.content)}
+                  </Typography>
+                  <Box display="flex" gap={1} alignItems="center" mb={1}>
+                    {note.importance && note.importance !== 'normal' && (
+                      <Chip
+                        size="small"
+                        label={
+                          note.importance === 'most_important'
+                            ? 'Most Important'
+                            : 'Important'
+                        }
+                        color={
+                          note.importance === 'most_important'
+                            ? 'error'
+                            : 'warning'
+                        }
+                        variant="outlined"
+                      />
+                    )}
+                    {note.isArchived && (
+                      <Chip size="small" label="Archived" variant="outlined" />
+                    )}
+                  </Box>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 1 }}
+                  >
+                    {getNotePreview(note.content)}
                   </Typography>
                   <Typography
                     variant="caption"
@@ -202,5 +239,3 @@ export default function NotesPage() {
     </Container>
   );
 }
-
-

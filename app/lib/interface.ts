@@ -651,6 +651,8 @@ export interface QuickNote {
   id?: string;
   userId: string;
   content: string;
+  isArchived?: boolean;
+  importance?: string;
   createdAt: Date | Timestamp;
   updatedAt?: Date | Timestamp;
 }

@@ -18,7 +18,9 @@ import {
   doc,
   getDoc,
   deleteDoc,
+  updateDoc,
   Timestamp,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -44,6 +46,13 @@ export default function NoteDetailPage() {
   // delete states
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // edit states
+  const [editOpen, setEditOpen] = useState(false);
+  const [editContent, setEditContent] = useState('');
+
+  // importance/archive states
+  const [savingMeta, setSavingMeta] = useState(false);
 
   useEffect(() => {
     const fetchNote = async () => {
@@ -71,6 +80,8 @@ export default function NoteDetailPage() {
                 ? data.updatedAt.toDate()
                 : new Date(data.updatedAt)
               : undefined,
+            importance: data.importance ?? 'normal',
+            isArchived: Boolean(data.isArchived),
           };
 
           // ownership check
@@ -184,22 +195,87 @@ export default function NoteDetailPage() {
           </Typography>
         </Box>
 
-        {/* Delete button */}
-        <Button
-          color="error"
-          variant="outlined"
-          startIcon={<Trash2Icon  fontSize="small" />}
-          onClick={() => setDeleteOpen(true)}
-        >
-          Delete
-        </Button>
+        {/* Actions */}
+        <Box display="flex" gap={1}>
+          <Button
+            variant="outlined"
+            onClick={() => {
+              setEditContent(note.content);
+              setEditOpen(true);
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="outlined"
+            color={note.importance === 'most_important' ? 'error' : 'warning'}
+            onClick={async () => {
+              if (!id) return;
+              setSavingMeta(true);
+              try {
+                const toggled =
+                  note.importance === 'normal'
+                    ? 'important'
+                    : note.importance === 'important'
+                      ? 'most_important'
+                      : 'normal';
+                await updateDoc(doc(db, 'notes', id as string), {
+                  importance: toggled,
+                  updatedAt: serverTimestamp(),
+                });
+                setNote((prev) =>
+                  prev ? { ...prev, importance: toggled } : prev,
+                );
+              } finally {
+                setSavingMeta(false);
+              }
+            }}
+            disabled={savingMeta}
+          >
+            {note.importance === 'most_important'
+              ? 'Set Normal'
+              : note.importance === 'important'
+                ? 'Set Most Important'
+                : 'Mark Important'}
+          </Button>
+          <Button
+            variant="outlined"
+            color={note.isArchived ? 'inherit' : 'primary'}
+            onClick={async () => {
+              if (!id) return;
+              setSavingMeta(true);
+              try {
+                const newArchived = !note.isArchived;
+                await updateDoc(doc(db, 'notes', id as string), {
+                  isArchived: newArchived,
+                  updatedAt: serverTimestamp(),
+                });
+                setNote((prev) =>
+                  prev ? { ...prev, isArchived: newArchived } : prev,
+                );
+              } finally {
+                setSavingMeta(false);
+              }
+            }}
+            disabled={savingMeta}
+          >
+            {note.isArchived ? 'Unarchive' : 'Archive'}
+          </Button>
+          <Button
+            color="error"
+            variant="outlined"
+            startIcon={<Trash2Icon fontSize="small" />}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete
+          </Button>
+        </Box>
       </Box>
 
       {/* Content */}
       <Card
         sx={{
-          backgroundColor:
-            customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+          backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
           color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
           minHeight: 400,
         }}
@@ -222,6 +298,53 @@ export default function NoteDetailPage() {
         </CardContent>
       </Card>
 
+      {/* EDIT DIALOG */}
+      <Dialog
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Edit Note</DialogTitle>
+        <DialogContent>
+          <textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            style={{
+              width: '100%',
+              minHeight: 200,
+              padding: 12,
+              fontFamily: 'inherit',
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              if (!id) return;
+              try {
+                await updateDoc(doc(db, 'notes', id as string), {
+                  content: editContent,
+                  updatedAt: serverTimestamp(),
+                });
+                setNote((prev) =>
+                  prev
+                    ? { ...prev, content: editContent, updatedAt: new Date() }
+                    : prev,
+                );
+                setEditOpen(false);
+              } catch (e) {
+                console.error('Failed to update note', e);
+              }
+            }}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* DELETE CONFIRMATION DIALOG */}
       <Dialog
         open={deleteOpen}
@@ -237,10 +360,7 @@ export default function NoteDetailPage() {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button
-            onClick={() => setDeleteOpen(false)}
-            disabled={deleting}
-          >
+          <Button onClick={() => setDeleteOpen(false)} disabled={deleting}>
             Cancel
           </Button>
           <Button
