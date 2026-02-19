@@ -83,7 +83,18 @@ export default function Homepage() {
     );
   }
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="100vh"
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <IncomeSourcesProvider userId={user.uid}>
