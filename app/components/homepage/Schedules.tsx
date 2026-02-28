@@ -60,8 +60,8 @@ const CustomStepIcon: React.FC<{
         color: isTimePassed
           ? 'white'
           : theme?.mode === 'dark'
-          ? '#9ca3af'
-          : '#6b7280',
+            ? '#9ca3af'
+            : '#6b7280',
         fontSize: '12px',
         fontWeight: 'bold',
         border: `2px solid ${
@@ -70,8 +70,8 @@ const CustomStepIcon: React.FC<{
               ? '#3b82f6'
               : '#2563eb'
             : theme?.mode === 'dark'
-            ? '#9ca3af'
-            : '#6b7280'
+              ? '#9ca3af'
+              : '#6b7280'
         }`,
       }}
     >
@@ -88,7 +88,7 @@ const Schedules: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<SchedulesProps | null>(
-    null
+    null,
   );
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
@@ -136,7 +136,7 @@ const Schedules: React.FC = () => {
         try {
           const fetchedSchedules = await getSchedulesByUserAndDate(
             user.uid,
-            selectedDate
+            selectedDate,
           );
           setSchedules(fetchedSchedules);
         } catch (error) {
@@ -166,7 +166,7 @@ const Schedules: React.FC = () => {
             try {
               const fetchedSchedules = await getSchedulesByUserAndDate(
                 user.uid,
-                selectedDate
+                selectedDate,
               );
               setSchedules(fetchedSchedules);
               setSnackbar({
@@ -185,13 +185,13 @@ const Schedules: React.FC = () => {
 
     window.addEventListener(
       'scheduleCreated',
-      handleScheduleCreated as EventListener
+      handleScheduleCreated as EventListener,
     );
 
     return () => {
       window.removeEventListener(
         'scheduleCreated',
-        handleScheduleCreated as EventListener
+        handleScheduleCreated as EventListener,
       );
     };
   }, [selectedDate, user]);
@@ -258,7 +258,7 @@ const Schedules: React.FC = () => {
         console.log('Refreshing schedules for date:', selectedDate);
         const fetchedSchedules = await getSchedulesByUserAndDate(
           user.uid,
-          selectedDate
+          selectedDate,
         );
         console.log('Fetched schedules:', fetchedSchedules);
         setSchedules(fetchedSchedules);
@@ -288,7 +288,7 @@ const Schedules: React.FC = () => {
       if (selectedDate && user) {
         const fetchedSchedules = await getSchedulesByUserAndDate(
           user.uid,
-          selectedDate
+          selectedDate,
         );
         setSchedules(fetchedSchedules);
       }
@@ -359,15 +359,11 @@ const Schedules: React.FC = () => {
               color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
             }}
           >
-            View today&#39;s schedule
+            Make schedule for today
           </Typography>
-          <IconButton
-  size="small"
-  onClick={handleAddSchedule}
->
-  <EditIcon fontSize="small" />
-</IconButton>
-
+          <IconButton size="small" onClick={handleAddSchedule}>
+            <EditIcon fontSize="small" />
+          </IconButton>
         </Box>
 
         {/* Date Picker */}
@@ -392,14 +388,14 @@ const Schedules: React.FC = () => {
                     backgroundColor: isSelected
                       ? '#fbbf24'
                       : theme?.mode === 'dark'
-                      ? '#374151'
-                      : '#f3f4f6',
+                        ? '#374151'
+                        : '#f3f4f6',
                     '&:hover': {
                       backgroundColor: isSelected
                         ? '#f59e0b'
                         : theme?.mode === 'dark'
-                        ? '#4b5563'
-                        : '#e5e7eb',
+                          ? '#4b5563'
+                          : '#e5e7eb',
                     },
                   }}
                 >
@@ -410,8 +406,8 @@ const Schedules: React.FC = () => {
                       color: isSelected
                         ? '#000000'
                         : theme?.mode === 'dark'
-                        ? '#d1d5db'
-                        : '#6b7280',
+                          ? '#d1d5db'
+                          : '#6b7280',
                     }}
                   >
                     {dateInfo.date}
@@ -423,8 +419,8 @@ const Schedules: React.FC = () => {
                       color: isSelected
                         ? '#000000'
                         : theme?.mode === 'dark'
-                        ? '#9ca3af'
-                        : '#9ca3af',
+                          ? '#9ca3af'
+                          : '#9ca3af',
                     }}
                   >
                     {dateInfo.day}
@@ -492,7 +488,7 @@ const Schedules: React.FC = () => {
                         active={active}
                         isTimePassed={isTimePassed(
                           schedule.startTime,
-                          selectedDate
+                          selectedDate,
                         )}
                       >
                         {completed ? '✓' : ''}
@@ -549,7 +545,7 @@ const Schedules: React.FC = () => {
                               height: 20,
                               fontSize: '0.7rem',
                               backgroundColor: getPriorityColor(
-                                schedule.priority || 'low'
+                                schedule.priority || 'low',
                               ),
                               color: 'white',
                             }}

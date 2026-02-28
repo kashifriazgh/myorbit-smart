@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  IconButton,
 } from '@mui/material';
 import {
   doc,
@@ -31,9 +32,9 @@ import moment from 'moment-timezone';
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import NoteIcon from '@mui/icons-material/Note';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 
-// Lucide icon
-import Trash2Icon from '@mui/icons-material/Delete';
 export default function NoteDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -43,15 +44,12 @@ export default function NoteDetailPage() {
   const [note, setNote] = useState<QuickNote | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // delete states
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // edit states
   const [editOpen, setEditOpen] = useState(false);
   const [editContent, setEditContent] = useState('');
 
-  // importance/archive states
   const [savingMeta, setSavingMeta] = useState(false);
 
   useEffect(() => {
@@ -84,7 +82,6 @@ export default function NoteDetailPage() {
             isArchived: Boolean(data.isArchived),
           };
 
-          // ownership check
           if (fetchedNote.userId !== user.uid) {
             router.push('/notes');
             return;
@@ -120,7 +117,6 @@ export default function NoteDetailPage() {
     }
   };
 
-  /* ---------------- LOADING ---------------- */
   if (loading) {
     return (
       <Container maxWidth="md" sx={{ py: 4 }}>
@@ -136,7 +132,6 @@ export default function NoteDetailPage() {
     );
   }
 
-  /* ---------------- NOT FOUND ---------------- */
   if (!note) {
     return (
       <Container maxWidth="md" sx={{ py: 4 }}>
@@ -167,45 +162,78 @@ export default function NoteDetailPage() {
     );
   }
 
-  /* ---------------- MAIN ---------------- */
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       {/* Header */}
+      <Box mb={3}>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => router.push('/notes')}
+          sx={{ color: 'text.primary', mb: 1 }}
+        >
+          Back to Notes
+        </Button>
+
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: 'block', fontSize: '0.875rem' }}
+        >
+          {moment(note.createdAt).format('MMMM D, YYYY [at] h:mm A')}
+        </Typography>
+      </Box>
+
+      {/* Content */}
+      <Card
+        sx={{
+          backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+          color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+          minHeight: 400,
+        }}
+      >
+        <CardContent sx={{ p: 4 }}>
+          <Typography
+            variant="body1"
+            sx={{
+              fontSize: '1.125rem',
+              fontWeight: 500,
+              lineHeight: 1.8,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontFamily:
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            }}
+          >
+            {note.content}
+          </Typography>
+        </CardContent>
+      </Card>
+
+      {/* ACTION BUTTONS MOVED TO BOTTOM */}
       <Box
-        mb={3}
+        mt={3}
         display="flex"
-        alignItems="center"
+        flexWrap="wrap"
+        gap={1}
         justifyContent="space-between"
       >
-        <Box>
-          <Button
-            startIcon={<ArrowBackIcon />}
-            onClick={() => router.push('/notes')}
-            sx={{ color: 'text.primary', mb: 1 }}
-          >
-            Back to Notes
-          </Button>
-
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ display: 'block', fontSize: '0.875rem' }}
-          >
-            {moment(note.createdAt).format('MMMM D, YYYY [at] h:mm A')}
-          </Typography>
-        </Box>
-
-        {/* Actions */}
         <Box display="flex" gap={1}>
-          <Button
-            variant="outlined"
+          <IconButton
+            color="primary"
             onClick={() => {
               setEditContent(note.content);
               setEditOpen(true);
             }}
           >
-            Edit
-          </Button>
+            <EditIcon />
+          </IconButton>
+
+          <IconButton color="error" onClick={() => setDeleteOpen(true)}>
+            <DeleteIcon />
+          </IconButton>
+        </Box>
+
+        <Box display="flex" gap={1} flexWrap="wrap">
           <Button
             variant="outlined"
             color={note.importance === 'most_important' ? 'error' : 'warning'}
@@ -238,6 +266,7 @@ export default function NoteDetailPage() {
                 ? 'Set Most Important'
                 : 'Mark Important'}
           </Button>
+
           <Button
             variant="outlined"
             color={note.isArchived ? 'inherit' : 'primary'}
@@ -261,42 +290,8 @@ export default function NoteDetailPage() {
           >
             {note.isArchived ? 'Unarchive' : 'Archive'}
           </Button>
-          <Button
-            color="error"
-            variant="outlined"
-            startIcon={<Trash2Icon fontSize="small" />}
-            onClick={() => setDeleteOpen(true)}
-          >
-            Delete
-          </Button>
         </Box>
       </Box>
-
-      {/* Content */}
-      <Card
-        sx={{
-          backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-          color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-          minHeight: 400,
-        }}
-      >
-        <CardContent sx={{ p: 4 }}>
-          <Typography
-            variant="body1"
-            sx={{
-              fontSize: '1.125rem',
-              fontWeight: 500,
-              lineHeight: 1.8,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              fontFamily:
-                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-            }}
-          >
-            {note.content}
-          </Typography>
-        </CardContent>
-      </Card>
 
       {/* EDIT DIALOG */}
       <Dialog
@@ -345,7 +340,7 @@ export default function NoteDetailPage() {
         </DialogActions>
       </Dialog>
 
-      {/* DELETE CONFIRMATION DIALOG */}
+      {/* DELETE DIALOG */}
       <Dialog
         open={deleteOpen}
         onClose={() => !deleting && setDeleteOpen(false)}
