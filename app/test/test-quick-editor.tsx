@@ -543,7 +543,7 @@ export default function ProductivityEditor({
   //   }
 
   //   setQuickSaving(true);
-  //   setQuickSaveError(null);
+  setQuickSaveError(null);
   //   setQuickSaveMessage(null);
 
   //   try {
@@ -691,7 +691,7 @@ export default function ProductivityEditor({
             }}
           >
             <Tab label="Quick Notes" value="notes" />
-            {/* <Tab label="Quick Editor" value="editor" /> */}
+            <Tab label="Quick Editor" value="editor" />
           </Tabs>
 
           {/* Quick Notes Tab */}
