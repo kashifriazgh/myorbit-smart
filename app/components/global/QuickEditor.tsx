@@ -543,7 +543,7 @@ export default function ProductivityEditor({
   //   }
 
   //   setQuickSaving(true);
-  //   setQuickSaveError(null);
+    setQuickSaveError(null);
   //   setQuickSaveMessage(null);
 
   //   try {
