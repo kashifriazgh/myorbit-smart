@@ -12,6 +12,7 @@ import SkeletonLoader from './components/global/SkeletonLoader';
 import Goals from './components/homepage/Goals';
 import Schedules from './components/homepage/Schedules';
 import DailyCheckouts from './components/homepage/DailyCheckouts';
+import QuickLinks from './components/homepage/QuickLinks';
 
 // Lazy load components
 const ImportantTasks = lazy(
@@ -134,9 +135,7 @@ export default function Homepage() {
           </div>
 
           <div className="w-full mb-8 p-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-center">
-            <span className="text-lg font-semibold text-slate-700 dark:text-slate-200">
-              Quick Links (Coming Soon)
-            </span>
+            <QuickLinks />
           </div>
 
           {!focusToday && (

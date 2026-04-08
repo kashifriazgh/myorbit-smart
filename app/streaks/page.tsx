@@ -9,12 +9,18 @@ import StreaksList from '../components/streaks/StreaksList';
 
 export default function Streaks() {
   const { theme } = useCustomTheme();
+  const [open, setOpen] = React.useState(false);
 
   if (!theme) return null;
 
   // Function called when streak is saved
   const handleSave = (data: StreakProps) => {
     console.log('✅ New Streak Saved:', data);
+    setOpen(false);
+  };
+
+  const handleClose = () => {
+    setOpen(false);
   };
 
   return (
@@ -33,7 +39,7 @@ export default function Streaks() {
         🔥 My Streaks
       </Typography>
       {/* Modal */}
-      <CreateStreakForm onSave={handleSave} />
+      <CreateStreakForm open={open} onClose={handleClose} onSave={handleSave} />
       <StreaksList />
     </Box>
   );

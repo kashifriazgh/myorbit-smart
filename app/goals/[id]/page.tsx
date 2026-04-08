@@ -115,6 +115,18 @@ const GoalDetailInner: React.FC = () => {
   const [newMilestoneTargetValue, setNewMilestoneTargetValue] = useState('');
 
   const goal = goals.find((g) => g.id === params.id);
+
+  // Detect if this is the first time viewing this goal (per user, per browser)
+  const [firstView, setFirstView] = useState(false);
+  useEffect(() => {
+    if (goal && goal.id) {
+      const viewedKey = `goal_viewed_${goal.id}`;
+      if (!localStorage.getItem(viewedKey)) {
+        setFirstView(true);
+        localStorage.setItem(viewedKey, '1');
+      }
+    }
+  }, [goal]);
   const typeColor = useMemo(
     () => (goal ? getGoalTypeColor(goal.type) : '#6B7280'),
     [goal?.type],
@@ -280,7 +292,53 @@ const GoalDetailInner: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Main Card Container */}
+      {/* Offer AI suggestion if first time viewing */}
+      {firstView && (
+        <Box
+          sx={{
+            mb: 3,
+            p: 2,
+            borderRadius: '1rem',
+            background: theme?.mode === 'dark' ? '#334155' : '#e0f2fe',
+            border: `1px solid ${theme?.mode === 'dark' ? '#475569' : '#38bdf8'}`,
+          }}
+        >
+          <Typography
+            variant="subtitle1"
+            sx={{
+              fontWeight: 600,
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#0ea5e9',
+              mb: 1,
+            }}
+          >
+            Welcome! Want to improve this goal?
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              color: theme?.mode === 'dark' ? '#cbd5e1' : '#0369a1',
+              mb: 2,
+            }}
+          >
+            We can analyze your goal and suggest improvements or milestones
+            using AI.
+          </Typography>
+          <Button
+            variant="contained"
+            sx={{
+              background: theme?.mode === 'dark' ? '#38bdf8' : '#0ea5e9',
+              color: '#fff',
+              fontWeight: 600,
+            }}
+            onClick={() => {
+              // TODO: Open AI suggestion modal or trigger API
+              alert('AI suggestion feature coming soon!');
+            }}
+          >
+            Analyze & Suggest with AI
+          </Button>
+        </Box>
+      )}
       <Box
         sx={{
           maxWidth: 'md',

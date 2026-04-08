@@ -11,7 +11,6 @@ import {
   Button,
   Stack,
   CircularProgress,
-  
   InputAdornment,
   Chip,
   useMediaQuery,
@@ -35,6 +34,7 @@ import Link from 'next/link';
 import { Timestamp } from 'firebase/firestore';
 import 'keen-slider/keen-slider.min.css';
 import { useKeenSlider } from 'keen-slider/react';
+import StreaksModal from '@/app/components/streaks/StreaksModal';
 
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -74,7 +74,6 @@ function getTimeDifferenceInMinutes(reminderTime: string | undefined): number {
 }
 
 const OnGoingStreaks = () => {
-  
   const { theme } = useCustomTheme();
   const { streaks, markStreakDone, updateRemarks } = useStreaks();
   const { user } = useAuth();
@@ -87,6 +86,7 @@ const OnGoingStreaks = () => {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
+  const [streaksModalOpen, setStreaksModalOpen] = useState(false);
 
   const lastSavedRef = useRef<string>('');
   const isSavingRef = useRef<boolean>(false);
@@ -141,13 +141,15 @@ const OnGoingStreaks = () => {
 
     let cancelled = false;
     isSavingRef.current = true;
-    
+
     (async () => {
       try {
         setSavingProgress(true);
         // Access streaks directly from closure - don't include in dependencies
         // to prevent infinite loop when context updates after save
-        const currentStreak = streaks.find((s) => s.userId === user?.uid && s.id === selectedStreakId);
+        const currentStreak = streaks.find(
+          (s) => s.userId === user?.uid && s.id === selectedStreakId,
+        );
         if (currentStreak) {
           await updateRemarks(currentStreak, debouncedProgress);
           if (!cancelled) {
@@ -256,7 +258,7 @@ const OnGoingStreaks = () => {
 
         // Move to next streak if available
         const currentIndex = filteredStreaks.findIndex(
-          (s) => s.id === targetStreakId
+          (s) => s.id === targetStreakId,
         );
         if (currentIndex !== -1) {
           if (currentIndex < filteredStreaks.length - 1) {
@@ -296,12 +298,7 @@ const OnGoingStreaks = () => {
     return theme?.mode === 'dark' ? '#64748b' : '#94a3b8'; // Gray - later
   };
 
-  const StreakCard = ({
-    streak,
-  }: {
-    streak: StreakProps;
-    index: number;
-  }) => {
+  const StreakCard = ({ streak }: { streak: StreakProps; index: number }) => {
     const reminderTime = streak.reminder?.time || streak.reminderTime;
     const timeFormatted = reminderTime
       ? moment(reminderTime, 'HH:mm').format('hh:mm A')
@@ -441,7 +438,7 @@ const OnGoingStreaks = () => {
                   overflow: 'hidden',
                 }}
                 title={`Last progress (${moment(
-                  convertToDate(lastProgressEntry.date)
+                  convertToDate(lastProgressEntry.date),
                 ).format('MMM DD')}): ${lastProgressEntry.progress}`}
               >
                 Last: {lastProgressEntry.progress}
@@ -527,17 +524,22 @@ const OnGoingStreaks = () => {
         >
           🔥 Today&#39;s Streaks
         </Typography>
-        <Link
-          href="/streaks"
-          style={{
+        <Button
+          variant="outlined"
+          onClick={() => setStreaksModalOpen(true)}
+          sx={{
             fontSize: '0.875rem',
             color: theme?.mode === 'dark' ? '#60a5fa' : '#2563eb',
-            textDecoration: 'none',
+            borderColor: theme?.mode === 'dark' ? '#60a5fa' : '#2563eb',
+            textTransform: 'none',
+            '&:hover': {
+              borderColor: theme?.mode === 'dark' ? '#93c5fd' : '#1d4ed8',
+              backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#eff6ff',
+            },
           }}
-          className="hover:underline"
         >
-          See all
-        </Link>
+          + Add Streak
+        </Button>
       </Box>
 
       {filteredStreaks.length === 0 ? (
@@ -637,6 +639,21 @@ const OnGoingStreaks = () => {
           )}
         </>
       )}
+
+      {/* See all link at bottom */}
+      <Box sx={{ mt: 3, textAlign: 'center' }}>
+        <Link
+          href="/streaks"
+          style={{
+            fontSize: '0.875rem',
+            color: theme?.mode === 'dark' ? '#60a5fa' : '#2563eb',
+            textDecoration: 'none',
+          }}
+          className="hover:underline"
+        >
+          View all streaks
+        </Link>
+      </Box>
 
       {/* Progress Modal */}
       <Modal
@@ -771,6 +788,15 @@ const OnGoingStreaks = () => {
           </Stack>
         </Box>
       </Modal>
+
+      {/* Streaks Creation Modal */}
+      <StreaksModal
+        open={streaksModalOpen}
+        onClose={() => setStreaksModalOpen(false)}
+        onSave={() => {
+          setStreaksModalOpen(false);
+        }}
+      />
     </Card>
   );
 };

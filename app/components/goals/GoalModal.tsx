@@ -21,14 +21,12 @@ import {
   Switch,
   useMediaQuery,
 } from '@mui/material';
+import { useRouter } from 'next/navigation';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import {
   Close,
-  Add,
-  Remove,
-  Delete,
   TrendingUp,
   FitnessCenter,
   School,
@@ -42,7 +40,7 @@ import {
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
-import { Goal, GoalType, GoalPriority, GoalStep } from '../../lib/interface';
+import { Goal, GoalType, GoalPriority } from '../../lib/interface';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Timestamp } from 'firebase/firestore';
 // NLP
@@ -175,6 +173,8 @@ const GOAL_UNITS_CONFIG: Record<
 
 const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
   const { addGoal, updateGoal } = useGoals();
+
+  const router = useRouter();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const isMobile = useMediaQuery('(max-width:600px)');
@@ -209,51 +209,22 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
     dueDate: normalizeToDate(goal?.dueDate),
     overallTargetValue: (goal?.overallTargetValue || '') as number | '',
     overallTargetUnit: goal?.overallTargetUnit || defaultUnit,
-    steps: goal?.steps || ([] as GoalStep[]),
     pinned: goal?.pinned || false,
   });
 
-  const [newStep, setNewStep] = useState({
-    title: '',
-    description: '',
-    targetValue: '',
-  });
-
-  const [stepsMode, setStepsMode] = useState<'auto' | 'manual'>('auto');
-  const [milestonesCount, setMilestonesCount] = useState<number>(3);
-  const [milestonesUserAdjusted, setMilestonesUserAdjusted] =
-    useState<boolean>(false);
-  const [touched, setTouched] = useState({
+  const [touched] = useState({
     overallTargetValue: false,
     overallTargetUnit: false,
     dueDate: false,
   });
 
-  const hasTitle = formData.title.trim().length > 0;
-  const hasTargetValue =
-    formData.overallTargetValue !== '' &&
-    formData.overallTargetValue !== null &&
-    formData.overallTargetValue !== undefined;
-  const hasTargetDate = Boolean(formData.dueDate);
-  const isMilestonesEnabled = hasTitle && hasTargetValue && hasTargetDate;
+  const [milestonesUserAdjusted, setMilestonesCount] = useState<
+    number | boolean
+  >(false);
 
-  // Auto-set steps mode based on targetValue
-  useMemo(() => {
-    if (hasTargetValue) {
-      setStepsMode('auto');
-    } else {
-      setStepsMode('manual');
-    }
-  }, [hasTargetValue]);
+  // ...existing code...
 
   const handleInputChange = (field: string, value: unknown) => {
-    // mark fields as user-touched to prevent auto-override on future title blur
-    if (field === 'overallTargetValue')
-      setTouched((p) => ({ ...p, overallTargetValue: true }));
-    if (field === 'overallTargetUnit')
-      setTouched((p) => ({ ...p, overallTargetUnit: true }));
-    if (field === 'dueDate') setTouched((p) => ({ ...p, dueDate: true }));
-
     setFormData((prev) => {
       const next = { ...prev, [field]: value };
       // When type changes, update unit to the default for that type
@@ -263,18 +234,6 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
       }
       return next;
     });
-
-    // Auto-calc timeline when dueDate changes
-    if (field === 'dueDate' && value) {
-      const tl = computeTimelineFromDueDate(value as Date);
-      setFormData((prev) => ({ ...prev, timeline: tl }));
-      if (!milestonesUserAdjusted) {
-        try {
-          const s = suggestMilestonesBySpan(value as Date);
-          setMilestonesCount(s);
-        } catch {}
-      }
-    }
   };
 
   // Helpers
@@ -566,83 +525,13 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
     if (days >= 7) return 2;
     return 2;
   }
-  function computeTimelineFromDueDate(due: Date): string {
-    const now = new Date();
-    // rules: if day <=12 => count current month as whole month; if 13-23 => half month; if >23 => exclude
-    const day = now.getDate();
-    const end = endOfMonth(due);
-    // months difference inclusive by month boundaries
-    let months =
-      (end.getFullYear() - now.getFullYear()) * 12 +
-      (end.getMonth() - now.getMonth()) +
-      1; // inclusive
-    if (day > 23)
-      months -= 1; // don't count current month
-    else if (day >= 13) return `${Math.max(0, months - 1)}.5 months`;
-    return `${Math.max(0, months)} months`;
-  }
-
-  const handleAddStep = () => {
-    if (!newStep.title.trim()) return;
-
-    const step: GoalStep = {
-      id: Date.now().toString(),
-      title: newStep.title,
-      description: newStep.description || undefined,
-      targetValue: newStep.targetValue
-        ? parseFloat(newStep.targetValue)
-        : undefined,
-      completed: false,
-      skipped: false,
-      startDate: new Date(),
-      endDate: formData.dueDate || new Date(),
-    };
-
-    setFormData((prev) => ({
-      ...prev,
-      steps: [...prev.steps, step],
-    }));
-
-    setNewStep({
-      title: '',
-      description: '',
-      targetValue: '',
-    });
-  };
-
-  const handleRemoveStep = (stepId: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      steps: prev.steps.filter((step) => step.id !== stepId),
-    }));
-  };
+  // Steps/Milestones logic removed
 
   const handleSubmit = async () => {
     if (!formData.title.trim() || !formData.dueDate) return;
-
     setLoading(true);
     try {
       const now = new Date();
-
-      // Ensure at least 1 milestone is created
-      let stepsToSave = formData.steps;
-      if (stepsToSave.length === 0) {
-        const defaultMilestone: GoalStep = {
-          id: Date.now().toString(),
-          title: `${formData.title} - Phase 1`,
-          description: undefined,
-          targetValue:
-            typeof formData.overallTargetValue === 'number'
-              ? formData.overallTargetValue
-              : undefined,
-          completed: false,
-          skipped: false,
-          startDate: now,
-          endDate: formData.dueDate || now,
-        };
-        stepsToSave = [defaultMilestone];
-      }
-
       const goalData: Goal = {
         title: formData.title,
         description: formData.description || undefined,
@@ -656,7 +545,6 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
             ? formData.overallTargetValue
             : undefined,
         overallTargetUnit: formData.overallTargetUnit || undefined,
-        steps: stepsToSave,
         pinned: formData.pinned,
         progress: goal?.progress || 0,
         status: goal?.status || 'Not Started',
@@ -664,14 +552,17 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
         createdAt: goal?.createdAt || Timestamp.fromDate(now),
         updatedAt: Timestamp.fromDate(now),
         authorName: user?.email || 'Anonymous',
+        steps: goal?.steps || [],
       };
-
+      let newGoalId = goal?.id;
       if (goal) {
         await updateGoal(goal.id!, goalData);
       } else {
-        await addGoal(goalData);
+        newGoalId = await addGoal(goalData);
       }
-
+      if (newGoalId) {
+        router.push(`/goals/${newGoalId}`);
+      }
       onClose();
     } catch (error) {
       console.error('Error saving goal:', error);
@@ -778,24 +669,44 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
               {/* i. Title */}
               <TextField
                 fullWidth
-                label="Goal Title"
+                label={
+                  <span>
+                    <b>Goal Title</b>{' '}
+                    <span style={{ color: '#ef4444' }}>*</span>
+                  </span>
+                }
                 value={formData.title}
                 onChange={(e) => handleTitleChange(e.target.value)}
                 placeholder="e.g., Save ₹5000 in 5 months"
                 variant="outlined"
+                InputProps={{
+                  style: {
+                    fontWeight: 500,
+                    fontSize: '1.1rem',
+                    letterSpacing: '0.01em',
+                  },
+                }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: '0.75rem',
                     backgroundColor:
                       theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
                   },
+                  '& .MuiInputLabel-root': {
+                    fontWeight: 600,
+                  },
+                  mb: 1,
                 }}
+                autoFocus
+                required
               />
 
               {/* ii. Type & Due Date side by side */}
               <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormControl fullWidth>
-                  <InputLabel>Goal Type</InputLabel>
+                  <InputLabel>
+                    <b>Goal Type</b>
+                  </InputLabel>
                   <Select
                     value={formData.type}
                     onChange={(e) => handleInputChange('type', e.target.value)}
@@ -812,7 +723,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
                           <Box sx={{ color: getGoalTypeColor(type.value) }}>
                             {type.icon}
                           </Box>
-                          {type.label}
+                          <span style={{ fontWeight: 600 }}>{type.label}</span>
                         </Box>
                       </MenuItem>
                     ))}
@@ -821,11 +732,18 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
 
                 <Box>
                   <DatePicker
-                    label="Target Date"
+                    label={
+                      <span>
+                        <b>Target Date</b>{' '}
+                        <span style={{ color: '#ef4444' }}>*</span>
+                      </span>
+                    }
                     value={formData.dueDate}
                     onChange={(date) => handleInputChange('dueDate', date)}
                     maxDate={maxDueDate}
-                    slotProps={{ textField: { fullWidth: true } }}
+                    slotProps={{
+                      textField: { fullWidth: true, required: true },
+                    }}
                   />
                 </Box>
               </Box>
@@ -927,7 +845,12 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
                   {/* i. Target Value */}
                   <TextField
                     fullWidth
-                    label="What you want to Reach"
+                    label={
+                      <span>
+                        <b>Target Value</b>{' '}
+                        <span style={{ color: '#ef4444' }}>*</span>
+                      </span>
+                    }
                     type="number"
                     value={formData.overallTargetValue}
                     onChange={(e) =>
@@ -937,16 +860,26 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
                       )
                     }
                     placeholder="e.g., 5000"
+                    InputProps={{
+                      style: {
+                        fontWeight: 500,
+                        fontSize: '1.05rem',
+                      },
+                    }}
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         borderRadius: '0.75rem',
                       },
+                      mb: 1,
                     }}
+                    required
                   />
 
                   {/* ii. Target Unit - Dynamic based on Goal Type */}
                   <FormControl fullWidth>
-                    <InputLabel>How you will measure</InputLabel>
+                    <InputLabel>
+                      <b>How you will measure</b>
+                    </InputLabel>
                     <Select
                       value={formData.overallTargetUnit}
                       onChange={(e) =>
@@ -959,7 +892,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
                     >
                       {GOAL_UNITS_CONFIG[formData.type].units.map((unit) => (
                         <MenuItem key={unit.value} value={unit.value}>
-                          {unit.label}
+                          <span style={{ fontWeight: 500 }}>{unit.label}</span>
                         </MenuItem>
                       ))}
                     </Select>
@@ -980,13 +913,23 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
                             fullWidth
                             multiline
                             rows={3}
-                            label="Description"
+                            label={
+                              <span>
+                                <b>Description</b>
+                              </span>
+                            }
                             value={formData.description}
                             onChange={(e) =>
                               handleInputChange('description', e.target.value)
                             }
-                            placeholder="Describe your goal in detail..."
+                            placeholder="Describe your goal in detail... (optional)"
                             variant="outlined"
+                            InputProps={{
+                              style: {
+                                fontWeight: 400,
+                                fontSize: '1rem',
+                              },
+                            }}
                             sx={{
                               mb: 2,
                               '& .MuiOutlinedInput-root': {
@@ -1071,316 +1014,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
                     />
                   </Box>
 
-                  <Divider sx={{ my: 2.5 }} />
-
-                  {/* iv. Steps & Milestones */}
-                  <Box sx={{ pt: 1 }}>
-                    <Typography
-                      variant="subtitle2"
-                      className="font-semibold mb-4"
-                      sx={{
-                        color: theme?.mode === 'dark' ? '#f1f5f9' : '#1f2937',
-                        fontSize: '1rem',
-                      }}
-                    >
-                      Steps & Milestones
-                    </Typography>
-
-                    {!isMilestonesEnabled && (
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                          mb: 2,
-                        }}
-                      >
-                        Enter a goal title, target value, and target date to
-                        unlock milestones.
-                      </Typography>
-                    )}
-
-                    <Box
-                      sx={{
-                        opacity: isMilestonesEnabled ? 1 : 0.35,
-                        pointerEvents: isMilestonesEnabled ? 'auto' : 'none',
-                        transition: 'opacity 0.2s ease',
-                      }}
-                    >
-                      {/* Steps mode selector */}
-                      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-                        <Button
-                          size="small"
-                          variant={
-                            stepsMode === 'auto' ? 'contained' : 'outlined'
-                          }
-                          onClick={() => setStepsMode('auto')}
-                          sx={{ px: 2.5, py: 1 }}
-                        >
-                          Auto Generate
-                        </Button>
-                        <Button
-                          size="small"
-                          variant={
-                            stepsMode === 'manual' ? 'contained' : 'outlined'
-                          }
-                          onClick={() => setStepsMode('manual')}
-                          sx={{ px: 2.5, py: 1 }}
-                        >
-                          Manual
-                        </Button>
-                      </Box>
-
-                      {stepsMode === 'auto' ? (
-                        <Box
-                          className="border rounded-lg"
-                          sx={{
-                            p: 3,
-                            mb: 4,
-                            borderColor:
-                              theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-                            backgroundColor:
-                              theme?.mode === 'dark'
-                                ? 'rgba(30, 41, 59, 0.3)'
-                                : 'rgba(248, 250, 252, 0.5)',
-                          }}
-                        >
-                          <Typography
-                            variant="body2"
-                            className="font-medium mb-4"
-                          >
-                            Auto-generate milestones
-                          </Typography>
-                          <Box className="flex items-center gap-3 justify-start">
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                setMilestonesUserAdjusted(true);
-                                setMilestonesCount(
-                                  Math.max(1, Math.floor(milestonesCount - 1)),
-                                );
-                              }}
-                              disabled={milestonesCount <= 1}
-                            >
-                              <Remove />
-                            </IconButton>
-                            <Typography variant="h4" fontWeight={700}>
-                              {milestonesCount}
-                            </Typography>
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                setMilestonesUserAdjusted(true);
-                                setMilestonesCount(
-                                  Math.max(1, Math.floor(milestonesCount + 1)),
-                                );
-                              }}
-                            >
-                              <Add />
-                            </IconButton>
-                            <Button
-                              variant="outlined"
-                              size="small"
-                              onClick={() => {
-                                if (!formData.dueDate) return;
-                                let n = Math.max(
-                                  1,
-                                  Math.floor(milestonesCount),
-                                );
-                                if (!milestonesUserAdjusted) {
-                                  let suggested: number | undefined;
-                                  try {
-                                    suggested = parseGoalTitle(
-                                      formData.title || '',
-                                    ).suggestedMilestones;
-                                  } catch {}
-                                  if (!suggested) {
-                                    suggested = suggestMilestonesBySpan(
-                                      formData.dueDate as Date,
-                                    );
-                                  }
-                                  if (suggested) n = suggested;
-                                }
-                                const start = new Date();
-                                const end = formData.dueDate as Date;
-                                const totalMs = end.getTime() - start.getTime();
-                                const stepMs = Math.floor(totalMs / n);
-
-                                const totalTarget =
-                                  typeof formData.overallTargetValue ===
-                                  'number'
-                                    ? formData.overallTargetValue
-                                    : 0;
-                                const per =
-                                  n > 0
-                                    ? Math.floor((totalTarget / n) * 100) / 100
-                                    : 0;
-                                const generated: GoalStep[] = Array.from({
-                                  length: n,
-                                }).map((_, i) => {
-                                  const s = new Date(
-                                    start.getTime() + i * stepMs,
-                                  );
-                                  const e =
-                                    i === n - 1
-                                      ? new Date(end)
-                                      : new Date(
-                                          start.getTime() +
-                                            (i + 1) * stepMs -
-                                            1,
-                                        );
-                                  return {
-                                    id: `${Date.now()}_${i}`,
-                                    title: `Milestone ${i + 1}`,
-                                    description: undefined,
-                                    targetValue: per || undefined,
-                                    startDate: s,
-                                    endDate: e,
-                                    completed: false,
-                                    skipped: false,
-                                  } as GoalStep;
-                                });
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  steps: generated,
-                                }));
-                              }}
-                            >
-                              Generate
-                            </Button>
-                            <Button
-                              size="small"
-                              onClick={() => setStepsMode('manual')}
-                            >
-                              Custom
-                            </Button>
-                          </Box>
-                        </Box>
-                      ) : null}
-
-                      {/* Manual: Add New Step */}
-                      {stepsMode === 'manual' && (
-                        <Box
-                          className="border rounded-lg"
-                          sx={{
-                            p: 3,
-                            mb: 4,
-                            borderColor:
-                              theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-                            backgroundColor:
-                              theme?.mode === 'dark'
-                                ? 'rgba(30, 41, 59, 0.3)'
-                                : 'rgba(248, 250, 252, 0.5)',
-                          }}
-                        >
-                          <Typography
-                            variant="body2"
-                            className="font-medium mb-4"
-                          >
-                            Add New Step
-                          </Typography>
-
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 2.5,
-                            }}
-                          >
-                            <Box className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <TextField
-                                fullWidth
-                                size="small"
-                                label="Step Title"
-                                value={newStep.title}
-                                onChange={(e) =>
-                                  setNewStep((prev) => ({
-                                    ...prev,
-                                    title: e.target.value,
-                                  }))
-                                }
-                                placeholder="e.g., Save PKR 1000 in January"
-                              />
-                              <TextField
-                                fullWidth
-                                size="small"
-                                label="What you want to reach"
-                                type="number"
-                                value={newStep.targetValue}
-                                onChange={(e) =>
-                                  setNewStep((prev) => ({
-                                    ...prev,
-                                    targetValue: e.target.value,
-                                  }))
-                                }
-                                placeholder="1000"
-                              />
-                            </Box>
-
-                            <Button
-                              variant="outlined"
-                              startIcon={<Add />}
-                              onClick={handleAddStep}
-                              disabled={!newStep.title.trim()}
-                              size="small"
-                            >
-                              Add Step
-                            </Button>
-                          </Box>
-                        </Box>
-                      )}
-
-                      {/* Existing Steps */}
-                      <AnimatePresence>
-                        {formData.steps.map((step) => (
-                          <motion.div
-                            key={step.id}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -20 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <Box
-                              className="flex items-center justify-between p-3 border rounded-lg mb-2"
-                              sx={{
-                                borderColor:
-                                  theme?.mode === 'dark'
-                                    ? '#374151'
-                                    : '#e5e7eb',
-                                backgroundColor:
-                                  theme?.mode === 'dark'
-                                    ? '#37415120'
-                                    : '#f9fafb',
-                              }}
-                            >
-                              <Box className="flex-1">
-                                <Typography
-                                  variant="body2"
-                                  className="font-medium"
-                                >
-                                  {step.title}
-                                </Typography>
-                                {step.targetValue && (
-                                  <Typography
-                                    variant="caption"
-                                    className="block"
-                                  >
-                                    Target: {step.targetValue}
-                                  </Typography>
-                                )}
-                              </Box>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleRemoveStep(step.id)}
-                                sx={{ color: '#EF4444' }}
-                              >
-                                <Delete />
-                              </IconButton>
-                            </Box>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-                    </Box>
-                  </Box>
+                  {/* Steps & Milestones section removed for cleaner UI */}
                 </Box>
               </motion.div>
             )}

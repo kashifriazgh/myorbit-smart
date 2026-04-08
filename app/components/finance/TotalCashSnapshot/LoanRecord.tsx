@@ -91,7 +91,7 @@ export default function LoanDialog() {
     const fetchCustom = async () => {
       const q = query(
         collection(db, 'customPaymentHeads'),
-        where('userId', '==', user.uid)
+        where('userId', '==', user.uid),
       );
       const snap = await getDocs(q);
       const heads: CustomPaymentHead[] = snap.docs.map((doc) => ({
@@ -102,7 +102,6 @@ export default function LoanDialog() {
     };
     fetchCustom();
   }, [user]);
-
 
   // validate and create loan
   const handleCreate = async () => {
@@ -127,9 +126,8 @@ export default function LoanDialog() {
       source === 'bank' ? banks.find((b) => b.id === selectedBank) : undefined;
     const customName =
       source === 'custom'
-        ? customPaymentHeads.find(
-            (c) => c.id === selectedCustomPaymentHead
-          )?.name || ''
+        ? customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
+            ?.name || ''
         : '';
     setError('');
 
@@ -179,15 +177,15 @@ export default function LoanDialog() {
       if (loanType === 'lend') {
         const available =
           source === 'bank' && bank?.name
-            ? snapshot.sources.bank?.[bank.name] ?? 0
+            ? (snapshot.sources.bank?.[bank.name] ?? 0)
             : source === 'custom' && customName
-            ? snapshot.sources.custom?.[customName] ?? 0
-            : (snapshot.sources[source] as number) ?? 0;
+              ? (snapshot.sources.custom?.[customName] ?? 0)
+              : ((snapshot.sources[source] as number) ?? 0);
         if (amount > available)
           throw new Error(
             `Insufficient balance in ${source}${
               bank?.name ? ` (${bank.name})` : ''
-            }`
+            }`,
           );
       }
 
@@ -213,7 +211,7 @@ export default function LoanDialog() {
               customPaymentHeadId: selectedCustomPaymentHead,
               customPaymentHeadName:
                 customPaymentHeads.find(
-                  (c) => c.id === selectedCustomPaymentHead
+                  (c) => c.id === selectedCustomPaymentHead,
                 )?.name || '',
             }
           : {}),
@@ -226,9 +224,8 @@ export default function LoanDialog() {
           updatedSources.bank[bank.name] -= amount;
         } else if (source === 'custom' && selectedCustomPaymentHead) {
           const customName =
-            customPaymentHeads.find(
-              (c) => c.id === selectedCustomPaymentHead
-            )?.name || '';
+            customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
+              ?.name || '';
           if (customName) {
             updatedSources.custom[customName] =
               (updatedSources.custom[customName] || 0) - amount;
@@ -242,9 +239,8 @@ export default function LoanDialog() {
           updatedSources.bank[bank.name] += amount;
         } else if (source === 'custom' && selectedCustomPaymentHead) {
           const customName =
-            customPaymentHeads.find(
-              (c) => c.id === selectedCustomPaymentHead
-            )?.name || '';
+            customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
+              ?.name || '';
           if (customName) {
             updatedSources.custom[customName] =
               (updatedSources.custom[customName] || 0) + amount;
@@ -322,7 +318,7 @@ export default function LoanDialog() {
               }}
             >
               <Typography variant="body2" color="text.secondary">
-                View all loan records and totals
+                View all loan records
               </Typography>
               <Link href="/finance/loans" passHref>
                 <Button
@@ -332,7 +328,7 @@ export default function LoanDialog() {
                   onClick={() => setShowModal(false)}
                   sx={{ textTransform: 'none' }}
                 >
-                  View Loan Records
+                  View
                 </Button>
               </Link>
             </Box>

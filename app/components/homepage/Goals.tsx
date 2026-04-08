@@ -37,14 +37,14 @@ const Goals: React.FC = () => {
       .filter((g) => g.status === 'In Progress' || g.status === 'Not Started')
       .sort(
         (a, b) =>
-          (priorityRank[b.priority] || 0) - (priorityRank[a.priority] || 0)
+          (priorityRank[b.priority] || 0) - (priorityRank[a.priority] || 0),
       );
   }, [goals, user]);
 
   // Show only the top 4 goals
   const displayGoals = useMemo(
     () => filteredGoals.slice(0, 4),
-    [filteredGoals]
+    [filteredGoals],
   );
 
   // Keen Slider (mobile)
@@ -70,8 +70,8 @@ const Goals: React.FC = () => {
             '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
         }}
       >
-        <Typography 
-          variant="h6" 
+        <Typography
+          variant="h6"
           className="font-bold mb-4"
           sx={{
             color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
@@ -121,14 +121,6 @@ const Goals: React.FC = () => {
             }}
           >
             🎯 Your Goals
-          </Typography>
-          <Typography
-            variant="caption"
-            sx={{
-              color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-            }}
-          >
-            Track and accomplish your objectives
           </Typography>
         </Box>
         <Button
@@ -228,6 +220,24 @@ const Goals: React.FC = () => {
           </Button>
         </Box>
       )}
+
+      {/* See more button at the bottom */}
+      <Box className="text-center mt-2">
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={() => router.push('/goals')}
+          sx={{
+            color: '#3B82F6',
+            borderColor: '#3B82F6',
+            fontSize: '0.75rem',
+            textTransform: 'none',
+            mt: 1,
+          }}
+        >
+          See more
+        </Button>
+      </Box>
 
       {user && (
         <GoalModal
