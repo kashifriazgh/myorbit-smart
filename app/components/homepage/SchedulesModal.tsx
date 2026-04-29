@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -10,6 +10,7 @@ import {
   TextField,
   Box,
   Typography,
+  Stack,
   FormControl,
   InputLabel,
   Select,
@@ -25,6 +26,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
+import { motion } from 'framer-motion';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { SchedulesProps } from '../../lib/interface';
@@ -79,6 +81,39 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
   });
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      const timer = setTimeout(() => {
+        titleInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
+  const handleQuickDate = (type: 'tomorrow' | 'afterTomorrow' | 'endOfWeek') => {
+    const date = new Date();
+    if (type === 'tomorrow') {
+      date.setDate(date.getDate() + 1);
+    } else if (type === 'afterTomorrow') {
+      date.setDate(date.getDate() + 2);
+    } else if (type === 'endOfWeek') {
+      const day = date.getDay();
+      const diff = day === 0 ? 7 : 7 - day;
+      date.setDate(date.getDate() + diff);
+    }
+
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const formattedDate = `${yyyy}-${mm}-${dd}`;
+
+    if (onDateChange) {
+      onDateChange(formattedDate);
+    }
+  };
+
 
   const priorityOptions = [
     { value: 'low', label: 'Low', color: '#4caf50' },
@@ -99,6 +134,72 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
     { value: 'weekly', label: 'Weekly' },
     { value: 'monthly', label: 'Monthly' },
   ];
+
+  const dynamicQuickTimes = useMemo(() => {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
+    // For future dates, show standard slots
+    if (selectedDate !== today) return ['09:00', '13:00', '17:00', '21:00'];
+
+    const currentHour = now.getHours();
+    let offsets: number[] = [];
+    
+    if (currentHour <= 14) {
+      // First two: 1h distance | Next two: 2h distance
+      // e.g. at 14:00 (2 PM) -> 15:00, 16:00, 18:00, 20:00
+      offsets = [1, 2, 4, 6];
+    } else {
+      // Distance each 1 hour
+      // e.g. at 15:00 (3 PM) -> 16:00, 17:00, 18:00, 19:00
+      offsets = [1, 2, 3, 4];
+    }
+
+    return offsets
+      .map(offset => currentHour + offset)
+      .filter(h => h < 24)
+      .map(h => `${String(h).padStart(2, '0')}:00`);
+  }, [selectedDate]);
+
+  const applyDuration = (minutes: number) => {
+    if (!formData.startTime) return;
+    const [h, m] = formData.startTime.split(':').map(Number);
+    const date = new Date();
+    date.setHours(h, m + minutes);
+    const endH = String(date.getHours()).padStart(2, '0');
+    const endM = String(date.getMinutes()).padStart(2, '0');
+    const newEndTime = `${endH}:${endM}`;
+    handleInputChange('endTime', newEndTime);
+    handleDurationChange(formData.startTime, newEndTime);
+  };
+
+  const timeFieldStyle = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 3,
+      backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.6)' : '#fff',
+      transition: 'all 0.2s ease',
+      '&:hover fieldset': { borderColor: muiTheme.palette.primary.main },
+      '&.Mui-focused fieldset': { borderWidth: '2px' },
+    }
+  };
+
+  const quickTimeBtnStyle = {
+    minWidth: 0,
+    px: 1.5,
+    py: 0.5,
+    fontSize: '0.75rem',
+    borderRadius: '12px',
+    color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+    border: `1px solid ${muiTheme.palette.divider}`,
+    textTransform: 'none',
+    '&:hover': {
+      bgcolor: 'primary.main',
+      color: 'white',
+      borderColor: 'primary.main',
+      transform: 'translateY(-1px)',
+    },
+    transition: 'all 0.2s',
+  };
 
   // Initialize form data when modal opens
   useEffect(() => {
@@ -257,6 +358,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Title - Most Important */}
           <TextField
+            inputRef={titleInputRef}
             fullWidth
             label="Title *"
             value={formData.title}
@@ -325,49 +427,123 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                 day: 'numeric',
               })}
             />
+            <Stack direction="row" spacing={1} mt={1.5} flexWrap="wrap">
+              {[
+                { label: 'Tomorrow', value: 'tomorrow' },
+                { label: 'After Tomorrow', value: 'afterTomorrow' },
+                { label: 'End of Week', value: 'endOfWeek' },
+              ].map((item) => (
+                <Button
+                  key={item.value}
+                  variant="outlined"
+                  size="small"
+                  onClick={() => handleQuickDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
+                  sx={{
+                    borderRadius: '20px',
+                    textTransform: 'none',
+                    fontSize: '0.75rem',
+                    px: 1.5,
+                    py: 0.5,
+                    borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0',
+                    color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      color: 'primary.main',
+                      bgcolor: 'transparent',
+                    },
+                  }}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </Stack>
           </Box>
 
-          {/* Time Fields */}
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <TextField
-              label="Start Time *"
-              type="time"
-              value={formData.startTime}
-              onChange={(e) => {
-                handleInputChange('startTime', e.target.value);
-                if (formData.endTime) {
-                  handleDurationChange(e.target.value, formData.endTime);
-                }
-              }}
-              required
-              variant="outlined"
-              size="medium"
-              InputLabelProps={{ shrink: true }}
-              sx={{ flex: 1, minWidth: '150px' }}
-            />
+          {/* Compact Time Selection UI */}
+          <Box
+            component={motion.div}
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            sx={{
+              p: 1.5,
+              borderRadius: 3,
+              bgcolor: theme?.mode === 'dark' ? 'rgba(30, 41, 59, 0.2)' : 'rgba(241, 245, 249, 0.3)',
+              border: `1px dashed ${muiTheme.palette.divider}`,
+            }}
+          >
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <Box sx={{ flex: 1 }}>
+                <TextField
+                  label="Start Time *"
+                  type="time"
+                  value={formData.startTime}
+                  onChange={(e) => {
+                    handleInputChange('startTime', e.target.value);
+                    if (formData.endTime) {
+                      handleDurationChange(e.target.value, formData.endTime);
+                    }
+                  }}
+                  required
+                  variant="outlined"
+                  size="small"
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                  sx={timeFieldStyle}
+                />
+                <Stack direction="row" spacing={0.5} mt={1} flexWrap="wrap" useFlexGap>
+                  {dynamicQuickTimes.map((time) => (
+                    <Button
+                      key={time}
+                      variant="text"
+                      size="small"
+                      onClick={() => handleInputChange('startTime', time)}
+                      sx={quickTimeBtnStyle}
+                    >
+                      {time}
+                    </Button>
+                  ))}
+                </Stack>
+              </Box>
 
-            {formData.startTime && (
-              <TextField
-                label="End Time"
-                type="time"
-                value={formData.endTime}
-                onChange={(e) => {
-                  handleInputChange('endTime', e.target.value);
-                  if (formData.startTime) {
-                    handleDurationChange(formData.startTime, e.target.value);
+              <Box sx={{ flex: 1 }}>
+                <TextField
+                  label="End Time"
+                  type="time"
+                  value={formData.endTime}
+                  onChange={(e) => {
+                    handleInputChange('endTime', e.target.value);
+                    if (formData.startTime) {
+                      handleDurationChange(formData.startTime, e.target.value);
+                    }
+                  }}
+                  variant="outlined"
+                  size="small"
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                  sx={timeFieldStyle}
+                  FormHelperTextProps={{ sx: { m: 0, mt: 0.5, fontSize: '0.65rem' } }}
+                  helperText={
+                    formData.duration
+                      ? `⏱️ ${formData.duration}m`
+                      : ''
                   }
-                }}
-                variant="outlined"
-                size="medium"
-                InputLabelProps={{ shrink: true }}
-                sx={{ flex: 1, minWidth: '150px' }}
-                helperText={
-                  formData.duration
-                    ? `${formData.duration} minutes`
-                    : 'Optional'
-                }
-              />
-            )}
+                />
+                <Stack direction="row" spacing={0.5} mt={1} flexWrap="wrap" useFlexGap>
+                  {[15, 30, 60, 120].map((mins) => (
+                    <Button
+                      key={mins}
+                      variant="text"
+                      size="small"
+                      disabled={!formData.startTime}
+                      onClick={() => applyDuration(mins)}
+                      sx={quickTimeBtnStyle}
+                    >
+                      +{mins >= 60 ? `${mins / 60}h` : `${mins}m`}
+                    </Button>
+                  ))}
+                </Stack>
+              </Box>
+            </Stack>
           </Box>
 
           {/* Objective */}

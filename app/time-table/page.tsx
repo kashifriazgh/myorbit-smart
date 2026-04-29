@@ -23,7 +23,7 @@ const TimeTablePage = () => {
       }}
     >
       <Box className="flex justify-between mb-4">
-        <h1 className="text-xl font-bold">Time Tables</h1>
+        <h1 className="text-xl font-bold dark:text-slate-50">Time Tables</h1>
         <Button startIcon={<Add />} onClick={() => setModalOpen(true)}>
           Create Time Table
         </Button>

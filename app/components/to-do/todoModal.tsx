@@ -24,7 +24,7 @@ import AddTaskIcon from '@mui/icons-material/PlaylistAdd';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   addDoc,
   collection,
@@ -58,7 +58,37 @@ export default function ToDoModal({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [isImportant, setIsImportant] = useState(false);
   const [aiStepModalOpen, setAiStepModalOpen] = useState(false);
-  const [assignee, setAssignee] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      // Small delay to ensure Dialog transition is underway and focus trap is ready
+      const timer = setTimeout(() => {
+        if (titleInputRef.current) {
+          titleInputRef.current.focus();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
+  const [assignee, setAssignee] = useState('Me');
+
+
+  const handleQuickDate = (type: 'tomorrow' | 'afterTomorrow' | 'endOfWeek') => {
+    const date = new Date();
+    if (type === 'tomorrow') {
+      date.setDate(date.getDate() + 1);
+    } else if (type === 'afterTomorrow') {
+      date.setDate(date.getDate() + 2);
+    } else if (type === 'endOfWeek') {
+      const day = date.getDay();
+      const diff = day === 0 ? 7 : 7 - day;
+      date.setDate(date.getDate() + diff);
+    }
+    setDueDate(date);
+  };
+
 
   const [steps, setSteps] = useState<
     {
@@ -141,7 +171,7 @@ export default function ToDoModal({ open, onClose }: Props) {
     setPrivacy('private');
     setDueDate(new Date());
     setIsImportant(false);
-    setAssignee('');
+    setAssignee('Me');
     setSteps([]);
     setAiStepModalOpen(false);
     setLoading(false);
@@ -258,6 +288,7 @@ export default function ToDoModal({ open, onClose }: Props) {
         }}      >
         <Stack spacing={2}>
           <TextField
+            inputRef={titleInputRef}
             label="Title"
             fullWidth
             multiline
@@ -366,10 +397,41 @@ export default function ToDoModal({ open, onClose }: Props) {
               minDate={new Date()}
               wrapperClassName="date-picker-wrapper"
             />
+            <Stack direction="row" spacing={1} mt={1.5} flexWrap="wrap" useFlexGap>
+              {[
+                { label: 'Tomorrow', value: 'tomorrow' },
+                { label: 'After Tomorrow', value: 'afterTomorrow' },
+                { label: 'End of Week', value: 'endOfWeek' },
+              ].map((item) => (
+                <Button
+                  key={item.value}
+                  variant="outlined"
+                  size="small"
+                  onClick={() => handleQuickDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
+                  sx={{
+                    borderRadius: '20px',
+                    textTransform: 'none',
+                    fontSize: '0.75rem',
+                    px: 1.5,
+                    py: 0.5,
+                    borderColor: theme.palette.divider,
+                    color: theme.palette.text.secondary,
+                    '&:hover': {
+                      borderColor: theme.palette.primary.main,
+                      color: theme.palette.primary.main,
+                      bgcolor: 'transparent',
+                    },
+                  }}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </Stack>
           </Paper>
 
           <TextField
-            label="Assignee (optional)"
+            label="Assignee"
+            placeholder="Who will do this task"
             fullWidth
             size="small"
             value={assignee}

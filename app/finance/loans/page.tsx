@@ -41,7 +41,7 @@ export default function LoanRecordsPage() {
       try {
         const q = query(
           collection(db, 'loans'),
-          where('userId', '==', user.uid)
+          where('userId', '==', user.uid),
         );
 
         const snap = await getDocs(q);
@@ -85,9 +85,7 @@ export default function LoanRecordsPage() {
   }
 
   // ✅ Properly typed (no `any`)
-  const formatDate = (
-    date?: Date | Timestamp | null
-  ): string => {
+  const formatDate = (date?: Date | Timestamp | null): string => {
     if (!date) return 'N/A';
 
     if (date instanceof Date) {
@@ -213,7 +211,11 @@ export default function LoanRecordsPage() {
                         Due: {formatDate(loan.dueDate)}
                       </Typography>
                       {loan.note && (
-                        <Typography variant="body2" color="text.secondary" mt={1}>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          mt={1}
+                        >
                           Note: {loan.note}
                         </Typography>
                       )}

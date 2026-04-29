@@ -22,6 +22,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import MoodIcon from '@mui/icons-material/Mood';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import { Timestamp } from 'firebase/firestore';
+import React from 'react';
 
 // Helper function to convert Timestamp or Date to Date
 const toDate = (timestamp: Timestamp | Date): Date => {
@@ -31,10 +32,49 @@ const toDate = (timestamp: Timestamp | Date): Date => {
   return timestamp.toDate();
 };
 
-export default function JournalList() {
-  const { recentJournals, loading } = useJournalContext();
+export default function JournalList({ 
+  searchQuery = '', 
+  startDate = '', 
+  endDate = '' 
+}: { 
+  searchQuery?: string; 
+  startDate?: string; 
+  endDate?: string; 
+}) {
+  const { journals, recentJournals, loading } = useJournalContext();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
+
+  const filteredJournals = React.useMemo(() => {
+    // If no search is active, show recent journals (last 30 days)
+    if (!searchQuery && !startDate && !endDate) {
+      return recentJournals;
+    }
+
+    // Otherwise, filter all journals
+    return journals.filter((entry) => {
+      // 1. Keyword search (title, content, tags)
+      const query = searchQuery.toLowerCase().trim();
+      const titleMatch = entry.title?.toLowerCase().includes(query);
+      const contentMatch = entry.content?.toLowerCase().includes(query);
+      const tagsMatch = entry.tags?.some(tag => tag.toLowerCase().includes(query));
+
+      const keywordMatch = !query || titleMatch || contentMatch || tagsMatch;
+
+      // 2. Date range search
+      const createdDate = moment(toDate(entry.createdAt));
+      let dateMatch = true;
+
+      if (startDate) {
+        dateMatch = dateMatch && createdDate.isSameOrAfter(moment(startDate).startOf('day'));
+      }
+      if (endDate) {
+        dateMatch = dateMatch && createdDate.isSameOrBefore(moment(endDate).endOf('day'));
+      }
+
+      return keywordMatch && dateMatch;
+    });
+  }, [journals, recentJournals, searchQuery, startDate, endDate]);
 
   const MOOD_COLORS: Record<
     string,
@@ -57,7 +97,7 @@ export default function JournalList() {
     );
   }
 
-  if (recentJournals.length === 0) {
+  if (filteredJournals.length === 0) {
     return (
       <Fade in={true} timeout={800}>
         <Card
@@ -69,6 +109,7 @@ export default function JournalList() {
             border: '2px dashed',
             borderColor: 'primary.main',
             opacity: 0.8,
+            borderRadius: '1rem',
           }}
         >
           <Avatar
@@ -89,10 +130,14 @@ export default function JournalList() {
             gutterBottom
             color="primary"
           >
-            📝 No Journal Entries Yet
+            {searchQuery || startDate || endDate 
+              ? '🔍 No Matching Entries Found' 
+              : '📝 No Journal Entries Yet'}
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Start your journaling journey by writing your first entry!
+            {searchQuery || startDate || endDate 
+              ? 'Try adjusting your search keywords or date range.' 
+              : 'Start your journaling journey by writing your first entry!'}
           </Typography>
         </Card>
       </Fade>
@@ -101,7 +146,7 @@ export default function JournalList() {
 
   return (
     <Stack spacing={3}>
-      {recentJournals.map((entry, index) => {
+      {filteredJournals.map((entry, index) => {
         const moodInfo = entry.mood ? MOOD_COLORS[entry.mood.type] : null;
         const createdDate = toDate(entry.createdAt);
         const isToday = moment(createdDate).isSame(moment(), 'day');
@@ -126,6 +171,7 @@ export default function JournalList() {
                 sx={{
                   transition: 'all 0.3s ease',
                   border: `1px solid ${muiTheme.palette.divider}`,
+                  borderRadius: '1rem',
                   '&:hover': {
                     transform: 'translateY(-4px)',
                     boxShadow: muiTheme.shadows[8],
@@ -167,20 +213,34 @@ export default function JournalList() {
 
                     {/* Main Content */}
                     <Box flexGrow={1}>
-                      {/* Title */}
-                      <Typography
-                        variant="h6"
-                        fontWeight="bold"
-                        sx={{
-                          mb: 1,
-                          color: 'inherit',
-                          '&:hover': {
-                            color: muiTheme.palette.primary.main,
-                          },
-                        }}
-                      >
-                        {entry.title}
-                      </Typography>
+                      {/* Title and Tags */}
+                      <Box display="flex" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={1} mb={1}>
+                        <Typography
+                          variant="h6"
+                          fontWeight="bold"
+                          sx={{
+                            color: 'inherit',
+                            '&:hover': {
+                              color: muiTheme.palette.primary.main,
+                            },
+                          }}
+                        >
+                          {entry.title}
+                        </Typography>
+                        
+                        {/* Tags Preview */}
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                          {entry.tags?.map((tag, idx) => (
+                            <Chip 
+                              key={idx} 
+                              label={`#${tag}`} 
+                              size="small" 
+                              variant="outlined"
+                              sx={{ height: 20, fontSize: '0.65rem', opacity: 0.8 }}
+                            />
+                          ))}
+                        </Stack>
+                      </Box>
 
                       {/* Content Preview */}
                       {entry.content && (
@@ -217,7 +277,7 @@ export default function JournalList() {
                         </Box>
                       )}
 
-                      {/* Tags and Info */}
+                      {/* Mood and Info */}
                       <Stack
                         direction="row"
                         spacing={1}

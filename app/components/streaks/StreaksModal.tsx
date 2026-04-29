@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -50,6 +50,16 @@ export default function StreaksModal({
   const [reminderDay, setReminderDay] = useState('Monday'); // for weekly
   const [loading, setLoading] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      const timer = setTimeout(() => {
+        titleInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
 
   const { user } = useAuth();
   const { theme } = useCustomTheme();
@@ -101,6 +111,7 @@ export default function StreaksModal({
       <DialogContent>
         <Box component="form" onSubmit={handleSave} sx={{ mt: 1 }}>
           <TextField
+            inputRef={titleInputRef}
             label="Streak Title"
             fullWidth
             margin="normal"

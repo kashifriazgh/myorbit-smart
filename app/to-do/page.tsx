@@ -1,6 +1,5 @@
 'use client';
 
-import { Box, TextField, Typography, Button } from '@mui/material';
 import { useState } from 'react';
 import ToDoModal from '../components/to-do/todoModal';
 import TodosList from '../components/to-do/todoList';
@@ -15,81 +14,55 @@ export default function TodosPage() {
   if (!theme) return null;
 
   return (
-    <Box maxWidth="600px" mx="auto" p={1.5}>
-      <Typography variant="h4" gutterBottom>
-        ✅ My Tasks
-      </Typography>
-      {/* TextField styled trigger to open modal */}
-      <TextField
-        variant="outlined"
-        placeholder="📝 What do you want to get done?"
-        fullWidth
-        onClick={() => setOpen(true)}
-        InputProps={{
-          readOnly: true,
-          sx: {
-            backgroundColor: theme.mode === 'dark' ? '#334155' : '#ffffff',
-            color: theme.mode === 'dark' ? '#f1f5f9' : '#000000',
-            borderRadius: 1.2,
-            cursor: 'pointer',
-            boxShadow: '0 1px 4px rgba(0, 102, 255, 0.1)',
-            transition: 'all 0.25s ease',
+    <div className={`w-full min-h-screen transition-colors duration-500 ${
+      theme.mode === 'dark' 
+        ? 'bg-slate-950 text-slate-50 selection:bg-blue-500/30' 
+        : 'bg-slate-50 text-slate-900 selection:bg-blue-200'
+    }`}>
+      <div className="max-w-[600px] mx-auto p-4 md:p-6">
+        <h1 className={`text-3xl md:text-4xl font-extrabold mb-8 flex items-center gap-3 ${
+          theme.mode === 'dark' ? 'text-white' : 'text-slate-900'
+        }`}>
+          <span className="drop-shadow-sm">✅</span> My Tasks
+        </h1>
+        
+        {/* Input-style trigger to open modal */}
+        <div
+          onClick={() => setOpen(true)}
+          className={`w-full p-4 mb-10 rounded-2xl border-2 cursor-pointer shadow-sm hover:shadow-md transition-all flex items-center gap-4 group backdrop-blur-sm ${
+            theme.mode === 'dark' 
+              ? 'border-slate-800 bg-slate-900/50 text-slate-500 hover:border-blue-500/50' 
+              : 'border-slate-200/60 bg-white text-slate-400 hover:border-blue-400'
+          }`}
+        >
+          <div className={`p-2 rounded-xl group-hover:scale-110 transition-transform ${
+            theme.mode === 'dark' ? 'bg-slate-800' : 'bg-slate-50'
+          }`}>
+            <span className="text-xl">📝</span>
+          </div>
+          <span className="text-lg font-medium">What do you want to get done?</span>
+        </div>
 
-            '&:hover': {
-              boxShadow: '0 2px 8px rgba(0, 102, 255, 0.2)',
-            },
+        <div className="space-y-6">
+          <TodosList />
+        </div>
 
-            '&:focus-within': {
-              borderColor: '#3366ff',
-              boxShadow: '0 0 0 2px rgba(51, 102, 255, 0.25)',
-            },
+        {/* View Completed Tasks Button */}
+        <div className="mt-12 text-center">
+          <Link href="/to-do/completed" className="no-underline inline-block w-full sm:w-auto">
+            <button className={`w-full sm:w-auto px-8 py-4 rounded-2xl border-2 font-bold flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-sm cursor-pointer group ${
+              theme.mode === 'dark'
+                ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                : 'border-emerald-500/80 text-emerald-600 hover:bg-emerald-50'
+            }`}>
+              <CheckCircleIcon className="group-hover:rotate-12 transition-transform" />
+              <span>View Completed Tasks</span>
+            </button>
+          </Link>
+        </div>
 
-            '& fieldset': {
-              borderColor: theme.mode === 'dark' ? '#f8fafc' : '#d0d7ff',
-            },
-
-            '&:hover fieldset': {
-              borderColor: theme.mode === 'dark' ? '#e2e8f0' : '#a0bfff',
-            },
-          },
-        }}
-        sx={{ mb: 3 }}
-      />
-
-      <TodosList />
-
-      {/* View Completed Tasks Button */}
-      <Box mt={3} textAlign="center">
-        <Link href="/to-do/completed" style={{ textDecoration: 'none' }}>
-          <Button
-            variant="outlined"
-            startIcon={<CheckCircleIcon />}
-            sx={{
-              px: 3,
-              py: 1.5,
-              borderRadius: 2,
-              textTransform: 'none',
-              fontSize: '1rem',
-              fontWeight: 500,
-              borderColor: theme.mode === 'dark' ? '#4ade80' : '#22c55e',
-              color: theme.mode === 'dark' ? '#4ade80' : '#22c55e',
-              '&:hover': {
-                borderColor: theme.mode === 'dark' ? '#22c55e' : '#16a34a',
-                backgroundColor:
-                  theme.mode === 'dark'
-                    ? 'rgba(34, 197, 94, 0.1)'
-                    : 'rgba(34, 197, 94, 0.05)',
-                transform: 'translateY(-1px)',
-              },
-              transition: 'all 0.2s ease',
-            }}
-          >
-            View Completed Tasks
-          </Button>
-        </Link>
-      </Box>
-
-      <ToDoModal open={open} onClose={() => setOpen(false)} />
-    </Box>
+        <ToDoModal open={open} onClose={() => setOpen(false)} />
+      </div>
+    </div>
   );
 }

@@ -21,6 +21,7 @@ interface JournalDoc {
     level: number;
   };
   productivityOfTheDay?: string;
+  tags?: string[];
   createdAt: Timestamp | Date;
   userId: string;
 }
@@ -83,6 +84,7 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
               content: data.content,
               mood: data.mood,
               productivityOfTheDay: data.productivityOfTheDay,
+              tags: data.tags,
               createdAt: data.createdAt,
               userId: data.userId,
             });

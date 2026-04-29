@@ -28,13 +28,24 @@ export function CustomThemeProvider({
   children: React.ReactNode;
 }) {
   const { user } = useAuth();
-  const [themeData, setThemeData] = useState<Theme | null>(null);
+  const defaultTheme: Theme = {
+    name: 'Default',
+    primary: '#1976d2',
+    secondary: '#9c27b0',
+    mode: 'light',
+  };
+  const [themeData, setThemeData] = useState<Theme>(defaultTheme);
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Initialize theme on first load
   useEffect(() => {
     if (isInitialized) return;
+
+    if (typeof window === 'undefined') {
+      setIsInitialized(true);
+      return;
+    }
 
     // Try to load from localStorage first (for immediate display)
     const globalCache = localStorage.getItem(THEME_CACHE_KEY);
@@ -49,12 +60,13 @@ export function CustomThemeProvider({
       }
     }
 
-    // If no cached theme, use default
+    const systemPrefersDark = window.matchMedia(
+      '(prefers-color-scheme: dark)',
+    ).matches;
+
     setThemeData({
-      name: 'Default',
-      primary: '#1976d2',
-      secondary: '#9c27b0',
-      mode: 'light',
+      ...defaultTheme,
+      mode: systemPrefersDark ? 'dark' : 'light',
     });
     setIsInitialized(true);
   }, [isInitialized]);
@@ -118,7 +130,7 @@ export function CustomThemeProvider({
       localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(newTheme)); // Also update global cache
       setThemeData(newTheme);
     },
-    [themeData, user]
+    [themeData, user],
   );
 
   const refreshTheme = async () => {
@@ -137,7 +149,7 @@ export function CustomThemeProvider({
   // 🔹 Listen to system dark mode changes (Battery Saver triggers this)
   // Avoid persisting to Firestore unless the user explicitly changes the theme
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia || !user) return;
+    if (typeof window === 'undefined' || !window.matchMedia) return;
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -146,13 +158,16 @@ export function CustomThemeProvider({
         const mode = isDark ? 'dark' : 'light';
         // Update local state and caches only; do not write to Firestore
         setThemeData((prev) => {
-          if (!prev || prev.mode === mode) return prev;
-          const updated = { ...prev, mode } as Theme;
+          if (prev.mode === mode) return prev;
+
+          const updated: Theme = { ...prev, mode } as Theme;
           try {
             const globalKey = THEME_CACHE_KEY;
             localStorage.setItem(globalKey, JSON.stringify(updated));
-            const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
-            localStorage.setItem(userCacheKey, JSON.stringify(updated));
+            if (user) {
+              const userCacheKey = `${THEME_CACHE_KEY}_${user.uid}`;
+              localStorage.setItem(userCacheKey, JSON.stringify(updated));
+            }
           } catch {}
           return updated;
         });
@@ -175,7 +190,6 @@ export function CustomThemeProvider({
 
     return () => {
       if (media.removeEventListener) {
-        media.removeEventListener('change', listener);
       } else {
         media.removeListener(listener);
       }
@@ -186,13 +200,17 @@ export function CustomThemeProvider({
     setHasUserInteracted(true); // ✅ stop listening to system changes after first manual change
     await setThemeMode(mode);
   };
-  const muiTheme = createTheme({
-    palette: {
-      mode: themeData?.mode || 'light',
-      primary: { main: themeData?.primary || '#1976d2' },
-      secondary: { main: themeData?.secondary || '#9c27b0' },
-    },
-  });
+  const muiTheme = React.useMemo(
+    () =>
+      createTheme({
+        palette: {
+          mode: themeData.mode,
+          primary: { main: themeData.primary },
+          secondary: { main: themeData.secondary },
+        },
+      }),
+    [themeData],
+  );
 
   return (
     <CustomThemeContext.Provider

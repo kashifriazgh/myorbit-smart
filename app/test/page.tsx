@@ -46,8 +46,10 @@ export default function ImproveGoalTest() {
   };
 
   return (
-    <div className="p-6 max-w-xl mx-auto space-y-4 border rounded-xl">
-      <h2 className="text-xl font-bold">Improve Goal (AI)</h2>
+    <div className="p-6 max-w-xl mx-auto space-y-4 border dark:border-slate-600 rounded-xl">
+      <h2 className="text-xl font-bold dark:text-slate-50">
+        Improve Goal (AI)
+      </h2>
 
       <input
         type="text"
@@ -67,7 +69,7 @@ export default function ImproveGoalTest() {
       <button
         onClick={handleSubmit}
         disabled={loading}
-        className="bg-black text-white px-4 py-2 rounded"
+        className="bg-black dark:bg-slate-800 text-white dark:text-slate-50 px-4 py-2 rounded"
       >
         {loading ? 'Analyzing...' : 'Analyze Goal'}
       </button>
@@ -76,7 +78,7 @@ export default function ImproveGoalTest() {
         <div className="mt-4 space-y-3">
           <h3 className="font-semibold">SMART Analysis</h3>
 
-          <ul className="text-sm space-y-1">
+          <ul className="text-sm dark:text-slate-300 space-y-1">
             <li>Specific: {result.isSMART.specific ? '✅' : '❌'}</li>
             <li>Measurable: {result.isSMART.measurable ? '✅' : '❌'}</li>
             <li>Achievable: {result.isSMART.achievable ? '✅' : '❌'}</li>
@@ -84,12 +86,14 @@ export default function ImproveGoalTest() {
             <li>Time Bound: {result.isSMART.timeBound ? '✅' : '❌'}</li>
           </ul>
 
-          <p className="text-sm text-gray-600">{result.isSMART.summary}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {result.isSMART.summary}
+          </p>
 
           {result.needsBreakdown && result.milestones?.length > 0 && (
             <div>
               <h3 className="font-semibold mt-3">Milestones</h3>
-              <ul className="list-disc ml-5 text-sm">
+              <ul className="list-disc ml-5 text-sm dark:text-slate-300">
                 {result.milestones.map((m: string, i: number) => (
                   <li key={i}>{m}</li>
                 ))}

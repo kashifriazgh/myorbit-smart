@@ -88,8 +88,14 @@ export default function Homepage() {
           <GuestUserBanner />
 
           <div className="flex justify-end items-center mb-4 w-full">
-            <label className="flex items-center gap-2 cursor-pointer select-none text-base font-medium text-slate-700 dark:text-slate-200">
-              <span>Focus on Today</span>
+            <label className="flex items-center gap-2 cursor-pointer select-none text-base font-medium">
+              <span
+                style={{
+                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#0f172a',
+                }}
+              >
+                Focus on Today
+              </span>
               <Switch
                 checked={focusToday}
                 onChange={(e) => setFocusToday(e.target.checked)}

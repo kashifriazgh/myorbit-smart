@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -20,6 +20,8 @@ import {
   FormControlLabel,
   Switch,
   useMediaQuery,
+  InputAdornment,
+  Stack,
 } from '@mui/material';
 import { useRouter } from 'next/navigation';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -36,6 +38,8 @@ import {
   SelfImprovement,
   ExpandMore,
   ExpandLess,
+  Flag as GoalIcon,
+  AutoAwesome as MagicIcon,
 } from '@mui/icons-material';
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useAuth } from '../../lib/context/userContext';
@@ -181,6 +185,16 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
   const [loading, setLoading] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      const timer = setTimeout(() => {
+        titleInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
 
   // Form state
   const isTimestampLike = (v: unknown): v is { toDate: () => Date } => {
@@ -639,92 +653,115 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
           {/* TOP SECTION: Title, Type, Due Date */}
           <Box
             sx={{
-              backgroundColor:
-                theme?.mode === 'dark'
-                  ? 'rgba(51, 65, 85, 0.3)'
-                  : 'rgba(226, 232, 240, 0.5)',
-              borderRadius: '1rem',
-              p: 4,
-              border: `1px solid ${
-                theme?.mode === 'dark'
-                  ? 'rgba(71, 85, 105, 0.5)'
-                  : 'rgba(203, 213, 225, 0.5)'
-              }`,
+              backgroundColor: theme?.mode === 'dark' ? 'rgba(30, 41, 59, 0.5)' : 'rgba(255, 255, 255, 0.9)',
+              borderRadius: '1.5rem',
+              p: { xs: 2.5, md: 4 },
+              border: `1px solid ${theme?.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'}`,
+              boxShadow: theme?.mode === 'dark' ? '0 8px 32px rgba(0, 0, 0, 0.2)' : '0 8px 32px rgba(0, 0, 0, 0.05)',
               mb: 4,
+              position: 'relative',
+              overflow: 'hidden',
+              backdropFilter: 'blur(10px)',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '6px',
+                height: '100%',
+                background: `linear-gradient(to bottom, ${getGoalTypeColor(formData.type)}, ${getGoalTypeColor(formData.type)}80)`,
+              }
             }}
           >
-            <Typography
-              variant="subtitle2"
-              className="font-semibold mb-4 uppercase"
-              sx={{
-                color: theme?.mode === 'dark' ? '#cbd5e1' : '#475569',
-                fontSize: '0.75rem',
-                letterSpacing: '0.5px',
-              }}
-            >
-              Core Goal Settings
-            </Typography>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+              <Box>
+                <Typography variant="h6" fontWeight={800} sx={{ color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a', fontSize: '1.1rem' }}>
+                  Set Your Vision
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                  اپنا گول اور اسے حاصل کرنے کی تاریخ لکھیں
+                </Typography>
+              </Box>
+              {formData.title && (
+                <Chip 
+                  label="Smart AI Parsing" 
+                  size="small" 
+                  icon={<MagicIcon style={{ fontSize: '14px', color: '#3B82F6' }} />}
+                  sx={{ 
+                    bgcolor: 'rgba(59, 130, 246, 0.1)', 
+                    color: '#3B82F6', 
+                    fontWeight: 700,
+                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                    fontSize: '0.65rem'
+                  }} 
+                />
+              )}
+            </Stack>
 
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3.5 }}>
               {/* i. Title */}
               <TextField
+                inputRef={titleInputRef}
                 fullWidth
-                label={
-                  <span>
-                    <b>Goal Title</b>{' '}
-                    <span style={{ color: '#ef4444' }}>*</span>
-                  </span>
-                }
+                label={<b>Goal Title</b>}
                 value={formData.title}
                 onChange={(e) => handleTitleChange(e.target.value)}
-                placeholder="e.g., Save ₹5000 in 5 months"
+                placeholder="What do you want to achieve? (e.g., Save $5k by December)"
                 variant="outlined"
                 InputProps={{
-                  style: {
-                    fontWeight: 500,
-                    fontSize: '1.1rem',
-                    letterSpacing: '0.01em',
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <GoalIcon sx={{ color: getGoalTypeColor(formData.type), opacity: 0.8 }} />
+                    </InputAdornment>
+                  ),
+                  sx: {
+                    borderRadius: '1.25rem',
+                    backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                    fontSize: '1.2rem',
+                    fontWeight: 700,
+                    '& fieldset': { borderColor: theme?.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
+                    '&:hover fieldset': { borderColor: getGoalTypeColor(formData.type) },
                   },
                 }}
                 sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: '0.75rem',
-                    backgroundColor:
-                      theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-                  },
                   '& .MuiInputLabel-root': {
-                    fontWeight: 600,
-                  },
-                  mb: 1,
+                    transform: 'translate(48px, 20px) scale(1)',
+                    '&.Mui-focused, &.MuiFormLabel-filled': {
+                      transform: 'translate(14px, -9px) scale(0.75)',
+                    }
+                  }
                 }}
-                autoFocus
                 required
               />
 
               {/* ii. Type & Due Date side by side */}
-              <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Box className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <FormControl fullWidth>
-                  <InputLabel>
-                    <b>Goal Type</b>
-                  </InputLabel>
+                  <InputLabel shrink sx={{ fontWeight: 800, color: 'text.secondary', mb: 1 }}>Category</InputLabel>
                   <Select
                     value={formData.type}
                     onChange={(e) => handleInputChange('type', e.target.value)}
-                    label="Goal Type"
+                    label="Category"
+                    notched
                     sx={{
-                      borderRadius: '0.75rem',
-                      backgroundColor:
-                        theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+                      borderRadius: '1.25rem',
+                      backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                      '& .MuiSelect-select': { py: 1.8, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1.5 },
                     }}
                   >
                     {goalTypes.map((type) => (
-                      <MenuItem key={type.value} value={type.value}>
-                        <Box className="flex items-center gap-2">
-                          <Box sx={{ color: getGoalTypeColor(type.value) }}>
-                            {type.icon}
-                          </Box>
-                          <span style={{ fontWeight: 600 }}>{type.label}</span>
+                      <MenuItem key={type.value} value={type.value} sx={{ py: 1.5 }}>
+                        <Box sx={{ 
+                          color: 'white', 
+                          bgcolor: getGoalTypeColor(type.value),
+                          p: 0.8,
+                          borderRadius: '10px',
+                          display: 'flex',
+                          mr: 1.5
+                        }}>
+                          {type.icon}
                         </Box>
+                        <Typography fontWeight={700}>{type.label}</Typography>
                       </MenuItem>
                     ))}
                   </Select>
@@ -732,69 +769,56 @@ const GoalModal: React.FC<GoalModalProps> = ({ open, onClose, goal }) => {
 
                 <Box>
                   <DatePicker
-                    label={
-                      <span>
-                        <b>Target Date</b>{' '}
-                        <span style={{ color: '#ef4444' }}>*</span>
-                      </span>
-                    }
+                    label="Target Date"
                     value={formData.dueDate}
                     onChange={(date) => handleInputChange('dueDate', date)}
                     maxDate={maxDueDate}
                     slotProps={{
-                      textField: { fullWidth: true, required: true },
-                    }}
-                  />
-                </Box>
-              </Box>
-
-              {/* Quick presets */}
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2 }}>
-                {monthPresetButtons.map((opt) => (
-                  <Button
-                    key={opt.label}
-                    size="small"
-                    variant={
-                      formData.dueDate &&
-                      new Date(formData.dueDate).toDateString() ===
-                        opt.value.toDateString()
-                        ? 'contained'
-                        : 'outlined'
-                    }
-                    onClick={() =>
-                      handleInputChange('dueDate', formatDate(opt.value))
-                    }
-                    sx={{
-                      borderRadius: '9999px',
-                      px: 1.5,
-                      py: 0.5,
-                      textTransform: 'none',
-                      fontWeight: 600,
-                      fontSize: '0.75rem',
-                      backgroundColor:
-                        formData.dueDate &&
-                        new Date(formData.dueDate).toDateString() ===
-                          opt.value.toDateString()
-                          ? getGoalTypeColor(formData.type)
-                          : 'transparent',
-                      borderColor:
-                        theme?.mode === 'dark' ? '#475569' : '#cbd5e1',
-                      color:
-                        formData.dueDate &&
-                        new Date(formData.dueDate).toDateString() ===
-                          opt.value.toDateString()
-                          ? '#ffffff'
-                          : theme?.mode === 'dark'
-                            ? '#e2e8f0'
-                            : '#0f172a',
-                      '&:hover': {
-                        backgroundColor: getGoalTypeColor(formData.type) + '20',
+                      textField: { 
+                        fullWidth: true, 
+                        required: true,
+                        sx: {
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '1.25rem',
+                            backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                            '& input': { fontWeight: 700, py: 1.8 }
+                          }
+                        }
                       },
                     }}
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
+                  />
+                  
+                  {/* Quick Pick Pills */}
+                  <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                    {monthPresetButtons.map((opt) => (
+                      <Chip
+                        key={opt.label}
+                        label={opt.label}
+                        size="small"
+                        onClick={() => handleInputChange('dueDate', formatDate(opt.value))}
+                        sx={{
+                          cursor: 'pointer',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          borderRadius: '8px',
+                          height: '28px',
+                          transition: 'all 0.2s',
+                          bgcolor: formData.dueDate && new Date(formData.dueDate).toDateString() === opt.value.toDateString()
+                            ? getGoalTypeColor(formData.type)
+                            : theme?.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                          color: formData.dueDate && new Date(formData.dueDate).toDateString() === opt.value.toDateString()
+                            ? 'white'
+                            : 'text.secondary',
+                          border: 'none',
+                          '&:hover': {
+                            bgcolor: getGoalTypeColor(formData.type) + '40',
+                            transform: 'translateY(-1px)'
+                          }
+                        }}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
               </Box>
             </Box>
           </Box>

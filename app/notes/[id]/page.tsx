@@ -6,7 +6,6 @@ import {
   Card,
   CardContent,
   Typography,
-  CircularProgress,
   Container,
   Button,
   Dialog,
@@ -14,6 +13,7 @@ import {
   DialogContent,
   DialogActions,
   IconButton,
+  Skeleton,
 } from '@mui/material';
 import {
   doc,
@@ -34,6 +34,10 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import NoteIcon from '@mui/icons-material/Note';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
+import PriorityHighIcon from '@mui/icons-material/PriorityHigh';
+import { Stack, Tooltip } from '@mui/material';
 
 export default function NoteDetailPage() {
   const { id } = useParams();
@@ -80,6 +84,8 @@ export default function NoteDetailPage() {
               : undefined,
             importance: data.importance ?? 'normal',
             isArchived: Boolean(data.isArchived),
+            isImportant: Boolean(data.isImportant),
+            isFav: Boolean(data.isFav),
           };
 
           if (fetchedNote.userId !== user.uid) {
@@ -117,17 +123,58 @@ export default function NoteDetailPage() {
     }
   };
 
+  const handleToggleFav = async () => {
+    if (!id || !note) return;
+    setSavingMeta(true);
+    try {
+      const newValue = !note.isFav;
+      await updateDoc(doc(db, 'notes', id as string), {
+        isFav: newValue,
+        updatedAt: serverTimestamp(),
+      });
+      setNote((prev) => (prev ? { ...prev, isFav: newValue } : prev));
+    } finally {
+      setSavingMeta(false);
+    }
+  };
+
+  const handleToggleImportant = async () => {
+    if (!id || !note) return;
+    setSavingMeta(true);
+    try {
+      const newValue = !note.isImportant;
+      await updateDoc(doc(db, 'notes', id as string), {
+        isImportant: newValue,
+        updatedAt: serverTimestamp(),
+      });
+      setNote((prev) => (prev ? { ...prev, isImportant: newValue } : prev));
+    } finally {
+      setSavingMeta(false);
+    }
+  };
+
   if (loading) {
     return (
       <Container maxWidth="md" sx={{ py: 4 }}>
-        <Box
-          display="flex"
-          justifyContent="center"
-          alignItems="center"
-          minHeight={400}
-        >
-          <CircularProgress />
+        <Box mb={3}>
+          <Skeleton variant="rectangular" width={120} height={32} sx={{ mb: 2, borderRadius: '8px' }} />
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Skeleton variant="text" width={200} height={24} />
+            <Stack direction="row" spacing={1}>
+              <Skeleton variant="circular" width={40} height={40} />
+              <Skeleton variant="circular" width={40} height={40} />
+            </Stack>
+          </Box>
         </Box>
+        <Card sx={{ minHeight: 400, borderRadius: '1.25rem', p: 2 }}>
+          <CardContent>
+            <Skeleton variant="rectangular" width="100%" height={24} sx={{ mb: 1.5 }} />
+            <Skeleton variant="rectangular" width="100%" height={24} sx={{ mb: 1.5 }} />
+            <Skeleton variant="rectangular" width="100%" height={24} sx={{ mb: 1.5 }} />
+            <Skeleton variant="rectangular" width="80%" height={24} sx={{ mb: 1.5 }} />
+            <Skeleton variant="rectangular" width="40%" height={24} />
+          </CardContent>
+        </Card>
       </Container>
     );
   }
@@ -163,7 +210,15 @@ export default function NoteDetailPage() {
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
+    <Container
+      maxWidth="md"
+      sx={{ py: 4 }}
+      className={
+        customTheme?.mode === 'dark'
+          ? 'bg-slate-950 text-slate-50'
+          : 'bg-slate-50 text-slate-900'
+      }
+    >
       {/* Header */}
       <Box mb={3}>
         <Button
@@ -174,26 +229,56 @@ export default function NoteDetailPage() {
           Back to Notes
         </Button>
 
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: 'block', fontSize: '0.875rem' }}
-        >
-          {moment(note.createdAt).format('MMMM D, YYYY [at] h:mm A')}
-        </Typography>
+        <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', fontSize: '0.875rem' }}
+          >
+            {moment(note.createdAt).format('MMMM D, YYYY [at] h:mm A')}
+          </Typography>
+
+          <Stack direction="row" spacing={1}>
+            <Tooltip title={note.isFav ? 'Remove from Favorites' : 'Add to Favorites'}>
+              <IconButton
+                onClick={handleToggleFav}
+                color={note.isFav ? 'warning' : 'default'}
+                disabled={savingMeta}
+              >
+                {note.isFav ? <StarIcon /> : <StarBorderIcon />}
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={note.isImportant ? 'Unmark as Important' : 'Mark as Important'}>
+              <IconButton
+                onClick={handleToggleImportant}
+                color={note.isImportant ? 'error' : 'default'}
+                disabled={savingMeta}
+              >
+                <PriorityHighIcon sx={{ opacity: note.isImportant ? 1 : 0.3 }} />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        </Box>
       </Box>
 
       {/* Content */}
       <Card
+        className={
+          customTheme?.mode === 'dark'
+            ? 'bg-slate-900 border-slate-800'
+            : 'bg-white border-slate-200'
+        }
         sx={{
-          backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-          color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
           minHeight: 400,
+          borderRadius: '1.25rem',
         }}
       >
         <CardContent sx={{ p: 4 }}>
           <Typography
             variant="body1"
+            className={
+              customTheme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-800'
+            }
             sx={{
               fontSize: '1.125rem',
               fontWeight: 500,

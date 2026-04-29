@@ -39,9 +39,11 @@ function ThemeBodyEffect() {
   const { theme } = useCustomTheme();
   React.useEffect(() => {
     if (theme?.mode === 'dark') {
+      document.documentElement.classList.add('dark');
       document.body.style.background = '#334155'; // slate-800
       document.body.style.color = '#f8fafc'; // slate-50
     } else {
+      document.documentElement.classList.remove('dark');
       document.body.style.background = '';
       document.body.style.color = '';
     }

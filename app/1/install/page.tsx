@@ -50,12 +50,12 @@ export default function InstallPage() {
       {installable ? (
         <button
           onClick={handleInstallClick}
-          className="px-6 py-3 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700 transition"
+          className="px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-xl shadow hover:bg-blue-700 dark:hover:bg-blue-800 transition"
         >
           Install App
         </button>
       ) : (
-        <p className="text-gray-500 text-center">
+        <p className="text-gray-500 dark:text-gray-400 text-center">
           Open this page in Chrome (Android) or Edge (Desktop) to install.
         </p>
       )}
