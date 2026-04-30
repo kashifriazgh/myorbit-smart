@@ -854,6 +854,10 @@ export interface Goal {
 
   notes?: string;
   tags?: string[];
+  
+  // Legacy / AI fields
+  deadline?: string;
+  targetDate?: string;
 
   authorName?: string;
 }

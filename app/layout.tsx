@@ -6,6 +6,8 @@ import ClientThemeProvider from './components/global/ClientThemeProvider';
 import Navbar from './components/global/Navbar';
 import EmotionRegistry from './emotionRegistry';
 import AppBarTop from './components/global/AppBarTop';
+import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingInitializer';
+
 
 // Google Fonts
 const inter = Inter({
@@ -59,6 +61,7 @@ export default function RootLayout({
         <EmotionRegistry>
           <ClientThemeProvider>
             <div className="flex min-h-screen flex-col  ">
+              <OnBoardingInitializer />
               {/* Top App Bar */}
               <AppBarTop />
 

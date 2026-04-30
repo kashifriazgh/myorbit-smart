@@ -136,14 +136,18 @@ export default function InitialOnboarding({
     const initOnboarding = async () => {
       if (!user) return;
 
-      // 1. Check LocalStorage
-      const localData = localStorage.getItem('onboarding_data');
-      const localCompleted = localStorage.getItem('onboarding_completed_groups');
-      const localIdx = localStorage.getItem('onboarding_current_group_idx');
-      localStorage.getItem('onboarding_first_interaction');
+      // 1. Check LocalStorage (User-specific)
+      const dataKey = `onboarding_data_${user.uid}`;
+      const completedKey = `onboarding_completed_groups_${user.uid}`;
+      const idxKey = `onboarding_current_group_idx_${user.uid}`;
+
+      const localData = localStorage.getItem(dataKey);
+      const localCompleted = localStorage.getItem(completedKey);
+      const localIdx = localStorage.getItem(idxKey);
       
       let initialData: OnboardingData = localData ? JSON.parse(localData) : {};
       const initialCompleted: number[] = localCompleted ? JSON.parse(localCompleted) : [];
+      
       if (localIdx && startStep === undefined) setCurrentGroupIdx(parseInt(localIdx));
       setCompletedGroups(initialCompleted);
 
@@ -172,7 +176,8 @@ export default function InitialOnboarding({
         // Logic to decide which step to show
         if (startStep === undefined) {
           // Priority 1: Check localStorage first (explicitly check for 'true' vs 'false')
-          const localInt = localStorage.getItem('onboarding_first_interaction');
+          const intKey = `onboarding_first_interaction_${user.uid}`;
+          const localInt = localStorage.getItem(intKey);
           let hasInteracted = localInt === 'true';
           
           // Priority 2: If not in local storage (null), check firebase data
@@ -225,18 +230,21 @@ export default function InitialOnboarding({
 
   // Sync with LocalStorage
   useEffect(() => {
-    if (Object.keys(onboardingData).length > 0) {
-      localStorage.setItem('onboarding_data', JSON.stringify(onboardingData));
-    }
-    localStorage.setItem('onboarding_completed_groups', JSON.stringify(completedGroups));
-    localStorage.setItem('onboarding_current_group_idx', currentGroupIdx.toString());
-  }, [onboardingData, completedGroups, currentGroupIdx]);
+    if (!user) return;
+    const dataKey = `onboarding_data_${user.uid}`;
+    const completedKey = `onboarding_completed_groups_${user.uid}`;
+    const idxKey = `onboarding_current_group_idx_${user.uid}`;
+
+    localStorage.setItem(dataKey, JSON.stringify(onboardingData));
+    localStorage.setItem(completedKey, JSON.stringify(completedGroups));
+    localStorage.setItem(idxKey, currentGroupIdx.toString());
+  }, [onboardingData, completedGroups, currentGroupIdx, user]);
 
   const saveToFirebase = useCallback(async (data: Partial<OnboardingData>) => {
     if (!user) return;
     try {
       const ref = doc(db, 'initialOnBoarding', user.uid);
-      await setDoc(ref, data, { merge: true });
+      await setDoc(ref, { ...data, userId: user.uid }, { merge: true });
       
       // Also update 'users' collection if name changed
       if (data.firstName || data.lastName) {
@@ -268,10 +276,11 @@ export default function InitialOnboarding({
     const updatedData = { ...onboardingData };
 
     // Set first interaction when name step is completed
-    if (currentGroupIdx === 0) {
+    if (currentGroupIdx === 0 && user) {
       updatedData.firstInteraction = true;
       setOnboardingData(updatedData);
-      localStorage.setItem('onboarding_first_interaction', 'true');
+      const intKey = `onboarding_first_interaction_${user.uid}`;
+      localStorage.setItem(intKey, 'true');
     }
 
     // Mark current group as completed locally

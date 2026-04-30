@@ -13,6 +13,7 @@ import Goals from './components/homepage/Goals';
 import Schedules from './components/homepage/Schedules';
 import DailyCheckouts from './components/homepage/DailyCheckouts';
 import QuickLinks from './components/homepage/QuickLinks';
+import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingInitializer';
 import OnboardingDebugger from './components/onboarding/OnboardingDebugger';
 
 // Lazy load components
@@ -87,6 +88,7 @@ export default function Homepage() {
           }}
         >
           <OnboardingDebugger />
+          <OnBoardingInitializer />
           <GuestUserBanner />
 
           <div className="flex justify-end items-center mb-4 w-full">
