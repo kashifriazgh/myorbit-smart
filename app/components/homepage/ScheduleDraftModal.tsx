@@ -31,6 +31,71 @@ interface Props {
   onScheduleCreated?: () => void;
 }
 
+interface ParsedScheduleData {
+  title?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  objective?: string;
+  duration?: number;
+  priority?: 'low' | 'medium' | 'high' | 'critical';
+  reminder?: {
+    before: number;
+    method: 'notification' | 'whatsapp' | 'email';
+  };
+  repeat?: 'none' | 'daily' | 'weekly' | 'monthly';
+}
+
+const parseAIResponse = (result: string): ParsedScheduleData => {
+  if (!result || typeof result !== 'string') {
+    throw new Error('Empty or invalid AI response');
+  }
+
+  let cleanedResult = result.trim();
+
+  // Strategy 1: Remove markdown code blocks
+  cleanedResult = cleanedResult
+    .replace(/```json\n?/gi, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  // Strategy 2: Try direct JSON parse
+  try {
+    return JSON.parse(cleanedResult);
+  } catch (e) {
+    console.log(e);
+    // Continue to next strategy
+  }
+
+  // Strategy 3: Extract JSON object from text
+  const jsonMatch = cleanedResult.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.log(e);
+      // Continue to next strategy
+    }
+  }
+
+  // Strategy 4: Try to find JSON between brackets (nested)
+  const bracketMatch = cleanedResult.match(/\{[\s\S]*\}/);
+  if (bracketMatch) {
+    try {
+      const extracted = bracketMatch[0];
+      // Remove any trailing commas
+      const fixed = extracted.replace(/,(\s*[}\]])/g, '$1');
+      return JSON.parse(fixed);
+    } catch (e) {
+      console.log(e);
+      // Continue to fallback
+    }
+  }
+
+  // Fallback: Return null and use defaults
+  throw new Error('Could not parse AI response. Using default values.');
+};
+
 export default function ScheduleDraftModal({
   open,
   onClose,
@@ -46,72 +111,6 @@ export default function ScheduleDraftModal({
 
   const getCurrentTime = () => getCurrentTimePK();
   const getTomorrowDate = () => getTomorrowDatePK();
-
-  // Improved JSON parsing with multiple fallback strategies
-  interface ParsedScheduleData {
-    title?: string;
-    date?: string;
-    startTime?: string;
-    endTime?: string;
-    objective?: string;
-    duration?: number;
-    priority?: 'low' | 'medium' | 'high' | 'critical';
-    reminder?: {
-      before: number;
-      method: 'notification' | 'whatsapp' | 'email';
-    };
-    repeat?: 'none' | 'daily' | 'weekly' | 'monthly';
-  }
-
-  const parseAIResponse = (result: string): ParsedScheduleData => {
-    if (!result || typeof result !== 'string') {
-      throw new Error('Empty or invalid AI response');
-    }
-
-    let cleanedResult = result.trim();
-
-    // Strategy 1: Remove markdown code blocks
-    cleanedResult = cleanedResult
-      .replace(/```json\n?/gi, '')
-      .replace(/```\n?/g, '')
-      .trim();
-
-    // Strategy 2: Try direct JSON parse
-    try {
-      return JSON.parse(cleanedResult);
-    } catch (e) {
-      console.log(e);
-      // Continue to next strategy
-    }
-
-    // Strategy 3: Extract JSON object from text
-    const jsonMatch = cleanedResult.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch (e) {
-        console.log(e);
-        // Continue to next strategy
-      }
-    }
-
-    // Strategy 4: Try to find JSON between brackets (nested)
-    const bracketMatch = cleanedResult.match(/\{[\s\S]*\}/);
-    if (bracketMatch) {
-      try {
-        const extracted = bracketMatch[0];
-        // Remove any trailing commas
-        const fixed = extracted.replace(/,(\s*[}\]])/g, '$1');
-        return JSON.parse(fixed);
-      } catch (e) {
-        console.log(e);
-        // Continue to fallback
-      }
-    }
-
-    // Fallback: Return null and use defaults
-    throw new Error('Could not parse AI response. Using default values.');
-  };
 
   const generateDraft = useCallback(async () => {
     if (!rawText.trim()) {

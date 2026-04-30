@@ -176,9 +176,9 @@ const OnGoingStreaks = () => {
     dirty,
     progressModalOpen,
     selectedStreakId,
-    // Don't include streaks, userStreaks, or updateRemarks in dependencies
-    // as they cause infinite loops when context updates after save
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    streaks,
+    updateRemarks,
+    user?.uid,
   ]);
 
   // Keen Slider for mobile

@@ -129,12 +129,12 @@ const GoalDetailInner: React.FC = () => {
   }, [goal]);
   const typeColor = useMemo(
     () => (goal ? getGoalTypeColor(goal.type) : '#6B7280'),
-    [goal?.type],
+    [goal],
   );
 
   const dueDateDate = useMemo(
     () => (goal ? toPlainDate(goal.dueDate) : null),
-    [goal?.dueDate],
+    [goal],
   );
 
   const createdDate = useMemo(() => (goal ? new Date() : null), [goal]);

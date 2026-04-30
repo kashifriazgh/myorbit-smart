@@ -332,6 +332,7 @@ export interface LoanRecord {
   id?: string;
   userId: string;
   amount: number;
+  paidAmount?: number; // amount paid/received so far
   type: 'borrow' | 'lend'; // perspective of the user
   counterparty: string; // name/identifier of the person
   dueDate?: Date | Timestamp;
@@ -630,21 +631,50 @@ export interface InitialOnBoarding {
 
   // This will still come from users collection, so not nested:
   fullName?: string;
+  firstName?: string;
+  lastName?: string;
 
   // Fields with progress tracking
   nickName?: OnBoardingField<string>;
   gender?: OnBoardingField<'male' | 'female' | 'other'>;
   profession?: OnBoardingField<string>;
-  ageGroup?: OnBoardingField<'teen' | '20s' | '30s' | '40s' | '50+'>;
-  currency?: OnBoardingField<string>; // e.g. 'PKR', 'USD'
+  professionType?: OnBoardingField<'job' | 'business'>;
+  ageGroup?: OnBoardingField<string>;
+  currency?: OnBoardingField<string>; 
   country?: OnBoardingField<string>;
-  goals?: OnBoardingField<string[]>; // e.g. ["Build habits", "Start business"]
+  city?: OnBoardingField<string>;
+  goals?: OnBoardingField<string[]>; 
+  skills?: OnBoardingField<string[]>;
+  hobby?: OnBoardingField<string>;
+  education?: OnBoardingField<string>;
   currentLevel?: OnBoardingField<'entry' | 'intermediate' | 'pro'>;
-  topPriorities?: OnBoardingField<string[]>; // e.g. ['learning', 'fitness']
+  topPriorities?: OnBoardingField<string[]>; 
   shoppingHabits?: OnBoardingField<'weekly' | 'monthly' | 'as-needed'>;
   incomeType?: OnBoardingField<'monthly' | 'weekly' | 'irregular'>;
-  startOfMonth?: OnBoardingField<number>; // Day of month: 1–31
-  startOfWeek?: OnBoardingField<number>; // Day of week: 0 = Sunday, 1 = Monday, etc.
+  startOfMonth?: OnBoardingField<number>; 
+  startOfWeek?: OnBoardingField<number>;
+  
+  // AI Behavior
+  aiTone?: OnBoardingField<'Formal' | 'Friendly' | 'Strict Coach'>;
+  autoImprove?: OnBoardingField<boolean>;
+  autoSuggest?: OnBoardingField<boolean>;
+  smartRescheduling?: OnBoardingField<boolean>;
+
+  // Productivity
+  workStyle?: OnBoardingField<string>;
+  peakHours?: OnBoardingField<string[]>;
+  socialPreference?: OnBoardingField<string>;
+  preferredSocialTime?: OnBoardingField<string>;
+  socialHourRange?: OnBoardingField<[number, number]>;
+
+  // Notifications
+  reminderBefore?: OnBoardingField<number>;
+  maxNotifications?: OnBoardingField<number>;
+  quitHours?: OnBoardingField<[number, number]>;
+
+  // Planning
+  activityTracking?: OnBoardingField<'Allow' | 'Limited' | 'Off'>;
+  deadlineType?: OnBoardingField<'Strict' | 'Flexible'>;
 }
 
 export interface QuickNote {

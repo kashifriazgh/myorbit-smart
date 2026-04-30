@@ -13,6 +13,7 @@ import Goals from './components/homepage/Goals';
 import Schedules from './components/homepage/Schedules';
 import DailyCheckouts from './components/homepage/DailyCheckouts';
 import QuickLinks from './components/homepage/QuickLinks';
+import OnboardingDebugger from './components/onboarding/OnboardingDebugger';
 
 // Lazy load components
 const ImportantTasks = lazy(
@@ -85,6 +86,7 @@ export default function Homepage() {
             minHeight: '100vh',
           }}
         >
+          <OnboardingDebugger />
           <GuestUserBanner />
 
           <div className="flex justify-end items-center mb-4 w-full">

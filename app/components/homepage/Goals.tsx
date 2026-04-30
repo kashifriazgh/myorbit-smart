@@ -12,6 +12,8 @@ import 'keen-slider/keen-slider.min.css';
 import { useKeenSlider } from 'keen-slider/react';
 import GoalModal from '../goals/GoalModal';
 
+const priorityRank: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
+
 const Goals: React.FC = () => {
   const { goals, loading } = useGoals();
   const { user } = useAuth();
@@ -29,7 +31,6 @@ const Goals: React.FC = () => {
   };
 
   // Filter by logged-in user, status In Progress/Not Started, sort by priority High > Medium > Low
-  const priorityRank: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
   const filteredGoals = useMemo(() => {
     if (!goals?.length || !user?.uid) return [];
     const userGoals = goals.filter((g) => g.userId === user.uid);

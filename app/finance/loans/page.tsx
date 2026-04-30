@@ -10,8 +10,16 @@ import {
   Chip,
   Stack,
   Skeleton,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  LinearProgress,
+  Tooltip,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { LoanRecord } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
@@ -20,10 +28,15 @@ import {
   query,
   where,
   Timestamp,
+  doc,
+  deleteDoc,
+  updateDoc,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
 import Link from 'next/link';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import DeleteIcon from '@mui/icons-material/Delete';
+import PaymentIcon from '@mui/icons-material/Payment';
 
 export default function LoanRecordsPage() {
   const { user } = useAuth();
@@ -32,49 +45,94 @@ export default function LoanRecordsPage() {
   const [settledLoans, setSettledLoans] = useState<LoanRecord[]>([]);
   const [totals, setTotals] = useState({ toPay: 0, toReceive: 0 });
 
-  useEffect(() => {
+  // Dialog states
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [progressDialogOpen, setProgressDialogOpen] = useState(false);
+  const [selectedLoan, setSelectedLoan] = useState<LoanRecord | null>(null);
+  const [updateAmount, setUpdateAmount] = useState<string>('');
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchLoans = useCallback(async () => {
     if (!user) return;
-
     setLoading(true);
+    try {
+      const q = query(
+        collection(db, 'loans'),
+        where('userId', '==', user.uid),
+      );
 
-    const fetchLoans = async () => {
-      try {
-        const q = query(
-          collection(db, 'loans'),
-          where('userId', '==', user.uid),
-        );
+      const snap = await getDocs(q);
 
-        const snap = await getDocs(q);
+      const loans: LoanRecord[] = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<LoanRecord, 'id'>),
+      }));
 
-        const loans: LoanRecord[] = snap.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Omit<LoanRecord, 'id'>),
-        }));
+      const outstanding = loans.filter((l) => !l.isSettled);
+      const settled = loans.filter((l) => l.isSettled);
 
-        const outstanding = loans.filter((l) => !l.isSettled);
-        const settled = loans.filter((l) => l.isSettled);
+      setActiveLoans(outstanding);
+      setSettledLoans(settled);
 
-        setActiveLoans(outstanding);
-        setSettledLoans(settled);
+      // Fix: borrow = toPay, lend = toReceive
+      const toPay = outstanding
+        .filter((l) => l.type === 'borrow')
+        .reduce((sum, l) => sum + ((l.amount ?? 0) - (l.paidAmount ?? 0)), 0);
 
-        const toPay = outstanding
-          .filter((l) => l.type === 'lend')
-          .reduce((sum, l) => sum + (l.amount ?? 0), 0);
+      const toReceive = outstanding
+        .filter((l) => l.type === 'lend')
+        .reduce((sum, l) => sum + ((l.amount ?? 0) - (l.paidAmount ?? 0)), 0);
 
-        const toReceive = outstanding
-          .filter((l) => l.type === 'borrow')
-          .reduce((sum, l) => sum + (l.amount ?? 0), 0);
-
-        setTotals({ toPay, toReceive });
-      } catch (err) {
-        console.error('Error fetching loans:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchLoans();
+      setTotals({ toPay, toReceive });
+    } catch (err) {
+      console.error('Error fetching loans:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    fetchLoans();
+  }, [fetchLoans]);
+
+  const handleDelete = async () => {
+    if (!selectedLoan?.id) return;
+    setActionLoading(true);
+    try {
+      await deleteDoc(doc(db, 'loans', selectedLoan.id));
+      setDeleteDialogOpen(false);
+      setSelectedLoan(null);
+      fetchLoans();
+    } catch (err) {
+      console.error('Error deleting loan:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUpdateProgress = async () => {
+    if (!selectedLoan?.id || !updateAmount) return;
+    setActionLoading(true);
+    try {
+      const paidValue = parseFloat(updateAmount);
+      const isSettled = paidValue >= selectedLoan.amount;
+      
+      await updateDoc(doc(db, 'loans', selectedLoan.id), {
+        paidAmount: paidValue,
+        isSettled,
+        updatedAt: new Date(),
+      });
+      
+      setProgressDialogOpen(false);
+      setSelectedLoan(null);
+      setUpdateAmount('');
+      fetchLoans();
+    } catch (err) {
+      console.error('Error updating progress:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   if (!user) {
     return (
@@ -184,57 +242,122 @@ export default function LoanRecordsPage() {
           </Card>
         ) : (
           <Stack spacing={2}>
-            {activeLoans.map((loan) => (
-              <Card
-                key={loan.id}
-                sx={{
-                  border: '1px solid #e0e0e0',
-                  backgroundColor:
-                    loan.type === 'borrow' ? '#fff3e0' : '#e8f5e8',
-                }}
-              >
-                <CardContent>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: 2,
-                    }}
-                  >
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="h6" fontWeight="bold">
-                        {loan.counterparty}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {loan.type === 'borrow' ? 'You borrowed' : 'You lent'} •
-                        Due: {formatDate(loan.dueDate)}
-                      </Typography>
-                      {loan.note && (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          mt={1}
-                        >
-                          Note: {loan.note}
+            {activeLoans.map((loan) => {
+              const paid = loan.paidAmount || 0;
+              const progress = Math.min((paid / loan.amount) * 100, 100);
+              
+              return (
+                <Card
+                  key={loan.id}
+                  sx={{
+                    border: '1px solid #e0e0e0',
+                    backgroundColor:
+                      loan.type === 'borrow' ? '#fff3e0' : '#e8f5e8',
+                    position: 'relative',
+                    overflow: 'visible',
+                  }}
+                >
+                  <CardContent>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 2,
+                      }}
+                    >
+                      <Box sx={{ flex: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="h6" fontWeight="bold">
+                            {loan.counterparty}
+                          </Typography>
+                          <Chip
+                            label={loan.type === 'borrow' ? 'Borrow' : 'Lend'}
+                            color={loan.type === 'borrow' ? 'warning' : 'success'}
+                            size="small"
+                          />
+                        </Box>
+                        <Typography variant="body2" color="text.secondary">
+                          {loan.type === 'borrow' ? 'You borrowed' : 'You lent'} •
+                          Due: {formatDate(loan.dueDate)}
                         </Typography>
-                      )}
-                    </Box>
+                        {loan.note && (
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            mt={1}
+                          >
+                            Note: {loan.note}
+                          </Typography>
+                        )}
+                        
+                        {/* Progress Bar */}
+                        <Box sx={{ mt: 2, mb: 1 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary">
+                              Progress: ₨{paid.toLocaleString()} / ₨{loan.amount.toLocaleString()}
+                            </Typography>
+                            <Typography variant="caption" fontWeight="bold">
+                              {Math.round(progress)}%
+                            </Typography>
+                          </Box>
+                          <LinearProgress 
+                            variant="determinate" 
+                            value={progress} 
+                            sx={{ 
+                              height: 6, 
+                              borderRadius: 3,
+                              bgcolor: 'rgba(0,0,0,0.05)',
+                              '& .MuiLinearProgress-bar': {
+                                borderRadius: 3,
+                              }
+                            }} 
+                          />
+                        </Box>
+                      </Box>
 
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="h6" fontWeight="bold">
-                        ₨{loan.amount?.toLocaleString()}
-                      </Typography>
-                      <Chip
-                        label={loan.type === 'borrow' ? 'Borrow' : 'Lend'}
-                        color={loan.type === 'borrow' ? 'warning' : 'success'}
-                        size="small"
-                      />
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                        <Typography variant="h6" fontWeight="bold">
+                          ₨{(loan.amount - paid).toLocaleString()}
+                          <Typography variant="caption" display="block" color="text.secondary" sx={{ textAlign: 'right' }}>
+                            remaining
+                          </Typography>
+                        </Typography>
+                        
+                        <Stack direction="row" spacing={1}>
+                          <Tooltip title="Update Progress">
+                            <IconButton 
+                              size="small" 
+                              onClick={() => {
+                                setSelectedLoan(loan);
+                                setUpdateAmount(loan.paidAmount?.toString() || '0');
+                                setProgressDialogOpen(true);
+                              }}
+                              sx={{ bgcolor: 'background.paper', boxShadow: 1 }}
+                            >
+                              <PaymentIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete Record">
+                            <IconButton 
+                              size="small" 
+                              color="error"
+                              onClick={() => {
+                                setSelectedLoan(loan);
+                                setDeleteDialogOpen(true);
+                              }}
+                              sx={{ bgcolor: 'background.paper', boxShadow: 1 }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      </Box>
                     </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </Stack>
         )}
       </Box>
@@ -283,6 +406,68 @@ export default function LoanRecordsPage() {
           </Stack>
         </Box>
       )}
+
+      {/* Update Progress Dialog */}
+      <Dialog open={progressDialogOpen} onClose={() => !actionLoading && setProgressDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 'bold' }}>Update Progress</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              Update how much has been {selectedLoan?.type === 'borrow' ? 'paid back' : 'received'} so far for this loan.
+            </Typography>
+            <Typography variant="subtitle2" fontWeight="bold">
+              Total Loan Amount: ₨{selectedLoan?.amount.toLocaleString()}
+            </Typography>
+            <TextField
+              fullWidth
+              label="Total Paid Amount"
+              type="number"
+              value={updateAmount}
+              onChange={(e) => setUpdateAmount(e.target.value)}
+              placeholder="e.g. 5000"
+              InputProps={{
+                startAdornment: <Typography sx={{ mr: 1 }}>₨</Typography>,
+              }}
+              disabled={actionLoading}
+              autoFocus
+            />
+            {selectedLoan && parseFloat(updateAmount) >= selectedLoan.amount && (
+              <Chip label="This will mark the loan as Settled" color="success" size="small" sx={{ alignSelf: 'flex-start' }} />
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 0 }}>
+          <Button onClick={() => setProgressDialogOpen(false)} disabled={actionLoading}>Cancel</Button>
+          <Button 
+            variant="contained" 
+            onClick={handleUpdateProgress} 
+            disabled={actionLoading || !updateAmount || isNaN(parseFloat(updateAmount))}
+          >
+            {actionLoading ? 'Updating...' : 'Update'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => !actionLoading && setDeleteDialogOpen(false)}>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>Delete Record?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this loan record? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 0 }}>
+          <Button onClick={() => setDeleteDialogOpen(false)} disabled={actionLoading}>Cancel</Button>
+          <Button 
+            variant="contained" 
+            color="error" 
+            onClick={handleDelete}
+            disabled={actionLoading}
+          >
+            {actionLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

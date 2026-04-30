@@ -40,6 +40,8 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import ToDoModal from '@/app/components/to-do/todoModal';
 
+const PRIORITY_ORDER = { critical: 0, urgent: 1, routine: 2 };
+
 const ImportantTasks = () => {
   const { todos, loading, updateStepStatus } = useTodoContext();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -51,8 +53,6 @@ const ImportantTasks = () => {
   const [fadeOutId, setFadeOutId] = useState<string | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
   const [todoModalOpen, setTodoModalOpen] = useState(false);
-
-  const PRIORITY_ORDER = { critical: 0, urgent: 1, routine: 2 };
 
   // Generate 5 dates starting from today (same as Schedules)
   const generateDates = () => {

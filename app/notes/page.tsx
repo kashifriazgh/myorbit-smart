@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Card,
@@ -64,7 +64,7 @@ export default function NotesPage() {
     return text.length > 140 ? text.slice(0, 140) + '…' : text;
   };
 
-  const fetchNotes = async () => {
+  const fetchNotes = useCallback(async () => {
     if (!user?.uid) {
       // Don't set loading to false yet if we're still initializing
       return;
@@ -72,10 +72,7 @@ export default function NotesPage() {
 
     setLoading(true);
     try {
-      const q = query(
-        collection(db, 'notes'),
-        where('userId', '==', user.uid),
-      );
+      const q = query(collection(db, 'notes'), where('userId', '==', user.uid));
 
       const snapshot = await getDocs(q);
       const fetchedNotes = snapshot.docs.map((doc) => {
@@ -104,11 +101,11 @@ export default function NotesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.uid]);
 
   useEffect(() => {
     fetchNotes();
-  }, [user?.uid, isEditorOpen]);
+  }, [fetchNotes, isEditorOpen]);
 
   const handleToggleFav = async (
     e: React.MouseEvent,

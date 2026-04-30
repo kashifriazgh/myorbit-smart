@@ -1,6 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from 'react';
 import {
   collection,
   onSnapshot,
@@ -71,38 +77,48 @@ export const StreaksProvider = ({
   }, [user?.uid]);
 
   // ✅ Mark streak as done (with or without remarks)
-  const markStreakDone = async (streak: StreakProps, progress: string = '') => {
-    const today = moment().startOf('day');
-    const dayName = moment().format('dddd');
+  const markStreakDone = useCallback(
+    async (streak: StreakProps, progress: string = '') => {
+      const today = moment().startOf('day');
+      const dayName = moment().format('dddd');
 
-    const alreadyDone = streak.attendance?.some((a) => {
-      // Handle both Timestamp and string dates
-      const date = convertToDate(a.date);
-      return moment(date).isSame(today, 'day');
-    });
-    if (alreadyDone) return;
+      const alreadyDone = streak.attendance?.some((a) => {
+        // Handle both Timestamp and string dates
+        const date = convertToDate(a.date);
+        return moment(date).isSame(today, 'day');
+      });
+      if (alreadyDone) return;
 
-    const updatedAttendance = [
-      ...(streak.attendance || []),
-      { date: Timestamp.now(), day: dayName, progress: progress || undefined },
-    ];
+      const updatedAttendance = [
+        ...(streak.attendance || []),
+        {
+          date: Timestamp.now(),
+          day: dayName,
+          progress: progress || undefined,
+        },
+      ];
 
-    await updateDoc(doc(db, 'streaks', streak.id!), {
-      lastChecked: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-      attendance: updatedAttendance,
-      streaksCount: (streak.streaksCount || 0) + 1,
-      currentProgress: progress,
-    });
-  };
+      await updateDoc(doc(db, 'streaks', streak.id!), {
+        lastChecked: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        attendance: updatedAttendance,
+        streaksCount: (streak.streaksCount || 0) + 1,
+        currentProgress: progress,
+      });
+    },
+    []
+  );
 
   // ✅ Only update remarks (without marking done)
-  const updateRemarks = async (streak: StreakProps, progress: string) => {
-    await updateDoc(doc(db, 'streaks', streak.id!), {
-      currentProgress: progress,
-      updatedAt: Timestamp.now(),
-    });
-  };
+  const updateRemarks = useCallback(
+    async (streak: StreakProps, progress: string) => {
+      await updateDoc(doc(db, 'streaks', streak.id!), {
+        currentProgress: progress,
+        updatedAt: Timestamp.now(),
+      });
+    },
+    []
+  );
 
   return (
     <StreaksContext.Provider
@@ -112,3 +128,4 @@ export const StreaksProvider = ({
     </StreaksContext.Provider>
   );
 };
+

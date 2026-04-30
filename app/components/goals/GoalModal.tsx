@@ -52,9 +52,6 @@ import { Timestamp } from 'firebase/firestore';
 import nlp from 'compromise';
 
 import winkNLP from 'wink-nlp';
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 
 // Define a custom type for the compromise document with the 'dates' method
 type CompromiseDocumentWithDates = ReturnType<typeof nlp> & {

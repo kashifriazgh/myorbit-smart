@@ -5,6 +5,7 @@ import React, {
   useContext,
   useState,
   useEffect,
+  useCallback,
   ReactNode,
 } from 'react';
 import { SchedulesProps } from '../interface';
@@ -57,20 +58,23 @@ export const SchedulesProvider: React.FC<SchedulesProviderProps> = ({
     setSelectedDate(today);
   }, []);
 
-  const fetchSchedules = async (date: string) => {
-    if (!userId || !date) return;
+  const fetchSchedules = useCallback(
+    async (date: string) => {
+      if (!userId || !date) return;
 
-    setLoading(true);
-    try {
-      const fetchedSchedules = await getSchedulesByUserAndDate(userId, date);
-      setSchedules(fetchedSchedules);
-    } catch (error) {
-      console.error('Error fetching schedules:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
+      setLoading(true);
+      try {
+        const fetchedSchedules = await getSchedulesByUserAndDate(userId, date);
+        setSchedules(fetchedSchedules);
+      } catch (error) {
+        console.error('Error fetching schedules:', error);
+        throw error;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [userId]
+  );
 
   const addSchedule = async (scheduleData: Omit<SchedulesProps, 'id'>) => {
     try {
@@ -144,7 +148,7 @@ export const SchedulesProvider: React.FC<SchedulesProviderProps> = ({
     if (selectedDate && userId) {
       fetchSchedules(selectedDate);
     }
-  }, [selectedDate, userId]);
+  }, [selectedDate, userId, fetchSchedules]);
 
   const value: SchedulesContextType = {
     schedules,

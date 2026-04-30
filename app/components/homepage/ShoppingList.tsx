@@ -917,7 +917,7 @@ const ShoppingList: React.FC = () => {
       isFetchingRef.current = false;
       console.log('🏁 Fetch completed');
     }
-  }, [user?.uid, getCurrentMonth]);
+  }, [user?.uid, getCurrentMonth, items.length, lastFetchedMonth]);
 
   useEffect(() => {
     console.log('🚀 useEffect triggered');
@@ -936,7 +936,7 @@ const ShoppingList: React.FC = () => {
       setLoading(false);
       setItems([]);
     }
-  }, [user?.uid, onboarding?.startOfMonth?.value, fetchItems]);
+  }, [user?.uid, onboarding, fetchItems]);
 
   const handleTogglePurchase = (item: ShoppingListItem) => {
     if (item.purchased) {

@@ -22,18 +22,19 @@ interface ThemeData {
 const CustomThemeContext = createContext<ThemeData | null>(null);
 const THEME_CACHE_KEY = 'cachedTheme';
 
+const defaultTheme: Theme = {
+  name: 'Default',
+  primary: '#1976d2',
+  secondary: '#9c27b0',
+  mode: 'light',
+};
+
 export function CustomThemeProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const { user } = useAuth();
-  const defaultTheme: Theme = {
-    name: 'Default',
-    primary: '#1976d2',
-    secondary: '#9c27b0',
-    mode: 'light',
-  };
   const [themeData, setThemeData] = useState<Theme>(defaultTheme);
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
