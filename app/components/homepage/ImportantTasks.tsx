@@ -16,6 +16,8 @@ import {
   Fade,
   Chip,
   Divider,
+  Badge,
+  styled,
   Collapse,
 } from '@mui/material';
 import {
@@ -41,6 +43,16 @@ import 'react-datepicker/dist/react-datepicker.css';
 import ToDoModal from '@/app/components/to-do/todoModal';
 
 const PRIORITY_ORDER = { critical: 0, urgent: 1, routine: 2 };
+
+// Custom Styled Badge
+const StyledBadge = styled(Badge)(({ theme }) => ({
+  '& .MuiBadge-badge': {
+    right: -3,
+    top: 3,
+    border: `2px solid ${theme.palette.background.paper}`,
+    padding: '0 4px',
+  },
+}));
 
 const ImportantTasks = () => {
   const { todos, loading, updateStepStatus } = useTodoContext();
@@ -76,6 +88,18 @@ const ImportantTasks = () => {
   useEffect(() => {
     if (dates.length > 0) setSelectedDate(dates[0].fullDate);
   }, [dates]);
+
+  // Calculate task counts for each day
+  const taskCounts = useMemo(() => {
+    const counts: { [date: string]: number } = {};
+    todos.forEach((t) => {
+      if (t.status !== 'completed' && t.dueDate) {
+        const dueDate = moment(t.dueDate).format('YYYY-MM-DD');
+        counts[dueDate] = (counts[dueDate] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [todos]);
 
   // Filter and sort todos for display based on selectedDate (today + next 4 days)
   const filteredTasks = useMemo(() => {
@@ -252,41 +276,48 @@ const ImportantTasks = () => {
         <Box display="flex" alignItems="center" gap={1}>
           {dates.map((dateInfo) => {
             const isSelected = selectedDate === dateInfo.fullDate;
+            const count = taskCounts[dateInfo.fullDate] || 0;
             return (
-              <Box
+              <StyledBadge
                 key={dateInfo.fullDate}
-                onClick={() => setSelectedDate(dateInfo.fullDate)}
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 48,
-                  height: 64,
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease-in-out',
-                  backgroundColor: isSelected ? '#bae6fd' : '#e0f2fe', // selected: sky-200, default: sky-100
-                  border: `1px solid ${isSelected ? '#7dd3fc' : '#bae6fd'}`, // subtle border
-                  boxShadow: isSelected ? 'inset 0 0 0 1px #38bdf8' : 'none',
-                  '&:hover': {
-                    backgroundColor: isSelected ? '#7dd3fc' : '#bae6fd', // hover: sky-300/200
-                  },
-                }}
+                badgeContent={count}
+                color="primary"
+                invisible={count === 0}
               >
-                <Typography
-                  variant="body2"
-                  sx={{ fontWeight: 700, color: '#0c4a6e' }}
+                <Box
+                  onClick={() => setSelectedDate(dateInfo.fullDate)}
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 48,
+                    height: 64,
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease-in-out',
+                    backgroundColor: isSelected ? '#bae6fd' : '#e0f2fe', // selected: sky-200, default: sky-100
+                    border: `1px solid ${isSelected ? '#7dd3fc' : '#bae6fd'}`, // subtle border
+                    boxShadow: isSelected ? 'inset 0 0 0 1px #38bdf8' : 'none',
+                    '&:hover': {
+                      backgroundColor: isSelected ? '#7dd3fc' : '#bae6fd', // hover: sky-300/200
+                    },
+                  }}
                 >
-                  {dateInfo.date}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{ fontSize: '0.7rem', color: '#0369a1' }}
-                >
-                  {dateInfo.day}
-                </Typography>
-              </Box>
+                  <Typography
+                    variant="body2"
+                    sx={{ fontWeight: 700, color: '#0c4a6e' }}
+                  >
+                    {dateInfo.date}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ fontSize: '0.7rem', color: '#0369a1' }}
+                  >
+                    {dateInfo.day}
+                  </Typography>
+                </Box>
+              </StyledBadge>
             );
           })}
         </Box>

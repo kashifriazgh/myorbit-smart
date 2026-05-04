@@ -44,7 +44,9 @@ export default function StreaksModal({
 }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [habitType, setHabitType] = useState<'daily' | 'weekly'>('daily');
+  const [habitType, setHabitType] = useState<
+    'daily' | 'weekly' | 'bi-weekly' | 'monthly' | 'quarterly'
+  >('daily');
   const [privacy] = useState<'private' | 'public'>('private');
   const [reminderTime, setReminderTime] = useState('');
   const [reminderDay, setReminderDay] = useState('Monday'); // for weekly
@@ -154,12 +156,22 @@ export default function StreaksModal({
               <Select
                 value={habitType}
                 onChange={(e) =>
-                  setHabitType(e.target.value as 'daily' | 'weekly')
+                  setHabitType(
+                    e.target.value as
+                      | 'daily'
+                      | 'weekly'
+                      | 'bi-weekly'
+                      | 'monthly'
+                      | 'quarterly'
+                  )
                 }
                 label="Type"
               >
                 <MenuItem value="daily">Daily</MenuItem>
                 <MenuItem value="weekly">Weekly</MenuItem>
+                <MenuItem value="bi-weekly">Bi-Weekly</MenuItem>
+                <MenuItem value="monthly">Monthly</MenuItem>
+                <MenuItem value="quarterly">Quarterly</MenuItem>
               </Select>
             </FormControl>
 

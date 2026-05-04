@@ -11,7 +11,6 @@ import {
   IconButton, 
   useTheme, 
   useMediaQuery,
-  Fade,
   CircularProgress,
   LinearProgress
 } from '@mui/material';
@@ -20,6 +19,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import { motion, AnimatePresence } from 'framer-motion';
 
 import { useAuth } from '@/app/lib/context/userContext';
 import { db } from '@/app/lib/firebase';
@@ -108,6 +108,23 @@ interface InitialOnboardingProps {
   startStep?: number;
 }
 
+const slideVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? 50 : -50,
+    opacity: 0
+  }),
+  center: {
+    zIndex: 1,
+    x: 0,
+    opacity: 1
+  },
+  exit: (direction: number) => ({
+    zIndex: 0,
+    x: direction < 0 ? 50 : -50,
+    opacity: 0
+  })
+};
+
 export default function InitialOnboarding({ 
   open: externalOpen, 
   onClose: externalOnClose,
@@ -130,6 +147,7 @@ export default function InitialOnboarding({
   const [completedGroups, setCompletedGroups] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [transitioning, setTransitioning] = useState(false);
+  const [direction, setDirection] = useState(1); // 1 for next, -1 for back
 
   // Load state from localStorage and Firebase
   useEffect(() => {
@@ -271,6 +289,7 @@ export default function InitialOnboarding({
   };
 
   const handleNext = async () => {
+    setDirection(1);
     setTransitioning(true);
     
     const updatedData = { ...onboardingData };
@@ -305,6 +324,7 @@ export default function InitialOnboarding({
   };
 
   const handleSkip = () => {
+    setDirection(1);
     setTransitioning(true);
     setTimeout(() => {
       if (currentGroupIdx < GROUPS.length - 1) {
@@ -317,6 +337,7 @@ export default function InitialOnboarding({
   };
 
   const handleCTAAction = (accept: boolean) => {
+    setDirection(1);
     setTransitioning(true);
     setTimeout(() => {
       if (accept) {
@@ -328,6 +349,11 @@ export default function InitialOnboarding({
       }
       setTransitioning(false);
     }, 500);
+  };
+
+  const handleBack = () => {
+    setDirection(-1);
+    setCurrentGroupIdx(prev => prev - 1);
   };
 
   const handleStepChange = (val: Partial<OnboardingData>) => {
@@ -354,19 +380,26 @@ export default function InitialOnboarding({
         }
       }}
     >
-      {transitioning && (
-        <Box sx={{ 
-          position: 'absolute', 
-          top: 0, left: 0, right: 0, bottom: 0, 
-          zIndex: 10, 
-          bgcolor: 'rgba(255,255,255,0.7)', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center' 
-        }}>
-          <CircularProgress />
-        </Box>
-      )}
+      <AnimatePresence mode="wait">
+        {transitioning && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ 
+              position: 'absolute', 
+              top: 0, left: 0, right: 0, bottom: 0, 
+              zIndex: 10, 
+              backgroundColor: 'rgba(255,255,255,0.7)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}
+          >
+            <CircularProgress />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end' }}>
         <IconButton onClick={() => setOpen(false)}>
@@ -374,22 +407,36 @@ export default function InitialOnboarding({
         </IconButton>
       </Box>
 
-      <DialogContent sx={{ px: { xs: 3, md: 6 }, pb: 6, pt: 0 }}>
-        {!showCTA ? (
-          <Fade in={!showCTA}>
-            <Box>
-              <Box sx={{ mb: 4 }}>
-                <CurrentStepComponent 
-                  value={onboardingData} 
-                  onChange={handleStepChange} 
-                />
+      <DialogContent sx={{ px: { xs: 3, md: 6 }, pb: 6, pt: 0, minHeight: '400px', display: 'flex', flexDirection: 'column' }}>
+        <AnimatePresence mode="wait" custom={direction}>
+          {!showCTA ? (
+            <motion.div
+              key={`step-${currentGroupIdx}`}
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                x: { type: "spring", stiffness: 300, damping: 30 },
+                opacity: { duration: 0.2 }
+              }}
+              style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column' }}
+            >
+              <Box sx={{ flex: 1 }}>
+                <Box sx={{ mb: 4 }}>
+                  <CurrentStepComponent 
+                    value={onboardingData} 
+                    onChange={handleStepChange} 
+                  />
+                </Box>
               </Box>
 
-              <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center">
+              <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center" sx={{ mt: 'auto' }}>
                 <Box>
                   {currentGroupIdx > 0 && (
                     <Button 
-                      onClick={() => setCurrentGroupIdx(prev => prev - 1)}
+                      onClick={handleBack}
                       startIcon={<ArrowBackIcon />}
                     >
                       Back
@@ -422,44 +469,57 @@ export default function InitialOnboarding({
                   </Button>
                 </Stack>
               </Stack>
-            </Box>
-          </Fade>
-        ) : (
-          <Fade in={showCTA}>
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <CheckCircleIcon sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
-              <Typography variant="h4" fontWeight="800" gutterBottom>
-                Thanks {onboardingData.firstName}!
-              </Typography>
-              <Typography variant="body1" color="text.secondary" paragraph>
-                {currentGroupIdx === 0 
-                  ? "Would you like to give us some more info about you so that we can work with you better?"
-                  : "That's great! Would you like to share some more details for an even better experience?"}
-              </Typography>
-              
-              <Stack spacing={2} sx={{ mt: 4 }}>
-                <Button 
-                  variant="contained" 
-                  size="large"
-                  onClick={() => handleCTAAction(true)}
-                  disabled={transitioning}
-                  sx={{ borderRadius: 3, py: 1.5, textTransform: 'none', fontWeight: 600 }}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="cta"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
+            >
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
                 >
-                  Yes, let&apos;s continue
-                </Button>
-                <Button 
-                  variant="text" 
-                  color="inherit"
-                  onClick={() => handleCTAAction(false)}
-                  disabled={transitioning}
-                  sx={{ textTransform: 'none' }}
-                >
-                  Maybe later
-                </Button>
-              </Stack>
-            </Box>
-          </Fade>
-        )}
+                  <CheckCircleIcon sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
+                </motion.div>
+                <Typography variant="h4" fontWeight="800" gutterBottom>
+                  Thanks {onboardingData.firstName}!
+                </Typography>
+                <Typography variant="body1" color="text.secondary" paragraph>
+                  {currentGroupIdx === 0 
+                    ? "Would you like to give us some more info about you so that we can work with you better?"
+                    : "That's great! Would you like to share some more details for an even better experience?"}
+                </Typography>
+                
+                <Stack spacing={2} sx={{ mt: 4 }}>
+                  <Button 
+                    variant="contained" 
+                    size="large"
+                    onClick={() => handleCTAAction(true)}
+                    disabled={transitioning}
+                    sx={{ borderRadius: 3, py: 1.5, textTransform: 'none', fontWeight: 600 }}
+                  >
+                    Yes, let&apos;s continue
+                  </Button>
+                  <Button 
+                    variant="text" 
+                    color="inherit"
+                    onClick={() => handleCTAAction(false)}
+                    disabled={transitioning}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Maybe later
+                  </Button>
+                </Stack>
+              </Box>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </DialogContent>
       
       {/* Progress Bar */}

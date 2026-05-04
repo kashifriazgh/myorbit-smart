@@ -54,15 +54,18 @@ export const StreaksProvider = ({
 }) => {
   const [streaks, setStreaks] = useState<StreakProps[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
+    if (authLoading) return; // Wait for auth to resolve
+
     if (!user?.uid) {
       setStreaks([]);
       setLoading(false);
       return;
     }
 
+    setLoading(true); // Ensure loading is true when starting to fetch
     const streaksRef = collection(db, 'streaks');
     const q = query(streaksRef, where('userId', '==', user.uid));
     const unsub = onSnapshot(q, (snap) => {
@@ -74,7 +77,7 @@ export const StreaksProvider = ({
       setLoading(false);
     });
     return () => unsub();
-  }, [user?.uid]);
+  }, [user?.uid, authLoading]);
 
   // ✅ Mark streak as done (with or without remarks)
   const markStreakDone = useCallback(

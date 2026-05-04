@@ -5,24 +5,26 @@ import {
   Box,
   Card,
   CardContent,
-  CircularProgress,
   Typography,
   Button,
   TextField,
   Tooltip,
   Chip,
+  Skeleton,
+  Stack,
 } from '@mui/material';
-import Stepper from '@mui/material/Stepper';
-import Step from '@mui/material/Step';
-import StepLabel from '@mui/material/StepLabel';
 import moment from 'moment-timezone';
 import { StreakProps } from '@/app/lib/interface';
 import { useStreaks } from '@/app/lib/context/StreaksContext';
 import ProgressModal from './StreakMarkDone';
 import DeleteStreak from './StreakDelete';
 import { Timestamp } from 'firebase/firestore';
+import HistoryIcon from '@mui/icons-material/History';
+import AddIcon from '@mui/icons-material/Add';
+import StreaksModal from './StreaksModal';
 
-// ✅ simple debounce hook
+/* ---------------------- Helpers ---------------------- */
+
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -32,28 +34,170 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
-// ✅ Helper function to convert date to Date object
 function convertToDate(date: Timestamp | string | Date): Date {
-  if (date instanceof Timestamp) {
-    return date.toDate();
-  } else if (typeof date === 'string') {
-    return new Date(date);
-  } else {
-    return date;
+  if (date instanceof Timestamp) return date.toDate();
+  if (typeof date === 'string') return new Date(date);
+  return date;
+}
+
+/* ---------------------- NEW CORE LOGIC ---------------------- */
+
+function getUnitsByType(streak: StreakProps, isExpanded: boolean) {
+  const attendance = streak.attendance || [];
+  const today = moment();
+
+  switch (streak.habitType) {
+    case 'daily': {
+      const length = isExpanded ? 30 : 7;
+      return Array.from({ length }, (_, i) => {
+        const date = moment().subtract(length - 1 - i, 'days');
+        const found = attendance.find((a) =>
+          moment(convertToDate(a.date)).isSame(date, 'day')
+        );
+        return {
+          label: date.format('ddd, MMM DD'),
+          short: date.format('D MMM'),
+          isDone: !!found,
+          isMissed: date.isBefore(today, 'day') && !found,
+          isToday: date.isSame(today, 'day'),
+        };
+      });
+    }
+
+    case 'weekly': {
+      const length = isExpanded ? 12 : 6;
+      return Array.from({ length }, (_, i) => {
+        const week = moment().startOf('week').subtract(length - 1 - i, 'weeks');
+        const found = attendance.find((a) =>
+          moment(convertToDate(a.date)).isSame(week, 'week')
+        );
+        return {
+          label: `Week of ${week.format('MMM DD')}`,
+          short: week.format('D MMM'),
+          isDone: !!found,
+          isMissed: week.isBefore(today, 'week') && !found,
+          isToday: week.isSame(today, 'week'),
+        };
+      });
+    }
+
+    case 'bi-weekly': {
+      const length = isExpanded ? 10 : 6;
+      return Array.from({ length }, (_, i) => {
+        const start = moment().startOf('week').subtract((length - 1 - i) * 2, 'weeks');
+        const found = attendance.find((a) =>
+          moment(convertToDate(a.date)).isSame(start, 'week') ||
+          moment(convertToDate(a.date)).isSame(start.clone().add(1, 'week'), 'week')
+        );
+        return {
+          label: `Bi-weekly: ${start.format('MMM DD')} - ${start.clone().add(13, 'days').format('MMM DD')}`,
+          short: start.format('D MMM'),
+          isDone: !!found,
+          isMissed: start.isBefore(today, 'week') && !found,
+          isToday: today.isBetween(start, start.clone().add(2, 'weeks'), 'day', '[)'),
+        };
+      });
+    }
+
+    case 'monthly': {
+      const length = isExpanded ? 12 : 6;
+      return Array.from({ length }, (_, i) => {
+        const month = moment().subtract(length - 1 - i, 'months');
+        const found = attendance.find((a) =>
+          moment(convertToDate(a.date)).isSame(month, 'month')
+        );
+        return {
+          label: month.format('MMMM YYYY'),
+          short: month.format('MMM'),
+          isDone: !!found,
+          isMissed: month.isBefore(today, 'month') && !found,
+          isToday: month.isSame(today, 'month'),
+        };
+      });
+    }
+
+    case 'quarterly': {
+      const length = isExpanded ? 8 : 4;
+      return Array.from({ length }, (_, i) => {
+        const q = moment().subtract(length - 1 - i, 'quarters');
+        const found = attendance.find((a) =>
+          moment(convertToDate(a.date)).isSame(q, 'quarter')
+        );
+        return {
+          label: `${q.format('YYYY')} - Quarter ${q.quarter()}`,
+          short: `Q${q.quarter()}`,
+          isDone: !!found,
+          isMissed: q.isBefore(today, 'quarter') && !found,
+          isToday: q.isSame(today, 'quarter'),
+        };
+      });
+    }
+
+    default:
+      return [];
   }
 }
 
+/* ---------------------- Loading Skeleton ---------------------- */
+
+function StreaksSkeleton() {
+  return (
+    <Stack spacing={2} mt={4}>
+      {[1, 2, 3].map((i) => (
+        <Card key={i} sx={{ borderRadius: 3, boxShadow: 3 }}>
+          <CardContent>
+            <Skeleton variant="text" width="40%" height={32} />
+            <Skeleton variant="text" width="60%" />
+            <Skeleton variant="text" width="20%" sx={{ mt: 1 }} />
+            <Box mt={2} display="flex" gap={1}>
+              {[1, 2, 3, 4, 5, 6, 7].map((j) => (
+                <Skeleton key={j} variant="rounded" width={48} height={56} sx={{ borderRadius: 2 }} />
+              ))}
+            </Box>
+            <Box mt={2} display="flex" gap={2}>
+              <Skeleton variant="rounded" width={120} height={36} />
+              <Skeleton variant="rounded" width="100%" height={36} />
+            </Box>
+          </CardContent>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+
+/* ---------------------- Component ---------------------- */
+
 export default function StreaksList() {
   const { streaks, loading, markStreakDone, updateRemarks } = useStreaks();
-  const [selectedStreak, setSelectedStreak] = useState<StreakProps | null>(
-    null
-  );
-  const [modalOpen, setModalOpen] = useState(false);
 
-  // Local remarks state per streak
+  const [selectedStreak, setSelectedStreak] =
+    useState<StreakProps | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [expandedStreaks, setExpandedStreaks] = useState<Set<string>>(new Set());
+
   const [remarksMap, setRemarksMap] = useState<{ [id: string]: string }>({});
 
-  // Handle saving streak done
+  const debouncedRemarks = useDebounce(remarksMap, 1000);
+
+  useEffect(() => {
+    Object.entries(debouncedRemarks).forEach(([id, text]) => {
+      const streak = streaks.find((s) => s.id === id);
+      if (streak && streak.currentProgress !== text) {
+        updateRemarks(streak, text);
+      }
+    });
+  }, [debouncedRemarks, streaks, updateRemarks]);
+
+  const toggleExpand = (id: string) => {
+    setExpandedStreaks((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const handleSaveProgress = async (progress: string) => {
     if (!selectedStreak) return;
     await markStreakDone(selectedStreak, progress);
@@ -61,218 +205,250 @@ export default function StreaksList() {
     setSelectedStreak(null);
   };
 
-  // ✅ Debounced remarks updater
-  const debouncedRemarks = useDebounce(remarksMap, 1000);
-
-  useEffect(() => {
-    Object.entries(debouncedRemarks).forEach(([id, text]) => {
-      const streak = streaks.find((s) => s.id === id);
-      if (streak && streak.currentProgress !== text) {
-        updateRemarks(streak, text); // 🔥 update only if changed
-      }
-    });
-  }, [debouncedRemarks, streaks, updateRemarks]);
-
   if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" my={6}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (streaks.length === 0) {
-    return <Typography>No streaks found.</Typography>;
+    return <StreaksSkeleton />;
   }
 
   return (
-    <Box mt={4} display="grid" gap={2}>
-      {streaks.map((streak) => {
-        const timeFormatted = streak.reminder?.time
-          ? moment(streak.reminder.time, 'HH:mm').format('hh:mm A')
-          : null;
+    <Box mt={4}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Typography variant="h5" fontWeight="bold">My Streaks</Typography>
+        <Button 
+          variant="contained" 
+          startIcon={<AddIcon />}
+          onClick={() => setCreateModalOpen(true)}
+          sx={{ borderRadius: 2, textTransform: 'none' }}
+        >
+          New Streak
+        </Button>
+      </Box>
 
-        const last7Days = Array.from({ length: 7 }, (_, i) =>
-          moment()
-            .subtract(6 - i, 'days')
-            .startOf('day')
-        );
-
-        const attendanceDots = last7Days.map((date) => {
-          const attendanceEntry = streak.attendance?.find((a) => {
-            // Handle both Timestamp and string dates
-            const entryDate = convertToDate(a.date);
-            return moment(entryDate).isSame(date, 'day');
-          });
-          return {
-            date: date.format('YYYY-MM-DD'),
-            isPresent: !!attendanceEntry,
-            progress: attendanceEntry?.progress,
-          };
-        });
-
-        const today = moment().startOf('day');
-        const alreadyDoneToday = streak.attendance?.some((a) => {
-          // Handle both Timestamp and string dates
-          const date = convertToDate(a.date);
-          return moment(date).isSame(today, 'day');
-        });
-
-        return (
-          <Card
-            key={streak.id}
-            sx={{
-              position: 'relative',
-              borderRadius: 2,
-              boxShadow: 2,
-              bgcolor: 'background.paper',
-              '&:hover .delete-btn': { opacity: 1 },
-            }}
+      {streaks.length === 0 ? (
+        <Box 
+          sx={{ 
+            mt: 8, 
+            textAlign: 'center', 
+            p: 4, 
+            bgcolor: 'background.paper', 
+            borderRadius: 4, 
+            boxShadow: 1 
+          }}
+        >
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            No streaks found. 
+          </Typography>
+          <Typography variant="body2" color="text.secondary" mb={3}>
+            Start tracking a new habit to build your consistency!
+          </Typography>
+          <Button 
+            variant="outlined" 
+            onClick={() => setCreateModalOpen(true)}
+            sx={{ borderRadius: 2 }}
           >
-            {/* Delete Button */}
-            <Box
-              className="delete-btn"
-              sx={{
-                position: 'absolute',
-                top: 8,
-                right: 8,
-                opacity: 0,
-                transition: 'opacity 0.3s',
-              }}
-            >
-              <DeleteStreak streakId={streak.id!} />
-            </Box>
+            Create Your First Streak
+          </Button>
+        </Box>
+      ) : (
+        <Box display="grid" gap={2}>
+          {streaks.map((streak) => {
+            const timeFormatted = streak.reminder?.time
+              ? moment(streak.reminder.time, 'HH:mm').format('hh:mm A')
+              : null;
 
-            <CardContent>
-              <Typography variant="h6">{streak.title}</Typography>
+            const today = moment().startOf('day');
 
-              {streak.description && (
-                <Typography variant="body2" color="text.secondary">
-                  {streak.description}
-                </Typography>
-              )}
+            const alreadyDoneToday = streak.attendance?.some((a) =>
+              moment(convertToDate(a.date)).isSame(today, 'day')
+            );
 
-              <Typography
-                variant="body2"
-                mt={1}
-                sx={{ color: 'green', fontWeight: 500 }}
-              >
-                {streak.habitType.toUpperCase()} •{' '}
-                {timeFormatted ? `at ${timeFormatted}` : '—'} •{' '}
-                {streak.streaksCount}🔥
-              </Typography>
+            const isExpanded = expandedStreaks.has(streak.id!);
+            const units = getUnitsByType(streak, isExpanded);
 
-              {/* Attendance Stepper */}
-              <Box mt={2}>
-                <Stepper activeStep={-1} alternativeLabel>
-                  {attendanceDots.map((dot, i) => {
-                    const dayLetter = moment(dot.date).format('dd')[0];
-                    const tooltipTitle = dot.isPresent
-                      ? `${moment(dot.date).format('MMM DD')}${
-                          dot.progress ? `: ${dot.progress}` : ''
-                        }`
-                      : `${moment(dot.date).format('MMM DD')}: Not completed`;
-
-                    return (
-                      <Step key={i}>
-                        <StepLabel
-                          icon={
-                            <Tooltip title={tooltipTitle} arrow>
-                              <Box
-                                sx={{
-                                  width: 28,
-                                  height: 28,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  borderRadius: '50%',
-                                  bgcolor: dot.isPresent ? 'green' : 'grey.300',
-                                  color: dot.isPresent ? 'white' : 'black',
-                                  fontSize: 14,
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                {dayLetter}
-                              </Box>
-                            </Tooltip>
-                          }
-                        />
-                      </Step>
-                    );
-                  })}
-                </Stepper>
-              </Box>
-
-              {/* Recent Progress Entries */}
-              {streak.attendance && streak.attendance.length > 0 && (
-                <Box mt={2}>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    gutterBottom
-                  >
-                    Recent Progress:
-                  </Typography>
-                  <Box display="flex" flexWrap="wrap" gap={0.5}>
-                    {streak.attendance
-                      .filter((entry) => entry.progress)
-                      .slice(-3) // Show last 3 entries with progress
-                      .map((entry, index) => (
-                        <Chip
-                          key={index}
-                          label={`${moment(convertToDate(entry.date)).format(
-                            'MMM DD'
-                          )}: ${entry.progress}`}
-                          size="small"
-                          variant="outlined"
-                          sx={{ fontSize: '0.75rem' }}
-                        />
-                      ))}
-                  </Box>
-                </Box>
-              )}
-
-              {/* Mark Done + Remarks */}
-              <Box
-                mt={2}
-                display="flex"
-                flexDirection="column"
-                alignItems="center"
-                gap={1}
-              >
-                <Button
-                  variant="contained"
-                  color="success"
-                  disabled={alreadyDoneToday}
-                  onClick={() => {
-                    setSelectedStreak(streak);
-                    setModalOpen(true);
+            return (
+              <Card key={streak.id} sx={{ borderRadius: 3, boxShadow: 3, position: 'relative' }}>
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    opacity: 0.7,
+                    display: 'flex',
+                    gap: 1
                   }}
                 >
-                  {alreadyDoneToday ? 'Done Today ✅' : 'Mark as Done'}
-                </Button>
+                  <Tooltip title={isExpanded ? "Show Less" : "View History"}>
+                    <Button 
+                      size="small" 
+                      onClick={() => toggleExpand(streak.id!)}
+                      sx={{ minWidth: 0, p: 0.5, color: isExpanded ? 'primary.main' : 'text.secondary' }}
+                    >
+                      <HistoryIcon fontSize="small" />
+                    </Button>
+                  </Tooltip>
+                  <DeleteStreak streakId={streak.id!} />
+                </Box>
 
-                {/* Remarks input (auto-save) */}
-                <TextField
-                  size="small"
-                  placeholder="Write your remarks..."
-                  value={remarksMap[streak.id!] ?? streak.currentProgress ?? ''}
-                  onChange={(e) =>
-                    setRemarksMap((prev) => ({
-                      ...prev,
-                      [streak.id!]: e.target.value,
-                    }))
-                  }
-                  fullWidth
-                  multiline
-                  variant="outlined"
-                />
-              </Box>
-            </CardContent>
-          </Card>
-        );
-      })}
+                <CardContent>
+                  <Typography variant="h6">{streak.title}</Typography>
+
+                  <Typography variant="body2" color="text.secondary">
+                    {streak.description}
+                  </Typography>
+
+                  <Typography
+                    variant="body2"
+                    mt={1}
+                    sx={{ color: 'green', fontWeight: 600 }}
+                  >
+                    {streak.habitType.toUpperCase()} •{' '}
+                    {timeFormatted || '—'} • {streak.streaksCount}🔥
+                  </Typography>
+
+                  {/* 🔥 NEW TIMELINE UI */}
+                  <Box 
+                    mt={2} 
+                    display="flex" 
+                    gap={1} 
+                    sx={{ 
+                      overflowX: 'auto', 
+                      pb: 1,
+                      '::-webkit-scrollbar': { height: 6 },
+                      '::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 3 }
+                    }}
+                  >
+                    {units.map((u, i) => (
+                      <Tooltip key={i} title={u.label}>
+                        <Box
+                          sx={{
+                            width: 48,
+                            minWidth: 48,
+                            height: 56,
+                            borderRadius: 2,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            position: 'relative',
+                            flexShrink: 0,
+
+                            bgcolor: u.isDone
+                              ? '#d1fae5'
+                              : u.isMissed
+                              ? '#fee2e2'
+                              : '#f3f4f6',
+                          }}
+                        >
+                          {/* circle */}
+                          <Box
+                            sx={{
+                              width: 20,
+                              height: 20,
+                              borderRadius: '50%',
+                              border: '2px solid',
+                              borderColor: u.isDone
+                                ? 'green'
+                                : u.isMissed
+                                ? 'red'
+                                : '#ccc',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: u.isDone ? 'green' : 'red',
+                            }}
+                          >
+                            {u.isDone ? '✓' : u.isMissed ? '!' : ''}
+                          </Box>
+
+                          {/* label */}
+                          <Typography fontSize={10} mt={0.5} align="center">
+                            {u.short}
+                          </Typography>
+
+                          {/* today indicator */}
+                          {u.isToday && (
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: 4,
+                                width: 18,
+                                height: 3,
+                                borderRadius: 2,
+                                bgcolor: 'blue',
+                              }}
+                            />
+                          )}
+                        </Box>
+                      </Tooltip>
+                    ))}
+                  </Box>
+
+                  {/* Recent Progress */}
+                  {streak.attendance && streak.attendance.length > 0 && (
+                    <Box mt={2}>
+                      <Typography variant="body2" color="text.secondary">
+                        Recent Progress:
+                      </Typography>
+
+                      <Box display="flex" gap={0.5} flexWrap="wrap">
+                        {streak.attendance
+                          .filter((e) => e.progress)
+                          .slice(-3)
+                          .map((entry, i) => (
+                            <Chip
+                              key={i}
+                              label={`${moment(convertToDate(entry.date)).format(
+                                'MMM DD'
+                              )}: ${entry.progress}`}
+                              size="small"
+                            />
+                          ))}
+                      </Box>
+                    </Box>
+                  )}
+
+                  {/* Actions */}
+                  <Box mt={2}>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      disabled={alreadyDoneToday}
+                      onClick={() => {
+                        setSelectedStreak(streak);
+                        setModalOpen(true);
+                      }}
+                    >
+                      {alreadyDoneToday
+                        ? 'Done Today ✅'
+                        : 'Mark as Done'}
+                    </Button>
+
+                    <TextField
+                      size="small"
+                      fullWidth
+                      multiline
+                      placeholder="Write remarks..."
+                      sx={{ mt: 1 }}
+                      value={
+                        remarksMap[streak.id!] ??
+                        streak.currentProgress ??
+                        ''
+                      }
+                      onChange={(e) =>
+                        setRemarksMap((prev) => ({
+                          ...prev,
+                          [streak.id!]: e.target.value,
+                        }))
+                      }
+                    />
+                  </Box>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </Box>
+      )}
 
       {selectedStreak && (
         <ProgressModal
@@ -282,6 +458,12 @@ export default function StreaksList() {
           onSave={handleSaveProgress}
         />
       )}
+
+      <StreaksModal 
+        open={createModalOpen} 
+        onClose={() => setCreateModalOpen(false)} 
+        onSave={() => {}} // useStreaks context handles the update automatically
+      />
     </Box>
   );
 }

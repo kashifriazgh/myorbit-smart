@@ -41,36 +41,38 @@ export default function GuestUserBanner() {
         <AlertTitle>👋 Welcome, {user.firstName}!</AlertTitle>
         <strong> Sign up</strong> to save your progress
         <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
-          <Button
-            component={Link}
-            href="/user/signup"
-            variant="contained"
-            color="secondary"
-            size="small"
-            startIcon={<PersonAddIcon />}
-            sx={{
-              backgroundColor: 'white',
-              color: '#1976d2',
-              '&:hover': { backgroundColor: '#f5f5f5' },
-            }}
-          >
-            Sign Up
-          </Button>
-          <Button
-            component={Link}
-            href="/user/login"
-            variant="outlined"
-            color="inherit"
-            size="small"
-            startIcon={<LoginIcon sx={{ color: 'white' }} />}
-            sx={{
-              color: 'white',
-              borderColor: 'rgba(255,255,255,0.7)',
-              '&:hover': { borderColor: 'white' },
-            }}
-          >
-            Sign In
-          </Button>
+          <Link href="/user/signup" passHref legacyBehavior>
+            <Button
+              component="a"
+              variant="contained"
+              color="secondary"
+              size="small"
+              startIcon={<PersonAddIcon />}
+              sx={{
+                backgroundColor: 'white',
+                color: '#1976d2',
+                '&:hover': { backgroundColor: '#f5f5f5' },
+              }}
+            >
+              Sign Up
+            </Button>
+          </Link>
+          <Link href="/user/login" passHref legacyBehavior>
+            <Button
+              component="a"
+              variant="outlined"
+              color="inherit"
+              size="small"
+              startIcon={<LoginIcon sx={{ color: 'white' }} />}
+              sx={{
+                color: 'white',
+                borderColor: 'rgba(255,255,255,0.7)',
+                '&:hover': { borderColor: 'white' },
+              }}
+            >
+              Sign In
+            </Button>
+          </Link>
         </Box>
       </Alert>
     </Box>

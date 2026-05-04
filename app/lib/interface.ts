@@ -708,7 +708,7 @@ export interface StreakProps {
   title: string; // e.g. "Morning Walk"
   description?: string; // optional details
   category?: string; // Health, Study, Spiritual, etc.
-  habitType: 'daily' | 'weekly' | 'monthly';
+  habitType: 'daily' | 'weekly' | 'bi-weekly' | 'monthly' | 'quarterly';
   target?: string; // e.g. "30 mins" / "10 pages"
   startDate: Timestamp;
   reminderTime?: string; // e.g. "06:00" in 24h format
