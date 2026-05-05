@@ -11,10 +11,8 @@ import HomepageHeader from './components/homepage/HomepageHeader';
 import SkeletonLoader from './components/global/SkeletonLoader';
 import Goals from './components/homepage/Goals';
 import Schedules from './components/homepage/Schedules';
-import DailyCheckouts from './components/homepage/DailyCheckouts';
 import QuickLinks from './components/homepage/QuickLinks';
 import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingInitializer';
-import OnboardingDebugger from './components/onboarding/OnboardingDebugger';
 
 // Lazy load components
 const ImportantTasks = lazy(
@@ -87,7 +85,6 @@ export default function Homepage() {
             minHeight: '100vh',
           }}
         >
-          <OnboardingDebugger />
           <OnBoardingInitializer />
           <GuestUserBanner />
 
@@ -109,12 +106,9 @@ export default function Homepage() {
             </label>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <div className="grid grid-cols-1 gap-6 mb-8">
             <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
               <HomepageHeader />
-            </Suspense>
-            <Suspense fallback={<SkeletonLoader variant="card" height={200} />}>
-              <DailyCheckouts focusToday={focusToday} />
             </Suspense>
           </div>
 

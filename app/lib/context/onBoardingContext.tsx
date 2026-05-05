@@ -7,7 +7,7 @@ import {
   useState,
   useCallback,
 } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from './userContext';
 import { InitialOnBoarding } from '@/app/lib/interface';
@@ -16,12 +16,14 @@ interface OnboardingContextType {
   onboarding: InitialOnBoarding | null;
   loading: boolean;
   refreshOnboarding: () => Promise<void>;
+  updateOnboarding: (data: Partial<InitialOnBoarding>) => Promise<void>;
 }
 
 const OnboardingContext = createContext<OnboardingContextType>({
   onboarding: null,
   loading: true,
   refreshOnboarding: async () => {},
+  updateOnboarding: async () => {},
 });
 
 export function OnboardingProvider({
@@ -41,22 +43,21 @@ export function OnboardingProvider({
     }
 
     try {
-      const ref = doc(db, 'settings', user.uid);
+      // Use the new top-level 'initialOnboarding' collection
+      const ref = doc(db, 'initialOnboarding', user.uid);
       const snap = await getDoc(ref);
 
       if (snap.exists()) {
         const data = snap.data();
-        console.log('🔍 Raw Firestore data:', data);
-        console.log('🔍 initialOnBoarding data:', data.initialOnBoarding);
+        console.log('🔍 Raw Firestore onboarding data:', data);
 
-        // Ensure we have the proper structure
-        const onboardingData = data.initialOnBoarding || {};
+        // Data is now top-level in the document
         setOnboarding({
           userId: user.uid,
-          ...onboardingData,
-        });
+          ...data,
+        } as InitialOnBoarding);
       } else {
-        console.warn('⚠️ No onboarding document found for this user');
+        console.warn('⚠️ No onboarding document found in initialOnboarding collection');
         setOnboarding(null);
       }
     } catch (err) {
@@ -66,8 +67,28 @@ export function OnboardingProvider({
     setLoading(false);
   }, [user?.uid]);
 
+  const updateOnboarding = useCallback(async (data: Partial<InitialOnBoarding>) => {
+    if (!user?.uid) return;
+
+    try {
+      const ref = doc(db, 'initialOnboarding', user.uid);
+      // setDoc with merge: true handles both insert and update
+      await setDoc(ref, { 
+        ...data, 
+        userId: user.uid,
+        updatedAt: new Date() 
+      }, { merge: true });
+      
+      // Refresh local state
+      await fetchOnboarding();
+    } catch (err) {
+      console.error('❌ Error updating onboarding:', err);
+      throw err;
+    }
+  }, [user?.uid, fetchOnboarding]);
+
   useEffect(() => {
-    console.log('🔍 useEffect triggered with user.uid:', user?.uid);
+    console.log('🔍 Onboarding Context useEffect triggered with user.uid:', user?.uid);
     fetchOnboarding();
   }, [fetchOnboarding, user?.uid]);
 
@@ -77,11 +98,13 @@ export function OnboardingProvider({
         onboarding,
         loading,
         refreshOnboarding: fetchOnboarding,
+        updateOnboarding,
       }}
     >
       {children}
     </OnboardingContext.Provider>
   );
 }
+
 
 export const useOnboarding = () => useContext(OnboardingContext);

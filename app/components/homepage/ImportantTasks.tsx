@@ -8,7 +8,6 @@ import {
   Card,
   CardContent,
   Modal,
-  TextField,
   Button,
   Stack,
   Skeleton,
@@ -609,50 +608,110 @@ const ImportantTasks = () => {
       </Box>
 
       {/* Reschedule Modal */}
-      <Modal open={rescheduleOpen} onClose={() => setRescheduleOpen(false)}>
-        <Box
-          sx={{
-            p: 3,
-            backgroundColor: 'white',
-            borderRadius: 2,
-            width: 300,
-            mx: 'auto',
-            mt: '15%',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-          }}
-        >
-          <Typography fontWeight={600} mb={2}>
-            Reschedule Task
-          </Typography>
-          <DatePicker
-            selected={newDueDate}
-            onChange={(date: Date | null) => setNewDueDate(date)}
-            minDate={new Date()}
-            dateFormat="yyyy-MM-dd"
-            customInput={
-              <TextField
-                fullWidth
-                size="small"
-                variant="outlined"
-                label="Expected Date"
-              />
-            }
-          />
-          <Stack direction="row" spacing={1} justifyContent="flex-end" mt={2}>
-            <Button onClick={() => setRescheduleOpen(false)}>Cancel</Button>
-            <Button
-              onClick={updateDueDate}
-              variant="contained"
-              disabled={!newDueDate || reschedulingLoading}
-            >
-              {reschedulingLoading ? (
-                <CircularProgress size={18} sx={{ color: 'white' }} />
-              ) : (
-                'Save'
-              )}
-            </Button>
-          </Stack>
-        </Box>
+      <Modal 
+        open={rescheduleOpen} 
+        onClose={() => setRescheduleOpen(false)}
+        closeAfterTransition
+      >
+        <Fade in={rescheduleOpen}>
+          <Box
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[420px] shadow-2xl overflow-hidden border outline-none 
+                       bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"
+            sx={{ p: 0 }}
+          >
+            {/* Header with soft gradient */}
+            <Box className="p-6 bg-gradient-to-br from-sky-400 to-sky-600 text-white">
+              <Typography variant="h6" className="font-extrabold">
+                Reschedule Task
+              </Typography>
+              <Typography variant="body2" className="opacity-90">
+                Pick a new timeline for your task
+              </Typography>
+            </Box>
+
+            <Box className="p-6">
+              {/* Quick Select Options */}
+              <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
+                ✨ Quick Suggestions
+              </Typography>
+              <Box className="grid grid-cols-2 gap-3 mb-6">
+                {[
+                  { label: 'Tomorrow', sub: moment().add(1, 'day').format('ddd'), date: moment().add(1, 'day') },
+                  { 
+                    label: 'In 2 Days', 
+                    sub: moment().add(2, 'days').format('dddd'), 
+                    date: moment().add(2, 'days') 
+                  },
+                  { label: 'Next Week', sub: moment().add(1, 'week').format('MMM D'), date: moment().add(1, 'week') },
+                  { label: 'Next Monday', sub: moment().add(1, 'week').startOf('isoWeek').format('MMM D'), date: moment().add(1, 'week').startOf('isoWeek') }
+                ].map((option) => {
+                  const isSelected = newDueDate && moment(newDueDate).isSame(option.date, 'day');
+                  return (
+                    <Box
+                      key={option.label}
+                      onClick={() => setNewDueDate(option.date.toDate())}
+                      className={`p-3 rounded-2xl cursor-pointer text-center transition-all duration-200 border-2 
+                                ${isSelected 
+                                  ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-400' 
+                                  : 'bg-slate-50 dark:bg-slate-800/50 border-transparent hover:bg-slate-100 dark:hover:bg-slate-700'
+                                }`}
+                    >
+                      <Typography className={`text-sm font-bold ${isSelected ? 'text-sky-700 dark:text-sky-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                        {option.label}
+                      </Typography>
+                      <Typography className={`text-[10px] ${isSelected ? 'text-sky-600/70 dark:text-sky-400/70' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {option.sub}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
+
+              <Divider className="my-6 border-slate-100 dark:border-slate-800">
+                <Chip label="OR" size="small" className="font-bold bg-transparent text-slate-400 text-[10px]" />
+              </Divider>
+
+              <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
+                📅 Custom Date
+              </Typography>
+              <Box className="relative">
+                <DatePicker
+                  selected={newDueDate}
+                  onChange={(date: Date | null) => setNewDueDate(date)}
+                  minDate={new Date()}
+                  dateFormat="MMMM d, yyyy"
+                  placeholderText="Select a date"
+                  className="w-full p-4 rounded-2xl border-2 border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 
+                             text-slate-900 dark:text-white font-semibold outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-400/10 transition-all"
+                />
+              </Box>
+
+              <Stack direction="row" spacing={2} mt={4}>
+                <Button 
+                  fullWidth
+                  onClick={() => setRescheduleOpen(false)}
+                  className="rounded-2xl py-3 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 normal-case"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  fullWidth
+                  onClick={updateDueDate}
+                  variant="contained"
+                  disabled={!newDueDate || reschedulingLoading}
+                  className="rounded-2xl py-3 font-bold bg-gradient-to-r from-sky-500 to-sky-600 shadow-lg shadow-sky-500/30 normal-case
+                             hover:from-sky-600 hover:to-sky-700 disabled:from-slate-200 disabled:to-slate-200 dark:disabled:from-slate-800 dark:disabled:to-slate-800"
+                >
+                  {reschedulingLoading ? (
+                    <CircularProgress size={24} color="inherit" />
+                  ) : (
+                    'Reschedule Now'
+                  )}
+                </Button>
+              </Stack>
+            </Box>
+          </Box>
+        </Fade>
       </Modal>
 
       {/* Todo Modal */}

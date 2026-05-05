@@ -8,11 +8,10 @@ import {
   useTheme,
   CircularProgress,
 } from '@mui/material';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { useAuth } from '@/app/lib/context/userContext';
-import { db } from '@/app/lib/firebase';
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useAuth } from '@/app/lib/context/userContext';
+import { useOnboarding } from '@/app/lib/context/onBoardingContext';
 
 const genderOptions: Array<'male' | 'female' | 'other'> = [
   'male',
@@ -37,32 +36,20 @@ const fadeIn = {
 };
 
 const AgeGender = () => {
+
   const { user } = useAuth();
   const theme = useTheme();
+  const { onboarding, updateOnboarding, loading: contextLoading } = useOnboarding();
 
   const [gender, setGender] = useState<string | null>(null);
   const [ageGroup, setAgeGroup] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!user?.uid) return;
-      try {
-        const ref = doc(db, 'settings', user.uid);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const data = snap.data();
-          setGender(data?.initialOnBoarding?.gender?.value ?? null);
-          setAgeGroup(data?.initialOnBoarding?.ageGroup?.value ?? null);
-        }
-      } catch (error) {
-        console.error('Failed to fetch onboarding fields', error);
-      }
-      setLoading(false);
-    };
-
-    fetchData();
-  }, [user]);
+    if (onboarding) {
+      setGender(onboarding.gender?.value ?? null);
+      setAgeGroup(onboarding.ageGroup?.value ?? null);
+    }
+  }, [onboarding]);
 
   const updateInitialOnboardingField = async (
     field: 'gender' | 'ageGroup',
@@ -70,29 +57,13 @@ const AgeGender = () => {
   ) => {
     if (!user?.uid) return;
 
-    const ref = doc(db, 'settings', user.uid);
-    const newField = {
-      [`initialOnBoarding.${field}`]: {
-        value,
-        filled: true,
-      },
-    };
-
     try {
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        await setDoc(ref, {
-          userId: user.uid,
-          initialOnBoarding: {
-            [field]: {
-              value,
-              filled: true,
-            },
-          },
-        });
-      } else {
-        await updateDoc(ref, newField);
-      }
+      await updateOnboarding({
+        [field]: {
+          value,
+          filled: true,
+        },
+      });
 
       if (field === 'gender') {
         setGender(value);
@@ -104,7 +75,8 @@ const AgeGender = () => {
     }
   };
 
-  if (loading) return <CircularProgress />;
+  if (contextLoading) return <CircularProgress />;
+
 
   return (
     <Stack className="my-6" spacing={6} alignItems="center" width="100%">

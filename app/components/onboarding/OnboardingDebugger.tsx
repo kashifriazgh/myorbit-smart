@@ -44,7 +44,7 @@ export default function OnboardingDebugger() {
 
   useEffect(() => {
     if (!user) return;
-    const ref = doc(db, 'initialOnBoarding', user.uid);
+    const ref = doc(db, 'initialOnboarding', user.uid);
     const unsub = onSnapshot(ref, (snap) => {
       if (snap.exists()) setData(snap.data());
     });

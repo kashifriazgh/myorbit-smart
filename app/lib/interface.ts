@@ -675,6 +675,7 @@ export interface InitialOnBoarding {
   // Planning
   activityTracking?: OnBoardingField<'Allow' | 'Limited' | 'Off'>;
   deadlineType?: OnBoardingField<'Strict' | 'Flexible'>;
+  onBoardingFirstInteraction?: boolean;
 }
 
 export interface QuickNote {

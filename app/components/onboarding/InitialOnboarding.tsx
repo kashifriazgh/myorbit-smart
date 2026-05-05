@@ -89,7 +89,7 @@ export type OnboardingData = {
   monthStart?: OnBoardingField<number>;
   activityTracking?: OnBoardingField<'Allow' | 'Limited' | 'Off'>;
   deadlineType?: OnBoardingField<'Strict' | 'Flexible'>;
-  firstInteraction?: boolean;
+  onBoardingFirstInteraction?: boolean;
 };
 
 const GROUPS = [
@@ -182,7 +182,7 @@ export default function InitialOnboarding({
           };
         }
 
-        const obRef = doc(db, 'initialOnBoarding', user.uid);
+        const obRef = doc(db, 'initialOnboarding', user.uid);
         const obSnap = await getDoc(obRef);
         let fireData: OnboardingData | null = null;
         
@@ -194,20 +194,19 @@ export default function InitialOnboarding({
         // Logic to decide which step to show
         if (startStep === undefined) {
           // Priority 1: Check localStorage first (explicitly check for 'true' vs 'false')
-          const intKey = `onboarding_first_interaction_${user.uid}`;
-          const localInt = localStorage.getItem(intKey);
+          const localInt = localStorage.getItem('onboarding_first_interaction');
           let hasInteracted = localInt === 'true';
           
           // Priority 2: If not in local storage (null), check firebase data
           if (localInt === null) {
-            hasInteracted = !!initialData.firstInteraction;
+            hasInteracted = !!initialData.onBoardingFirstInteraction;
           }
           
           console.log('Onboarding Check:', { 
             localInt, 
             hasInteracted, 
             firstName: initialData.firstName,
-            firstInteraction: initialData.firstInteraction 
+            onBoardingFirstInteraction: initialData.onBoardingFirstInteraction 
           });
 
           if (!initialData.firstName || !initialData.lastName) {
@@ -261,7 +260,7 @@ export default function InitialOnboarding({
   const saveToFirebase = useCallback(async (data: Partial<OnboardingData>) => {
     if (!user) return;
     try {
-      const ref = doc(db, 'initialOnBoarding', user.uid);
+      const ref = doc(db, 'initialOnboarding', user.uid);
       await setDoc(ref, { ...data, userId: user.uid }, { merge: true });
       
       // Also update 'users' collection if name changed
@@ -296,10 +295,9 @@ export default function InitialOnboarding({
 
     // Set first interaction when name step is completed
     if (currentGroupIdx === 0 && user) {
-      updatedData.firstInteraction = true;
+      updatedData.onBoardingFirstInteraction = true;
       setOnboardingData(updatedData);
-      const intKey = `onboarding_first_interaction_${user.uid}`;
-      localStorage.setItem(intKey, 'true');
+      localStorage.setItem('onboarding_first_interaction', 'true');
     }
 
     // Mark current group as completed locally
