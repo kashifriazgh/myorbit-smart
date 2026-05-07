@@ -6,14 +6,14 @@ import {
   TextField,
   MenuItem,
   Select,
-  InputLabel,
   FormControl,
   Dialog,
-  DialogTitle,
   DialogContent,
   DialogActions,
   CircularProgress,
   Collapse,
+  Typography,
+  IconButton,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -108,143 +108,207 @@ export default function StreaksModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Create New Streak 🔥</DialogTitle>
-      <DialogContent>
-        <Box component="form" onSubmit={handleSave} sx={{ mt: 1 }}>
-          <TextField
-            inputRef={titleInputRef}
-            label="Streak Title"
-            fullWidth
-            margin="normal"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-          />
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        className: "rounded-[28px] overflow-hidden shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800",
+        sx: { borderRadius: '28px' }
+      }}
+    >
+      {/* ── Premium Gradient Header ── */}
+      <Box className="p-6 bg-gradient-to-br from-orange-500 to-rose-600 text-white flex justify-between items-center">
+        <Box>
+          <Typography variant="h6" className="font-extrabold">
+            {user ? 'Unleash Your Potential 🔥' : 'Create New Streak'}
+          </Typography>
+          <Typography variant="body2" className="opacity-90">
+            Build consistency, one day at a time
+          </Typography>
+        </Box>
+        <IconButton onClick={onClose} className="text-white hover:bg-white/20 transition-colors">
+          <ExpandMoreIcon className="rotate-90" />
+        </IconButton>
+      </Box>
 
-          {/* Collapsible Description */}
-          <Box display="flex" alignItems="center" margin="normal">
-            <Button
-              startIcon={
-                descriptionExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />
-              }
-              onClick={() => setDescriptionExpanded(!descriptionExpanded)}
-              sx={{
-                textTransform: 'none',
-                justifyContent: 'flex-start',
-                p: 0,
-              }}
-            >
-              Description (optional)
-            </Button>
-          </Box>
-          <Collapse in={descriptionExpanded}>
+      <DialogContent className="p-6">
+        <Box component="form" onSubmit={handleSave} className="flex flex-col gap-8 pt-4">
+          {/* ── Title ── */}
+          <Box>
+            <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+              🏷️ Streak Title <span className="text-red-500">*</span>
+            </Typography>
             <TextField
+              inputRef={titleInputRef}
               fullWidth
-              multiline
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              sx={{ mb: 1 }}
-            />
-          </Collapse>
-
-          {/* Type and Day on same line */}
-          <div className="grid grid-cols-2 gap-4 mt-4">
-            <FormControl fullWidth>
-              <InputLabel>Type</InputLabel>
-              <Select
-                value={habitType}
-                onChange={(e) =>
-                  setHabitType(
-                    e.target.value as
-                      | 'daily'
-                      | 'weekly'
-                      | 'bi-weekly'
-                      | 'monthly'
-                      | 'quarterly'
-                  )
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              placeholder="What habit are we building?"
+              variant="outlined"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '16px',
+                  backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                  fontSize: '1.15rem',
+                  fontWeight: 700,
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '& fieldset': { borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                  '&:hover fieldset': { borderColor: '#f97316' },
+                  '&.Mui-focused fieldset': { borderColor: '#f97316', borderWidth: '2px' },
+                  '&.Mui-focused': { boxShadow: '0 0 0 4px rgba(249, 115, 22, 0.1)' }
                 }
-                label="Type"
-              >
-                <MenuItem value="daily">Daily</MenuItem>
-                <MenuItem value="weekly">Weekly</MenuItem>
-                <MenuItem value="bi-weekly">Bi-Weekly</MenuItem>
-                <MenuItem value="monthly">Monthly</MenuItem>
-                <MenuItem value="quarterly">Quarterly</MenuItem>
-              </Select>
-            </FormControl>
+              }}
+            />
+          </Box>
 
-            {habitType === 'weekly' ? (
+          {/* ── Type and Timing ── */}
+          <Box className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                🔄 Frequency
+              </Typography>
               <FormControl fullWidth>
-                <InputLabel>Day</InputLabel>
                 <Select
-                  value={reminderDay}
-                  onChange={(e) => setReminderDay(e.target.value)}
-                  label="Day"
+                  value={habitType}
+                  onChange={(e) =>
+                    setHabitType(
+                      e.target.value as
+                        | 'daily'
+                        | 'weekly'
+                        | 'bi-weekly'
+                        | 'monthly'
+                        | 'quarterly'
+                    )
+                  }
+                  sx={{
+                    borderRadius: '16px',
+                    backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                    fontWeight: 700,
+                    '& fieldset': { borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                  }}
                 >
-                  {daysOfWeek.map((day) => (
-                    <MenuItem key={day} value={day}>
-                      {day}
-                    </MenuItem>
-                  ))}
+                  <MenuItem value="daily" className="font-bold">Daily</MenuItem>
+                  <MenuItem value="weekly" className="font-bold">Weekly</MenuItem>
+                  <MenuItem value="bi-weekly" className="font-bold">Bi-Weekly</MenuItem>
+                  <MenuItem value="monthly" className="font-bold">Monthly</MenuItem>
+                  <MenuItem value="quarterly" className="font-bold">Quarterly</MenuItem>
                 </Select>
               </FormControl>
-            ) : (
+            </Box>
+
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                ⏰ Reminder
+              </Typography>
+              {habitType === 'weekly' ? (
+                <FormControl fullWidth>
+                  <Select
+                    value={reminderDay}
+                    onChange={(e) => setReminderDay(e.target.value)}
+                    sx={{
+                      borderRadius: '16px',
+                      backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                      fontWeight: 700,
+                      '& fieldset': { borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                    }}
+                  >
+                    {daysOfWeek.map((day) => (
+                      <MenuItem key={day} value={day} className="font-bold">
+                        {day}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <TextField
+                  type="time"
+                  fullWidth
+                  value={reminderTime}
+                  onChange={(e) => setReminderTime(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '16px',
+                      backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                      fontWeight: 700,
+                      '& fieldset': { borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                    },
+                    '& .MuiInputBase-input': { textAlign: 'center' }
+                  }}
+                />
+              )}
+            </Box>
+          </Box>
+
+          {/* Weekly Reminder Time */}
+          {habitType === 'weekly' && (
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                ⏲️ Reminder Time
+              </Typography>
               <TextField
-                label="Reminder Time"
                 type="time"
                 fullWidth
                 value={reminderTime}
                 onChange={(e) => setReminderTime(e.target.value)}
                 InputLabelProps={{ shrink: true }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '16px',
+                    backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                    fontWeight: 700,
+                    '& fieldset': { borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                  }
+                }}
               />
-            )}
-          </div>
-
-          {/* Reminder Time for weekly habits */}
-          {habitType === 'weekly' && (
-            <TextField
-              label="Reminder Time"
-              type="time"
-              fullWidth
-              margin="normal"
-              value={reminderTime}
-              onChange={(e) => setReminderTime(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
+            </Box>
           )}
 
-          {/* Privacy field commented out */}
-          {/* <FormControl fullWidth margin="normal">
-              <InputLabel>Privacy</InputLabel>
-              <Select
-                value={privacy}
-                onChange={(e) =>
-                  setPrivacy(e.target.value as 'private' | 'public')
-                }
-                label="Privacy"
-              >
-                <MenuItem value="private">Only Me</MenuItem>
-                <MenuItem value="public">Public</MenuItem>
-              </Select>
-            </FormControl> */}
+          {/* ── Description ── */}
+          <Box>
+            <Button
+              startIcon={descriptionExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+              onClick={() => setDescriptionExpanded(!descriptionExpanded)}
+              className="normal-case font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-xl py-2 px-4 mb-2"
+            >
+              Add Description (optional)
+            </Button>
+            <Collapse in={descriptionExpanded}>
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What's the motivation behind this streak?"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '16px',
+                    backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                    '& fieldset': { borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                  }
+                }}
+              />
+            </Collapse>
+          </Box>
         </Box>
       </DialogContent>
 
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+      <DialogActions className="p-6 bg-slate-50/50 dark:bg-slate-800/20 border-t border-slate-100 dark:border-slate-800 gap-3">
+        <Button onClick={onClose} className="rounded-xl font-bold px-6 py-2 normal-case text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Cancel
+        </Button>
         <Button
           onClick={handleSave}
           type="submit"
           variant="contained"
           disabled={loading}
-          sx={{
-            backgroundColor: '#845ef7',
-            '&:hover': { backgroundColor: '#7048e8' },
-          }}
+          className="rounded-xl font-extrabold px-8 py-2 normal-case bg-gradient-to-r from-orange-500 to-rose-600 shadow-lg shadow-orange-500/30 hover:shadow-orange-500/50 transition-all"
         >
-          {loading ? <CircularProgress size={18} /> : 'Save Streak'}
+          {loading ? <CircularProgress size={20} className="text-white" /> : 'Ignite Streak 🔥'}
         </Button>
       </DialogActions>
     </Dialog>

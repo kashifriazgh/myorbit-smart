@@ -3,7 +3,6 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
   DialogActions,
   Button,
@@ -310,17 +309,8 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
   const canSubmit = formData.title.trim() && formData.dueDate;
 
   // ── sx helpers ──────────────────────────────────────────────────────────────
-  const surface = isDark ? 'rgba(15,23,42,0.6)' : '#fff';
-  const inputSx = {
-    '& .MuiOutlinedInput-root': {
-      borderRadius: '10px',
-      backgroundColor: surface,
-      fontSize: '14px',
-      '& fieldset': { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)' },
-      '&:hover fieldset': { borderColor: activeColor },
-      '&.Mui-focused fieldset': { borderColor: activeColor, borderWidth: '1.5px' },
-    },
-  };
+
+
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -332,256 +322,257 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
         fullWidth
         fullScreen={isMobile}
         PaperProps={{
-          sx: {
-            borderRadius: isMobile ? 0 : '16px',
-            background: isDark
-              ? 'linear-gradient(160deg,#0f172a 0%,#1e293b 100%)'
-              : '#f8fafc',
-            boxShadow: isDark
-              ? '0 24px 48px rgba(0,0,0,0.6)'
-              : '0 24px 48px rgba(0,0,0,0.12)',
-            overflow: 'hidden',
-          },
+          className: "rounded-[28px] overflow-hidden shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800",
+          sx: { borderRadius: '28px' }
         }}
       >
-        {/* ── Header ── */}
-        <DialogTitle
-          sx={{
-            px: 3, py: 2.5,
-            borderBottom: `0.5px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: isDark ? 'rgba(15,23,42,0.8)' : '#fff',
-          }}
-        >
+        {/* ── Premium Gradient Header ── */}
+        <Box className="p-6 bg-gradient-to-br from-violet-500 to-indigo-700 text-white flex justify-between items-center">
           <Box>
-            <Typography sx={{ fontSize: '15px', fontWeight: 600, color: isDark ? '#f1f5f9' : '#0f172a' }}>
-              {goal ? 'Edit goal' : 'New goal'}
+            <Typography variant="h6" className="font-extrabold">
+              {goal ? 'Edit Goal' : 'Set New Goal'}
             </Typography>
-            <Typography sx={{ fontSize: '11px', color: isDark ? '#64748b' : '#94a3b8', mt: 0.3 }}>
-              {goal ? 'Update your goal details' : 'What do you want to achieve?'}
+            <Typography variant="body2" className="opacity-90">
+              {goal ? 'Refine your achievement details' : 'Define your path to success'}
             </Typography>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box className="flex items-center gap-2">
             {aiParsed && (
               <Chip
-                icon={<MagicIcon style={{ fontSize: 12, color: '#3B82F6' }} />}
-                label="AI parsed"
+                icon={<MagicIcon style={{ fontSize: 12, color: '#fff' }} />}
+                label="AI Parsed"
                 size="small"
-                sx={{
-                  height: 22, fontSize: '10px', fontWeight: 600,
-                  bgcolor: 'rgba(59,130,246,0.1)', color: '#3B82F6',
-                  border: '0.5px solid rgba(59,130,246,0.25)',
-                  '& .MuiChip-icon': { ml: 0.8 },
-                }}
+                className="bg-white/20 text-white border-none font-bold px-1"
+                sx={{ '& .MuiChip-icon': { color: 'inherit !important' } }}
               />
             )}
-            <IconButton onClick={onClose} size="small"
-              sx={{
-                width: 28, height: 28, border: `0.5px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                color: isDark ? '#64748b' : '#94a3b8',
-                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' },
-              }}
-            >
-              <Close sx={{ fontSize: 14 }} />
+            <IconButton onClick={onClose} className="text-white hover:bg-white/20 transition-colors">
+              <Close />
             </IconButton>
           </Box>
-        </DialogTitle>
+        </Box>
 
-        <DialogContent sx={{ px: 3, py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <DialogContent className="p-6">
+          <Box className="flex flex-col gap-10 pt-4">
+            {/* ── Title ── */}
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                🏷️ Goal Title <span className="text-red-500">*</span>
+              </Typography>
+              <TextField
+                inputRef={titleRef}
+                fullWidth
+                value={formData.title}
+                onChange={e => handleTitleChange(e.target.value)}
+                placeholder="e.g. Save PKR 50k in 3 months"
+                variant="outlined"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '16px',
+                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                    fontSize: '1.15rem',
+                    fontWeight: 700,
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    '& fieldset': { borderColor: isDark ? '#334155' : '#e2e8f0' },
+                    '&:hover fieldset': { borderColor: activeColor },
+                    '&.Mui-focused fieldset': { borderColor: activeColor, borderWidth: '2px' },
+                    '&.Mui-focused': { boxShadow: `0 0 0 4px ${activeColor}15` }
+                  }
+                }}
+              />
+            </Box>
 
-          {/* ── Category strip ── */}
-          <Box>
-            <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-              Category
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={0.8}>
-              {GOAL_TYPES.map(({ value, label, icon }) => {
-                const active = formData.type === value;
-                const color  = TYPE_COLORS[value];
-                return (
-                  <Box
-                    key={value}
-                    onClick={() => set('type', value)}
+            {/* ── Category strip ── */}
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                📂 Category
+              </Typography>
+              <Stack direction="row" flexWrap="wrap" gap={1}>
+                {GOAL_TYPES.map(({ value, label, icon }) => {
+                  const active = formData.type === value;
+                  const color = TYPE_COLORS[value];
+                  return (
+                    <Box
+                      key={value}
+                      onClick={() => set('type', value)}
+                      className={`
+                        flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer select-none transition-all duration-200 border
+                        ${active 
+                          ? 'text-white shadow-lg' 
+                          : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                        }
+                      `}
+                      style={{ 
+                        backgroundColor: active ? color : undefined,
+                        borderColor: active ? 'transparent' : undefined,
+                        boxShadow: active ? `0 4px 12px ${color}40` : undefined
+                      }}
+                    >
+                      <Box className={active ? 'text-white' : ''} sx={{ '& svg': { fontSize: 16 } }}>
+                        {icon}
+                      </Box>
+                      <Typography className="text-sm font-bold">
+                        {label}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            </Box>
+
+            {/* ── Target value + unit ── */}
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                🎯 Target
+              </Typography>
+              <Stack direction="row" gap={2}>
+                <TextField
+                  type="number"
+                  value={formData.overallTargetValue}
+                  onChange={e => set('overallTargetValue', e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="0"
+                  className="flex-[2]"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '16px',
+                      backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                      fontFamily: 'monospace',
+                      fontSize: '1.5rem',
+                      fontWeight: 800,
+                      '& fieldset': { borderColor: isDark ? '#334155' : '#e2e8f0' },
+                      '&:hover fieldset': { borderColor: activeColor },
+                      '&.Mui-focused fieldset': { borderColor: activeColor },
+                    },
+                    '& input[type=number]': {
+                      MozAppearance: 'textfield',
+                      '&::-webkit-inner-spin-button,&::-webkit-outer-spin-button': { display: 'none' },
+                    },
+                  }}
+                />
+                <FormControl className="flex-1">
+                  <Select
+                    value={formData.overallTargetUnit}
+                    onChange={e => set('overallTargetUnit', e.target.value)}
                     sx={{
-                      display: 'flex', alignItems: 'center', gap: 0.7,
-                      px: 1.4, py: 0.6, borderRadius: '20px', cursor: 'pointer',
-                      fontSize: '12px', fontWeight: 500, userSelect: 'none',
-                      transition: 'all 0.15s ease',
-                      border: `0.5px solid ${active ? 'transparent' : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                      bgcolor: active ? color : isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                      color:   active ? '#fff'  : isDark ? '#94a3b8' : '#64748b',
-                      '&:hover': { borderColor: active ? 'transparent' : color, color: active ? '#fff' : color },
-                      '& svg': { fontSize: 14 },
+                      borderRadius: '16px',
+                      height: '100%',
+                      fontSize: '0.9rem',
+                      fontWeight: 700,
+                      backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                      '& fieldset': { borderColor: isDark ? '#334155' : '#e2e8f0' },
+                      '&:hover fieldset': { borderColor: activeColor },
+                      '&.Mui-focused fieldset': { borderColor: activeColor },
                     }}
                   >
-                    {icon}
-                    {label}
-                  </Box>
-                );
-              })}
-            </Stack>
-          </Box>
+                    {UNITS[formData.type].map(u => (
+                      <MenuItem key={u} value={u} className="font-semibold">{u}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+            </Box>
 
-          {/* ── Title ── */}
-          <Box>
-            <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-              Goal title <span style={{ color: '#ef4444' }}>*</span>
-            </Typography>
-            <TextField
-              inputRef={titleRef}
-              fullWidth
-              value={formData.title}
-              onChange={e => handleTitleChange(e.target.value)}
-              placeholder="e.g. Save PKR 50k in 3 months"
-              sx={{
-                ...inputSx,
-                '& .MuiOutlinedInput-root': {
-                  ...inputSx['& .MuiOutlinedInput-root'],
-                  fontSize: '15px',
-                  fontWeight: 500,
-                },
-              }}
-            />
-          </Box>
-
-          {/* ── Target value + unit ── */}
-          <Box>
-            <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-              Target
-            </Typography>
-            <Stack direction="row" gap={1.5}>
-              <TextField
-                type="number"
-                value={formData.overallTargetValue}
-                onChange={e => set('overallTargetValue', e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="0"
-                sx={{
-                  flex: 1,
-                  ...inputSx,
-                  '& .MuiOutlinedInput-root': {
-                    ...inputSx['& .MuiOutlinedInput-root'],
-                    fontFamily: 'monospace',
-                    fontSize: '20px',
-                    fontWeight: 600,
-                  },
-                  '& input[type=number]': {
-                    MozAppearance: 'textfield',
-                    '&::-webkit-inner-spin-button,&::-webkit-outer-spin-button': { display: 'none' },
+            {/* ── Due date ── */}
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                📅 Target Date <span className="text-red-500">*</span>
+              </Typography>
+              <DatePicker
+                value={formData.dueDate}
+                onChange={date => set('dueDate', date)}
+                maxDate={maxDate}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    sx: {
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: '16px',
+                        backgroundColor: isDark ? '#1e3a8a20' : '#f0f7ff',
+                        '& fieldset': { borderColor: '#3b82f6', borderWidth: '2px' },
+                      },
+                      '& .MuiInputBase-input': {
+                        textAlign: 'center',
+                        fontWeight: 800,
+                        color: '#2563eb',
+                        fontSize: '1.1rem',
+                        letterSpacing: '1px'
+                      }
+                    },
+                    helperText: (
+                      <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-bold ml-1 uppercase tracking-wider">
+                        {formData.dueDate ? new Date(formData.dueDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : 'Select a date'}
+                      </Typography>
+                    )
                   },
                 }}
               />
-              <FormControl sx={{ minWidth: 120 }}>
-                <Select
-                  value={formData.overallTargetUnit}
-                  onChange={e => set('overallTargetUnit', e.target.value)}
-                  sx={{
-                    borderRadius: '10px',
-                    height: '100%',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    backgroundColor: surface,
-                    '& fieldset': { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)' },
-                    '&:hover fieldset': { borderColor: activeColor },
-                    '&.Mui-focused fieldset': { borderColor: activeColor },
-                  }}
-                >
-                  {UNITS[formData.type].map(u => (
-                    <MenuItem key={u} value={u} sx={{ fontSize: '13px' }}>{u}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Stack>
-          </Box>
+              {/* Quick-pick pills */}
+              <Stack direction="row" flexWrap="wrap" gap={1} mt={2.5} className="overflow-x-auto pb-1 no-scrollbar flex-nowrap">
+                {datePresets.map(({ label, date }) => {
+                  const isActive = formData.dueDate &&
+                    new Date(formData.dueDate).toDateString() === date.toDateString();
+                  return (
+                    <Button
+                      key={label}
+                      variant="outlined"
+                      onClick={() => set('dueDate', date)}
+                      className={`
+                        rounded-full normal-case text-[12px] font-bold px-5 py-1.5 whitespace-nowrap transition-all
+                        ${isActive 
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-md hover:bg-blue-700' 
+                          : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10'
+                        }
+                      `}
+                    >
+                      {label}
+                    </Button>
+                  );
+                })}
+              </Stack>
+            </Box>
 
-          {/* ── Due date ── */}
-          <Box>
-            <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-              Target date <span style={{ color: '#ef4444' }}>*</span>
-            </Typography>
-            <DatePicker
-              value={formData.dueDate}
-              onChange={date => set('dueDate', date)}
-              maxDate={maxDate}
-              slotProps={{
-                textField: {
-                  fullWidth: true,
-                  sx: inputSx,
-                },
-              }}
-            />
-            {/* Quick-pick pills */}
-            <Stack direction="row" flexWrap="wrap" gap={0.8} mt={1.2}>
-              {datePresets.map(({ label, date }) => {
-                const isActive = formData.dueDate &&
-                  new Date(formData.dueDate).toDateString() === date.toDateString();
-                return (
-                  <Box
-                    key={label}
-                    onClick={() => set('dueDate', date)}
-                    sx={{
-                      px: 1.2, py: 0.5, borderRadius: '20px', cursor: 'pointer',
-                      fontSize: '11px', fontWeight: 500, userSelect: 'none',
-                      transition: 'all 0.15s',
-                      border: `0.5px solid ${isActive ? 'transparent' : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                      bgcolor: isActive ? activeColor : 'transparent',
-                      color:   isActive ? '#fff' : isDark ? '#64748b' : '#94a3b8',
-                      '&:hover': { borderColor: activeColor, color: isActive ? '#fff' : activeColor },
-                    }}
-                  >
-                    {label}
-                  </Box>
-                );
-              })}
-            </Stack>
-          </Box>
+            {/* ── Priority ── */}
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                ⚡ Priority Level
+              </Typography>
+              <Stack direction="row" gap={1.5}>
+                {(['Low', 'Medium', 'High'] as GoalPriority[]).map(p => {
+                  const cfg = PRIORITY_CONFIG[p];
+                  const active = formData.priority === p;
+                  return (
+                    <Box
+                      key={p}
+                      onClick={() => set('priority', p)}
+                      className={`
+                        flex-1 py-3 text-center cursor-pointer rounded-2xl text-sm font-extrabold select-none transition-all duration-200 border-2
+                        ${active ? '' : 'bg-slate-50 dark:bg-slate-800/50 border-transparent text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}
+                      `}
+                      style={{ 
+                        backgroundColor: active ? cfg.bg : undefined,
+                        color: active ? cfg.color : undefined,
+                        borderColor: active ? cfg.color : undefined,
+                        boxShadow: active ? `0 4px 12px ${cfg.color}20` : undefined
+                      }}
+                    >
+                      {p}
+                    </Box>
+                  );
+                })}
+              </Stack>
+            </Box>
 
-          {/* ── Priority ── */}
-          <Box>
-            <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-              Priority
-            </Typography>
-            <Stack direction="row" gap={1}>
-              {(['Low', 'Medium', 'High'] as GoalPriority[]).map(p => {
-                const cfg    = PRIORITY_CONFIG[p];
-                const active = formData.priority === p;
-                return (
-                  <Box
-                    key={p}
-                    onClick={() => set('priority', p)}
-                    sx={{
-                      flex: 1, py: 1, textAlign: 'center', cursor: 'pointer',
-                      borderRadius: '10px', fontSize: '12px', fontWeight: 600,
-                      userSelect: 'none', transition: 'all 0.15s',
-                      border: `0.5px solid ${active ? cfg.border : isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-                      bgcolor: active ? cfg.bg : isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                      color:   active ? cfg.color : isDark ? '#475569' : '#94a3b8',
-                      '&:hover': { bgcolor: cfg.bg, color: cfg.color, borderColor: cfg.border },
-                    }}
-                  >
-                    {p}
-                  </Box>
-                );
-              })}
-            </Stack>
-          </Box>
-
-          {/* ── Advanced toggle ── */}
-          <Box
-            onClick={() => setShowAdvanced(s => !s)}
-            sx={{
-              display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer',
-              '&:hover .adv-label': { color: isDark ? '#94a3b8' : '#64748b' },
-            }}
-          >
-            <Box sx={{ flex: 1, height: '0.5px', bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
-            <Typography className="adv-label" sx={{ fontSize: '11px', fontWeight: 500, color: isDark ? '#475569' : '#94a3b8', whiteSpace: 'nowrap', transition: 'color 0.15s' }}>
-              More options
-            </Typography>
-            {showAdvanced ? <ExpandLess sx={{ fontSize: 14, color: isDark ? '#475569' : '#94a3b8' }} /> : <ExpandMore sx={{ fontSize: 14, color: isDark ? '#475569' : '#94a3b8' }} />}
-            <Box sx={{ flex: 1, height: '0.5px', bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
-          </Box>
+            {/* ── Advanced Options Toggle ── */}
+            <Box className="mb-2">
+              <Button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                fullWidth
+                startIcon={showAdvanced ? <ExpandLess /> : <ExpandMore />}
+                className="justify-start normal-case font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-xl py-2"
+              >
+                {showAdvanced ? 'Hide' : 'More Options'} (Description, Privacy, Tags)
+              </Button>
+            </Box>
 
           {/* ── Advanced panel ── */}
           <AnimatePresence initial={false}>
@@ -597,39 +588,55 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
 
                   {/* Description */}
                   <Box>
-                    <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-                      Description
+                    <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                      📝 Description
                     </Typography>
                     <TextField
                       fullWidth multiline rows={3}
                       value={formData.description}
                       onChange={e => set('description', e.target.value)}
                       placeholder="Add more context, motivation, or notes…"
-                      sx={inputSx}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '16px',
+                          backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                          '& fieldset': { borderColor: isDark ? '#334155' : '#e2e8f0' },
+                          '&:hover fieldset': { borderColor: activeColor },
+                          '&.Mui-focused fieldset': { borderColor: activeColor },
+                        }
+                      }}
                     />
                   </Box>
 
                   {/* Notes */}
                   <Box>
-                    <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-                      Notes
+                    <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                      📒 Private Notes
                     </Typography>
                     <TextField
                       fullWidth multiline rows={2}
                       value={formData.notes}
                       onChange={e => set('notes', e.target.value)}
                       placeholder="Private notes about this goal…"
-                      sx={inputSx}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '16px',
+                          backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                          '& fieldset': { borderColor: isDark ? '#334155' : '#e2e8f0' },
+                          '&:hover fieldset': { borderColor: activeColor },
+                          '&.Mui-focused fieldset': { borderColor: activeColor },
+                        }
+                      }}
                     />
                   </Box>
 
                   {/* Tags */}
                   <Box>
-                    <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-                      Tags
+                    <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                      #️⃣ Tags
                     </Typography>
                     {formData.tags.length > 0 && (
-                      <Stack direction="row" flexWrap="wrap" gap={0.8} mb={1}>
+                      <Stack direction="row" flexWrap="wrap" gap={0.8} mb={1.5}>
                         {formData.tags.map(tag => (
                           <Chip
                             key={tag}
@@ -637,9 +644,10 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
                             size="small"
                             onDelete={() => set('tags', formData.tags.filter(t => t !== tag))}
                             sx={{
-                              fontSize: '11px', fontWeight: 500, height: 24,
+                              fontSize: '11px', fontWeight: 700, height: 26,
                               bgcolor: `${activeColor}18`, color: activeColor,
-                              border: `0.5px solid ${activeColor}40`,
+                              border: `1.5px solid ${activeColor}30`,
+                              borderRadius: '8px',
                             }}
                           />
                         ))}
@@ -651,50 +659,56 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
                       onChange={e => setTagInput(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(); } }}
                       placeholder="Type a tag and press Enter"
-                      sx={inputSx}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '16px',
+                          backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                          '& fieldset': { borderColor: isDark ? '#334155' : '#e2e8f0' },
+                          '&:hover fieldset': { borderColor: activeColor },
+                          '&.Mui-focused fieldset': { borderColor: activeColor },
+                        }
+                      }}
                     />
                   </Box>
 
                   {/* Privacy */}
                   <Box>
-                    <Typography sx={{ fontSize: '10px', fontWeight: 600, color: isDark ? '#475569' : '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.2 }}>
-                      Privacy
+                    <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                      🔒 Privacy Setting
                     </Typography>
                     <FormControl fullWidth>
                       <Select
                         value={formData.privacy}
                         onChange={e => set('privacy', e.target.value)}
                         sx={{
-                          borderRadius: '10px', fontSize: '13px', fontWeight: 500,
-                          backgroundColor: surface,
-                          '& fieldset': { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)' },
+                          borderRadius: '16px', fontSize: '0.9rem', fontWeight: 700,
+                          backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                          '& fieldset': { borderColor: isDark ? '#334155' : '#e2e8f0' },
                           '&:hover fieldset': { borderColor: activeColor },
                           '&.Mui-focused fieldset': { borderColor: activeColor },
                         }}
                       >
-                        <MenuItem value="private" sx={{ fontSize: 13 }}>Private — only you</MenuItem>
-                        <MenuItem value="public"  sx={{ fontSize: 13 }}>Public — anyone</MenuItem>
-                        <MenuItem value="specific" sx={{ fontSize: 13 }}>Specific people</MenuItem>
+                        <MenuItem value="private" className="font-semibold">Private — only you</MenuItem>
+                        <MenuItem value="public"  className="font-semibold">Public — anyone</MenuItem>
+                        <MenuItem value="specific" className="font-semibold">Specific people</MenuItem>
                       </Select>
                     </FormControl>
                   </Box>
 
                   {/* Pin toggle */}
                   <Box
-                    sx={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      px: 1.8, py: 1.4, borderRadius: '10px',
-                      border: `0.5px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-                      bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                    }}
+                    className={`
+                      flex items-center justify-between px-5 py-4 rounded-2xl border transition-all
+                      ${isDark ? 'bg-slate-800/30 border-slate-700' : 'bg-slate-50 border-slate-100'}
+                    `}
                   >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
-                      <PushPin sx={{ fontSize: 16, color: formData.pinned ? activeColor : isDark ? '#475569' : '#94a3b8' }} />
+                    <Box className="flex items-center gap-4">
+                      <PushPin sx={{ fontSize: 20, color: formData.pinned ? activeColor : isDark ? '#475569' : '#94a3b8' }} />
                       <Box>
-                        <Typography sx={{ fontSize: '13px', fontWeight: 500, color: isDark ? '#cbd5e1' : '#374151' }}>
+                        <Typography className="text-sm font-extrabold text-slate-700 dark:text-slate-200">
                           Pin to top
                         </Typography>
-                        <Typography sx={{ fontSize: '11px', color: isDark ? '#475569' : '#94a3b8' }}>
+                        <Typography className="text-[11px] font-bold text-slate-400 dark:text-slate-500">
                           Keep this goal at the top of your list
                         </Typography>
                       </Box>
@@ -702,7 +716,7 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
                     <Switch
                       checked={formData.pinned}
                       onChange={e => set('pinned', e.target.checked)}
-                      size="small"
+                      size="medium"
                       sx={{
                         '& .MuiSwitch-switchBase.Mui-checked': { color: activeColor },
                         '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: activeColor },
@@ -714,26 +728,15 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
               </motion.div>
             )}
           </AnimatePresence>
-
-        </DialogContent>
+        </Box>
+      </DialogContent>
 
         {/* ── Footer ── */}
-        <DialogActions
-          sx={{
-            px: 3, py: 2.5, gap: 1.5,
-            borderTop: `0.5px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-            background: isDark ? 'rgba(15,23,42,0.5)' : 'rgba(248,250,252,0.8)',
-          }}
-        >
-          <Button
-            onClick={onClose}
+        <DialogActions className="p-6 bg-slate-50/50 dark:bg-slate-800/20 border-t border-slate-100 dark:border-slate-800 gap-3">
+          <Button 
+            onClick={onClose} 
             disabled={loading}
-            sx={{
-              textTransform: 'none', fontSize: '13px', fontWeight: 500,
-              color: isDark ? '#64748b' : '#94a3b8', borderRadius: '10px',
-              px: 2, border: `0.5px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-              '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' },
-            }}
+            className="rounded-xl font-bold px-6 py-2 normal-case text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             Cancel
           </Button>
@@ -741,15 +744,14 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
             variant="contained"
             onClick={handleSubmit}
             disabled={loading || !canSubmit}
-            sx={{
-              textTransform: 'none', fontSize: '13px', fontWeight: 600,
-              borderRadius: '10px', px: 3, boxShadow: 'none',
-              bgcolor: activeColor,
-              '&:hover': { bgcolor: activeColor, opacity: 0.88, boxShadow: 'none' },
-              '&:disabled': { bgcolor: isDark ? '#1e293b' : '#e2e8f0', color: isDark ? '#334155' : '#94a3b8' },
+            className="rounded-xl font-extrabold px-8 py-2 normal-case shadow-lg transition-all"
+            style={{ 
+              backgroundColor: canSubmit ? activeColor : undefined,
+              boxShadow: canSubmit ? `0 8px 16px ${activeColor}40` : undefined,
+              opacity: canSubmit ? 1 : 0.5
             }}
           >
-            {loading ? 'Saving…' : goal ? 'Update goal' : 'Create goal'}
+            {loading ? 'Saving…' : goal ? 'Update Goal' : 'Launch Goal'}
           </Button>
         </DialogActions>
       </Dialog>

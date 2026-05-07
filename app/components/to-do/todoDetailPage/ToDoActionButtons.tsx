@@ -1,6 +1,5 @@
 'use client';
 import { IconButton } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
 import PublicIcon from '@mui/icons-material/Public';
 import { useState } from 'react';
 import { Todo, FirestoreUser } from '@/app/lib/interface';
@@ -40,10 +39,6 @@ export default function TodoActionButtons({
 
       <IconButton onClick={() => setPrivacyOpen(true)}>
         <PublicIcon />
-      </IconButton>
-
-      <IconButton onClick={() => setDeleteOpen(true)}>
-        <DeleteIcon color="error" />
       </IconButton>
 
       {/* Modals */}

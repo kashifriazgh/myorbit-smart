@@ -1,7 +1,6 @@
 'use client';
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
@@ -14,16 +13,17 @@ import {
   useMediaQuery,
   useTheme,
   IconButton,
-  Tooltip,
-  Paper,
   Collapse,
 } from '@mui/material';
-import StarBorderIcon from '@mui/icons-material/StarBorder';
-import StarIcon from '@mui/icons-material/Star';
-import AddTaskIcon from '@mui/icons-material/PlaylistAdd';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import {
+  PlaylistAdd as AddTaskIcon,
+  Delete as DeleteIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
+  Close as CloseIcon,
+  Star as StarIcon,
+  StarBorder as StarBorderIcon,
+} from '@mui/icons-material';
 import { useState, useRef, useEffect } from 'react';
 import {
   addDoc,
@@ -232,456 +232,398 @@ export default function ToDoModal({ open, onClose }: Props) {
 
   return (
     <Dialog
-  open={open}
-  onClose={handleCancel}
-  maxWidth="md"
-  fullWidth
-  fullScreen={isMobile}
-  PaperProps={{
-    sx: {
-      display: 'flex',
-      flexDirection: 'column',
-      maxHeight: '100dvh', // important on mobile
-    },
-  }}
->
-
-<DialogTitle
-  sx={{
-    position: isMobile ? 'fixed' : 'sticky',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: theme.zIndex.modal + 1,
-    bgcolor: theme.palette.background.paper,
-    borderBottom: `1px solid ${theme.palette.divider}`,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 1,
-  }}
->
-
-  <Typography fontWeight={600}>📝 New To-Do</Typography>
-
-  {isMobile && (
-  <Button
-    variant="contained"
-    size="small"
-    onClick={handleSave}
-    disabled={loading || !title.trim()}
-  >
-    {loading ? 'Saving…' : 'Save'}
-  </Button>
-)}
-</DialogTitle>
-
-
-
-      <DialogContent
-        dividers
-        sx={{
-          flex: 1,
-          overflowY: 'auto',
-          bgcolor: theme.palette.background.default,
-          pt: isMobile ? 9 : 3, // header height compensation
-        }}      >
-        <Stack spacing={2}>
-          <TextField
-            inputRef={titleInputRef}
-            label="Title"
-            fullWidth
-            multiline
-            maxRows={3}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-
-          <Collapse in={!showDescription}>
-            <Typography
-              onClick={() => setShowDescription(true)}
-              sx={{
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                color: 'primary.main',
-                mt: 1,
-              }}
+      open={open}
+      onClose={handleCancel}
+      maxWidth="md"
+      fullWidth
+      fullScreen={isMobile}
+      PaperProps={{
+        className: "rounded-[28px] overflow-hidden shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800",
+        sx: { borderRadius: isMobile ? 0 : '28px' }
+      }}
+    >
+      {/* ── Premium Gradient Header ── */}
+      <Box className="p-6 bg-gradient-to-br from-teal-500 to-cyan-700 text-white flex justify-between items-center">
+        <Box>
+          <Typography variant="h6" className="font-extrabold">
+            {title ? 'Edit Task' : 'New Task'} 📝
+          </Typography>
+          <Typography variant="body2" className="opacity-90">
+            Stay organized. Stay focused.
+          </Typography>
+        </Box>
+        <Box className="flex items-center gap-2">
+          {isMobile && (
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleSave}
+              disabled={loading || !title.trim()}
+              className="bg-white text-teal-600 font-bold hover:bg-teal-50 rounded-xl mr-2"
             >
-              + Add Task Description
-            </Typography>
-          </Collapse>
+              {loading ? 'Saving…' : 'Save'}
+            </Button>
+          )}
+          <IconButton onClick={handleCancel} className="text-white hover:bg-white/20 transition-colors">
+            <CloseIcon />
+          </IconButton>
+        </Box>
+      </Box>
 
-          <Collapse in={showDescription}>
-            <Box mt={1}>
+      <DialogContent className="p-6">
+        <Box className="flex flex-col gap-10 pt-4">
+          {/* 1. Title */}
+          <Box>
+            <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+              🏷️ Task Title <span className="text-red-500">*</span>
+            </Typography>
+            <TextField
+              inputRef={titleInputRef}
+              fullWidth
+              multiline
+              maxRows={3}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="What needs to be done?"
+              variant="outlined"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '16px',
+                  backgroundColor: theme.palette.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                  fontSize: '1.15rem',
+                  fontWeight: 700,
+                  transition: 'all-0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '& fieldset': { borderColor: theme.palette.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                  '&:hover fieldset': { borderColor: '#14b8a6' },
+                  '&.Mui-focused fieldset': { borderColor: '#14b8a6', borderWidth: '2px' },
+                }
+              }}
+            />
+          </Box>
+
+          {/* 2. Date / Deadline Section */}
+          <Box
+            className={`
+              p-6 rounded-[24px] border transition-all
+              ${theme.palette.mode === 'dark' ? 'bg-slate-800/30 border-slate-700' : 'bg-slate-50 border-slate-100'}
+            `}
+          >
+            <Typography className="text-[11px] font-extrabold text-teal-600 dark:text-teal-400 uppercase tracking-[0.2em] mb-4">
+              📅 Set Deadline
+            </Typography>
+            <Box className="flex flex-col md:flex-row gap-6 items-start md:items-center">
+              <DatePicker
+                selected={dueDate}
+                onChange={(date: Date | null) => setDueDate(date)}
+                className="custom-datepicker-premium"
+                dateFormat="MMMM d, yyyy"
+                minDate={new Date()}
+              />
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                {[
+                  { label: 'Tomorrow', value: 'tomorrow' },
+                  { label: 'After Tomorrow', value: 'afterTomorrow' },
+                  { label: 'End of Week', value: 'endOfWeek' },
+                ].map((item) => (
+                  <Button
+                    key={item.value}
+                    variant="outlined"
+                    onClick={() => handleQuickDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
+                    className="rounded-full normal-case text-[12px] font-extrabold px-5 py-1.5 border-slate-200 text-slate-500 hover:border-teal-500 hover:text-teal-600 transition-all"
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </Stack>
+            </Box>
+          </Box>
+
+          {/* 3. Priority & Privacy & Starred Row */}
+          <Box className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 items-end">
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                ⚡ Priority
+              </Typography>
               <TextField
-                label="Task Description"
+                select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                fullWidth
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '16px',
+                    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                    fontWeight: 700,
+                  }
+                }}
+              >
+                {PRIORITY_OPTIONS.map((p) => (
+                  <MenuItem key={p.value} value={p.value} className="font-bold">
+                    {p.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Box>
+
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                👤 Assignee
+              </Typography>
+              <TextField
+                placeholder="Who is tackling this?"
+                fullWidth
+                value={assignee}
+                onChange={(e) => setAssignee(e.target.value)}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '16px',
+                    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                  }
+                }}
+              />
+            </Box>
+
+            <Box className="flex items-center gap-4">
+              <Box className="flex-1">
+                <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                  ⭐ Important
+                </Typography>
+                <Box 
+                  onClick={() => setIsImportant(!isImportant)}
+                  className={`
+                    flex items-center justify-between p-3 rounded-2xl border cursor-pointer transition-all
+                    ${isImportant 
+                      ? 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800' 
+                      : 'bg-slate-50 border-slate-100 dark:bg-slate-800/30 dark:border-slate-800'}
+                  `}
+                >
+                  <Typography className={`text-sm font-bold ${isImportant ? 'text-amber-600' : 'text-slate-400'}`}>
+                    Mark as Starred
+                  </Typography>
+                  {isImportant ? <StarIcon className="text-amber-500" /> : <StarBorderIcon className="text-slate-300" />}
+                </Box>
+              </Box>
+            </Box>
+          </Box>
+
+          {/* 4. Privacy & Description Toggle */}
+          <Box className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                🔒 Privacy
+              </Typography>
+              <TextField
+                select
+                value={privacy}
+                onChange={(e) => setPrivacy(e.target.value as 'private' | 'public')}
+                fullWidth
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '16px',
+                    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                    fontWeight: 700,
+                  }
+                }}
+              >
+                <MenuItem value="private" className="font-bold">Only Me</MenuItem>
+                <MenuItem value="public" className="font-bold">Public</MenuItem>
+              </TextField>
+            </Box>
+
+            <Box className="pt-7">
+              <Collapse in={!showDescription}>
+                <Button
+                  onClick={() => setShowDescription(true)}
+                  startIcon={<ExpandMoreIcon />}
+                  className="normal-case font-bold text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-xl px-4"
+                >
+                  + Add Detailed Description
+                </Button>
+              </Collapse>
+            </Box>
+          </Box>
+
+          {/* 5. Description Area */}
+          <Collapse in={showDescription}>
+            <Box>
+              <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
+                📝 Description
+              </Typography>
+              <TextField
                 fullWidth
                 multiline
                 rows={3}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-              />
-              <Typography
-                onClick={() => setShowDescription(false)}
+                placeholder="Context, details, or notes..."
                 sx={{
-                  cursor: 'pointer',
-                  textDecoration: 'underline',
-                  color: 'secondary.main',
-                  mt: 0.5,
-                  fontSize: '0.875rem',
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '16px',
+                    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                    '& fieldset': { borderColor: theme.palette.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                  }
                 }}
+              />
+              <Button
+                onClick={() => setShowDescription(false)}
+                className="normal-case font-bold text-slate-400 hover:text-red-500 mt-2"
+                size="small"
               >
                 – Hide Description
-              </Typography>
+              </Button>
             </Box>
           </Collapse>
 
-          <Stack direction="row" spacing={1} alignItems="center">
-            <TextField
-              select
-              label="Priority"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              size="small"
-              fullWidth
-              sx={{ flex: 1 }}
-            >
-              {PRIORITY_OPTIONS.map((p) => (
-                <MenuItem key={p.value} value={p.value}>
-                  {p.label}
-                </MenuItem>
-              ))}
-            </TextField>
+          <Divider className="dark:border-slate-800" />
 
-            <TextField
-              select
-              label="Privacy"
-              value={privacy}
-              onChange={(e) =>
-                setPrivacy(e.target.value as 'private' | 'public')
-              }
-              size="small"
-              fullWidth
-              sx={{ flex: 1 }}
-            >
-              <MenuItem value="private">Only Me</MenuItem>
-              <MenuItem value="public">Public</MenuItem>
-            </TextField>
-
-            <Tooltip title="Mark as Important">
-              <IconButton
-                color={isImportant ? 'warning' : 'default'}
-                onClick={() => setIsImportant(!isImportant)}
-              >
-                {isImportant ? <StarIcon /> : <StarBorderIcon />}
-              </IconButton>
-            </Tooltip>
-          </Stack>
-
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2,
-              bgcolor: theme.palette.action.hover,
-              borderColor: theme.palette.primary.light,
-            }}
-          >
-            <Typography variant="subtitle2" mb={1} color="primary">
-              Select Due Date
-            </Typography>
-            <DatePicker
-              selected={dueDate}
-              onChange={(date: Date | null) => setDueDate(date)}
-              className="custom-datepicker"
-              dateFormat="MMMM d, yyyy"
-              minDate={new Date()}
-              wrapperClassName="date-picker-wrapper"
-            />
-            <Stack direction="row" spacing={1} mt={1.5} flexWrap="wrap" useFlexGap>
-              {[
-                { label: 'Tomorrow', value: 'tomorrow' },
-                { label: 'After Tomorrow', value: 'afterTomorrow' },
-                { label: 'End of Week', value: 'endOfWeek' },
-              ].map((item) => (
+          {/* ── Task Steps ── */}
+          <Box>
+            <Box className="flex justify-between items-center mb-6">
+              <Typography className="text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
+                📋 Execution Steps
+              </Typography>
+              <Box className="flex gap-3">
                 <Button
-                  key={item.value}
-                  variant="outlined"
-                  size="small"
-                  onClick={() => handleQuickDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
-                  sx={{
-                    borderRadius: '20px',
-                    textTransform: 'none',
-                    fontSize: '0.75rem',
-                    px: 1.5,
-                    py: 0.5,
-                    borderColor: theme.palette.divider,
-                    color: theme.palette.text.secondary,
-                    '&:hover': {
-                      borderColor: theme.palette.primary.main,
-                      color: theme.palette.primary.main,
-                      bgcolor: 'transparent',
-                    },
-                  }}
+                  variant="contained"
+                  startIcon={<AddTaskIcon />}
+                  onClick={addStep}
+                  className="rounded-xl font-bold px-4 py-2 bg-teal-600 hover:bg-teal-700 shadow-md transition-all normal-case"
                 >
-                  {item.label}
+                  Add Step
                 </Button>
-              ))}
-            </Stack>
-          </Paper>
-
-          <TextField
-            label="Assignee"
-            placeholder="Who will do this task"
-            fullWidth
-            size="small"
-            value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-          />
-
-          <Divider />
-          <Typography fontWeight={600}>Task Steps</Typography>
-
-          {/* Hint message about steps */}
-          <Box
-            sx={{
-              p: 1.5,
-              bgcolor: theme.palette.action.hover,
-              borderRadius: 1,
-              border: `1px solid ${theme.palette.primary.light}`,
-              mb: 2,
-            }}
-          >
-            <Typography
-              variant="body2"
-              sx={{
-                color: theme.palette.text.secondary,
-                fontSize: '0.875rem',
-                fontStyle: 'italic',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 0.5,
-              }}
-            >
-              💡{' '}
-              <span>
-                You can also add steps and sub-steps later in the task detail
-                page after creating the task.
-              </span>
-            </Typography>
-          </Box>
-
-          {steps.map((step, stepIndex) => (
-            <Box key={stepIndex} sx={{ mb: 2 }}>
-              {/* Step header */}
-              <Stack
-                direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-                sx={{ mb: 1 }}
-              >
-                <Typography fontWeight="bold" color="primary">{`Step ${
-                  stepIndex + 1
-                }`}</Typography>
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={() => removeStep(stepIndex)}
+                <Button
+                  variant="outlined"
+                  startIcon={<AutoAwesomeIcon />}
+                  onClick={() => setAiStepModalOpen(true)}
+                  disabled={!title.trim()}
+                  className="rounded-xl font-bold px-4 py-2 border-teal-200 text-teal-600 hover:bg-teal-50 transition-all normal-case"
                 >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Stack>
-
-              <Box
-                sx={{
-                  border: '1px solid #ccc',
-                  p: 2,
-                  borderRadius: 2,
-                  bgcolor: theme.palette.background.paper,
-                }}
-              >
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <TextField
-                    label="Step Text"
-                    value={step.text}
-                    fullWidth
-                    size="small"
-                    onChange={(e) => {
-                      const updated = [...steps];
-                      updated[stepIndex].text = e.target.value;
-                      setSteps(updated);
-                    }}
-                  />
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      const updated = [...steps];
-                      updated[stepIndex].showDescription =
-                        !updated[stepIndex].showDescription;
-                      setSteps(updated);
-                    }}
-                  >
-                    {step.showDescription ? (
-                      <ExpandLessIcon />
-                    ) : (
-                      <ExpandMoreIcon />
-                    )}
-                  </IconButton>
-                </Stack>
-
-                <Collapse in={step.showDescription}>
-                  <TextField
-                    label="Step Description"
-                    value={step.description}
-                    fullWidth
-                    size="small"
-                    multiline
-                    rows={2}
-                    onChange={(e) => {
-                      const updated = [...steps];
-                      updated[stepIndex].description = e.target.value;
-                      setSteps(updated);
-                    }}
-                    sx={{ mt: 1 }}
-                  />
-                </Collapse>
-
-                {/* Substeps */}
-                <Box mt={1}>
-                  <Typography fontSize={14} fontWeight={500} mb={0.5}>
-                    SubSteps
-                  </Typography>
-
-                  {step.subSteps.map((sub, subIndex) => (
-                    <Stack
-                      key={subIndex}
-                      spacing={1}
-                      direction="row"
-                      mt={1}
-                      alignItems="center"
-                    >
-                      <TextField
-                        label="SubStep Text"
-                        value={sub.text}
-                        size="small"
-                        onChange={(e) => {
-                          const updated = [...steps];
-                          updated[stepIndex].subSteps[subIndex].text =
-                            e.target.value;
-                          setSteps(updated);
-                        }}
-                      />
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          const updated = [...steps];
-                          updated[stepIndex].subSteps[
-                            subIndex
-                          ].showDescription =
-                            !updated[stepIndex].subSteps[subIndex]
-                              .showDescription;
-                          setSteps(updated);
-                        }}
-                      >
-                        {sub.showDescription ? (
-                          <ExpandLessIcon fontSize="small" />
-                        ) : (
-                          <ExpandMoreIcon fontSize="small" />
-                        )}
-                      </IconButton>
-
-                      <Collapse in={sub.showDescription}>
-                        <TextField
-                          label="SubStep Description"
-                          value={sub.description}
-                          size="small"
-                          onChange={(e) => {
-                            const updated = [...steps];
-                            updated[stepIndex].subSteps[subIndex].description =
-                              e.target.value;
-                            setSteps(updated);
-                          }}
-                        />
-                      </Collapse>
-
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => removeSubStep(stepIndex, subIndex)}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Stack>
-                  ))}
-
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => addSubStep(stepIndex)}
-                    sx={{ mt: 1 }}
-                  >
-                    + Add SubStep
-                  </Button>
-                </Box>
+                  AI Steps
+                </Button>
               </Box>
             </Box>
-          ))}
 
-          <Stack direction="row" spacing={2} sx={{ alignSelf: 'flex-start' }}>
-            <Button
-              size="medium"
-              variant="contained"
-              startIcon={<AddTaskIcon />}
-              onClick={addStep}
-              sx={{ bgcolor: 'secondary.main' }}
-            >
-              Add Step
-            </Button>
-            <Button
-              size="medium"
-              variant="outlined"
-              startIcon={<AutoAwesomeIcon />}
-              onClick={() => setAiStepModalOpen(true)}
-              disabled={!title.trim()}
-              sx={{
-                borderColor: 'primary.main',
-                color: 'primary.main',
-                '&:hover': {
-                  borderColor: 'primary.dark',
-                  backgroundColor: 'primary.light',
-                },
-              }}
-            >
-              AI Generate Steps
-            </Button>
-          </Stack>
-        </Stack>
+            {/* Steps Instruction */}
+            <Box className="flex items-center gap-3 p-4 mb-8 rounded-2xl bg-teal-50/50 dark:bg-teal-900/10 border border-teal-100 dark:border-teal-900/30 text-teal-700 dark:text-teal-300">
+              <Typography variant="body2" className="italic font-medium">
+                💡 Breakdown your task into actionable steps for better tracking.
+              </Typography>
+            </Box>
+
+            <Stack gap={3}>
+              {steps.map((step, stepIndex) => (
+                <Box 
+                  key={stepIndex} 
+                  className="group p-5 rounded-[20px] border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50 shadow-sm transition-all hover:shadow-md"
+                >
+                  <Box className="flex items-center justify-between mb-4">
+                    <Typography className="text-xs font-black text-teal-600 uppercase tracking-[0.2em]">
+                      Step {stepIndex + 1}
+                    </Typography>
+                    <IconButton size="small" onClick={() => removeStep(stepIndex)} className="text-slate-300 hover:text-red-500">
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+
+                  <Stack direction="row" spacing={2} alignItems="center" className="mb-2">
+                    <TextField
+                      fullWidth
+                      value={step.text}
+                      onChange={(e) => {
+                        const updated = [...steps];
+                        updated[stepIndex].text = e.target.value;
+                        setSteps(updated);
+                      }}
+                      placeholder={`What's Step ${stepIndex + 1}?`}
+                      variant="standard"
+                      InputProps={{ disableUnderline: true }}
+                      className="font-bold text-slate-700 dark:text-slate-200"
+                    />
+                    <IconButton size="small" onClick={() => {
+                      const updated = [...steps];
+                      updated[stepIndex].showDescription = !updated[stepIndex].showDescription;
+                      setSteps(updated);
+                    }}>
+                      {step.showDescription ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    </IconButton>
+                  </Stack>
+
+                  <Collapse in={step.showDescription}>
+                    <TextField
+                      fullWidth multiline rows={2}
+                      value={step.description}
+                      onChange={(e) => {
+                        const updated = [...steps];
+                        updated[stepIndex].description = e.target.value;
+                        setSteps(updated);
+                      }}
+                      placeholder="Add step details..."
+                      className="mt-3"
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '12px',
+                          fontSize: '0.875rem'
+                        }
+                      }}
+                    />
+                  </Collapse>
+
+                  {/* Substeps */}
+                  <Box className="mt-6 pt-4 border-t border-slate-50 dark:border-slate-800">
+                    <Typography className="text-[10px] font-black text-slate-400 uppercase mb-3">Sub-Tasks</Typography>
+                    <Stack gap={2}>
+                      {step.subSteps.map((sub, subIndex) => (
+                        <Box key={subIndex} className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
+                          <TextField
+                            fullWidth
+                            size="small"
+                            value={sub.text}
+                            onChange={(e) => {
+                              const updated = [...steps];
+                              updated[stepIndex].subSteps[subIndex].text = e.target.value;
+                              setSteps(updated);
+                            }}
+                            placeholder="Sub-task name..."
+                            variant="standard"
+                            InputProps={{ disableUnderline: true }}
+                            className="font-bold text-xs"
+                          />
+                          <IconButton size="small" color="error" onClick={() => removeSubStep(stepIndex, subIndex)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      ))}
+                      <Button
+                        size="small"
+                        onClick={() => addSubStep(stepIndex)}
+                        className="self-start normal-case font-bold text-teal-600 hover:bg-teal-50 rounded-lg px-3"
+                      >
+                        + Add Sub-task
+                      </Button>
+                    </Stack>
+                  </Box>
+                </Box>
+              ))}
+            </Stack>
+          </Box>
+        </Box>
       </DialogContent>
 
-      <DialogActions
-  sx={{
-    position: isMobile ? 'static' : 'sticky',
-    bottom: 0,
-    zIndex: 10,
-    bgcolor: theme.palette.background.paper,
-    borderTop: `1px solid ${theme.palette.divider}`,
-    py: 1.5,
-  }}
->
-  <Button variant="outlined" onClick={handleCancel} disabled={loading}>
-    Cancel
-  </Button>
-
-  {!isMobile && (
-    <Button
-      variant="contained"
-      color="primary"
-      onClick={handleSave}
-      disabled={loading || !title.trim()}
-    >
-      {loading ? 'Saving...' : 'Save'}
-    </Button>
-  )}
-</DialogActions>
+      <DialogActions className="p-6 bg-slate-50/50 dark:bg-slate-800/20 border-t border-slate-100 dark:border-slate-800 gap-3">
+        <Button onClick={handleCancel} className="rounded-xl font-bold px-6 py-2 normal-case text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Cancel
+        </Button>
+        {!isMobile && (
+          <Button
+            onClick={handleSave}
+            variant="contained"
+            disabled={loading || !title.trim()}
+            className="rounded-xl font-extrabold px-8 py-2 normal-case bg-gradient-to-r from-teal-500 to-cyan-700 shadow-lg shadow-teal-500/30 hover:shadow-teal-500/50 transition-all"
+          >
+            {loading ? 'Saving…' : 'Create Task'}
+          </Button>
+        )}
+      </DialogActions>
 
 
 

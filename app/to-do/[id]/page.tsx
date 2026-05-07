@@ -8,10 +8,6 @@ import {
   IconButton,
   Select,
   MenuItem,
-  Stepper,
-  Step,
-  StepLabel,
-  StepContent,
   Button,
   Checkbox,
   Dialog,
@@ -55,7 +51,6 @@ export default function TodoDetailPage() {
 
   const [todo, setTodo] = useState<Todo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeStep, setActiveStep] = useState(0);
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
 
   const [stepModalOpen, setStepModalOpen] = useState(false);
@@ -284,223 +279,139 @@ export default function TodoDetailPage() {
 
       <Divider sx={{ my: 2 }} />
 
-      <Stepper activeStep={activeStep} orientation="vertical">
-        {todo.steps
-          .sort((a, b) => {
-            // Sort so completed steps appear at bottom
-            if (a.status === 'completed' && b.status !== 'completed') return 1;
-            if (a.status !== 'completed' && b.status === 'completed') return -1;
-            return 0;
-          })
-          .map((step, idx) => (
-            <Step key={idx} completed={step.status === 'completed'}>
-              <StepLabel
-                onClick={() => setActiveStep(idx)}
-                sx={{ cursor: 'pointer' }}
+      {/* ── Mobile-First Execution Dashboard ── */}
+      <Box className="mt-8 space-y-4 px-1">
+        <Box className="flex justify-between items-center mb-6 px-2">
+          <Typography className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">
+            Step-by-Step Execution
+          </Typography>
+          <Box className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-slate-100 dark:border-slate-800">
+            <Typography className="text-[10px] font-black text-teal-600 dark:text-teal-400 uppercase tracking-tighter">
+              {todo.steps?.filter(s => s.status === 'completed').length || 0} / {todo.steps?.length || 0} Done
+            </Typography>
+          </Box>
+        </Box>
+
+        <Stack spacing={1.5}>
+          {todo.steps
+            ?.sort((a, b) => {
+              if (a.status === 'completed' && b.status !== 'completed') return 1;
+              if (a.status !== 'completed' && b.status === 'completed') return -1;
+              return 0;
+            })
+            .map((step, idx) => (
+              <Box 
+                key={idx}
+                className={`
+                  overflow-hidden rounded-[20px] border transition-all duration-300 active:scale-[0.98]
+                  ${step.status === 'completed' 
+                    ? 'bg-slate-50/50 dark:bg-slate-700 border-slate-100 dark:border-slate-600 opacity-80' 
+                    : 'bg-white dark:bg-slate-700 border-slate-100 dark:border-slate-600 shadow-sm'}
+                `}
               >
-                <Box
-                  sx={{
-                    position: 'relative',
-                    '&:hover .step-delete': { opacity: 1 },
-                    backgroundColor:
-                      step.precedence === 'critical'
-                        ? '#fee2e2'
-                        : step.precedence === 'urgent'
-                        ? '#ffedd5'
-                        : '#e5e7eb',
-                    borderRadius: 1,
-                    px: 1.5,
-                    py: 0.75,
-                    border:
-                      step.precedence === 'critical'
-                        ? '1px solid #ef4444'
-                        : step.precedence === 'urgent'
-                        ? '1px solid #f97316'
-                        : '1px solid #9ca3af',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 0.25,
-                  }}
-                >
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 1,
-                    }}
-                  >
-                    <Typography variant="body2" fontWeight={600}>
-                      {step.text}
-                    </Typography>
-                    <Box display="flex" alignItems="center" gap={1} sx={{ pr: 3 }}>
+                {/* Card Main Area */}
+                <Box className="p-3.5 flex items-start gap-3">
+                  <Checkbox
+                    checked={step.status === 'completed'}
+                    onChange={(e) => updateStepStatusLocal(idx, e.target.checked ? 'completed' : 'in_progress')}
+                    size="small"
+                    className={`p-0 ${step.status === 'completed' ? 'text-teal-500 dark:text-teal-400' : 'text-slate-300 dark:text-slate-400'}`}
+                    sx={{ '& .MuiSvgIcon-root': { fontSize: 22 } }}
+                  />
+                  
+                  <Box className="flex-1 min-w-0">
+                    <Box className="flex justify-between items-start gap-2">
+                      <Typography className={`text-[15px] font-extrabold leading-tight ${step.status === 'completed' ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
+                        {step.text}
+                      </Typography>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => setConfirmDelete({ type: 'step', stepIndex: idx })}
+                        className="text-slate-300 dark:text-slate-400 hover:text-red-500 p-0.5"
+                      >
+                        <DeleteIcon sx={{ fontSize: '1.1rem' }} />
+                      </IconButton>
+                    </Box>
+
+                    {/* Step Badges Row */}
+                    <Box className="flex flex-wrap gap-2 mt-2">
+                      <Select
+                        size="small"
+                        value={step.status}
+                        onChange={(e) => updateStepStatusLocal(idx, e.target.value)}
+                        variant="standard"
+                        disableUnderline
+                        className={`
+                          px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest
+                          ${step.status === 'completed' ? 'bg-teal-50 text-teal-600 dark:bg-teal-400/20 dark:text-teal-400' : 'bg-blue-50 text-blue-600 dark:bg-blue-400/20 dark:text-blue-300'}
+                        `}
+                      >
+                        {STATUS_OPTIONS.map((status) => (
+                          <MenuItem key={status.value} value={status.value} className="text-[10px] font-black uppercase tracking-widest">
+                            {status.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+
                       {step.assignee && (
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            fontStyle: 'italic',
-                            fontWeight: 600,
-                            px: 0.75,
-                            py: 0.25,
-                            borderRadius: 999,
-                            backgroundColor: 'rgba(15,23,42,0.05)',
-                          }}
-                        >
-                          {step.assignee}
-                        </Typography>
-                      )}
-                      {step.dueDate && (
-                        <Typography variant="caption" color="text.secondary">
-                          {new Date(
-                            step.dueDate instanceof Date
-                              ? step.dueDate
-                              : step.dueDate.toDate()
-                          ).toLocaleDateString()}
-                        </Typography>
+                        <Box className="bg-slate-50 dark:bg-slate-800/50 px-2.5 py-0.5 rounded-full border border-slate-100 dark:border-slate-600 flex items-center gap-1">
+                          <PersonIcon sx={{ fontSize: '0.75rem', color: '#94a3b8' }} />
+                          <Typography className="text-[9px] font-bold text-slate-500 dark:text-slate-300 uppercase">{step.assignee}</Typography>
+                        </Box>
                       )}
                     </Box>
                   </Box>
-                  {typeof step.weightPercent === 'number' && step.weightPercent >= 0 && (
-                    <Box
-                      sx={{
-                        mt: 0.25,
-                        width: '100%',
-                        height: 4,
-                        borderRadius: 999,
-                        backgroundColor: 'rgba(148,163,184,0.4)',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: `${Math.min(Math.max(step.weightPercent, 0), 100)}%`,
-                          height: '100%',
-                          background:
-                            step.precedence === 'critical'
-                              ? '#ef4444'
-                              : step.precedence === 'urgent'
-                              ? '#f97316'
-                              : '#3b82f6',
-                        }}
-                      />
-                    </Box>
-                  )}
-                  <IconButton
-                    size="small"
-                    className="step-delete"
-                    sx={{
-                      position: 'absolute',
-                      right: 4,
-                      top: 4,
-                      opacity: 0,
-                      transition: 'opacity 0.2s',
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmDelete({ type: 'step', stepIndex: idx });
-                    }}
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              </StepLabel>
-              <StepContent>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary" mb={1}>
-                    {step.description}
-                  </Typography>
-                  <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                    <Select
-                      size="small"
-                      value={step.status}
-                      onChange={(e) =>
-                        updateStepStatusLocal(idx, e.target.value)
-                      }
-                      sx={{ minWidth: 100, fontSize: '12px' }}
-                    >
-                      {STATUS_OPTIONS.map((status) => (
-                        <MenuItem key={status.value} value={status.value}>
-                          {status.label}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      sx={{ fontSize: '12px' }}
-                      onClick={() => {
-                        setSubStepTargetIndex(idx);
-                        setSubStepModalOpen(true);
-                      }}
-                    >
-                      + Add Sub-step
-                    </Button>
-                    {/* Small inline editor for meta fields could be added here later */}
-                  </Stack>
                 </Box>
 
-                {step.subSteps && step.subSteps.length > 0 && (
-                  <Box sx={{ pl: 2, borderLeft: '2px solid #e0e0e0' }}>
-                    {step.subSteps.map((subStep, subIdx) => (
-                      <Box
-                        key={subIdx}
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1,
-                          mb: 1,
-                          position: 'relative',
-                          '&:hover .substep-delete': {
-                            opacity: 1,
-                          },
-                        }}
+                {/* Sub-steps Detail Panel */}
+                <Box className="px-4 pb-4 pt-1.5 bg-slate-50/50 dark:bg-slate-600/20 border-t border-slate-50 dark:border-slate-600">
+                  <Box className="space-y-2">
+                    {step.subSteps?.map((subStep, subIdx) => (
+                      <Box 
+                        key={subIdx} 
+                        className="flex items-center gap-3 p-2.5 rounded-xl bg-white dark:bg-slate-600 border border-slate-100 dark:border-slate-500 active:bg-slate-50"
+                        onClick={() => handleSubStepToggle(idx, subIdx)}
                       >
                         <Checkbox
                           checked={subStep.done}
                           onChange={() => handleSubStepToggle(idx, subIdx)}
                           size="small"
+                          sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: 18 } }}
+                          className={subStep.done ? 'text-teal-500 dark:text-teal-400' : 'text-slate-300 dark:text-slate-400'}
                         />
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            textDecoration: subStep.done
-                              ? 'line-through'
-                              : 'none',
-                            color: subStep.done
-                              ? 'text.secondary'
-                              : 'text.primary',
-                            flex: 1,
-                          }}
-                        >
+                        <Typography className={`text-[13px] font-bold flex-1 ${subStep.done ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-100'}`}>
                           {subStep.text}
                         </Typography>
-                        <IconButton
-                          size="small"
-                          className="substep-delete"
-                          sx={{
-                            opacity: 0,
-                            transition: 'opacity 0.2s',
-                            position: 'absolute',
-                            right: 0,
+                        <IconButton 
+                          size="small" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDelete({ type: 'sub', stepIndex: idx, subIndex: subIdx });
                           }}
-                          onClick={() =>
-                            setConfirmDelete({
-                              type: 'sub',
-                              stepIndex: idx,
-                              subIndex: subIdx,
-                            })
-                          }
+                          className="text-slate-200 dark:text-slate-400 p-0.5"
                         >
-                          <DeleteIcon fontSize="small" />
+                          <DeleteIcon sx={{ fontSize: '0.8rem' }} />
                         </IconButton>
                       </Box>
                     ))}
+
+                    <Button
+                      fullWidth
+                      variant="text"
+                      onClick={() => {
+                        setSubStepTargetIndex(idx);
+                        setSubStepModalOpen(true);
+                      }}
+                      className="py-2.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-500 text-[10px] font-black text-slate-400 dark:text-slate-300 hover:text-teal-600 hover:border-teal-200 transition-all uppercase tracking-widest"
+                    >
+                      + Add Sub-Step
+                    </Button>
                   </Box>
-                )}
-              </StepContent>
-            </Step>
-          ))}
-      </Stepper>
+                </Box>
+              </Box>
+            ))}
+        </Stack>
+      </Box>
 
       <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         <Button variant="contained" onClick={() => setStepModalOpen(true)}>

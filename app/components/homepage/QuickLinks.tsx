@@ -74,20 +74,52 @@ const links = [
 
 const QuickLinks = () => {
   return (
-    <div className="p-2">
-      <div className="flex gap-3 overflow-x-auto no-scrollbar">
-        {links.map((link) => (
-          <Link
-            key={link.name}
-            href={link.href}
-            className={`min-w-[90px] flex-shrink-0 flex flex-col items-center justify-center p-3 rounded-lg ${link.bg} hover:shadow-md transition`}
-          >
-            {link.icon}
-            <span className="mt-1 text-xs font-medium text-gray-700 text-center leading-tight">
-              {link.name}
-            </span>
-          </Link>
-        ))}
+    <div className="w-full py-8 px-4 md:px-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Section Header */}
+        <div className="flex items-center gap-2 mb-6 ml-1">
+          <div className="w-2 h-6 bg-gradient-to-b from-violet-500 to-indigo-600 rounded-full" />
+          <h2 className="text-sm font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">
+            Quick Launchpad
+          </h2>
+        </div>
+
+        {/* Links Grid/Flex */}
+        <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
+          {links.map((link) => (
+            <Link
+              key={link.name}
+              href={link.href}
+              className={`
+                group relative w-[80px] h-[80px] sm:w-[90px] sm:h-[90px] 
+                flex flex-col items-center justify-center 
+                rounded-2xl transition-all duration-300 ease-out
+                hover:scale-105 hover:-translate-y-1 hover:shadow-xl hover:z-10
+                ${link.bg} dark:bg-slate-800/40 
+                border border-transparent hover:border-white/50 dark:hover:border-slate-700
+                backdrop-blur-sm shadow-md shadow-slate-200/50 dark:shadow-none
+              `}
+            >
+              {/* Icon Container with Glow */}
+              <div className="relative mb-1.5 transition-transform duration-300 group-hover:scale-110">
+                <div className="absolute inset-0 blur-lg opacity-0 group-hover:opacity-40 transition-opacity bg-current" />
+                <div className="relative transform transition-transform group-hover:rotate-12">
+                  {React.cloneElement(link.icon as React.ReactElement<{ style?: React.CSSProperties }>, { 
+                    style: { fontSize: '1.5rem' } 
+                  })}
+                </div>
+              </div>
+
+              {/* Label */}
+              <span className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 text-center leading-tight px-2 transition-colors group-hover:text-slate-900 dark:group-hover:text-white">
+                {link.name}
+              </span>
+
+              {/* Subtle Indicator */}
+              <div className="absolute bottom-2 w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600 opacity-0 group-hover:opacity-100 transition-all duration-300" />
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 'use client';
 import { Chip, Stack, Modal, Box, Typography, TextField, Button, CircularProgress } from '@mui/material';
+import { CalendarToday as CalendarIcon, Person as PersonIcon } from '@mui/icons-material';
 import moment from 'moment-timezone';
 import { useState } from 'react';
 import OptionModal from '@/app/components/global/LevelModal';
@@ -59,57 +60,108 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
 
   return (
     <>
-      <Stack direction="row" spacing={1} mt={1} flexWrap="wrap" useFlexGap>
-        <Chip
-          label={todo.assignee ? `${todo.assignee}` : 'Set Assignee'}
-          onClick={() => setAssigneeOpen(true)}
-          sx={{
-            bgcolor: theme?.mode === 'dark' ? '#0f172a' : '#e5e7eb',
-          }}
-        />
-        <Chip
-          label={` ${todo.priority}`}
-          onClick={() => setPriorityOpen(true)}
-          sx={{
+    <Stack direction="row" spacing={1.5} mt={2} flexWrap="wrap" useFlexGap>
+      {/* Assignee Chip */}
+      <Chip
+        icon={<PersonIcon sx={{ fontSize: '1.1rem !important' }} />}
+        label={todo.assignee ? todo.assignee : 'Unassigned'}
+        onClick={() => setAssigneeOpen(true)}
+        className="rounded-xl px-2 font-bold transition-all hover:scale-105"
+        sx={{
+          bgcolor: theme?.mode === 'dark' ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc',
+          color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+          border: '1px solid',
+          borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0',
+          '& .MuiChip-icon': { color: 'inherit' }
+        }}
+      />
+
+      {/* Priority Chip */}
+      <Chip
+        label={todo.priority.toUpperCase()}
+        onClick={() => setPriorityOpen(true)}
+        className="rounded-xl px-2 font-black tracking-wider text-[10px] transition-all hover:scale-105"
+        sx={{
+          bgcolor: {
+            critical: '#fee2e2',
+            urgent: '#ffedd5',
+            routine: '#f1f5f9',
+          }[todo.priority],
+          color: {
+            critical: '#ef4444',
+            urgent: '#f97316',
+            routine: '#64748b',
+          }[todo.priority],
+          border: '1px solid',
+          borderColor: {
+            critical: '#fca5a5',
+            urgent: '#fdba74',
+            routine: '#e2e8f0',
+          }[todo.priority],
+          dark: {
             bgcolor: {
-              critical: '#d32f2f',
-              urgent: '#f57c00',
-              routine: '#9e9e9e',
+              critical: 'rgba(239, 68, 68, 0.15)',
+              urgent: 'rgba(249, 115, 22, 0.15)',
+              routine: 'rgba(148, 163, 184, 0.15)',
             }[todo.priority],
-            color: '#fff',
-          }}
-        />
+          }
+        }}
+      />
+
+      {/* Status Chip */}
+      <Chip
+        label={todo.status.replace('_', ' ').toUpperCase()}
+        onClick={() => setStatusOpen(true)}
+        className="rounded-xl px-2 font-black tracking-wider text-[10px] transition-all hover:scale-105"
+        sx={{
+          bgcolor: {
+            completed: '#f0fdf4',
+            in_progress: '#eff6ff',
+            hold: '#fffbeb',
+            'left-over': '#fafafa',
+          }[todo.status],
+          color: {
+            completed: '#22c55e',
+            in_progress: '#3b82f6',
+            hold: '#f59e0b',
+            'left-over': '#737373',
+          }[todo.status],
+          border: '1px solid',
+          borderColor: {
+            completed: '#bbf7d0',
+            in_progress: '#bfdbfe',
+            hold: '#fef3c7',
+            'left-over': '#e5e5e5',
+          }[todo.status],
+        }}
+      />
+
+      {/* Due Date Chip */}
+      {todo.dueDate && (
         <Chip
-          label={`${todo.status}`}
-          onClick={() => setStatusOpen(true)}
+          icon={<CalendarIcon sx={{ fontSize: '1rem !important' }} />}
+          label={
+            todo.dueDate instanceof Date
+              ? moment(todo.dueDate).format('MMM D, YYYY')
+              : moment(todo.dueDate.toDate()).format('MMM D, YYYY')
+          }
+          onClick={() => {
+            const date = todo.dueDate instanceof Date 
+              ? todo.dueDate 
+              : todo.dueDate.toDate();
+            setNewDueDate(date);
+            setDueDateOpen(true);
+          }}
+          className="rounded-xl px-2 font-bold transition-all hover:scale-105"
           sx={{
-            bgcolor: {
-              completed: '#2e7d32',
-              in_progress: '#0288d1',
-              hold: '#ffa000',
-              'left-over': '#6d4c41',
-            }[todo.status],
-            color: '#fff',
+            bgcolor: theme?.mode === 'dark' ? 'rgba(20, 184, 166, 0.1)' : '#f0fdfa',
+            color: '#0d9488',
+            border: '1px solid #ccfbf1',
+            '& .MuiChip-icon': { color: 'inherit' }
           }}
         />
-        {todo.dueDate && (
-          <Chip
-            label={`Due by: ${
-              todo.dueDate instanceof Date
-                ? moment(todo.dueDate).format('MMM D, YYYY')
-                : moment(todo.dueDate.toDate()).format('MMM D, YYYY')
-            }`}
-            onClick={() => {
-              const date = todo.dueDate instanceof Date 
-                ? todo.dueDate 
-                : todo.dueDate.toDate();
-              setNewDueDate(date);
-              setDueDateOpen(true);
-            }}
-            sx={{ cursor: 'pointer' }}
-          />
-        )}
-      </Stack>
+      )}
+    </Stack>
 
       {/* Modals */}
       <OptionModal

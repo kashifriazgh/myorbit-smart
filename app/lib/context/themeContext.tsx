@@ -201,6 +201,17 @@ export function CustomThemeProvider({
     setHasUserInteracted(true); // ✅ stop listening to system changes after first manual change
     await setThemeMode(mode);
   };
+  // 🔹 Sync Tailwind Dark Mode
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const root = window.document.documentElement;
+    if (themeData.mode === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, [themeData.mode]);
+
   const muiTheme = React.useMemo(
     () =>
       createTheme({

@@ -205,11 +205,10 @@ const OnGoingStreaks = () => {
 
   // if no user → render nothing
   if (!user?.uid) return null;
-  // if no streaks → render nothing
-  if (filteredStreaks.length === 0) return null;
+
+  // We handle empty streaks inside the return JSX to show the fallback UI
 
   const currentStreak = filteredStreaks[activeStep];
-  if (!currentStreak) return null;
 
   const openProgressModal = (streak: StreakProps) => {
     setSelectedStreakId(streak.id!);
@@ -542,16 +541,53 @@ const OnGoingStreaks = () => {
         </Button>
       </Box>
 
-      {filteredStreaks.length === 0 ? (
-        <Box className="text-center py-8">
+      {userStreaks.length === 0 ? (
+        <Box className="text-center py-12 px-6">
+          <Box className="mb-6 flex justify-center">
+            <Box className="p-4 rounded-full bg-orange-100 dark:bg-orange-900/30">
+              <LocalFireDepartment sx={{ fontSize: 48, color: '#f97316' }} />
+            </Box>
+          </Box>
           <Typography
-            variant="body1"
-            sx={{
-              color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-              mb: 2,
-            }}
+            variant="h6"
+            className="font-bold mb-2 text-slate-800 dark:text-slate-100"
           >
-            All streaks completed for today! 🎉
+            No Streaks Found
+          </Typography>
+          <Typography
+            variant="body2"
+            className="text-slate-500 dark:text-slate-400 mb-8 max-w-[280px] mx-auto"
+          >
+            Build your discipline! Click below to create a new streak and track your daily habits.
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={() => setStreaksModalOpen(true)}
+            startIcon={<LocalFireDepartment />}
+            className="rounded-xl font-bold px-8 py-3 bg-gradient-to-r from-orange-500 to-rose-600 shadow-lg shadow-orange-500/30"
+          >
+            Ignite Your First Streak
+          </Button>
+        </Box>
+      ) : filteredStreaks.length === 0 ? (
+        <Box className="text-center py-12 px-6">
+          <Typography
+            variant="h1"
+            sx={{ fontSize: '3rem', mb: 2 }}
+          >
+            🎉
+          </Typography>
+          <Typography
+            variant="h6"
+            className="font-bold mb-1 text-slate-800 dark:text-slate-100"
+          >
+            You&apos;re All Caught Up!
+          </Typography>
+          <Typography
+            variant="body2"
+            className="text-slate-500 dark:text-slate-400"
+          >
+            All your active streaks have been completed for today. Great job!
           </Typography>
         </Box>
       ) : (
@@ -691,7 +727,7 @@ const OnGoingStreaks = () => {
                   color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
                 }}
               >
-                {currentStreak.title}
+                {currentStreak?.title || 'Loading streak...'}
               </Typography>
             </Box>
 
