@@ -4,9 +4,8 @@ import {
   Box,
   Button,
   Dialog,
-  DialogActions,
   DialogContent,
-  DialogTitle,
+  DialogActions,
   FormControl,
   InputLabel,
   MenuItem,
@@ -21,11 +20,17 @@ import {
   CircularProgress,
   Alert,
   Chip,
+  Fade,
+  Avatar,
 } from '@mui/material';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ScheduleIcon from '@mui/icons-material/Schedule';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import CategoryIcon from '@mui/icons-material/Category';
+import TitleIcon from '@mui/icons-material/Title';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import CloseIcon from '@mui/icons-material/Close';
 
 import { INCOME_CATEGORIES } from '@/app/lib/constant';
 import { IncomeSource } from '@/app/lib/interface';
@@ -193,22 +198,59 @@ export default function AddIncomeModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle sx={{ pb: 1 }}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <ScheduleIcon color="primary" />
-          <Typography variant="h6" component="div">
-            Add New Income Source
-          </Typography>
+    <Dialog 
+      open={open} 
+      onClose={onClose} 
+      fullWidth 
+      maxWidth="sm"
+      TransitionComponent={Fade}
+      PaperProps={{
+        sx: {
+          borderRadius: 4,
+          overflow: 'hidden',
+          backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#ffffff',
+        }
+      }}
+    >
+      <Box sx={{ 
+        background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+        p: 3,
+        color: 'white',
+        position: 'relative'
+      }}>
+        <Stack direction="row" alignItems="center" spacing={1.5}>
+          <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}>
+            <AccountBalanceWalletIcon />
+          </Avatar>
+          <Box>
+            <Typography variant="h5" fontWeight="900" sx={{ letterSpacing: '-0.5px' }}>
+              Add Income
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 600 }}>
+              Track your new earnings
+            </Typography>
+          </Box>
         </Stack>
-      </DialogTitle>
-      <DialogContent sx={{ px: 3, py: 2 }}>
+        <IconButton 
+          onClick={onClose}
+          sx={{ 
+            position: 'absolute', 
+            right: 16, 
+            top: 16, 
+            color: 'white',
+            '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </Box>
+      <DialogContent sx={{ px: { xs: 2, sm: 4 }, py: 4 }}>
         <Stack spacing={2}>
           {/* Basic Information */}
           <TextField
             fullWidth
             label="Income Title"
-            placeholder="e.g., Salary, Freelance Project, Investment"
+            placeholder="e.g., Monthly Salary"
             value={title}
             onChange={(e) => {
               setTitle(e.target.value);
@@ -217,31 +259,39 @@ export default function AddIncomeModal({
             error={!!errors.title}
             helperText={errors.title}
             required
+            InputProps={{
+              startAdornment: <TitleIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+            }}
           />
 
           <TextField
             fullWidth
             label="Amount (Rs)"
             type="number"
-            placeholder="0"
+            placeholder="0.00"
             value={amount}
             onChange={(e) => {
-              setAmount(Number(e.target.value));
+              setAmount(e.target.value === '' ? '' : Number(e.target.value));
               handleFieldChange('amount');
             }}
             error={!!errors.amount}
             helperText={errors.amount}
             required
+            InputProps={{
+              startAdornment: <AttachMoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+            }}
           />
 
           <FormControl fullWidth error={!!errors.category} required>
             <InputLabel>Category</InputLabel>
             <Select
               value={category}
+              label="Category"
               onChange={(e) => {
                 setCategory(e.target.value);
                 handleFieldChange('category');
               }}
+              startAdornment={<CategoryIcon sx={{ mr: 1, ml: 0.5, color: 'text.secondary', fontSize: 20 }} />}
             >
               {INCOME_CATEGORIES.map((cat) => (
                 <MenuItem key={cat} value={cat}>
@@ -250,11 +300,7 @@ export default function AddIncomeModal({
               ))}
             </Select>
             {errors.category && (
-              <Typography
-                variant="caption"
-                color="error"
-                sx={{ mt: 0.5, ml: 2 }}
-              >
+              <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 2 }}>
                 {errors.category}
               </Typography>
             )}
@@ -549,17 +595,30 @@ export default function AddIncomeModal({
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
-        <Button onClick={onClose} variant="outlined" disabled={saving}>
+      <DialogActions sx={{ px: { xs: 2, sm: 4 }, py: 3, gap: 1, bgcolor: theme?.mode === 'dark' ? 'rgba(255,255,255,0.02)' : '#f8fafc' }}>
+        <Button 
+          onClick={onClose} 
+          variant="text" 
+          disabled={saving}
+          sx={{ fontWeight: 700, color: 'text.secondary' }}
+        >
           Cancel
         </Button>
         <Button
           variant="contained"
           disabled={saving}
           onClick={handleSave}
-          startIcon={saving ? <CircularProgress size={16} /> : null}
+          sx={{ 
+            px: 4, 
+            py: 1, 
+            borderRadius: 2, 
+            fontWeight: 800,
+            boxShadow: '0 4px 14px 0 rgba(59, 130, 246, 0.39)',
+            textTransform: 'none'
+          }}
+          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? 'Creating...' : 'Add Income Source'}
         </Button>
       </DialogActions>
     </Dialog>

@@ -38,6 +38,7 @@ import {
 import { useAuth } from '@/app/lib/context/userContext';
 import Link from 'next/link';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 const SOURCE_OPTIONS: TransactionSource[] = [
   'bank',
@@ -50,6 +51,8 @@ const SOURCE_OPTIONS: TransactionSource[] = [
 
 export default function LoanDialog() {
   const { user } = useAuth();
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
   const [showModal, setShowModal] = useState(false);
 
   // loan form state
@@ -275,7 +278,14 @@ export default function LoanDialog() {
     <>
       <Button
         variant="outlined"
-        sx={{ background: '#e0f2fe' }}
+        sx={{ 
+          background: isDark ? 'rgba(2, 132, 199, 0.1)' : '#e0f2fe',
+          borderColor: isDark ? 'rgba(2, 132, 199, 0.3)' : '#bae6fd',
+          color: isDark ? '#7dd3fc' : '#0369a1',
+          '&:hover': {
+            background: isDark ? 'rgba(2, 132, 199, 0.2)' : '#bae6fd',
+          }
+        }}
         onClick={() => setShowModal(true)}
       >
         Outstanding Loan
@@ -305,9 +315,9 @@ export default function LoanDialog() {
             sx={{
               mb: 3,
               p: 2,
-              backgroundColor: '#e3f2fd',
-              borderRadius: 1,
-              border: '1px solid #90caf9',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#e3f2fd',
+              borderRadius: 2,
+              border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : '#90caf9'}`,
             }}
           >
             <Box

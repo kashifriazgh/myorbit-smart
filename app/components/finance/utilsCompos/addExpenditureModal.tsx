@@ -5,7 +5,6 @@ import {
   Button,
   Checkbox,
   Dialog,
-  DialogTitle,
   DialogContent,
   DialogActions,
   FormControl,
@@ -16,15 +15,22 @@ import {
   Typography,
   Stack,
   CircularProgress,
-  Alert,
   Collapse,
   IconButton,
   FormControlLabel,
   Chip,
+  Fade,
+  Avatar,
+  Alert,
 } from '@mui/material';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import CategoryIcon from '@mui/icons-material/Category';
+import TitleIcon from '@mui/icons-material/Title';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import CloseIcon from '@mui/icons-material/Close';
 import { EXPENSE_CATEGORIES } from '@/app/lib/constant';
 import { Expenditure } from '@/app/lib/interface';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -211,28 +217,59 @@ export default function AddExpenditureDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md" sx={{
-      '& .MuiDialog-paper': {
-        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-      },
-    }}>
-      <DialogTitle sx={{ pb: 1 }}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <Typography variant="h6" component="div" sx={{
-            color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-          }}>
-            Add New Expenditure
-          </Typography>
+    <Dialog 
+      open={open} 
+      onClose={onClose} 
+      fullWidth 
+      maxWidth="sm"
+      TransitionComponent={Fade}
+      PaperProps={{
+        sx: {
+          borderRadius: 4,
+          overflow: 'hidden',
+          backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#ffffff',
+        }
+      }}
+    >
+      <Box sx={{ 
+        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+        p: 3,
+        color: 'white',
+        position: 'relative'
+      }}>
+        <Stack direction="row" alignItems="center" spacing={1.5}>
+          <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}>
+            <ShoppingCartIcon />
+          </Avatar>
+          <Box>
+            <Typography variant="h5" fontWeight="900" sx={{ letterSpacing: '-0.5px' }}>
+              Add Expense
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 600 }}>
+              Record your spending
+            </Typography>
+          </Box>
         </Stack>
-      </DialogTitle>
-      <DialogContent sx={{ px: 3, py: 2 }}>
+        <IconButton 
+          onClick={onClose}
+          sx={{ 
+            position: 'absolute', 
+            right: 16, 
+            top: 16, 
+            color: 'white',
+            '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </Box>
+      <DialogContent sx={{ px: { xs: 2, sm: 4 }, py: 4 }}>
         <Stack spacing={2}>
           {/* Basic Information */}
           <TextField
             fullWidth
             label="Expenditure Title"
-            placeholder="e.g., Rent, Groceries, Utilities"
+            placeholder="e.g., House Rent"
             value={title}
             onChange={(e) => {
               setTitle(e.target.value);
@@ -241,26 +278,8 @@ export default function AddExpenditureDialog({
             error={!!errors.title}
             helperText={errors.title}
             required
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-                '& fieldset': {
-                  borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
-                },
-                '&:hover fieldset': {
-                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
-                },
-              },
-              '& .MuiInputLabel-root': {
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                '&.Mui-focused': {
-                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
-                },
-              },
+            InputProps={{
+              startAdornment: <TitleIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
             }}
           />
 
@@ -268,7 +287,7 @@ export default function AddExpenditureDialog({
             fullWidth
             label="Amount (Rs)"
             type="number"
-            placeholder="0"
+            placeholder="0.00"
             value={amount}
             onChange={(e) => {
               setAmount(e.target.value === '' ? '' : Number(e.target.value));
@@ -277,77 +296,30 @@ export default function AddExpenditureDialog({
             error={!!errors.amount}
             helperText={errors.amount}
             required
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-                '& fieldset': {
-                  borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
-                },
-                '&:hover fieldset': {
-                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
-                },
-              },
-              '& .MuiInputLabel-root': {
-                color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                '&.Mui-focused': {
-                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
-                },
-              },
+            InputProps={{
+              startAdornment: <AttachMoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
             }}
           />
 
           <FormControl fullWidth error={!!errors.category} required>
-            <InputLabel sx={{
-              color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-              '&.Mui-focused': {
-                color: theme?.mode === 'dark' ? '#cbd5e1' : '#3b82f6',
-              },
-            }}>Category</InputLabel>
+            <InputLabel>Category</InputLabel>
             <Select
               value={category}
+              label="Category"
               onChange={(e) => {
                 setCategory(e.target.value);
                 handleFieldChange('category');
               }}
-              sx={{
-                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: theme?.mode === 'dark' ? '#475569' : '#d1d5db',
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#9ca3af',
-                },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: theme?.mode === 'dark' ? '#64748b' : '#3b82f6',
-                },
-                '& .MuiSvgIcon-root': {
-                  color: theme?.mode === 'dark' ? '#94a3b8' : '#6b7280',
-                },
-              }}
+              startAdornment={<CategoryIcon sx={{ mr: 1, ml: 0.5, color: 'text.secondary', fontSize: 20 }} />}
             >
               {EXPENSE_CATEGORIES.map((cat) => (
-                <MenuItem key={cat} value={cat} sx={{
-                  backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
-                  color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-                  '&:hover': {
-                    backgroundColor: theme?.mode === 'dark' ? '#475569' : '#f3f4f6',
-                  },
-                }}>
+                <MenuItem key={cat} value={cat}>
                   {cat}
                 </MenuItem>
               ))}
             </Select>
             {errors.category && (
-              <Typography
-                variant="caption"
-                color="error"
-                sx={{ mt: 0.5, ml: 2 }}
-              >
+              <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 2 }}>
                 {errors.category}
               </Typography>
             )}
@@ -795,17 +767,31 @@ export default function AddExpenditureDialog({
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
-        <Button onClick={onClose} variant="outlined" disabled={saving}>
+      <DialogActions sx={{ px: { xs: 2, sm: 4 }, py: 3, gap: 1, bgcolor: theme?.mode === 'dark' ? 'rgba(255,255,255,0.02)' : '#f8fafc' }}>
+        <Button 
+          onClick={onClose} 
+          variant="text" 
+          disabled={saving}
+          sx={{ fontWeight: 700, color: 'text.secondary' }}
+        >
           Cancel
         </Button>
         <Button
           variant="contained"
           disabled={saving}
           onClick={handleSave}
-          startIcon={saving ? <CircularProgress size={16} /> : null}
+          color="error"
+          sx={{ 
+            px: 4, 
+            py: 1, 
+            borderRadius: 2, 
+            fontWeight: 800,
+            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.39)',
+            textTransform: 'none'
+          }}
+          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}
         >
-          {saving ? 'Saving...' : 'Save Expenditure'}
+          {saving ? 'Creating...' : 'Add Expenditure'}
         </Button>
       </DialogActions>
     </Dialog>

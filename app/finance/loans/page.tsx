@@ -37,9 +37,12 @@ import Link from 'next/link';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PaymentIcon from '@mui/icons-material/Payment';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 export default function LoanRecordsPage() {
   const { user } = useAuth();
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
   const [loading, setLoading] = useState(true);
   const [activeLoans, setActiveLoans] = useState<LoanRecord[]>([]);
   const [settledLoans, setSettledLoans] = useState<LoanRecord[]>([]);
@@ -158,7 +161,18 @@ export default function LoanRecordsPage() {
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
+    <Container 
+      maxWidth="md" 
+      sx={{ 
+        mt: 4, 
+        mb: 4,
+        py: 4,
+        backgroundColor: isDark ? '#1e293b' : '#ffffff',
+        color: isDark ? '#f1f5f9' : '#000000',
+        borderRadius: isDark ? '16px' : '0px',
+        minHeight: '100vh',
+      }}
+    >
       {/* Header */}
       <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
         <Link href="/finance" passHref>
@@ -249,12 +263,19 @@ export default function LoanRecordsPage() {
               return (
                 <Card
                   key={loan.id}
+                  elevation={2}
                   sx={{
-                    border: '1px solid #e0e0e0',
-                    backgroundColor:
-                      loan.type === 'borrow' ? '#fff3e0' : '#e8f5e8',
+                    border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : '#e0e0e0'}`,
+                    backgroundColor: isDark 
+                      ? (loan.type === 'borrow' ? 'rgba(255, 152, 0, 0.05)' : 'rgba(76, 175, 80, 0.05)')
+                      : (loan.type === 'borrow' ? '#fff3e0' : '#e8f5e8'),
                     position: 'relative',
                     overflow: 'visible',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: isDark ? '0 10px 15px -3px rgba(0, 0, 0, 0.4)' : 4,
+                    },
                   }}
                 >
                   <CardContent>
@@ -370,7 +391,15 @@ export default function LoanRecordsPage() {
           </Typography>
           <Stack spacing={2}>
             {settledLoans.map((loan) => (
-              <Card key={loan.id} sx={{ opacity: 0.7 }}>
+              <Card 
+                key={loan.id} 
+                elevation={1}
+                sx={{ 
+                  opacity: 0.7,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#f8fafc',
+                  border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.05)' : '#e2e8f0'}`,
+                }}
+              >
                 <CardContent>
                   <Box
                     sx={{

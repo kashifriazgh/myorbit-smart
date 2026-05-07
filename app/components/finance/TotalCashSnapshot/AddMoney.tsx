@@ -3,7 +3,6 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   TextField,
   FormControl,
   InputLabel,
@@ -11,6 +10,11 @@ import {
   Select,
   Checkbox,
   Typography,
+  Stack,
+  Avatar,
+  IconButton,
+  Fade,
+  Box,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { TransactionSource, Bank, CustomPaymentHead } from '@/app/lib/interface';
@@ -24,6 +28,16 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
+import { 
+  Close as CloseIcon,
+  Add as AddIcon,
+  AccountBalance as BankIcon,
+  Wallet as WalletIcon,
+  Payments as PaymentsIcon,
+  AttachMoney as MoneyIcon,
+  AddCard as AddCardIcon
+} from '@mui/icons-material';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 const SOURCE_OPTIONS: TransactionSource[] = [
   'bank',
@@ -172,147 +186,263 @@ export default function AddMoney({ onSave, saving }: Props) {
     setSelectedCustomPaymentHead('');
   };
 
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
+
   return (
     <>
-      <Button variant="contained" onClick={() => setShowModal(true)}>
-        + Add Money
+      <Button 
+        variant="contained" 
+        onClick={() => setShowModal(true)}
+        startIcon={<AddIcon />}
+        sx={{ 
+          borderRadius: 2, 
+          fontWeight: 700,
+          textTransform: 'none',
+          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+        }}
+      >
+        Add Money
       </Button>
 
-      <Dialog open={showModal} onClose={() => setShowModal(false)}>
-        <DialogTitle>Add Money</DialogTitle>
+      <Dialog 
+        open={showModal} 
+        onClose={() => !saving && setShowModal(false)}
+        fullWidth
+        maxWidth="xs"
+        TransitionComponent={Fade}
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            overflow: 'hidden',
+            backgroundColor: isDark ? '#0f172a' : '#ffffff',
+          }
+        }}
+      >
+        <Box sx={{ 
+          background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+          p: 3,
+          color: 'white',
+          position: 'relative'
+        }}>
+          <Stack direction="row" alignItems="center" spacing={1.5}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}>
+              <AddCardIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.2 }}>
+                Add Funds
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 600 }}>
+                Increase your total balance
+              </Typography>
+            </Box>
+          </Stack>
+          <IconButton 
+            onClick={() => setShowModal(false)}
+            sx={{ 
+              position: 'absolute', 
+              right: 12, 
+              top: 12, 
+              color: 'white',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
         <DialogContent>
-          <TextField
-            fullWidth
-            label="Amount"
-            type="number"
-            value={newAmount}
-            onChange={(e) =>
-              setNewAmount(e.target.value === '' ? '' : Number(e.target.value))
-            }
-            margin="normal"
-          />
+          <Stack spacing={2.5}>
+            <TextField
+              fullWidth
+              label="Amount"
+              type="number"
+              value={newAmount}
+              onChange={(e) =>
+                setNewAmount(e.target.value === '' ? '' : Number(e.target.value))
+              }
+              InputProps={{
+                startAdornment: <MoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+              }}
+              placeholder="0.00"
+            />
 
-          {/* Source dropdown (disabled when freezed) */}
-          <FormControl fullWidth margin="normal" disabled={isFreezed}>
-            <InputLabel>Source</InputLabel>
-            <Select
-              value={newMode}
-              onChange={(e) => setNewMode(e.target.value as TransactionSource)}
-              label="Source"
-            >
-              {SOURCE_OPTIONS.map((mode) => (
-                <MenuItem key={mode} value={mode}>
-                  {mode}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+            <FormControl fullWidth disabled={isFreezed}>
+              <InputLabel>Source Type</InputLabel>
+              <Select
+                value={newMode}
+                onChange={(e) => setNewMode(e.target.value as TransactionSource)}
+                label="Source Type"
+                startAdornment={<PaymentsIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
+              >
+                {SOURCE_OPTIONS.map((mode) => (
+                  <MenuItem key={mode} value={mode} sx={{ textTransform: 'capitalize' }}>
+                    {mode.replace('_', ' ')}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
           {/* Extra bank select if source = bank and not freezed */}
-          {!isFreezed && newMode === 'bank' && (
-            <>
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Select Bank</InputLabel>
-                <Select
-                  value={selectedBank}
-                  onChange={(e) => setSelectedBank(e.target.value)}
-                  label="Bank"
-                >
-                  {banks.map((bank) => (
-                    <MenuItem key={bank.id} value={bank.id}>
-                      {bank.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+            {!isFreezed && newMode === 'bank' && (
+              <Stack spacing={2}>
+                <FormControl fullWidth>
+                  <InputLabel>Select Bank</InputLabel>
+                  <Select
+                    value={selectedBank}
+                    onChange={(e) => setSelectedBank(e.target.value)}
+                    label="Select Bank"
+                    startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
+                  >
+                    <MenuItem value=""><em>-- Add New Bank --</em></MenuItem>
+                    {banks.map((bank) => (
+                      <MenuItem key={bank.id} value={bank.id}>
+                        {bank.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
 
-              {/* Add new bank */}
-              <TextField
-                fullWidth
-                label="New Bank Name"
-                value={newBankName}
-                onChange={(e) => setNewBankName(e.target.value)}
-                margin="normal"
-              />
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={handleAddBank}
-                disabled={!newBankName.trim()}
-              >
-                + Add Bank
-              </Button>
-            </>
-          )}
+                {!selectedBank && (
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: 2, 
+                    bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc',
+                    border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1'}`
+                  }}>
+                    <Typography variant="caption" fontWeight="700" color="primary" sx={{ mb: 1, display: 'block' }}>
+                      NEW BANK ACCOUNT
+                    </Typography>
+                    <Stack direction="row" spacing={1}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Bank Name"
+                        value={newBankName}
+                        onChange={(e) => setNewBankName(e.target.value)}
+                      />
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={handleAddBank}
+                        disabled={!newBankName.trim()}
+                        sx={{ whiteSpace: 'nowrap', borderRadius: 1.5 }}
+                      >
+                        Add
+                      </Button>
+                    </Stack>
+                  </Box>
+                )}
+              </Stack>
+            )}
 
           {/* Custom payment head select if source = custom and not freezed */}
-          {!isFreezed && newMode === 'custom' && (
-            <>
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Select Payment Head</InputLabel>
-                <Select
-                  value={selectedCustomPaymentHead}
-                  onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
-                  label="Payment Head"
-                >
-                  {customPaymentHeads.map((head) => (
-                    <MenuItem key={head.id} value={head.id}>
-                      {head.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+            {!isFreezed && newMode === 'custom' && (
+              <Stack spacing={2}>
+                <FormControl fullWidth>
+                  <InputLabel>Select Payment Head</InputLabel>
+                  <Select
+                    value={selectedCustomPaymentHead}
+                    onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
+                    label="Select Payment Head"
+                    startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
+                  >
+                    <MenuItem value=""><em>-- Add New Head --</em></MenuItem>
+                    {customPaymentHeads.map((head) => (
+                      <MenuItem key={head.id} value={head.id}>
+                        {head.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
 
-              {/* Add new custom payment head */}
-              <TextField
-                fullWidth
-                label="New Payment Head Name"
-                value={newCustomPaymentHeadName}
-                onChange={(e) => setNewCustomPaymentHeadName(e.target.value)}
-                margin="normal"
+                {!selectedCustomPaymentHead && (
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: 2, 
+                    bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc',
+                    border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1'}`
+                  }}>
+                    <Typography variant="caption" fontWeight="700" color="secondary" sx={{ mb: 1, display: 'block' }}>
+                      NEW PAYMENT HEAD
+                    </Typography>
+                    <Stack direction="row" spacing={1}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Head Name"
+                        value={newCustomPaymentHeadName}
+                        onChange={(e) => setNewCustomPaymentHeadName(e.target.value)}
+                      />
+                      <Button
+                        variant="contained"
+                        color="secondary"
+                        size="small"
+                        onClick={handleAddCustomPaymentHead}
+                        disabled={!newCustomPaymentHeadName.trim()}
+                        sx={{ whiteSpace: 'nowrap', borderRadius: 1.5 }}
+                      >
+                        Add
+                      </Button>
+                    </Stack>
+                  </Box>
+                )}
+              </Stack>
+            )}
+
+            <Box 
+              sx={{ 
+                p: 1.5, 
+                borderRadius: 2, 
+                bgcolor: isFreezed ? 'rgba(239, 68, 68, 0.05)' : 'transparent',
+                border: `1px solid ${isFreezed ? 'rgba(239, 68, 68, 0.2)' : 'rgba(0,0,0,0.05)'}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              <Box>
+                <Typography variant="body2" fontWeight="700">Add to Freezed balance</Typography>
+                <Typography variant="caption" color="text.secondary">Amount won&apos;t be available for spending</Typography>
+              </Box>
+              <Checkbox
+                checked={isFreezed}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsFreezed(checked);
+                  if (checked) {
+                    setNewMode('in_hand');
+                    setSelectedBank('');
+                    setSelectedCustomPaymentHead('');
+                  }
+                }}
               />
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={handleAddCustomPaymentHead}
-                disabled={!newCustomPaymentHeadName.trim()}
-              >
-                + Add Payment Head
-              </Button>
-            </>
-          )}
-
-          <Checkbox
-            size="small"
-            checked={isFreezed}
-            onChange={(e) => {
-              const checked = e.target.checked;
-              setIsFreezed(checked);
-
-              if (checked) {
-                // ✅ reset source & bank & custom when freezed
-                setNewMode('in_hand');
-                setSelectedBank('');
-                setSelectedCustomPaymentHead('');
-              }
-            }}
-          />
-          <Typography fontSize={13} component="span">
-            Add to Freezed balance
-          </Typography>
+            </Box>
+          </Stack>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowModal(false)}>Cancel</Button>
+
+        <DialogActions sx={{ px: 3, py: 3, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+          <Button onClick={() => setShowModal(false)} sx={{ fontWeight: 700, color: 'text.secondary' }}>
+            Cancel
+          </Button>
           <Button
             variant="contained"
             onClick={handleSaveClick}
             disabled={
               saving ||
               (!isFreezed && newMode === 'bank' && !selectedBank) ||
-              (!isFreezed && newMode === 'custom' && !selectedCustomPaymentHead)
+              (!isFreezed && newMode === 'custom' && !selectedCustomPaymentHead) ||
+              !newAmount || newAmount <= 0
             }
+            sx={{ 
+              borderRadius: 2, 
+              fontWeight: 800, 
+              px: 4,
+              boxShadow: '0 4px 14px 0 rgba(59, 130, 246, 0.39)',
+              textTransform: 'none'
+            }}
           >
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? 'Processing...' : 'Complete Addition'}
           </Button>
         </DialogActions>
       </Dialog>

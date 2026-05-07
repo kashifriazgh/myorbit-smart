@@ -16,12 +16,18 @@ import {
   CircularProgress,
   Stack,
   Collapse,
-  LinearProgress,
   Modal,
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { ExpandLess, ExpandMore, Event } from '@mui/icons-material';
+import { ExpandLess, ExpandMore, Event, Receipt, ShoppingCart, DirectionsCar, Restaurant, LocalHospital, HomeWork, Bolt, Delete, CheckCircle, Info, TrendingUp } from '@mui/icons-material';
+import {
+  Card,
+  CardContent,
+  Avatar,
+  Chip,
+  Divider,
+} from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { Expenditure, TransactionSource } from '@/app/lib/interface';
@@ -265,13 +271,12 @@ function ExpendituresComponent({ userId }: { userId: string }) {
   return (
     <Box
       sx={{
-        maxWidth: 600,
+        maxWidth: 700,
         mx: 'auto',
         my: 4,
-        p: 4,
-        boxShadow: 6,
-        borderRadius: 3,
-        bgcolor: isDark ? '#1e293b' : '#fff',
+        p: { xs: 2, sm: 4 },
+        borderRadius: 4,
+        bgcolor: 'transparent',
       }}
     >
       <Typography variant="h5" fontWeight="bold" mb={2}>
@@ -301,204 +306,280 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                 ? 'One-Time Expenses'
                 : 'Recurring Expenses'}
             </Typography>
-            {groupedByType[group].map((exp) => (
-              <Box
-                key={exp.id}
-                sx={{
-                  my: 2,
-                  p: 2,
-                  borderLeft: `4px solid ${isDark ? '#4ade80' : '#22c55e'}`,
-                  borderRadius: 2,
-                  backgroundColor: isDark ? '#1e293b' : '#f9fafb',
-                }}
-              >
-                <Stack
-                  direction="row"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  spacing={1}
+            {groupedByType[group].map((exp) => {
+              const daysDiff = exp.dueDate ? getDaysDifference(exp.dueDate instanceof Date ? exp.dueDate : exp.dueDate.toDate()) : null;
+              
+              const getCategoryIcon = (category?: string) => {
+                const cat = category?.toLowerCase() || '';
+                if (cat.includes('food') || cat.includes('restaurant')) return <Restaurant />;
+                if (cat.includes('transport') || cat.includes('car') || cat.includes('travel')) return <DirectionsCar />;
+                if (cat.includes('rent') || cat.includes('home')) return <HomeWork />;
+                if (cat.includes('bill') || cat.includes('utility') || cat.includes('electricity')) return <Bolt />;
+                if (cat.includes('health') || cat.includes('medical')) return <LocalHospital />;
+                if (cat.includes('shop') || cat.includes('grocery')) return <ShoppingCart />;
+                return <Receipt />;
+              };
+
+              const getCategoryColor = (category?: string) => {
+                const cat = category?.toLowerCase() || '';
+                if (cat.includes('food')) return '#f97316';
+                if (cat.includes('transport')) return '#3b82f6';
+                if (cat.includes('rent')) return '#8b5cf6';
+                if (cat.includes('bill')) return '#eab308';
+                if (cat.includes('health')) return '#ef4444';
+                if (cat.includes('shop')) return '#ec4899';
+                return '#64748b';
+              };
+
+              return (
+                <Card
+                  key={exp.id}
+                  elevation={isDark ? 0 : 2}
+                  sx={{
+                    my: 2.5,
+                    borderRadius: 3,
+                    overflow: 'hidden',
+                    backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                    border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'}`,
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: isDark ? '0 20px 25px -5px rgba(0, 0, 0, 0.5)' : '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                      borderColor: isDark ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.2)',
+                    },
+                  }}
                 >
-                  <Typography fontWeight="bold">{exp.title}</Typography>
-                  <Box sx={{ minWidth: 100 }}>
-                    <TextField
-                      type="text"
-                      variant="standard"
-                      value={
-                        editingAmounts[exp.id!] !== undefined
-                          ? editingAmounts[exp.id!].toString()
-                          : exp.amount.toString()
-                      }
-                      size="small"
-                      placeholder="0"
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        // Allow empty string, numbers, and decimal point
-                        if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                          const newAmount =
-                            value === '' ? 0 : parseFloat(value) || 0;
-                          setEditingAmounts((prev) => ({
-                            ...prev,
-                            [exp.id!]: newAmount,
-                          }));
-                        }
-                      }}
-                      onBlur={() => {
-                        if (exp.id) {
-                          const finalAmount =
-                            editingAmounts[exp.id] !== undefined
-                              ? editingAmounts[exp.id]
-                              : exp.amount;
-                          setAmountUpdatingId(exp.id);
-                          updateExpenditureAmount(exp.id, finalAmount).finally(
-                            () => {
-                              setAmountUpdatingId(null);
-                              setEditingAmounts((prev) => {
-                                const newState = { ...prev };
-                                delete newState[exp.id!];
-                                return newState;
-                              });
-                            }
-                          );
-                        }
-                      }}
-                      onFocus={(e) => {
-                        // Select all text when focused for easy editing
-                        e.target.select();
-                      }}
-                      inputProps={{
-                        style: {
-                          maxWidth: 100,
-                          textAlign: 'right',
-                          fontWeight: 'bold',
-                          color: '#16a34a',
-                          fontSize: '14px',
-                        },
-                      }}
-                      sx={{
-                        '& .MuiInput-underline:before': {
-                          borderBottomColor: 'rgba(22, 163, 74, 0.3)',
-                        },
-                        '& .MuiInput-underline:hover:before': {
-                          borderBottomColor: 'rgba(22, 163, 74, 0.5)',
-                        },
-                        '& .MuiInput-underline:after': {
-                          borderBottomColor: '#16a34a',
-                        },
-                      }}
-                    />
-                    {amountUpdatingId === exp.id && (
-                      <LinearProgress sx={{ mt: 0.5 }} />
-                    )}
-                  </Box>
-                </Stack>
-                <Typography variant="body2" mt={0.5}>
-                  {exp.category && `Category: ${exp.category}`} ·{' '}
-                  {exp.frequency}
-                </Typography>
-                {exp.dueDate && (
-                  <Typography variant="body2" color="error" fontWeight="bold">
-                    📅 Due Date:{' '}
-                    {exp.dueDate instanceof Date
-                      ? exp.dueDate.toLocaleDateString()
-                      : exp.dueDate?.toDate?.()?.toLocaleDateString() ||
-                        'Invalid date'}
-                  </Typography>
-                )}
-                {exp.effectiveFromDate &&
-                  (() => {
-                    const effectiveDate =
-                      exp.effectiveFromDate instanceof Date
-                        ? exp.effectiveFromDate
-                        : exp.effectiveFromDate?.toDate?.();
-
-                    if (effectiveDate) {
-                      const daysDiff = getDaysDifference(effectiveDate);
-                      if (daysDiff > 0) {
-                        return (
-                          <Typography
-                            variant="body2"
-                            color="primary"
-                            sx={{ fontWeight: 'medium' }}
+                  <CardContent sx={{ p: 0 }}>
+                    <Box sx={{ p: 2.5 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                        <Stack direction="row" spacing={2} alignItems="center">
+                          <Avatar 
+                            sx={{ 
+                              bgcolor: `${getCategoryColor(exp.category)}15`, 
+                              color: getCategoryColor(exp.category),
+                              width: 48,
+                              height: 48,
+                              borderRadius: 2
+                            }}
                           >
-                            🚀 Effected By: {effectiveDate.toLocaleDateString()}{' '}
-                            (after {daysDiff} day{daysDiff !== 1 ? 's' : ''})
-                          </Typography>
-                        );
-                      }
-                    }
-                    return null;
-                  })()}
-                <Typography variant="body2" mt={0.5}>
-                  {exp.isPaid ? '✅ Paid' : '❌ Not Paid'}
-                </Typography>
+                            {getCategoryIcon(exp.category)}
+                          </Avatar>
+                          <Box>
+                            <Typography variant="subtitle1" fontWeight="800" sx={{ lineHeight: 1.2 }}>
+                              {exp.title}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                              <Chip 
+                                label={exp.category || 'Other'} 
+                                size="small" 
+                                sx={{ 
+                                  height: 20, 
+                                  fontSize: '10px', 
+                                  fontWeight: 700,
+                                  bgcolor: `${getCategoryColor(exp.category)}10`,
+                                  color: getCategoryColor(exp.category),
+                                  border: `1px solid ${getCategoryColor(exp.category)}30`
+                                }} 
+                              />
+                              • {exp.frequency}
+                            </Typography>
+                          </Box>
+                        </Stack>
 
-                {/* Payment Count */}
-                {exp.paymentHistory && exp.paymentHistory.length > 0 && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    display="block"
-                  >
-                    💰 {exp.paymentHistory.length} payment
-                    {exp.paymentHistory.length > 1 ? 's' : ''} made
-                  </Typography>
-                )}
-                {exp.notes && (
-                  <>
-                    <Button
-                      size="small"
-                      onClick={() => setNotesOpen(!notesOpen)}
-                      startIcon={notesOpen ? <ExpandLess /> : <ExpandMore />}
-                    >
-                      Notes
-                    </Button>
-                    <Collapse in={notesOpen}>
-                      <Typography variant="body2" mt={1} color="text.secondary">
-                        📝 {exp.notes}
-                      </Typography>
-                    </Collapse>
-                  </>
-                )}
-                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    color="error"
-                    onClick={() => exp.id && setDeleteId(exp.id)}
-                  >
-                    Delete
-                  </Button>
-                  {!exp.isPaid && (
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      color="primary"
-                      onClick={() => openMarkPaidDialog(exp)}
-                      disabled={actionLoading}
-                    >
-                      {updatingPaidId === exp.id ? (
-                        <CircularProgress size={18} />
-                      ) : (
-                        'Mark as Paid'
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                            {amountUpdatingId === exp.id && (
+                              <CircularProgress size={16} sx={{ mr: 1 }} />
+                            )}
+                            <TextField
+                              type="text"
+                              variant="standard"
+                              value={
+                                editingAmounts[exp.id!] !== undefined
+                                  ? editingAmounts[exp.id!].toString()
+                                  : exp.amount.toString()
+                              }
+                              size="small"
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                                  const newAmount = value === '' ? 0 : parseFloat(value) || 0;
+                                  setEditingAmounts((prev) => ({ ...prev, [exp.id!]: newAmount }));
+                                }
+                              }}
+                              onBlur={() => {
+                                if (exp.id) {
+                                  const finalAmount = editingAmounts[exp.id] !== undefined ? editingAmounts[exp.id] : exp.amount;
+                                  setAmountUpdatingId(exp.id);
+                                  updateExpenditureAmount(exp.id, finalAmount).finally(() => {
+                                    setAmountUpdatingId(null);
+                                    setEditingAmounts((prev) => {
+                                      const newState = { ...prev };
+                                      delete newState[exp.id!];
+                                      return newState;
+                                    });
+                                  });
+                                }
+                              }}
+                              onFocus={(e) => e.target.select()}
+                              InputProps={{
+                                disableUnderline: true,
+                                style: {
+                                  textAlign: 'right',
+                                  fontWeight: '900',
+                                  color: isDark ? '#f87171' : '#ef4444',
+                                  fontSize: '1.25rem',
+                                  padding: 0,
+                                }
+                              }}
+                              sx={{
+                                '& input': { textAlign: 'right', p: 0 }
+                              }}
+                            />
+                          </Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                            PKR
+                          </Typography>
+                        </Box>
+                      </Stack>
+
+                      <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {exp.dueDate && (
+                          <Box 
+                            sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: 0.5, 
+                              px: 1.5, 
+                              py: 0.5, 
+                              borderRadius: 1.5, 
+                              bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#fef2f2',
+                              border: `1px solid ${isDark ? 'rgba(239, 68, 68, 0.1)' : '#fee2e2'}`
+                            }}
+                          >
+                            <Event sx={{ fontSize: 14, color: '#ef4444' }} />
+                            <Typography variant="caption" fontWeight="700" color="#ef4444">
+                              {exp.dueDate instanceof Date
+                                ? exp.dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                                : exp.dueDate?.toDate?.()?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) || 'N/A'}
+                            </Typography>
+                          </Box>
+                        )}
+
+                        {exp.isPaid ? (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, py: 0.5, borderRadius: 1.5, bgcolor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                            <CheckCircle sx={{ fontSize: 14, color: '#10b981' }} />
+                            <Typography variant="caption" fontWeight="700" sx={{ color: '#10b981' }}>Paid</Typography>
+                          </Box>
+                        ) : (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, py: 0.5, borderRadius: 1.5, bgcolor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            <Info sx={{ fontSize: 14, color: '#ef4444' }} />
+                            <Typography variant="caption" fontWeight="700" sx={{ color: '#ef4444' }}>Unpaid</Typography>
+                          </Box>
+                        )}
+
+                        {daysDiff !== null && (
+                          <Box 
+                            sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: 0.5, 
+                              px: 1.5, 
+                              py: 0.5, 
+                              borderRadius: 1.5, 
+                              bgcolor: daysDiff <= 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                              border: `1px solid ${daysDiff <= 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`
+                            }}
+                          >
+                            <TrendingUp sx={{ fontSize: 14, color: daysDiff <= 0 ? '#ef4444' : '#3b82f6' }} />
+                            <Typography variant="caption" fontWeight="700" sx={{ color: daysDiff <= 0 ? '#ef4444' : '#3b82f6' }}>
+                              {daysDiff === 0 ? 'Due Today' : daysDiff < 0 ? `Overdue ${Math.abs(daysDiff)}d` : `In ${daysDiff}d`}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+
+                      {exp.notes && (
+                        <Box sx={{ mt: 2 }}>
+                          <Button
+                            size="small"
+                            onClick={() => setNotesOpen(!notesOpen)}
+                            startIcon={notesOpen ? <ExpandLess /> : <ExpandMore />}
+                            sx={{ fontSize: '10px', p: 0, minWidth: 'auto', color: 'text.secondary' }}
+                          >
+                            Notes
+                          </Button>
+                          <Collapse in={notesOpen}>
+                            <Typography 
+                              variant="body2" 
+                              sx={{ 
+                                mt: 1, 
+                                p: 1.5, 
+                                borderRadius: 2, 
+                                bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc',
+                                color: 'text.secondary',
+                                fontSize: '0.75rem',
+                                fontStyle: 'italic',
+                                borderLeft: '3px solid #cbd5e1'
+                              }}
+                            >
+                              &quot;{exp.notes}&quot;
+                            </Typography>
+                          </Collapse>
+                        </Box>
                       )}
-                    </Button>
-                  )}
-                  <Tooltip title="Reschedule">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleReschedule(exp)}
-                      sx={{
-                        color: '#f59e0b',
-                        border: '1px solid #f59e0b',
-                        borderRadius: 1,
+                    </Box>
+
+                    <Divider sx={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+
+                    <Stack 
+                      direction="row" 
+                      spacing={0.5} 
+                      sx={{ 
+                        p: 1, 
+                        bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fafafa',
+                        justifyContent: 'flex-end'
                       }}
                     >
-                      <Event fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-              </Box>
-            ))}
+                      {!exp.isPaid && (
+                        <>
+                          <Tooltip title="Mark as Paid">
+                            <IconButton 
+                              size="small" 
+                              onClick={() => openMarkPaidDialog(exp)}
+                              disabled={actionLoading}
+                              sx={{ color: '#10b981', '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.1)' } }}
+                            >
+                              {updatingPaidId === exp.id ? <CircularProgress size={20} /> : <CheckCircle fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Reschedule">
+                            <IconButton 
+                              size="small" 
+                              onClick={() => handleReschedule(exp)}
+                              disabled={reschedulingLoading}
+                              sx={{ color: '#f59e0b', '&:hover': { bgcolor: 'rgba(245, 158, 11, 0.1)' } }}
+                            >
+                              <Event fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      )}
+                      <Tooltip title="Delete">
+                        <IconButton 
+                          size="small" 
+                          onClick={() => exp.id && setDeleteId(exp.id)}
+                          disabled={deleting}
+                          sx={{ color: '#ef4444', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }}
+                        >
+                          <Delete fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </Box>
         ) : null
       )}

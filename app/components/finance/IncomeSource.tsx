@@ -19,6 +19,21 @@ import DeleteConfirmModal from '../global/DeleteConfirmModal';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ReceiptIcon from '@mui/icons-material/Receipt';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import BusinessIcon from '@mui/icons-material/Business';
+import HomeWorkIcon from '@mui/icons-material/HomeWork';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import InfoIcon from '@mui/icons-material/Info';
+import {
+  Card,
+  CardContent,
+  IconButton,
+  Avatar,
+  Chip,
+  Tooltip,
+  Divider,
+} from '@mui/material';
 
 export default function IncomeSourceComponent({ userId }: { userId: string }) {
   const { theme } = useCustomTheme();
@@ -172,13 +187,12 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
   return (
     <Box
       sx={{
-        maxWidth: 600,
+        maxWidth: 700,
         mx: 'auto',
         my: 4,
-        p: 4,
-        boxShadow: 6,
-        borderRadius: 3,
-        bgcolor: theme.mode === 'dark' ? '#1e293b' : '#fff',
+        p: { xs: 2, sm: 4 },
+        borderRadius: 4,
+        bgcolor: 'transparent', // Let the parent container handle background
       }}
     >
       <ChartViewByCategory data={categoryChartData} />
@@ -200,242 +214,256 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
         Total ({displayedSources.length}) – Rs {totalAmount.toLocaleString()}
       </Typography>
 
-      {displayedSources.map((src) => (
-        <Box
-          key={src.id}
-          sx={{
-            my: 2,
-            p: 2,
-            borderLeft: '4px solid #3b82f6',
-            borderRadius: 2,
-            backgroundColor: theme.mode === 'dark' ? '#1e293b' : '#f9fafb',
-            opacity: 1,
-            transition: 'opacity 0.3s ease',
-          }}
-        >
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-            spacing={1}
-          >
-            <Typography fontWeight="bold">{src.title}</Typography>
-            <Box sx={{ position: 'relative' }}>
-              <TextField
-                type="text"
-                variant="standard"
-                value={
-                  editingAmounts[src.id!] !== undefined
-                    ? editingAmounts[src.id!].toString()
-                    : src.amount.toString()
-                }
-                size="small"
-                placeholder="0"
-                onChange={(e) => {
-                  const value = e.target.value;
-                  // Allow empty string, numbers, and decimal point
-                  if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                    const newAmount = value === '' ? 0 : parseFloat(value) || 0;
-                    setEditingAmounts((prev) => ({
-                      ...prev,
-                      [src.id!]: newAmount,
-                    }));
-                  }
-                }}
-                onBlur={async () => {
-                  if (!src.id) return;
-                  const finalAmount =
-                    editingAmounts[src.id] !== undefined
-                      ? editingAmounts[src.id]
-                      : src.amount;
-                  setUpdatingAmountId(src.id);
-                  try {
-                    await updateIncomeAmount(src.id, finalAmount);
-                    setEditingAmounts((prev) => {
-                      const newState = { ...prev };
-                      delete newState[src.id!];
-                      return newState;
-                    });
-                  } catch (err) {
-                    console.error('Error updating amount:', err);
-                  } finally {
-                    setUpdatingAmountId(null);
-                  }
-                }}
-                onFocus={(e) => {
-                  // Select all text when focused for easy editing
-                  e.target.select();
-                }}
-                inputProps={{
-                  style: {
-                    maxWidth: 100,
-                    textAlign: 'right',
-                    fontWeight: 'bold',
-                    color: '#2563eb',
-                    fontSize: '14px',
-                  },
-                }}
-                sx={{
-                  '& .MuiInput-underline:before': {
-                    borderBottomColor: 'rgba(59, 130, 246, 0.3)',
-                  },
-                  '& .MuiInput-underline:hover:before': {
-                    borderBottomColor: 'rgba(59, 130, 246, 0.5)',
-                  },
-                  '& .MuiInput-underline:after': {
-                    borderBottomColor: '#3b82f6',
-                  },
-                }}
-              />
-              {updatingAmountId === src.id && (
-                <CircularProgress
-                  size={16}
-                  sx={{
-                    position: 'absolute',
-                    right: -24,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                  }}
-                />
-              )}
-            </Box>
-          </Stack>
-          <Typography variant="body2" mt={0.5}>
-            {src.category} · {src.frequency}
-          </Typography>
-          {src.expectedDate && (
-            <Typography variant="body2" color="text.secondary">
-              📅 Expected:{' '}
-              {src.expectedDate instanceof Date
-                ? src.expectedDate.toLocaleDateString()
-                : src.expectedDate?.toDate?.()?.toLocaleDateString() ||
-                  'Invalid date'}
-            </Typography>
-          )}
-          {src.effectiveFromDate &&
-            (() => {
-              const effectiveDate =
-                src.effectiveFromDate instanceof Date
-                  ? src.effectiveFromDate
-                  : src.effectiveFromDate?.toDate?.();
+      {displayedSources.map((src) => {
+        const isDark = theme.mode === 'dark';
+        const daysDiff = src.effectiveFromDate ? getDaysDifference(src.effectiveFromDate instanceof Date ? src.effectiveFromDate : src.effectiveFromDate.toDate()) : null;
+        
+        // Category icons mapping
+        const getCategoryIcon = (category?: string) => {
+          const cat = category?.toLowerCase() || '';
+          if (cat.includes('salary') || cat.includes('job')) return <BusinessIcon />;
+          if (cat.includes('rent')) return <HomeWorkIcon />;
+          if (cat.includes('investment') || cat.includes('stock')) return <TrendingUpIcon />;
+          if (cat.includes('freelance') || cat.includes('side')) return <PaymentsIcon />;
+          return <ReceiptIcon />;
+        };
 
-              if (effectiveDate) {
-                const daysDiff = getDaysDifference(effectiveDate);
-                if (daysDiff > 0) {
-                  return (
-                    <Typography
-                      variant="body2"
-                      color="primary"
-                      sx={{ fontWeight: 'medium' }}
-                    >
-                      🚀 Effected By: {effectiveDate.toLocaleDateString()}{' '}
-                      (after {daysDiff} day{daysDiff !== 1 ? 's' : ''})
-                    </Typography>
-                  );
-                }
-              }
-              return null;
-            })()}
-          <Typography variant="body2" mt={0.5}>
-            {src.isReceived ? '✅ Received' : '❌ Not Received'}
-          </Typography>
+        const getCategoryColor = (category?: string) => {
+          const cat = category?.toLowerCase() || '';
+          if (cat.includes('salary')) return '#3b82f6';
+          if (cat.includes('rent')) return '#10b981';
+          if (cat.includes('investment')) return '#8b5cf6';
+          if (cat.includes('freelance')) return '#f59e0b';
+          return '#64748b';
+        };
 
-          {/* Payment Count */}
-          {src.paymentHistory && src.paymentHistory.length > 0 && (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              display="block"
-            >
-              💰 {src.paymentHistory.length} payment
-              {src.paymentHistory.length > 1 ? 's' : ''} received
-            </Typography>
-          )}
-          {src.notes && (
-            <Typography variant="body2" mt={1} color="text.secondary">
-              📝 {src.notes}
-            </Typography>
-          )}
-
-          {/* Action Buttons - All on one line with icons */}
-          <Stack
-            direction="row"
-            spacing={1}
+        return (
+          <Card
+            key={src.id}
+            elevation={isDark ? 0 : 2}
             sx={{
-              mt: 1,
-              '& .MuiButton-root': {
-                minWidth: 'auto',
-                fontSize: '0.75rem',
-                px: { xs: 1, sm: 1.5 },
-                py: 0.5,
-                flex: { xs: 1, sm: 'none' },
+              my: 2.5,
+              borderRadius: 3,
+              overflow: 'hidden',
+              backgroundColor: isDark ? '#0f172a' : '#ffffff',
+              border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'}`,
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: isDark ? '0 20px 25px -5px rgba(0, 0, 0, 0.5)' : '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : 'rgba(59, 130, 246, 0.2)',
               },
             }}
           >
-            <Button
-              variant="outlined"
-              size="small"
-              color="error"
-              onClick={() => onClickDelete(src)}
-              disabled={deleteLoading}
-              title="Delete income source"
-              startIcon={
-                deleteLoading && selectedIncome?.id === src.id ? (
-                  <CircularProgress size={16} />
-                ) : (
-                  <DeleteIcon />
-                )
-              }
-            >
-              Delete
-            </Button>
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ p: 2.5 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <Avatar 
+                      sx={{ 
+                        bgcolor: `${getCategoryColor(src.category)}15`, 
+                        color: getCategoryColor(src.category),
+                        width: 48,
+                        height: 48,
+                        borderRadius: 2
+                      }}
+                    >
+                      {getCategoryIcon(src.category)}
+                    </Avatar>
+                    <Box>
+                      <Typography variant="subtitle1" fontWeight="800" sx={{ lineHeight: 1.2 }}>
+                        {src.title}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <Chip 
+                          label={src.category || 'Other'} 
+                          size="small" 
+                          sx={{ 
+                            height: 20, 
+                            fontSize: '10px', 
+                            fontWeight: 700,
+                            bgcolor: `${getCategoryColor(src.category)}10`,
+                            color: getCategoryColor(src.category),
+                            border: `1px solid ${getCategoryColor(src.category)}30`
+                          }} 
+                        />
+                        • {src.frequency}
+                      </Typography>
+                    </Box>
+                  </Stack>
 
-            {!src.isReceived && (
-              <>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  color="primary"
-                  onClick={() => onClickMark(src)}
-                  disabled={actionLoading}
-                  title="Mark as received"
-                  startIcon={
-                    actionLoading && selectedIncome?.id === src.id ? (
-                      <CircularProgress size={16} />
-                    ) : (
-                      <CheckCircleIcon
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                      {updatingAmountId === src.id && (
+                        <CircularProgress size={16} sx={{ mr: 1 }} />
+                      )}
+                      <TextField
+                        type="text"
+                        variant="standard"
+                        value={
+                          editingAmounts[src.id!] !== undefined
+                            ? editingAmounts[src.id!].toString()
+                            : src.amount.toString()
+                        }
+                        size="small"
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            const newAmount = value === '' ? 0 : parseFloat(value) || 0;
+                            setEditingAmounts((prev) => ({ ...prev, [src.id!]: newAmount }));
+                          }
+                        }}
+                        onBlur={async () => {
+                          if (!src.id) return;
+                          const finalAmount = editingAmounts[src.id] !== undefined ? editingAmounts[src.id] : src.amount;
+                          setUpdatingAmountId(src.id);
+                          try {
+                            await updateIncomeAmount(src.id, finalAmount);
+                            setEditingAmounts((prev) => {
+                              const newState = { ...prev };
+                              delete newState[src.id!];
+                              return newState;
+                            });
+                          } catch (err) {
+                            console.error('Error updating amount:', err);
+                          } finally {
+                            setUpdatingAmountId(null);
+                          }
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        InputProps={{
+                          disableUnderline: true,
+                          style: {
+                            textAlign: 'right',
+                            fontWeight: '900',
+                            color: isDark ? '#60a5fa' : '#2563eb',
+                            fontSize: '1.25rem',
+                            padding: 0,
+                          }
+                        }}
                         sx={{
-                          color: src.isReceived ? '#4caf50' : '#9e9e9e',
+                          '& input': { textAlign: 'right', p: 0 }
                         }}
                       />
-                    )
-                  }
-                >
-                  {actionLoading && selectedIncome?.id === src.id ? '...' : '.'}
-                </Button>
+                    </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                      PKR
+                    </Typography>
+                  </Box>
+                </Stack>
 
-                <Button
-                  variant="outlined"
-                  size="small"
-                  color="secondary"
-                  onClick={() => onClickReschedule(src)}
-                  disabled={rescheduleLoading}
-                  title="Reschedule income"
-                  startIcon={
-                    rescheduleLoading && selectedIncome?.id === src.id ? (
-                      <CircularProgress size={16} />
-                    ) : (
-                      <CalendarTodayIcon />
-                    )
-                  }
-                >
-                  Reschedule
-                </Button>
-              </>
-            )}
-          </Stack>
-        </Box>
-      ))}
+                <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {src.expectedDate && (
+                    <Box 
+                      sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 0.5, 
+                        px: 1.5, 
+                        py: 0.5, 
+                        borderRadius: 1.5, 
+                        bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
+                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`
+                      }}
+                    >
+                      <CalendarTodayIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                      <Typography variant="caption" fontWeight="600" color="text.secondary">
+                        {src.expectedDate instanceof Date
+                          ? src.expectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                          : src.expectedDate?.toDate?.()?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) || 'N/A'}
+                      </Typography>
+                    </Box>
+                  )}
+
+                  {src.isReceived ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, py: 0.5, borderRadius: 1.5, bgcolor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                      <CheckCircleIcon sx={{ fontSize: 14, color: '#10b981' }} />
+                      <Typography variant="caption" fontWeight="700" sx={{ color: '#10b981' }}>Received</Typography>
+                    </Box>
+                  ) : (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, py: 0.5, borderRadius: 1.5, bgcolor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                      <InfoIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
+                      <Typography variant="caption" fontWeight="700" sx={{ color: '#f59e0b' }}>Pending</Typography>
+                    </Box>
+                  )}
+
+                  {daysDiff !== null && daysDiff > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.5, py: 0.5, borderRadius: 1.5, bgcolor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                      <TrendingUpIcon sx={{ fontSize: 14, color: '#3b82f6' }} />
+                      <Typography variant="caption" fontWeight="700" sx={{ color: '#3b82f6' }}>In {daysDiff}d</Typography>
+                    </Box>
+                  )}
+                </Box>
+
+                {src.notes && (
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      mt: 2, 
+                      p: 1.5, 
+                      borderRadius: 2, 
+                      bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc',
+                      color: 'text.secondary',
+                      fontSize: '0.75rem',
+                      fontStyle: 'italic',
+                      borderLeft: '3px solid #cbd5e1'
+                    }}
+                  >
+                    &quot;{src.notes}&quot;
+                  </Typography>
+                )}
+              </Box>
+
+              <Divider sx={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+
+              <Stack 
+                direction="row" 
+                spacing={0.5} 
+                sx={{ 
+                  p: 1, 
+                  bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fafafa',
+                  justifyContent: 'flex-end'
+                }}
+              >
+                {!src.isReceived && (
+                  <>
+                    <Tooltip title="Mark as Received">
+                      <IconButton 
+                        size="small" 
+                        onClick={() => onClickMark(src)}
+                        disabled={actionLoading}
+                        sx={{ color: '#10b981', '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.1)' } }}
+                      >
+                        {actionLoading && selectedIncome?.id === src.id ? <CircularProgress size={20} /> : <CheckCircleIcon fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Reschedule">
+                      <IconButton 
+                        size="small" 
+                        onClick={() => onClickReschedule(src)}
+                        disabled={rescheduleLoading}
+                        sx={{ color: '#6366f1', '&:hover': { bgcolor: 'rgba(99, 102, 241, 0.1)' } }}
+                      >
+                        {rescheduleLoading && selectedIncome?.id === src.id ? <CircularProgress size={20} /> : <CalendarTodayIcon fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>
+                  </>
+                )}
+                <Tooltip title="Delete">
+                  <IconButton 
+                    size="small" 
+                    onClick={() => onClickDelete(src)}
+                    disabled={deleteLoading}
+                    sx={{ color: '#ef4444', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }}
+                  >
+                    {deleteLoading && selectedIncome?.id === src.id ? <CircularProgress size={20} /> : <DeleteIcon fontSize="small" />}
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            </CardContent>
+          </Card>
+        );
+      })}
 
       {/* Mark as Received Dialog */}
       <MarkAsReceivedDialog
