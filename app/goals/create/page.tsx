@@ -6,13 +6,12 @@ import { ArrowBack } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { useAuth } from '../../lib/context/userContext';
-import { GoalsProvider } from '../../lib/context/GoalsContext';
 import GoalModal from '../../components/goals/GoalModal';
 
 const CreateGoalPage: React.FC = () => {
   const router = useRouter();
   const { theme } = useCustomTheme();
-  const { user } = useAuth();
+  useAuth();
 
   return (
     <Box
@@ -46,11 +45,7 @@ const CreateGoalPage: React.FC = () => {
         </Box>
 
         {/* Goal Creation Form */}
-        {user ? (
-          <GoalsProvider userId={user.uid}>
-            <GoalModal open={true} onClose={() => router.push('/goals')} />
-          </GoalsProvider>
-        ) : null}
+        <GoalModal open={true} onClose={() => router.push('/goals')} />
       </Box>
     </Box>
   );

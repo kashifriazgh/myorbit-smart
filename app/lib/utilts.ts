@@ -12,6 +12,20 @@ export function formatCurrency(
   })}`;
 }
 
+export function toDateSafe(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
+    return value.toDate();
+  }
+  if (typeof value === 'object' && value !== null && 'seconds' in value) {
+    const v = value as { seconds: number; nanoseconds?: number };
+    return new Date(v.seconds * 1000 + (v.nanoseconds || 0) / 1000000);
+  }
+  const d = new Date(value as string | number);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 // lib/utils/timeAnalysis.ts
 
 export function extractHoursAndDaysFromTimestamps(timestamps: Date[]) {

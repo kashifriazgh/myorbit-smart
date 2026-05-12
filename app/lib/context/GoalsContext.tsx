@@ -20,6 +20,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from './userContext';
 
 interface GoalsContextType {
   goals: Goal[];
@@ -61,15 +62,11 @@ export const useGoals = () => {
   return context;
 };
 
-interface GoalsProviderProps {
-  children: ReactNode;
-  userId: string;
-}
-
-export const GoalsProvider: React.FC<GoalsProviderProps> = ({
+export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
   children,
-  userId,
 }) => {
+  const { user } = useAuth();
+  const userId = user?.uid || '';
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +77,7 @@ export const GoalsProvider: React.FC<GoalsProviderProps> = ({
     const goalsRef = collection(db, 'goals');
     const q = query(
       goalsRef,
-      where('status', 'in', ['In Progress', 'Not Started'])
+      where('status', 'in', ['In Progress', 'Not Started', 'Completed'])
     );
 
     const unsubscribe = onSnapshot(
@@ -308,7 +305,7 @@ export const GoalsProvider: React.FC<GoalsProviderProps> = ({
         createdAt: Timestamp.fromDate(now),
         updatedAt: Timestamp.fromDate(now),
         dueDate: Timestamp.fromDate(toDateSafe(goalData.dueDate) || now),
-        steps: goalData.steps.map((step) => ({
+        steps: (goalData.steps || []).map((step) => ({
           ...step,
           startDate: step.startDate
             ? Timestamp.fromDate(toDateSafe(step.startDate)!)

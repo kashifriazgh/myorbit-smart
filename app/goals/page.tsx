@@ -18,7 +18,7 @@ import {
 } from '@mui/material';
 import { Search, Add, FilterList } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useGoals, GoalsProvider } from '../lib/context/GoalsContext';
+import { useGoals } from '../lib/context/GoalsContext';
 import { useAuth } from '../lib/context/userContext';
 import { useCustomTheme } from '../lib/context/themeContext';
 import { GoalType, GoalPriority, GoalStatus } from '../lib/interface';
@@ -69,7 +69,7 @@ const getDueDate = (rawDate: FirestoreLikeDate | undefined): Date | null => {
 
 const GoalsPageInner: React.FC = () => {
   const { goals, loading } = useGoals();
-  const { user } = useAuth();
+  useAuth();
   const { theme } = useCustomTheme();
   const router = useRouter();
 
@@ -286,14 +286,10 @@ const GoalsPageInner: React.FC = () => {
       </Box>
 
       {/* MODAL */}
-      {user && (
-        <GoalsProvider userId={user.uid}>
-          <GoalModal
-            open={createModalOpen}
-            onClose={() => setCreateModalOpen(false)}
-          />
-        </GoalsProvider>
-      )}
+      <GoalModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+      />
 
       {/* FAB */}
       <Fab
@@ -314,14 +310,4 @@ const GoalsPageInner: React.FC = () => {
 
 /* ---------- WRAPPER ---------- */
 
-const GoalsPage: React.FC = () => {
-  const { user } = useAuth();
-  if (!user) return null;
-  return (
-    <GoalsProvider userId={user.uid}>
-      <GoalsPageInner />
-    </GoalsProvider>
-  );
-};
-
-export default GoalsPage;
+export default GoalsPageInner;

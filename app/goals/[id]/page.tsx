@@ -24,8 +24,7 @@ import {
   RadioButtonUnchecked,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useGoals, GoalsProvider } from '../../lib/context/GoalsContext';
-import { useAuth } from '../../lib/context/userContext';
+import { useGoals } from '../../lib/context/GoalsContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { GoalType } from '../../lib/interface';
 import GoalModal from '../../components/goals/GoalModal';
@@ -918,11 +917,4 @@ const GoalDetailInner: React.FC = () => {
 
 // ─── Page export ──────────────────────────────────────────────────────────────
 
-export default function GoalDetailPage() {
-  const { user } = useAuth();
-  return (
-    <GoalsProvider userId={user?.uid}>
-      <GoalDetailInner />
-    </GoalsProvider>
-  );
-}
+export default GoalDetailInner;

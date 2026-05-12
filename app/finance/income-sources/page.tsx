@@ -22,7 +22,7 @@ export default function IncomeSourcesPage() {
         borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
       }}
     >
-      <IncomeSourcesProvider userId={user.uid}>
+      <IncomeSourcesProvider>
         <IncomeSourcesComponent userId={user.uid} />
       </IncomeSourcesProvider>
     </Box>

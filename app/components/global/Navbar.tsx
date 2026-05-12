@@ -7,7 +7,6 @@ import BottomNavigation from '@mui/material/BottomNavigation';
 import BottomNavigationAction from '@mui/material/BottomNavigationAction';
 import HomeIcon from '@mui/icons-material/Home';
 import ChecklistIcon from '@mui/icons-material/Checklist';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
 import PriceCheckIcon from '@mui/icons-material/PriceCheck';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
@@ -15,6 +14,7 @@ import TimelineIcon from '@mui/icons-material/Timeline';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import FlagIcon from '@mui/icons-material/Flag';
 import NoteIcon from '@mui/icons-material/Note';
+import AssignmentIcon from '@mui/icons-material/Assignment';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -65,7 +65,7 @@ export default function BottomNav() {
   }
   const navItems = [
     { label: 'To-Do', icon: <ChecklistIcon />, path: '/to-do' },
-    { label: 'Journal', icon: <MenuBookIcon />, path: '/journals' },
+    { label: 'Projects', icon: <AssignmentIcon />, path: '/projects' },
     {
       label: 'Home',
       icon: (

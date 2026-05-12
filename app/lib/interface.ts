@@ -75,6 +75,7 @@ export interface ToDoStep {
 
 export interface Todo {
   id?: string;
+  projectId?: string;
   title: string;
   description?: string;
   tags?: string[];
@@ -749,6 +750,7 @@ export interface TimeTableProps {
 export interface SchedulesProps {
   id?: string;
   userId: string;
+  projectId?: string;
   date: string; // 'YYYY-MM-DD' format
   isFlexible?: boolean; // If true, appears daily in 'today' view
   title: string;
@@ -827,6 +829,7 @@ export type GoalStatus =
 
 export interface Goal {
   id?: string;
+  projectId?: string;
   createdAt: Date | Timestamp;
   title: string;
   type: GoalType;
@@ -864,4 +867,45 @@ export interface Goal {
   targetDate?: string;
 
   authorName?: string;
+}
+
+export type ProjectType = "general" | "learning" | "freelance" | "health" | "personal";
+export type ProjectStatus = "active" | "planning" | "completed" | "on-hold";
+
+export type PointType = 'string' | 'todo' | 'schedule' | 'goal' | 'keyvalue' | 'streak';
+
+export interface Point {
+  id: string;
+  type: PointType;
+  content?: string;
+  todoId?: string;
+  scheduleId?: string;
+  goalId?: string;
+  key?: string;
+  value?: string;
+  count?: number; // for streaks
+  colorScheme?: 'default' | 'success' | 'warning' | 'info' | 'error' | 'grey';
+  groupName?: string;
+}
+
+export interface Agenda {
+  id: string;
+  title: string;
+  points: Point[];
+}
+
+export interface Project {
+  id?: string;
+  userId: string;
+  title: string;
+  description?: string;
+  type: ProjectType;
+  status: ProjectStatus;
+  budget?: number;
+  estimatedCompletion?: Timestamp | Date;
+  progress: number;
+  assignees?: string[];
+  agendas: Agenda[];
+  createdAt: Timestamp | Date;
+  completedAt?: Timestamp | Date | null;
 }

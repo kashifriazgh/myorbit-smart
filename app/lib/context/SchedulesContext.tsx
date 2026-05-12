@@ -15,15 +15,18 @@ import {
   updateSchedule,
   deleteSchedule,
   getSchedulesByUserAndDateRange,
+  getAllSchedulesByUser,
 } from '../functions/schedules';
+import { useAuth } from './userContext';
 
 interface SchedulesContextType {
   schedules: SchedulesProps[];
+  allSchedules: SchedulesProps[];
   loading: boolean;
   selectedDate: string;
   setSelectedDate: (date: string) => void;
   fetchSchedules: (date: string) => Promise<void>;
-  addSchedule: (schedule: Omit<SchedulesProps, 'id'>) => Promise<void>;
+  addSchedule: (schedule: Omit<SchedulesProps, 'id'>) => Promise<string>;
   editSchedule: (
     scheduleId: string,
     updates: Partial<SchedulesProps>
@@ -39,16 +42,13 @@ const SchedulesContext = createContext<SchedulesContextType | undefined>(
   undefined
 );
 
-interface SchedulesProviderProps {
-  children: ReactNode;
-  userId: string;
-}
-
-export const SchedulesProvider: React.FC<SchedulesProviderProps> = ({
+export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({
   children,
-  userId,
 }) => {
+  const { user } = useAuth();
+  const userId = user?.uid || '';
   const [schedules, setSchedules] = useState<SchedulesProps[]>([]);
+  const [allSchedules, setAllSchedules] = useState<SchedulesProps[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
 
@@ -76,6 +76,16 @@ export const SchedulesProvider: React.FC<SchedulesProviderProps> = ({
     [userId]
   );
 
+  const fetchAllSchedules = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const fetched = await getAllSchedulesByUser(userId, 500);
+      setAllSchedules(fetched);
+    } catch (error) {
+      console.error('Error fetching all schedules:', error);
+    }
+  }, [userId]);
+
   const addSchedule = async (scheduleData: Omit<SchedulesProps, 'id'>) => {
     try {
       const scheduleId = await createSchedule(scheduleData);
@@ -92,6 +102,9 @@ export const SchedulesProvider: React.FC<SchedulesProviderProps> = ({
           )
         );
       }
+      // Also add to allSchedules
+      setAllSchedules((prev) => [newSchedule, ...prev]);
+      return scheduleId;
     } catch (error) {
       console.error('Error adding schedule:', error);
       throw error;
@@ -111,6 +124,11 @@ export const SchedulesProvider: React.FC<SchedulesProviderProps> = ({
           schedule.id === scheduleId ? { ...schedule, ...updates } : schedule
         )
       );
+      setAllSchedules((prev) =>
+        prev.map((schedule) =>
+          schedule.id === scheduleId ? { ...schedule, ...updates } : schedule
+        )
+      );
     } catch (error) {
       console.error('Error editing schedule:', error);
       throw error;
@@ -123,6 +141,9 @@ export const SchedulesProvider: React.FC<SchedulesProviderProps> = ({
 
       // Remove from local state
       setSchedules((prev) =>
+        prev.filter((schedule) => schedule.id !== scheduleId)
+      );
+      setAllSchedules((prev) =>
         prev.filter((schedule) => schedule.id !== scheduleId)
       );
     } catch (error) {
@@ -143,15 +164,21 @@ export const SchedulesProvider: React.FC<SchedulesProviderProps> = ({
     }
   };
 
-  // Fetch schedules when selected date changes
   useEffect(() => {
     if (selectedDate && userId) {
       fetchSchedules(selectedDate);
     }
   }, [selectedDate, userId, fetchSchedules]);
 
+  useEffect(() => {
+    if (userId) {
+      fetchAllSchedules();
+    }
+  }, [userId, fetchAllSchedules]);
+
   const value: SchedulesContextType = {
     schedules,
+    allSchedules,
     loading,
     selectedDate,
     setSelectedDate,

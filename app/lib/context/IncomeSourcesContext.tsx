@@ -14,6 +14,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import { useAuth } from './userContext';
 import {
   IncomeSource,
   TransactionSource,
@@ -55,11 +56,11 @@ export const useIncomeSources = () => {
 
 export const IncomeSourcesProvider = ({
   children,
-  userId,
 }: {
   children: React.ReactNode;
-  userId: string;
 }) => {
+  const { user } = useAuth();
+  const userId = user?.uid || '';
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(true);

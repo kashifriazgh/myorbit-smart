@@ -1,7 +1,5 @@
 'use client';
 import React, { Suspense, lazy } from 'react';
-import { IncomeSourcesProvider } from './lib/context/IncomeSourcesContext';
-import { GoalsProvider } from './lib/context/GoalsContext';
 import { useAuth } from './lib/context/userContext';
 import { useCustomTheme } from './lib/context/themeContext';
 import { CircularProgress, Box } from '@mui/material';
@@ -75,89 +73,79 @@ export default function Homepage() {
   }
 
   return (
-    <IncomeSourcesProvider userId={user.uid}>
-      <GoalsProvider userId={user.uid}>
-        <div
-          className="p-4 mx-auto max-w-7xl"
-          style={{
-            backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#f8fafc',
-            color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-            minHeight: '100vh',
-          }}
-        >
-          <OnBoardingInitializer />
-          <GuestUserBanner />
+    <div
+      className="p-4 mx-auto max-w-7xl"
+      style={{
+        backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#f8fafc',
+        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        minHeight: '100vh',
+      }}
+    >
+      <OnBoardingInitializer />
+      <GuestUserBanner />
 
-          <div className="flex justify-end items-center mb-4 w-full">
-            <label className="flex items-center gap-2 cursor-pointer select-none text-base font-medium">
-              <span
-                style={{
-                  color: theme?.mode === 'dark' ? '#cbd5e1' : '#0f172a',
-                }}
-              >
-                Focus on Today
-              </span>
-              <Switch
-                checked={focusToday}
-                onChange={(e) => setFocusToday(e.target.checked)}
-                slotProps={{ input: { 'aria-label': 'Focus on Today' } }}
-                color="primary"
-              />
-            </label>
-          </div>
+      <div className="flex justify-end items-center mb-4 w-full">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-base font-medium">
+          <span
+            style={{
+              color: theme?.mode === 'dark' ? '#cbd5e1' : '#0f172a',
+            }}
+          >
+            Focus on Today
+          </span>
+          <Switch
+            checked={focusToday}
+            onChange={(e) => setFocusToday(e.target.checked)}
+            slotProps={{ input: { 'aria-label': 'Focus on Today' } }}
+            color="primary"
+          />
+        </label>
+      </div>
 
-          <div className="grid grid-cols-1 gap-6 mb-8">
-            <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
-              <HomepageHeader />
-            </Suspense>
-          </div>
+      <div className="grid grid-cols-1 gap-6 mb-8">
+        <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
+          <HomepageHeader />
+        </Suspense>
+      </div>
 
-          {/* Updated Three Column Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
-            {/* Column 1 - Schedules */}
-            <div className="lg:col-span-4">
-              <Suspense
-                fallback={<SkeletonLoader variant="card" height={400} />}
-              >
-                <Schedules />
-              </Suspense>
-            </div>
-
-            {/* Column 2 - ImportantTasks */}
-            <div className="lg:col-span-4">
-              <Suspense fallback={<ComponentLoader variant="list" />}>
-                <ImportantTasks />
-              </Suspense>
-            </div>
-
-            {/* Column 3 - OverdueTasks */}
-            <div className="lg:col-span-4">
-              <Suspense fallback={<ComponentLoader variant="list" />}>
-                <OverdueTasks />
-              </Suspense>
-            </div>
-          </div>
-
-          <div className="w-full mb-8 p-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-center">
-            <QuickLinks />
-          </div>
-
-          {!focusToday && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              <Suspense
-                fallback={<SkeletonLoader variant="card" height={400} />}
-              >
-                <Goals />
-              </Suspense>
-              <Suspense
-                fallback={<SkeletonLoader variant="card" height={400} />}
-              >
-                <OnGoingStreaks />
-              </Suspense>
-            </div>
-          )}
+      {/* Updated Three Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+        {/* Column 1 - Schedules */}
+        <div className="lg:col-span-4">
+          <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
+            <Schedules />
+          </Suspense>
         </div>
-      </GoalsProvider>
-    </IncomeSourcesProvider>
+
+        {/* Column 2 - ImportantTasks */}
+        <div className="lg:col-span-4">
+          <Suspense fallback={<ComponentLoader variant="list" />}>
+            <ImportantTasks />
+          </Suspense>
+        </div>
+
+        {/* Column 3 - OverdueTasks */}
+        <div className="lg:col-span-4">
+          <Suspense fallback={<ComponentLoader variant="list" />}>
+            <OverdueTasks />
+          </Suspense>
+        </div>
+      </div>
+
+      <div className="w-full mb-8 p-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-center">
+        <QuickLinks />
+      </div>
+
+      {!focusToday && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
+            <Goals />
+          </Suspense>
+          <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
+            <OnGoingStreaks />
+          </Suspense>
+        </div>
+      )}
+    </div>
   );
 }
