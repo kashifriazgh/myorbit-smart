@@ -1,9 +1,10 @@
+'use client';
+
 import {
   Button,
   Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   TextField,
   FormControl,
   InputLabel,
@@ -12,7 +13,11 @@ import {
   Typography,
   CircularProgress,
   Box,
-  Grow,
+  Fade,
+  Stack,
+  Avatar,
+  IconButton,
+  Collapse,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import {
@@ -36,9 +41,23 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
+import {
+  Close as CloseIcon,
+  AttachMoney as MoneyIcon,
+  Person as PersonIcon,
+  CalendarMonth as DateIcon,
+  AccountBalance as BankIcon,
+  Wallet as WalletIcon,
+  Payments as PaymentsIcon,
+  Description as NoteIcon,
+  SwapHoriz as SwapIcon,
+  ArrowForward as ArrowForwardIcon,
+  AddCircle as AddIcon,
+  WarningAmber as WarningIcon,
+} from '@mui/icons-material';
 import Link from 'next/link';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { formatCurrency } from '@/app/lib/utilts';
 
 const SOURCE_OPTIONS: TransactionSource[] = [
   'bank',
@@ -49,7 +68,21 @@ const SOURCE_OPTIONS: TransactionSource[] = [
   'custom',
 ];
 
-export default function LoanDialog() {
+interface Props {
+  onAddMoney?: (
+    amount: number,
+    source: TransactionSource,
+    isFreezed: boolean,
+    bankId?: string,
+    bankName?: string,
+    customPaymentHeadId?: string,
+    customPaymentHeadName?: string,
+    note?: string
+  ) => Promise<void>;
+  onSuccess?: () => void;
+}
+
+export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
   const { user } = useAuth();
   const { theme: customTheme } = useCustomTheme();
   const isDark = customTheme?.mode === 'dark';
@@ -64,6 +97,7 @@ export default function LoanDialog() {
   const [selectedBank, setSelectedBank] = useState('');
   const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] =
     useState('');
+  const [note, setNote] = useState('');
   const [banks, setBanks] = useState<Bank[]>([]);
   const [customPaymentHeads, setCustomPaymentHeads] = useState<
     CustomPaymentHead[]
@@ -72,6 +106,8 @@ export default function LoanDialog() {
   // error, loading
   const [error, setError] = useState('');
   const [localSaving, setLocalSaving] = useState(false);
+  const [quickAddLoading, setQuickAddLoading] = useState(false);
+  const [insufficientFunds, setInsufficientFunds] = useState(false);
 
   // fetch banks
   useEffect(() => {
@@ -106,6 +142,38 @@ export default function LoanDialog() {
     fetchCustom();
   }, [user]);
 
+  // reset error when inputs change
+  useEffect(() => {
+    setError('');
+    setInsufficientFunds(false);
+  }, [amount, source, selectedBank, selectedCustomPaymentHead, loanType]);
+
+  const handleQuickAdd = async () => {
+    if (!onAddMoney || !amount || amount <= 0) return;
+    setQuickAddLoading(true);
+    try {
+      const bank = source === 'bank' ? banks.find(b => b.id === selectedBank) : undefined;
+      const customHead = source === 'custom' ? customPaymentHeads.find(c => c.id === selectedCustomPaymentHead) : undefined;
+      
+      await onAddMoney(
+        Number(amount),
+        source,
+        false,
+        bank?.id,
+        bank?.name,
+        customHead?.id,
+        customHead?.name,
+        `Quick top-up for loan to ${counterparty}`
+      );
+      setInsufficientFunds(false);
+      setError('');
+    } catch {
+      setError('Failed to add money. Please try manually.');
+    } finally {
+      setQuickAddLoading(false);
+    }
+  };
+
   // validate and create loan
   const handleCreate = async () => {
     if (!user || !amount || amount <= 0 || !counterparty.trim()) {
@@ -137,14 +205,13 @@ export default function LoanDialog() {
     try {
       setLocalSaving(true);
 
-      // onCreateLoan function logic (same as before)
       const record: Omit<LoanRecord, 'id' | 'createdAt'> = {
         userId: user.uid,
         amount: Number(amount),
         type: loanType,
         counterparty: counterparty.trim(),
         dueDate: Timestamp.fromDate(new Date(dueDate)),
-        note: '',
+        note: note.trim(),
         isSettled: false,
       };
 
@@ -184,12 +251,14 @@ export default function LoanDialog() {
             : source === 'custom' && customName
               ? (snapshot.sources.custom?.[customName] ?? 0)
               : ((snapshot.sources[source] as number) ?? 0);
-        if (amount > available)
+        if (amount > available) {
+          setInsufficientFunds(true);
           throw new Error(
             `Insufficient balance in ${source}${
               bank?.name ? ` (${bank.name})` : ''
             }`,
           );
+        }
       }
 
       // create loan
@@ -204,7 +273,7 @@ export default function LoanDialog() {
         type: loanType === 'lend' ? 'deduct' : 'add',
         source,
         category: 'loan',
-        note: `Loan ${loanType} - ${counterparty}`,
+        note: note.trim() || `Loan ${loanType} - ${counterparty}`,
         referenceId: loanRef.id,
         createdAt: serverTimestamp(),
         ...(bank?.id ? { bankId: bank.id } : {}),
@@ -266,7 +335,9 @@ export default function LoanDialog() {
       setSource('in_hand');
       setSelectedBank('');
       setLoanType('borrow');
+      setNote('');
       setShowModal(false);
+      if (onSuccess) onSuccess();
     } catch (err) {
       setError(err.message || 'Something went wrong');
     } finally {
@@ -274,202 +345,304 @@ export default function LoanDialog() {
     }
   };
 
+  const getSourceLabel = () => {
+    if (source === 'bank') {
+      const bank = banks.find(b => b.id === selectedBank);
+      return bank ? `Bank (${bank.name})` : 'Bank';
+    }
+    if (source === 'custom') {
+      const head = customPaymentHeads.find(c => c.id === selectedCustomPaymentHead);
+      return head ? head.name : 'Custom Head';
+    }
+    return source.replace('_', ' ');
+  };
+
   return (
     <>
       <Button
         variant="outlined"
-        sx={{ 
-          background: isDark ? 'rgba(2, 132, 199, 0.1)' : '#e0f2fe',
-          borderColor: isDark ? 'rgba(2, 132, 199, 0.3)' : '#bae6fd',
+        sx={{
+          borderRadius: 2,
+          fontWeight: 700,
+          textTransform: 'none',
+          borderColor: isDark ? 'rgba(14, 165, 233, 0.5)' : '#0ea5e9',
           color: isDark ? '#7dd3fc' : '#0369a1',
+          bgcolor: isDark ? 'rgba(14, 165, 233, 0.05)' : 'rgba(14, 165, 233, 0.05)',
           '&:hover': {
-            background: isDark ? 'rgba(2, 132, 199, 0.2)' : '#bae6fd',
+            bgcolor: isDark ? 'rgba(14, 165, 233, 0.1)' : 'rgba(14, 165, 233, 0.1)',
+            borderColor: '#0ea5e9'
           }
         }}
         onClick={() => setShowModal(true)}
+        startIcon={<SwapIcon sx={{ fontSize: 18 }} />}
       >
         Outstanding Loan
       </Button>
 
       <Dialog
         open={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={() => !localSaving && setShowModal(false)}
         fullWidth
-        maxWidth="md"
-        TransitionComponent={Grow}
-        TransitionProps={{
-          timeout: 300,
-          mountOnEnter: true,
-          unmountOnExit: true,
-        }}
+        maxWidth="xs"
+        TransitionComponent={Fade}
         PaperProps={{
           sx: {
-            borderRadius: 2,
-          },
+            borderRadius: 4,
+            overflow: 'hidden',
+            backgroundColor: isDark ? '#0f172a' : '#ffffff',
+          }
         }}
       >
-        <DialogTitle>Add Outstanding Loan</DialogTitle>
-        <DialogContent>
-          {/* Link to Loan Records Page */}
-          <Box
+        <Box sx={{
+          background: 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)',
+          p: 3,
+          color: 'white',
+          position: 'relative'
+        }}>
+          <Stack direction="row" alignItems="center" spacing={1.5}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}>
+              <SwapIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.2 }}>
+                Outstanding Loan
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 600 }}>
+                Record new borrow or lend transaction
+              </Typography>
+            </Box>
+          </Stack>
+          <IconButton
+            onClick={() => setShowModal(false)}
             sx={{
-              mb: 3,
-              p: 2,
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#e3f2fd',
-              borderRadius: 2,
-              border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : '#90caf9'}`,
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              color: 'white',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
             }}
           >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        <DialogContent sx={{ px: 3, py: 3 }}>
+          <Stack spacing={2.5}>
+            {/* View Records Link */}
             <Box
               sx={{
+                p: 1.5,
+                borderRadius: 2,
+                bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#f0f9ff',
+                border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.05)' : '#e0f2fe'}`,
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
               }}
             >
-              <Typography variant="body2" color="text.secondary">
-                View all loan records
+              <Typography variant="caption" fontWeight="700" color="text.secondary">
+                ALL LOAN RECORDS
               </Typography>
               <Link href="/finance/loans" passHref>
                 <Button
-                  variant="contained"
                   size="small"
-                  endIcon={<ArrowForwardIcon />}
+                  endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
                   onClick={() => setShowModal(false)}
-                  sx={{ textTransform: 'none' }}
+                  sx={{ textTransform: 'none', fontWeight: 800, fontSize: '0.75rem' }}
                 >
-                  View
+                  View History
                 </Button>
               </Link>
             </Box>
-          </Box>
 
-          {/* Loan form */}
-          <TextField
-            fullWidth
-            label="Amount"
-            type="number"
-            value={amount}
-            onChange={(e) =>
-              setAmount(e.target.value === '' ? '' : Number(e.target.value))
-            }
-            margin="normal"
-          />
-
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Loan Type</InputLabel>
-            <Select
-              value={loanType}
-              onChange={(e) => setLoanType(e.target.value as 'borrow' | 'lend')}
-            >
-              <MenuItem value="borrow">Borrow</MenuItem>
-              <MenuItem value="lend">Lend</MenuItem>
-            </Select>
-          </FormControl>
-
-          {/* Hint for loan type */}
-          {loanType === 'borrow' && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Borrow → You are taking money from someone. You will need to
-              return it later.
-            </Typography>
-          )}
-
-          {loanType === 'lend' && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Lend → You are giving money to someone. They will return it to you
-              later.
-            </Typography>
-          )}
-
-          <TextField
-            fullWidth
-            label="Lender / Borrower Name"
-            value={counterparty}
-            onChange={(e) => setCounterparty(e.target.value)}
-            margin="normal"
-          />
-
-          <TextField
-            fullWidth
-            type="date"
-            label="Due Date"
-            InputLabelProps={{ shrink: true }}
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            margin="normal"
-          />
-
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Source</InputLabel>
-            <Select
-              value={source}
-              onChange={(e) => {
-                const val = e.target.value as TransactionSource;
-                setSource(val);
-                setSelectedBank('');
-                setSelectedCustomPaymentHead('');
+            <TextField
+              fullWidth
+              label="Amount"
+              type="number"
+              value={amount}
+              onChange={(e) =>
+                setAmount(e.target.value === '' ? '' : Number(e.target.value))
+              }
+              InputProps={{
+                startAdornment: <MoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
               }}
-            >
-              {SOURCE_OPTIONS.map((mode) => (
-                <MenuItem key={mode} value={mode}>
-                  {mode}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              placeholder="0.00"
+            />
 
-          {source === 'bank' && (
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Select Bank</InputLabel>
+            <FormControl fullWidth>
+              <InputLabel>Loan Type</InputLabel>
               <Select
-                value={selectedBank}
-                onChange={(e) => setSelectedBank(e.target.value)}
+                value={loanType}
+                onChange={(e) => setLoanType(e.target.value as 'borrow' | 'lend')}
+                label="Loan Type"
+                startAdornment={<SwapIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
               >
-                {banks.map((bank) => (
-                  <MenuItem key={bank.id} value={bank.id}>
-                    {bank.name}
+                <MenuItem value="borrow">Borrow (Receive Money)</MenuItem>
+                <MenuItem value="lend">Lend (Give Money)</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              fullWidth
+              label={loanType === 'borrow' ? "Lender Name" : "Borrower Name"}
+              value={counterparty}
+              onChange={(e) => setCounterparty(e.target.value)}
+              placeholder="e.g. John Doe"
+              InputProps={{
+                startAdornment: <PersonIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+              }}
+            />
+
+            <TextField
+              fullWidth
+              type="date"
+              label="Expected Due Date"
+              InputLabelProps={{ shrink: true }}
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              InputProps={{
+                startAdornment: <DateIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+              }}
+            />
+
+            <FormControl fullWidth>
+              <InputLabel>Cash Source</InputLabel>
+              <Select
+                value={source}
+                onChange={(e) => {
+                  const val = e.target.value as TransactionSource;
+                  setSource(val);
+                  setSelectedBank('');
+                  setSelectedCustomPaymentHead('');
+                }}
+                label="Cash Source"
+                startAdornment={<PaymentsIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
+              >
+                {SOURCE_OPTIONS.map((mode) => (
+                  <MenuItem key={mode} value={mode} sx={{ textTransform: 'capitalize' }}>
+                    {mode.replace('_', ' ')}
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
-          )}
 
-          {source === 'custom' && (
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Select Payment Head</InputLabel>
-              <Select
-                value={selectedCustomPaymentHead}
-                onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
-              >
-                {customPaymentHeads.map((head) => (
-                  <MenuItem key={head.id} value={head.id}>
-                    {head.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
+            {source === 'bank' && (
+              <FormControl fullWidth>
+                <InputLabel>Select Bank</InputLabel>
+                <Select
+                  value={selectedBank}
+                  onChange={(e) => setSelectedBank(e.target.value)}
+                  label="Select Bank"
+                  startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
+                >
+                  {banks.map((bank) => (
+                    <MenuItem key={bank.id} value={bank.id}>
+                      {bank.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
 
-          {/* Error at bottom above Save */}
-          {error && (
-            <Typography color="error" fontSize={14} sx={{ mt: 2 }}>
-              {error}
-            </Typography>
-          )}
+            {source === 'custom' && (
+              <FormControl fullWidth>
+                <InputLabel>Select Payment Head</InputLabel>
+                <Select
+                  value={selectedCustomPaymentHead}
+                  onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
+                  label="Select Payment Head"
+                  startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
+                >
+                  {customPaymentHeads.map((head) => (
+                    <MenuItem key={head.id} value={head.id}>
+                      {head.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            <TextField
+              fullWidth
+              label="Note / Remark"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. For project expenses"
+              size="small"
+              multiline
+              rows={2}
+              InputProps={{
+                startAdornment: <NoteIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20, mt: 1, alignSelf: 'flex-start' }} />,
+              }}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+
+            <Collapse in={!!error || insufficientFunds}>
+              <Box sx={{
+                p: 2,
+                borderRadius: 2,
+                bgcolor: insufficientFunds ? (isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2') : 'transparent',
+                border: insufficientFunds ? `1px solid ${isDark ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2'}` : 'none'
+              }}>
+                <Stack spacing={1.5}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <WarningIcon color="error" sx={{ fontSize: 20 }} />
+                    <Typography color="error" variant="caption" fontWeight="bold">
+                      {error}
+                    </Typography>
+                  </Stack>
+                  
+                  {insufficientFunds && onAddMoney && (
+                    <Button
+                      variant="contained"
+                      color="error"
+                      size="small"
+                      fullWidth
+                      onClick={handleQuickAdd}
+                      disabled={quickAddLoading}
+                      startIcon={quickAddLoading ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
+                      sx={{
+                        textTransform: 'none',
+                        fontWeight: 800,
+                        borderRadius: 1.5,
+                        boxShadow: 'none'
+                      }}
+                    >
+                      {quickAddLoading ? 'Adding Funds...' : `Add ${formatCurrency(Number(amount), 'PKR')} to ${getSourceLabel()}`}
+                    </Button>
+                  )}
+                </Stack>
+              </Box>
+            </Collapse>
+          </Stack>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowModal(false)}>Cancel</Button>
+
+        <DialogActions sx={{ px: 3, py: 3, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+          <Button onClick={() => setShowModal(false)} sx={{ fontWeight: 700, color: 'text.secondary' }}>
+            Cancel
+          </Button>
           <Button
             variant="contained"
+            color="primary"
             onClick={handleCreate}
             disabled={
               localSaving ||
+              quickAddLoading ||
               (source === 'bank' && !selectedBank) ||
-              (source === 'custom' && !selectedCustomPaymentHead)
+              (source === 'custom' && !selectedCustomPaymentHead) ||
+              !amount || !counterparty.trim() || !dueDate
             }
+            sx={{
+              borderRadius: 2,
+              fontWeight: 800,
+              px: 4,
+              bgcolor: '#0ea5e9',
+              boxShadow: '0 4px 14px 0 rgba(14, 165, 233, 0.39)',
+              textTransform: 'none',
+              '&:hover': { bgcolor: '#0369a1' }
+            }}
           >
-            {localSaving ? <CircularProgress size={20} /> : 'Save Loan'}
+            {localSaving ? <CircularProgress size={20} color="inherit" /> : 'Record Loan'}
           </Button>
         </DialogActions>
       </Dialog>

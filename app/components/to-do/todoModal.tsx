@@ -57,6 +57,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   const [dueDate, setDueDate] = useState<Date | null>(new Date());
   const [loading, setLoading] = useState(false);
   const [isImportant, setIsImportant] = useState(false);
+  const [isFlexible, setIsFlexible] = useState(false);
   const [aiStepModalOpen, setAiStepModalOpen] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -171,6 +172,7 @@ export default function ToDoModal({ open, onClose }: Props) {
     setPrivacy('private');
     setDueDate(new Date());
     setIsImportant(false);
+    setIsFlexible(false);
     setAssignee('Me');
     setSteps([]);
     setAiStepModalOpen(false);
@@ -217,7 +219,8 @@ export default function ToDoModal({ open, onClose }: Props) {
       sharedWith: [],
       assignee: assignee.trim() || null,
       startDate: Timestamp.fromDate(new Date()),
-      dueDate: Timestamp.fromDate(dueDate || new Date()),
+      dueDate: isFlexible ? null : Timestamp.fromDate(dueDate || new Date()),
+      isFlexible,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       privacy,
@@ -308,34 +311,47 @@ export default function ToDoModal({ open, onClose }: Props) {
               ${theme.palette.mode === 'dark' ? 'bg-slate-800/30 border-slate-700' : 'bg-slate-50 border-slate-100'}
             `}
           >
-            <Typography className="text-[11px] font-extrabold text-teal-600 dark:text-teal-400 uppercase tracking-[0.2em] mb-4">
-              📅 Set Deadline
-            </Typography>
-            <Box className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-              <DatePicker
-                selected={dueDate}
-                onChange={(date: Date | null) => setDueDate(date)}
-                className="custom-datepicker-premium"
-                dateFormat="MMMM d, yyyy"
-                minDate={new Date()}
-              />
-              <Stack direction="row" spacing={1} flexWrap="wrap">
-                {[
-                  { label: 'Tomorrow', value: 'tomorrow' },
-                  { label: 'After Tomorrow', value: 'afterTomorrow' },
-                  { label: 'End of Week', value: 'endOfWeek' },
-                ].map((item) => (
-                  <Button
-                    key={item.value}
-                    variant="outlined"
-                    onClick={() => handleQuickDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
-                    className="rounded-full normal-case text-[12px] font-extrabold px-5 py-1.5 border-slate-200 text-slate-500 hover:border-teal-500 hover:text-teal-600 transition-all"
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </Stack>
+            <Box className="flex items-center justify-between mb-4">
+              <Typography className="text-[11px] font-extrabold text-teal-600 dark:text-teal-400 uppercase tracking-[0.2em]">
+                📅 Deadline
+              </Typography>
+              <Button
+                onClick={() => setIsFlexible(!isFlexible)}
+                variant={isFlexible ? 'contained' : 'outlined'}
+                size="small"
+                className={`rounded-full px-4 font-bold transition-all text-[10px] ${isFlexible ? 'bg-teal-600 shadow-lg shadow-teal-500/30' : ''}`}
+              >
+                {isFlexible ? '✨ Flexible Active' : 'Make Flexible'}
+              </Button>
             </Box>
+            
+            <Collapse in={!isFlexible}>
+              <Box className="flex flex-col md:flex-row gap-6 items-start md:items-center">
+                <DatePicker
+                  selected={dueDate}
+                  onChange={(date: Date | null) => setDueDate(date)}
+                  className="custom-datepicker-premium"
+                  dateFormat="MMMM d, yyyy"
+                  minDate={new Date()}
+                />
+                <Stack direction="row" spacing={1} flexWrap="wrap">
+                  {[
+                    { label: 'Tomorrow', value: 'tomorrow' },
+                    { label: 'After Tomorrow', value: 'afterTomorrow' },
+                    { label: 'End of Week', value: 'endOfWeek' },
+                  ].map((item) => (
+                    <Button
+                      key={item.value}
+                      variant="outlined"
+                      onClick={() => handleQuickDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
+                      className="rounded-full normal-case text-[12px] font-extrabold px-5 py-1.5 border-slate-200 text-slate-500 hover:border-teal-500 hover:text-teal-600 transition-all"
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </Stack>
+              </Box>
+            </Collapse>
           </Box>
 
           {/* 3. Priority & Privacy & Starred Row */}

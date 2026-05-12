@@ -381,22 +381,24 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                           <Box flex={1} minWidth={0}>
                             <Box
                               display="flex"
-                              alignItems="center"
+                              alignItems="flex-start"
                               justifyContent="space-between"
                               gap={2}
                               mb={0.5}
                             >
-                              <Typography
-                                variant="body1"
-                                fontWeight="bold"
-                                sx={{
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {transaction.note || label}
-                              </Typography>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography
+                                  variant="body1"
+                                  fontWeight="bold"
+                                  sx={{
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {transaction.note || label}
+                                </Typography>
+                              </Box>
                               <Typography
                                 variant="h6"
                                 fontWeight="bold"
@@ -417,16 +419,18 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                               alignItems="center"
                               gap={1.5}
                               flexWrap="wrap"
+                              mt={0.5}
                             >
                               <Chip
                                 label={label}
                                 size="small"
                                 sx={{
-                                  bgcolor: `${color}20`,
+                                  bgcolor: `${color}15`,
                                   color: color,
-                                  fontWeight: 600,
-                                  fontSize: '0.75rem',
-                                  height: 24,
+                                  fontWeight: 700,
+                                  fontSize: '0.65rem',
+                                  height: 20,
+                                  textTransform: 'uppercase'
                                 }}
                               />
                               <Typography
@@ -477,4 +481,3 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
 };
 
 export default TransactionHistory;
-

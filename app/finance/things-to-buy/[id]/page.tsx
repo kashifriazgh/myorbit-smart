@@ -4,7 +4,6 @@ import {
   Box,
   Typography,
   CircularProgress,
-  Divider,
   Stack,
   IconButton,
   TextField,
@@ -25,7 +24,13 @@ import {
   LinearProgress,
   useMediaQuery,
   Fade,
-  Slide,
+  Avatar,
+  InputAdornment,
+  Collapse,
+  Paper,
+  Tooltip,
+  Zoom,
+  Grid,
 } from '@mui/material';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -33,18 +38,37 @@ import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { BuyItem } from '@/app/lib/interface';
 import moment from 'moment';
-import DeleteIcon from '@mui/icons-material/Delete';
-import EditIcon from '@mui/icons-material/Edit';
-import SaveIcon from '@mui/icons-material/Save';
-import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
-import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
-import WarningIcon from '@mui/icons-material/Warning';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import {
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+  Save as SaveIcon,
+  ShoppingCart as ShoppingCartIcon,
+  Warning as WarningIcon,
+  TrendingUp as TrendingUpIcon,
+  ArrowBack as ArrowBackIcon,
+  Close as CloseIcon,
+  AddShoppingCart as AddItemIcon,
+  CheckCircle as CheckCircleIcon,
+  Add as AddIcon,
+  RemoveShoppingCart as EmptyIcon,
+  Payments as PaymentsIcon,
+  ReceiptLong as SummaryIcon,
+} from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import Link from 'next/link';
 
 const PRIORITY_ORDER = { urgent: 1, needed: 2, optional: 3 };
 const PRIORITIES = ['optional', 'needed', 'urgent'] as const;
+
+const getPriorityColor = (priority?: string) => {
+  switch (priority) {
+    case 'urgent': return '#ef4444';
+    case 'needed': return '#3b82f6';
+    case 'optional': return '#10b981';
+    default: return '#94a3b8';
+  }
+};
 
 // Animated Counter Component
 const AnimatedCounter = ({
@@ -88,7 +112,7 @@ const AnimatedCounter = ({
     <Typography
       component="span"
       sx={{
-        fontWeight: 'bold',
+        fontWeight: '900',
         color: isAnimating ? 'primary.main' : 'inherit',
         transition: 'color 0.3s ease',
         transform: isAnimating ? 'scale(1.1)' : 'scale(1)',
@@ -104,6 +128,7 @@ export default function BuyItemDetailPage() {
   const { id } = useParams();
   const planId = Array.isArray(id) ? id[0] : id ?? '';
   const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
   const [plan, setPlan] = useState<BuyItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [editIndex, setEditIndex] = useState<number | null>(null);
@@ -130,6 +155,9 @@ export default function BuyItemDetailPage() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [addItemOpen, setAddItemOpen] = useState(false);
+  const [addSuccess, setAddSuccess] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [itemSaving, setItemSaving] = useState(false);
 
   // Budget management state
   const [budgetUpdateOpen, setBudgetUpdateOpen] = useState(false);
@@ -184,22 +212,34 @@ export default function BuyItemDetailPage() {
     return prioA - prioB;
   });
 
-  const handleAddNewItem = () => {
+  const handleAddNewItem = async () => {
     if (!itemTitle || estimatedPrice === '') return;
-    const newItem = {
-      title: itemTitle,
-      estimatedPrice: Number(estimatedPrice),
-      isPurchased: false,
-      priority,
-      notes,
-    };
-    const newItems = [...plan!.items, newItem];
-    setPlan({ ...plan!, items: newItems });
-    saveItems(newItems);
-    setItemTitle('');
-    setEstimatedPrice('');
-    setPriority('needed');
-    setNotes('');
+    setItemSaving(true);
+    try {
+      setAddError('');
+      const newItem = {
+        title: itemTitle,
+        estimatedPrice: Number(estimatedPrice),
+        isPurchased: false,
+        priority,
+        notes,
+      };
+      const newItems = [...plan!.items, newItem];
+      
+      await saveItems(newItems);
+      
+      setAddSuccess(true);
+      setItemTitle('');
+      setEstimatedPrice('');
+      setPriority('needed');
+      setNotes('');
+      
+      setTimeout(() => setAddSuccess(false), 3000);
+    } catch {
+      setAddError('Failed to add item. Please try again.');
+    } finally {
+      setItemSaving(false);
+    }
   };
 
   // Budget validation function
@@ -261,453 +301,581 @@ export default function BuyItemDetailPage() {
 
   if (loading)
     return (
-      <Box textAlign="center" mt={5}>
-        <CircularProgress />
+      <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height="100vh" gap={2}>
+        <CircularProgress size={60} thickness={4} sx={{ color: '#667eea' }} />
+        <Typography variant="h6" fontWeight="bold" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+          Loading your list...
+        </Typography>
       </Box>
     );
-  if (!plan) return <Typography textAlign="center">Plan not found.</Typography>;
+    
+  if (!plan) return (
+    <Box textAlign="center" mt={10}>
+       <EmptyIcon sx={{ fontSize: 80, color: 'error.light', opacity: 0.5, mb: 2 }} />
+       <Typography variant="h5">Plan not found.</Typography>
+       <Link href="/finance/things-to-buy" passHref>
+          <Button sx={{ mt: 2 }}>Go Back</Button>
+       </Link>
+    </Box>
+  );
 
   return (
     <Box
-      mt={4}
-      p={isMobile ? 1 : 2}
-      maxWidth="700px"
+      maxWidth="800px"
       mx="auto"
       sx={{
-        backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-        color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+        color: isDark ? '#f1f5f9' : '#0f172a',
         minHeight: '100vh',
-        borderRadius: customTheme?.mode === 'dark' ? '8px' : '0px',
+        p: isMobile ? 1.5 : 4,
       }}
     >
-      <Fade in={true} timeout={800}>
-        <Card
-          elevation={3}
+      {/* Header Section */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Link href="/finance/things-to-buy" passHref style={{ textDecoration: 'none' }}>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            sx={{ 
+              textTransform: 'none', 
+              fontWeight: 800,
+              borderRadius: 3,
+              color: isDark ? '#94a3b8' : '#64748b',
+              '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }
+            }}
+          >
+            All Plans
+          </Button>
+        </Link>
+        <Chip 
+          label={plan.archived ? 'Archived' : 'Active'} 
+          color={plan.archived ? 'default' : 'success'} 
+          sx={{ fontWeight: 800, borderRadius: 2 }}
+        />
+      </Box>
+
+      {/* Hero Card */}
+      <Fade in timeout={800}>
+        <Paper
+          elevation={0}
           sx={{
-            mb: 3,
+            p: isMobile ? 3 : 5,
+            mb: 4,
+            borderRadius: 6,
             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             color: 'white',
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: '0 20px 25px -5px rgba(118, 75, 162, 0.3)'
           }}
         >
-          <CardContent>
-            <Typography variant="h4" fontWeight="bold" gutterBottom>
-              {plan.title}
-            </Typography>
-            <Typography variant="subtitle2" sx={{ opacity: 0.9 }}>
-              Created:{' '}
-              {moment(
-                plan.createdAt instanceof Timestamp
-                  ? plan.createdAt.toDate()
-                  : plan.createdAt
-              ).format('dddd, MMM D, YYYY h:mm A')}
-            </Typography>
-          </CardContent>
-        </Card>
+          {/* Decorative background icons */}
+          <ShoppingCartIcon sx={{ position: 'absolute', top: -20, right: -20, fontSize: 180, opacity: 0.1, transform: 'rotate(15deg)' }} />
+          
+          <Stack spacing={1} position="relative" zIndex={1}>
+             <Typography variant={isMobile ? 'h4' : 'h3'} fontWeight="900" sx={{ letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+               {plan.title}
+             </Typography>
+             <Box display="flex" alignItems="center" gap={1}>
+               <SummaryIcon sx={{ fontSize: 18, opacity: 0.8 }} />
+               <Typography variant="subtitle2" sx={{ opacity: 0.8, fontWeight: 600 }}>
+                 Created {moment(plan.createdAt instanceof Timestamp ? plan.createdAt.toDate() : plan.createdAt).fromNow()}
+               </Typography>
+             </Box>
+          </Stack>
+        </Paper>
       </Fade>
 
-      {/* Budget Overview Card */}
-      <Fade in={true} timeout={1000}>
-        <Card elevation={2} sx={{ mb: 3 }}>
-          <CardContent>
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              mb={2}
-            >
-              <Typography variant="h6" fontWeight="bold" color="primary">
-                Budget Overview
-              </Typography>
-              {plan.budgetLimit && (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<TrendingUpIcon />}
-                  onClick={() => {
-                    setNewBudgetLimit(plan.budgetLimit || '');
-                    setBudgetUpdateOpen(true);
-                  }}
-                >
-                  Update Budget
-                </Button>
-              )}
-            </Box>
-
-            {plan.budgetLimit ? (
-              <>
-                <Box
-                  display="flex"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  mb={1}
-                >
-                  <Typography variant="body2" color="text.secondary">
-                    Spent: Rs {totalSpent.toLocaleString()}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Budget: Rs {plan.budgetLimit.toLocaleString()}
-                  </Typography>
-                </Box>
-
-                <LinearProgress
-                  variant="determinate"
-                  value={Math.min(budgetUsagePercentage, 100)}
-                  sx={{
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: '#e0e0e0',
-                    '& .MuiLinearProgress-bar': {
-                      backgroundColor: isOverBudget
-                        ? '#f44336'
-                        : budgetUsagePercentage > 80
-                        ? '#ff9800'
-                        : '#4caf50',
-                    },
-                  }}
-                />
-
-                <Box
-                  display="flex"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  mt={1}
-                >
-                  <Typography
-                    variant="body2"
-                    color={isOverBudget ? 'error.main' : 'text.secondary'}
-                  >
-                    {isOverBudget
-                      ? `Over budget by Rs ${Math.abs(
-                          remainingBudget
-                        ).toLocaleString()}`
-                      : `Remaining: Rs ${remainingBudget.toLocaleString()}`}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {budgetUsagePercentage.toFixed(1)}% used
-                  </Typography>
-                </Box>
-
-                {isOverBudget && (
-                  <Alert severity="warning" sx={{ mt: 2 }}>
-                    <Box display="flex" alignItems="center">
-                      You have exceeded your budget limit!
-                    </Box>
-                  </Alert>
-                )}
-              </>
-            ) : (
-              <Box textAlign="center" py={2}>
-                <Typography variant="body2" color="text.secondary" mb={2}>
-                  No budget limit set
-                </Typography>
-                <Button
-                  variant="contained"
-                  startIcon={<AttachMoneyIcon />}
-                  onClick={() => setBudgetUpdateOpen(true)}
-                >
-                  Set Budget Limit
-                </Button>
-              </Box>
-            )}
-          </CardContent>
-        </Card>
-      </Fade>
-
-      {/* Items Summary */}
-      <Fade in={true} timeout={1200}>
-        <Card elevation={1} sx={{ mb: 3 }}>
-          <CardContent>
-            <Typography variant="h6" fontWeight="bold" color="primary" mb={1}>
-              Shopping List Summary
-            </Typography>
-            <Box display="flex" flexWrap="wrap" gap={2}>
-              <Chip
-                label={
-                  <Box display="flex" alignItems="center" gap={0.5}>
-                    <AnimatedCounter value={plan.items.length} />
-                    <Typography variant="body2">Total Items</Typography>
+      <Grid container spacing={3}>
+        {/* Left Column: Budget & Stats */}
+        <Grid size={{ xs: 12, md: 5 }}>
+          <Stack spacing={3}>
+            {/* Budget Card */}
+            <Fade in timeout={1000}>
+              <Card 
+                elevation={0} 
+                sx={{ 
+                  borderRadius: 5, 
+                  bgcolor: isDark ? '#1e293b' : '#ffffff',
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`,
+                  boxShadow: isDark ? '0 10px 15px -3px rgba(0,0,0,0.3)' : '0 10px 15px -3px rgba(0,0,0,0.05)'
+                }}
+              >
+                <CardContent sx={{ p: 3 }}>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                    <Typography variant="subtitle2" fontWeight="900" color="primary" sx={{ letterSpacing: '0.1em' }}>
+                      BUDGET TRACKER
+                    </Typography>
+                    <IconButton size="small" onClick={() => {
+                        setNewBudgetLimit(plan.budgetLimit || '');
+                        setBudgetUpdateOpen(true);
+                    }}>
+                      <TrendingUpIcon fontSize="small" />
+                    </IconButton>
                   </Box>
-                }
-                color="primary"
-                variant="outlined"
-              />
-              <Chip
-                label={
-                  <Box display="flex" alignItems="center" gap={0.5}>
-                    <AnimatedCounter
-                      value={plan.items.filter((i) => i.isPurchased).length}
-                    />
-                    <Typography variant="body2">Purchased</Typography>
-                  </Box>
-                }
-                color="success"
-                variant="outlined"
-              />
-              <Chip
-                label={
-                  <Box display="flex" alignItems="center" gap={0.5}>
-                    <AnimatedCounter
-                      value={plan.items.filter((i) => !i.isPurchased).length}
-                    />
-                    <Typography variant="body2">Remaining</Typography>
-                  </Box>
-                }
-                color="default"
-                variant="outlined"
-              />
-              <Chip
-                label={`Rs ${totalEstimated.toLocaleString()} Estimated Total`}
-                color="info"
-                variant="outlined"
-              />
-            </Box>
-          </CardContent>
-        </Card>
-      </Fade>
 
-      <Stack spacing={2}>
-        {sorted.map((it, idx) => {
-          const globalIndex = plan.items.findIndex((x) => x === it);
-          const isBought = it.isPurchased;
+                  {plan.budgetLimit ? (
+                    <Stack spacing={2}>
+                      <Box display="flex" justifyContent="space-between" alignItems="flex-end">
+                         <Box>
+                           <Typography variant="h4" fontWeight="900">
+                             ₨ {remainingBudget.toLocaleString()}
+                           </Typography>
+                           <Typography variant="caption" color="text.secondary" fontWeight="700">
+                             REMAINING BALANCE
+                           </Typography>
+                         </Box>
+                         <Box textAlign="right">
+                            <Typography variant="h6" fontWeight="800" sx={{ color: isOverBudget ? 'error.main' : 'success.main' }}>
+                              {budgetUsagePercentage.toFixed(0)}%
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" fontWeight="700">
+                              USED
+                            </Typography>
+                         </Box>
+                      </Box>
 
-          return (
-            <Slide
-              key={`${it.title}-${globalIndex}`}
-              direction="up"
-              in={true}
-              timeout={300 + idx * 100}
-            >
-              <Box>
-                <Card
-                  elevation={isBought ? 1 : 2}
-                  sx={{
-                    transition: 'all 0.3s ease',
-                    backgroundColor: isBought
-                      ? theme.palette.mode === 'dark'
-                        ? 'rgba(76, 175, 80, 0.1)'
-                        : '#e8f5e8'
-                      : theme.palette.mode === 'dark'
-                      ? 'rgba(255, 255, 255, 0.05)'
-                      : '#ffffff',
-                    border: isBought
-                      ? `2px solid ${theme.palette.success.main}`
-                      : `1px solid ${theme.palette.divider}`,
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: theme.shadows[4],
-                    },
-                  }}
-                >
-                  <CardContent sx={{ p: isMobile ? 1.5 : 2 }}>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Checkbox
-                        checked={isBought}
-                        color="success"
-                        onChange={() => {
-                          if (!isBought) {
-                            // If marking as purchased, validate budget first
-                            const itemPrice =
-                              it.purchasedPrice ?? it.estimatedPrice;
-                            if (!validateBudgetBeforePurchase(itemPrice)) {
-                              setPendingPurchase({
-                                index: globalIndex,
-                                price: itemPrice,
-                              });
-                              setBudgetWarningOpen(true);
-                              return;
-                            }
-                          }
-
-                          const newItems = plan.items.map((x, i) =>
-                            i === globalIndex
-                              ? { ...x, isPurchased: !x.isPurchased }
-                              : x
-                          );
-                          setPlan({ ...plan, items: newItems });
-                          saveItems(newItems);
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.min(budgetUsagePercentage, 100)}
+                        sx={{
+                          height: 12,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
+                          '& .MuiLinearProgress-bar': {
+                            borderRadius: 6,
+                            background: isOverBudget 
+                              ? 'linear-gradient(90deg, #ef4444 0%, #f87171 100%)' 
+                              : 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)',
+                          },
                         }}
                       />
 
-                      <Box flexGrow={1}>
-                        {editIndex === globalIndex ? (
-                          <>
-                            <TextField
-                              fullWidth
-                              defaultValue={it.title}
-                              onChange={(e) => (it.title = e.target.value)}
-                              size="small"
-                              sx={{ mb: 1 }}
-                            />
-                            <TextField
-                              fullWidth
-                              type="number"
-                              defaultValue={
-                                it.purchasedPrice ?? it.estimatedPrice
-                              }
-                              onChange={(e) =>
-                                (it.purchasedPrice = Number(e.target.value))
-                              }
-                              size="small"
-                              sx={{ mb: 1 }}
-                            />
-                            <IconButton
-                              onClick={() => {
-                                saveItems(plan.items);
-                                setEditIndex(null);
-                              }}
-                            >
-                              <SaveIcon color="primary" />
-                            </IconButton>
-                          </>
-                        ) : (
-                          <>
-                            <Typography fontWeight="bold">
-                              {it.title} – Rs{' '}
-                              {(
-                                it.purchasedPrice ?? it.estimatedPrice
-                              ).toLocaleString()}
-                            </Typography>
-                            <Typography
-                              fontSize="0.85rem"
-                              color="text.secondary"
-                            >
-                              Priority: {it.priority}
-                            </Typography>
-                            {it.notes && (
-                              <Typography variant="body2" mt={0.5}>
-                                📝 {it.notes}
-                              </Typography>
-                            )}
-                            <Stack direction="row" spacing={1} mt={1}>
-                              {!isBought && (
-                                <Chip
-                                  icon={<ShoppingCartIcon />}
-                                  label="Bought with price"
-                                  color="primary"
-                                  onClick={() =>
-                                    setBuyModal({
-                                      index: globalIndex,
-                                      open: true,
-                                    })
-                                  }
-                                  clickable
-                                />
-                              )}
-                              {!isBought && (
-                                <IconButton
-                                  onClick={() => setEditIndex(globalIndex)}
-                                >
-                                  <EditIcon />
-                                </IconButton>
-                              )}
-                              {!isBought && (
-                                <IconButton
-                                  onClick={() =>
-                                    setConfirmDelete({
-                                      open: true,
-                                      index: globalIndex,
-                                    })
-                                  }
-                                >
-                                  <DeleteIcon color="error" />
-                                </IconButton>
-                              )}
-                            </Stack>
-                          </>
-                        )}
+                      <Box display="flex" justifyContent="space-between">
+                         <Typography variant="caption" fontWeight="800" color="text.secondary">
+                           SPENT: ₨{totalSpent.toLocaleString()}
+                         </Typography>
+                         <Typography variant="caption" fontWeight="800" color="text.secondary">
+                           LIMIT: ₨{plan.budgetLimit.toLocaleString()}
+                         </Typography>
                       </Box>
+                    </Stack>
+                  ) : (
+                    <Box textAlign="center" py={2} bgcolor={isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc'} borderRadius={4}>
+                       <PaymentsIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
+                       <Typography variant="body2" color="text.secondary" fontWeight="700" mb={2}>
+                         No budget limit set yet
+                       </Typography>
+                       <Button 
+                         variant="contained" 
+                         size="small"
+                         onClick={() => setBudgetUpdateOpen(true)}
+                         sx={{ borderRadius: 2, fontWeight: 800 }}
+                       >
+                         Set Limit
+                       </Button>
                     </Box>
-                  </CardContent>
-                </Card>
+                  )}
+                </CardContent>
+              </Card>
+            </Fade>
+
+            {/* Quick Stats Grid */}
+            <Fade in timeout={1200}>
+              <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2}>
+                 <Paper sx={{ p: 2, borderRadius: 4, textAlign: 'center', bgcolor: isDark ? '#1e293b' : '#ffffff' }}>
+                    <Typography variant="h5" fontWeight="900"><AnimatedCounter value={plan.items.length} /></Typography>
+                    <Typography variant="caption" fontWeight="800" color="text.secondary">TOTAL ITEMS</Typography>
+                 </Paper>
+                 <Paper sx={{ p: 2, borderRadius: 4, textAlign: 'center', bgcolor: isDark ? '#1e293b' : '#ffffff' }}>
+                    <Typography variant="h5" fontWeight="900" color="success.main"><AnimatedCounter value={plan.items.filter(i => i.isPurchased).length} /></Typography>
+                    <Typography variant="caption" fontWeight="800" color="text.secondary">BOUGHT</Typography>
+                 </Paper>
+                 <Paper sx={{ p: 2, borderRadius: 4, textAlign: 'center', bgcolor: isDark ? '#1e293b' : '#ffffff' }}>
+                    <Typography variant="h5" fontWeight="900" color="primary.main"><AnimatedCounter value={plan.items.filter(i => !i.isPurchased).length} /></Typography>
+                    <Typography variant="caption" fontWeight="800" color="text.secondary">REMAINING</Typography>
+                 </Paper>
+                 <Paper sx={{ p: 2, borderRadius: 4, textAlign: 'center', bgcolor: isDark ? '#1e293b' : '#ffffff' }}>
+                    <Typography variant="body1" fontWeight="900">₨{(totalEstimated/1000).toFixed(1)}k</Typography>
+                    <Typography variant="caption" fontWeight="800" color="text.secondary">EST. TOTAL</Typography>
+                 </Paper>
               </Box>
-            </Slide>
-          );
-        })}
-      </Stack>
-
-      {/* Add New Item Section */}
-      <Divider sx={{ my: 4 }} />
-      <Box textAlign="right" mt={4} sx={{ display: 'flex' }}>
-        <Button
-          className="justify-center"
-          variant="outlined"
-          onClick={() => setAddItemOpen(true)}
-        >
-          ➕ Add New Item
-        </Button>
-      </Box>
-
-      <Dialog
-        open={addItemOpen}
-        onClose={() => setAddItemOpen(false)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>Add New Item</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} mt={1}>
-            <TextField
-              size="small"
-              label="Title"
-              fullWidth
-              value={itemTitle}
-              onChange={(e) => setItemTitle(e.target.value)}
-              sx={{
-                input: {
-                  backgroundColor:
-                    theme.palette.mode === 'dark' ? '#1e293b' : 'white',
-                },
-              }}
-            />
-            <TextField
-              size="small"
-              label="Estimated Price"
-              type="number"
-              fullWidth
-              value={estimatedPrice}
-              onChange={(e) =>
-                setEstimatedPrice(
-                  e.target.value === '' ? '' : Number(e.target.value)
-                )
-              }
-              sx={{
-                input: {
-                  backgroundColor:
-                    theme.palette.mode === 'dark' ? '#1e293b' : 'white',
-                },
-              }}
-            />
-            <FormControl fullWidth size="small">
-              <InputLabel>Priority</InputLabel>
-              <Select
-                value={priority}
-                label="Priority"
-                onChange={(e) => setPriority(e.target.value as typeof priority)}
-                sx={{
-                  backgroundColor:
-                    theme.palette.mode === 'dark' ? '#1e293b' : 'white',
-                }}
-              >
-                {PRIORITIES.map((p) => (
-                  <MenuItem key={p} value={p}>
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            </Fade>
           </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAddItemOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={!itemTitle || estimatedPrice === ''}
-            onClick={() => {
-              handleAddNewItem();
-              setAddItemOpen(false);
+        </Grid>
+
+        {/* Right Column: Items List */}
+        <Grid size={{ xs: 12, md: 7 }}>
+          <Stack spacing={2}>
+             <Box display="flex" justifyContent="space-between" alignItems="center" mb={1} px={1}>
+                <Typography variant="h6" fontWeight="900">Shopping List</Typography>
+                <Tooltip title="Add New Item">
+                  <IconButton 
+                    onClick={() => setAddItemOpen(true)} 
+                    sx={{ bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' } }}
+                  >
+                    <AddIcon />
+                  </IconButton>
+                </Tooltip>
+             </Box>
+
+             {plan.items.length === 0 ? (
+               <Fade in>
+                 <Box 
+                   textAlign="center" 
+                   py={8} 
+                   sx={{ 
+                     borderRadius: 6, 
+                     border: `2px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`,
+                     bgcolor: isDark ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)'
+                   }}
+                 >
+                   <EmptyIcon sx={{ fontSize: 60, color: 'text.disabled', mb: 2 }} />
+                   <Typography variant="h6" fontWeight="800" color="text.secondary">Your list is empty</Typography>
+                   <Button variant="text" onClick={() => setAddItemOpen(true)} sx={{ mt: 1, fontWeight: 800 }}>
+                     Add your first item
+                   </Button>
+                 </Box>
+               </Fade>
+             ) : (
+               <Stack spacing={1.5}>
+                 {sorted.map((it, idx) => {
+                    const globalIndex = plan.items.findIndex(x => x === it);
+                    const isBought = it.isPurchased;
+                    
+                    return (
+                      <Zoom in timeout={300 + idx * 50} key={`${it.title}-${globalIndex}`}>
+                        <Card
+                          elevation={0}
+                          sx={{
+                            borderRadius: 4,
+                            overflow: 'hidden',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            border: `1px solid ${isBought ? 'transparent' : isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`,
+                            bgcolor: isBought 
+                              ? isDark ? 'rgba(16, 185, 129, 0.08)' : '#f0fdf4'
+                              : isDark ? '#1e293b' : '#ffffff',
+                            '&:hover': {
+                              transform: 'translateX(4px)',
+                              boxShadow: isDark ? '0 4px 12px rgba(0,0,0,0.5)' : '0 4px 12px rgba(0,0,0,0.05)'
+                            }
+                          }}
+                        >
+                          {/* Priority Indicator Strip */}
+                          <Box sx={{ 
+                            position: 'absolute', 
+                            left: 0, 
+                            top: 0, 
+                            bottom: 0, 
+                            width: 6, 
+                            bgcolor: isBought ? 'success.main' : getPriorityColor(it.priority)
+                          }} />
+
+                          <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                            <Box display="flex" alignItems="center" gap={1}>
+                               <Checkbox
+                                  checked={isBought}
+                                  icon={<Box sx={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid', borderColor: 'divider' }} />}
+                                  checkedIcon={<CheckCircleIcon color="success" sx={{ fontSize: 28 }} />}
+                                  onChange={() => {
+                                    if (!isBought) {
+                                      const price = it.purchasedPrice ?? it.estimatedPrice;
+                                      if (!validateBudgetBeforePurchase(price)) {
+                                        setPendingPurchase({ index: globalIndex, price });
+                                        setBudgetWarningOpen(true);
+                                        return;
+                                      }
+                                    }
+                                    const newItems = plan.items.map((x, i) =>
+                                      i === globalIndex ? { ...x, isPurchased: !x.isPurchased } : x
+                                    );
+                                    saveItems(newItems);
+                                  }}
+                               />
+
+                               <Box flexGrow={1} ml={1}>
+                                  {editIndex === globalIndex ? (
+                                    <Stack direction="row" spacing={1} alignItems="center">
+                                      <TextField
+                                        size="small"
+                                        defaultValue={it.title}
+                                        onChange={(e) => (it.title = e.target.value)}
+                                        sx={{ flexGrow: 1 }}
+                                      />
+                                      <IconButton onClick={() => { saveItems(plan.items); setEditIndex(null); }}>
+                                        <SaveIcon color="primary" fontSize="small" />
+                                      </IconButton>
+                                    </Stack>
+                                  ) : (
+                                    <Box>
+                                      <Typography variant="body1" fontWeight="800" sx={{ 
+                                        textDecoration: isBought ? 'line-through' : 'none',
+                                        opacity: isBought ? 0.6 : 1
+                                      }}>
+                                        {it.title}
+                                      </Typography>
+                                      <Stack direction="row" alignItems="center" spacing={1} mt={0.5}>
+                                         <Typography variant="caption" fontWeight="900" color="primary">
+                                           ₨{(it.purchasedPrice ?? it.estimatedPrice).toLocaleString()}
+                                         </Typography>
+                                         <Box sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: 'divider' }} />
+                                         <Typography variant="caption" fontWeight="700" sx={{ color: isBought ? 'success.main' : getPriorityColor(it.priority) }}>
+                                           {it.priority?.toUpperCase()}
+                                         </Typography>
+                                      </Stack>
+                                      {it.notes && (
+                                        <Typography variant="caption" display="block" color="text.secondary" sx={{ fontStyle: 'italic', mt: 0.5 }}>
+                                           &quot; {it.notes} &quot;
+                                        </Typography>
+                                      )}
+                                    </Box>
+                                  )}
+                               </Box>
+
+                               {!isBought && editIndex !== globalIndex && (
+                                 <Stack direction="row">
+                                    <IconButton size="small" onClick={() => {
+                                      setNewPrice(String(it.estimatedPrice));
+                                      setBuyModal({ index: globalIndex, open: true });
+                                    }}>
+                                      <ShoppingCartIcon fontSize="small" />
+                                    </IconButton>
+                                    <IconButton size="small" onClick={() => setEditIndex(globalIndex)}>
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                    <IconButton size="small" color="error" onClick={() => setConfirmDelete({ open: true, index: globalIndex })}>
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                 </Stack>
+                               )}
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      </Zoom>
+                    );
+                 })}
+               </Stack>
+             )}
+          </Stack>
+        </Grid>
+      </Grid>
+
+      {/* Floating Add Button for Mobile */}
+      {isMobile && (
+        <Zoom in>
+          <IconButton
+            onClick={() => setAddItemOpen(true)}
+            sx={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              width: 56,
+              height: 56,
+              bgcolor: 'primary.main',
+              color: 'white',
+              boxShadow: '0 8px 16px rgba(102, 126, 234, 0.4)',
+              '&:hover': { bgcolor: 'primary.dark' }
             }}
           >
-            Add
+            <AddIcon />
+          </IconButton>
+        </Zoom>
+      )}
+
+      {/* Improved Add Item Dialog */}
+      <Dialog
+        open={addItemOpen}
+        onClose={() => !itemSaving && setAddItemOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 6,
+            overflow: 'hidden',
+            backgroundColor: isDark ? '#0f172a' : '#ffffff',
+          }
+        }}
+      >
+        <Box sx={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          p: 3,
+          color: 'white',
+          position: 'relative'
+        }}>
+          <Stack direction="row" alignItems="center" spacing={2}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', width: 48, height: 48 }}>
+              <AddItemIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.2 }}>
+                New Item
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 600 }}>
+                Adding to {plan.title}
+              </Typography>
+            </Box>
+          </Stack>
+          <IconButton
+            onClick={() => setAddItemOpen(false)}
+            sx={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              color: 'white',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        <DialogContent sx={{ px: 3, py: 3 }}>
+          <Stack spacing={2.5}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="subtitle2" fontWeight="900" color="primary">DETAILS</Typography>
+              <Button
+                variant="contained"
+                size="small"
+                onClick={handleAddNewItem}
+                disabled={itemSaving || !itemTitle || estimatedPrice === ''}
+                startIcon={itemSaving ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
+                sx={{ borderRadius: 2.5, fontWeight: 900, textTransform: 'none', px: 2 }}
+              >
+                {itemSaving ? 'Adding...' : 'Add Item'}
+              </Button>
+            </Box>
+
+            <Collapse in={addSuccess}>
+              <Alert 
+                severity="success" 
+                icon={<CheckCircleIcon fontSize="inherit" />}
+                sx={{ borderRadius: 3, fontWeight: 800 }}
+              >
+                Added to list!
+              </Alert>
+            </Collapse>
+
+            <Collapse in={!!addError}>
+              <Alert 
+                severity="error" 
+                sx={{ borderRadius: 3, fontWeight: 800 }}
+              >
+                {addError}
+              </Alert>
+            </Collapse>
+
+            <TextField
+              fullWidth
+              label="Item Title"
+              placeholder="What do you need?"
+              value={itemTitle}
+              onChange={(e) => setItemTitle(e.target.value)}
+              disabled={itemSaving}
+              InputProps={{
+                sx: { borderRadius: 3 },
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <ShoppingCartIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="Est. Price"
+              type="number"
+              placeholder="0.00"
+              value={estimatedPrice}
+              onChange={(e) => setEstimatedPrice(e.target.value === '' ? '' : Number(e.target.value))}
+              disabled={itemSaving}
+              InputProps={{
+                sx: { borderRadius: 3 },
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Typography sx={{ fontWeight: 900, mr: 0.5, color: 'text.secondary' }}>₨</Typography>
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <Stack direction="row" spacing={2}>
+              <FormControl fullWidth>
+                <InputLabel>Priority</InputLabel>
+                <Select
+                  value={priority}
+                  label="Priority"
+                  onChange={(e) => setPriority(e.target.value as typeof priority)}
+                  disabled={itemSaving}
+                  sx={{ borderRadius: 3 }}
+                >
+                  {PRIORITIES.map((p) => (
+                    <MenuItem key={p} value={p}>
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Stack>
+
+            <TextField
+              fullWidth
+              label="Notes"
+              multiline
+              rows={2}
+              placeholder="Brand, size, color..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={itemSaving}
+              InputProps={{
+                sx: { borderRadius: 3 },
+              }}
+            />
+          </Stack>
+        </DialogContent>
+      </Dialog>
+
+      {/* Other Modals (Budget Update, Confirm Delete, etc.) */}
+      {/* ... keep existing modal logic ... */}
+      
+      {/* Budget Update Dialog */}
+      <Dialog
+        open={budgetUpdateOpen}
+        onClose={() => setBudgetUpdateOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 5 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>Set Budget Limit</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" mb={3} fontWeight="600">
+            Keep your spending in check by setting a maximum limit for this list.
+          </Typography>
+          <TextField
+            fullWidth
+            label="Limit Amount"
+            type="number"
+            value={newBudgetLimit}
+            onChange={(e) => setNewBudgetLimit(e.target.value === '' ? '' : Number(e.target.value))}
+            autoFocus
+            InputProps={{
+              sx: { borderRadius: 3 },
+              startAdornment: (
+                <InputAdornment position="start">
+                   <Typography sx={{ fontWeight: 900 }}>₨</Typography>
+                </InputAdornment>
+              ),
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => setBudgetUpdateOpen(false)} sx={{ fontWeight: 700 }}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleBudgetUpdate}
+            sx={{ borderRadius: 3, fontWeight: 900, px: 3 }}
+          >
+            Save Limit
           </Button>
         </DialogActions>
       </Dialog>
@@ -716,36 +884,44 @@ export default function BuyItemDetailPage() {
       <Dialog
         open={buyModal.open}
         onClose={() => setBuyModal({ open: false, index: -1 })}
+        PaperProps={{ sx: { borderRadius: 5 } }}
       >
-        <DialogTitle>Enter Purchase Price</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900 }}>Confirm Purchase</DialogTitle>
         <DialogContent>
+          <Typography variant="body2" color="text.secondary" mb={3} fontWeight="600">
+            Actual price paid for <strong>{plan.items[buyModal.index]?.title}</strong>:
+          </Typography>
           <TextField
             autoFocus
             fullWidth
-            label="Bought Price"
+            label="Actual Price"
             type="number"
             value={newPrice}
             onChange={(e) => setNewPrice(e.target.value)}
-            margin="normal"
+            InputProps={{
+              sx: { borderRadius: 3 },
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Typography sx={{ fontWeight: 900 }}>₨</Typography>
+                </InputAdornment>
+              ),
+            }}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBuyModal({ open: false, index: -1 })}>
-            Cancel
-          </Button>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => setBuyModal({ open: false, index: -1 })} sx={{ fontWeight: 700 }}>Cancel</Button>
           <Button
             variant="contained"
             onClick={() => {
               const idx = buyModal.index;
               if (!plan || idx < 0 || idx >= plan.items.length) return;
-              const price = Number(newPrice);
-
-              handleItemPurchase(idx, price);
+              handleItemPurchase(idx, Number(newPrice));
               setBuyModal({ open: false, index: -1 });
               setNewPrice('');
             }}
+            sx={{ borderRadius: 3, fontWeight: 900, px: 3 }}
           >
-            Save
+            Record Purchase
           </Button>
         </DialogActions>
       </Dialog>
@@ -754,25 +930,24 @@ export default function BuyItemDetailPage() {
       <Dialog
         open={confirmDelete.open}
         onClose={() => setConfirmDelete({ open: false, index: -1 })}
+        PaperProps={{ sx: { borderRadius: 5 } }}
       >
-        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900 }}>Remove Item?</DialogTitle>
         <DialogContent>
-          <Typography>Are you sure you want to delete this item?</Typography>
+          <Typography fontWeight="600">Are you sure you want to delete this item from your list?</Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmDelete({ open: false, index: -1 })}>
-            Cancel
-          </Button>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => setConfirmDelete({ open: false, index: -1 })} sx={{ fontWeight: 700 }}>Cancel</Button>
           <Button
             variant="contained"
             color="error"
             onClick={() => {
               const idx = confirmDelete.index;
               const filtered = plan.items.filter((_, i) => i !== idx);
-              setPlan({ ...plan, items: filtered });
               saveItems(filtered);
               setConfirmDelete({ open: false, index: -1 });
             }}
+            sx={{ borderRadius: 3, fontWeight: 900, px: 3 }}
           >
             Delete
           </Button>
@@ -782,129 +957,46 @@ export default function BuyItemDetailPage() {
       {/* Budget Warning Dialog */}
       <Dialog
         open={budgetWarningOpen}
-        onClose={() => {
-          setBudgetWarningOpen(false);
-          setPendingPurchase(null);
-        }}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          <Box display="flex" alignItems="center" gap={1}>
-            <WarningIcon color="warning" />
-            Budget Exceeded
-          </Box>
-        </DialogTitle>
-        <DialogContent>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            <Typography variant="body1" gutterBottom>
-              This purchase would exceed your budget limit of Rs{' '}
-              {budgetLimit.toLocaleString()}.
-            </Typography>
-            <Typography variant="body2">
-              Current spent: Rs {totalSpent.toLocaleString()}
-              <br />
-              Item price: Rs {pendingPurchase?.price.toLocaleString()}
-              <br />
-              New total would be: Rs{' '}
-              {(totalSpent + (pendingPurchase?.price || 0)).toLocaleString()}
-            </Typography>
-          </Alert>
-          <Typography variant="body2" color="text.secondary">
-            You can either increase your budget or proceed anyway if this is an
-            essential purchase.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setBudgetWarningOpen(false);
-              setPendingPurchase(null);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<TrendingUpIcon />}
-            onClick={() => {
-              setBudgetUpdateOpen(true);
-              setBudgetWarningOpen(false);
-            }}
-          >
-            Increase Budget
-          </Button>
-          <Button variant="contained" color="warning" onClick={forcePurchase}>
-            Proceed Anyway
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Budget Update Dialog */}
-      <Dialog
-        open={budgetUpdateOpen}
-        onClose={() => {
-          setBudgetUpdateOpen(false);
-          setNewBudgetLimit('');
-        }}
+        onClose={() => { setBudgetWarningOpen(false); setPendingPurchase(null); }}
         maxWidth="xs"
         fullWidth
+        PaperProps={{ sx: { borderRadius: 6 } }}
       >
-        <DialogTitle>Update Budget Limit</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} mt={1}>
-            <TextField
-              fullWidth
-              label="New Budget Limit"
-              type="number"
-              value={newBudgetLimit}
-              onChange={(e) =>
-                setNewBudgetLimit(
-                  e.target.value === '' ? '' : Number(e.target.value)
-                )
-              }
-              placeholder="Enter amount in Rs"
-              InputProps={{
-                startAdornment: <Typography sx={{ mr: 1 }}>Rs</Typography>,
-              }}
-              sx={{
-                input: {
-                  backgroundColor:
-                    theme.palette.mode === 'dark' ? '#1e293b' : 'white',
-                },
-              }}
-            />
-            {newBudgetLimit !== '' && (
-              <Alert severity="info">
-                <Typography variant="body2">
-                  Current spent: Rs {totalSpent.toLocaleString()}
-                  <br />
-                  New budget: Rs {Number(newBudgetLimit).toLocaleString()}
-                  <br />
-                  Remaining: Rs{' '}
-                  {(Number(newBudgetLimit) - totalSpent).toLocaleString()}
-                </Typography>
-              </Alert>
-            )}
+        <DialogContent sx={{ p: 4 }}>
+          <Box textAlign="center" mb={3}>
+             <Avatar sx={{ bgcolor: 'rgba(244, 67, 54, 0.1)', color: 'error.main', width: 64, height: 64, mx: 'auto', mb: 2 }}>
+                <WarningIcon sx={{ fontSize: 32 }} />
+             </Avatar>
+             <Typography variant="h5" fontWeight="900">Budget Warning</Typography>
+          </Box>
+          <Alert severity="warning" variant="outlined" sx={{ mb: 3, borderRadius: 3, border: 'none', bgcolor: isDark ? 'rgba(255, 152, 0, 0.05)' : 'rgba(255, 152, 0, 0.05)' }}>
+            <Typography variant="body2" fontWeight="700">
+              This purchase will exceed your limit of ₨{plan.budgetLimit?.toLocaleString()}.
+            </Typography>
+          </Alert>
+          <Typography variant="body2" textAlign="center" color="text.secondary" fontWeight="600">
+            Current Spent: ₨{totalSpent.toLocaleString()}<br/>
+            With this item: ₨{(totalSpent + (pendingPurchase?.price || 0)).toLocaleString()}
+          </Typography>
+          <Stack spacing={2} mt={4}>
+             <Button
+                fullWidth
+                variant="contained"
+                color="warning"
+                onClick={forcePurchase}
+                sx={{ borderRadius: 3, fontWeight: 900, py: 1.5 }}
+              >
+                Purchase Anyway
+              </Button>
+              <Button 
+                fullWidth
+                onClick={() => { setBudgetWarningOpen(false); setPendingPurchase(null); }}
+                sx={{ fontWeight: 800 }}
+              >
+                Cancel
+              </Button>
           </Stack>
         </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setBudgetUpdateOpen(false);
-              setNewBudgetLimit('');
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={newBudgetLimit === '' || Number(newBudgetLimit) <= 0}
-            onClick={handleBudgetUpdate}
-          >
-            Update Budget
-          </Button>
-        </DialogActions>
       </Dialog>
     </Box>
   );

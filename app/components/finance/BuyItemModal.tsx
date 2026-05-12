@@ -2,7 +2,6 @@
 
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
   DialogActions,
   Button,
@@ -21,13 +20,31 @@ import {
   Chip,
   IconButton,
   Collapse,
+  Avatar,
+  InputAdornment,
+  Fade,
+  CircularProgress,
+  Grid,
+  Card,
+  CardContent,
 } from '@mui/material';
-import { Add, Delete } from '@mui/icons-material';
+import {
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  Close as CloseIcon,
+  ShoppingCart as ShoppingCartIcon,
+  AttachMoney as MoneyIcon,
+  PriorityHigh as PriorityIcon,
+  Description as NoteIcon,
+  PlaylistAdd as PlanIcon,
+  CheckCircle as SuccessIcon,
+} from '@mui/icons-material';
 import { useState } from 'react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { BuyItem } from '@/app/lib/interface';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 const PRIORITIES = ['optional', 'needed', 'urgent'] as const;
 
@@ -51,6 +68,8 @@ export default function BuyItemModal({
   onItemCreated?: (item: BuyItem) => void;
 }) {
   const theme = useTheme();
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
   const { user } = useAuth();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -65,12 +84,15 @@ export default function BuyItemModal({
   const [priority, setPriority] = useState<BuyItemEntry['priority']>('needed');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
-  const [addItemOpen, setAddItemOpen] = useState(false); // Collapsible section state
+  const [success, setSuccess] = useState(false);
+  const [addItemOpen, setAddItemOpen] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const totalEstimate = items.reduce((sum, i) => sum + i.estimatedPrice, 0);
 
   const handleAddItem = () => {
     setError('');
+    setSuccess(false);
     if (!itemTitle || estimatedPrice === '') {
       setError('Please enter both title and estimated price');
       return;
@@ -98,12 +120,15 @@ export default function BuyItemModal({
     };
 
     setItems((prev) => [...prev, newItem]);
+    setSuccess(true);
 
     // Reset item fields
     setItemTitle('');
     setEstimatedPrice('');
     setPriority('needed');
     setNotes('');
+
+    setTimeout(() => setSuccess(false), 2000);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -119,37 +144,47 @@ export default function BuyItemModal({
     setPriority('needed');
     setNotes('');
     setError('');
-    setAddItemOpen(false);
+    setSuccess(false);
+    setAddItemOpen(true);
+    setSaving(false);
   };
 
   const handleSavePlan = async () => {
     if (!planTitle || budgetLimit === '' || !user) return;
 
-    const now = new Date();
-    const newPlan: BuyItem = {
-      userId: user.uid,
-      title: planTitle,
-      items,
-      archived: false,
-      pinned: false,
-      sharedWith: [],
-      createdAt: now,
-      updatedAt: now,
-      budgetLimit: typeof budgetLimit === 'number' ? budgetLimit : Number(budgetLimit),
-    };
+    setSaving(true);
+    try {
+      const now = new Date();
+      const newPlan: BuyItem = {
+        userId: user.uid,
+        title: planTitle,
+        items,
+        archived: false,
+        pinned: false,
+        sharedWith: [],
+        createdAt: now,
+        updatedAt: now,
+        budgetLimit: typeof budgetLimit === 'number' ? budgetLimit : Number(budgetLimit),
+      };
 
-    const docRef = await addDoc(collection(db, 'buyItems'), {
-      ...newPlan,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+      const docRef = await addDoc(collection(db, 'buyItems'), {
+        ...newPlan,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
-    if (onItemCreated) {
-      onItemCreated({ ...newPlan, id: docRef.id });
+      if (onItemCreated) {
+        onItemCreated({ ...newPlan, id: docRef.id });
+      }
+
+      resetForm();
+      onClose();
+    } catch (err) {
+      console.error('Error saving shopping plan:', err);
+      setError('Failed to save plan. Please try again.');
+    } finally {
+      setSaving(false);
     }
-
-    resetForm();
-    onClose();
   };
 
   const handleCancel = () => {
@@ -162,338 +197,266 @@ export default function BuyItemModal({
       open={open}
       onClose={handleCancel}
       fullWidth
-      maxWidth={isMobile ? 'sm' : 'md'}
+      maxWidth="md"
       fullScreen={isMobile}
-      sx={{
-        '& .MuiDialog-paper': {
-          margin: isMobile ? 0 : 'auto',
-          maxHeight: isMobile ? '100vh' : '90vh',
-        },
+      TransitionComponent={Fade}
+      PaperProps={{
+        sx: {
+          borderRadius: isMobile ? 0 : 4,
+          overflow: 'hidden',
+          backgroundColor: isDark ? '#0f172a' : '#ffffff',
+        }
       }}
     >
-      <DialogTitle
-        sx={{
-          pb: 1,
-          fontSize: isMobile ? '1.25rem' : '1.5rem',
-          fontWeight: 'bold',
-        }}
-      >
-        Create Shopping Plan
-      </DialogTitle>
-
-      <DialogContent
-        sx={{
-          px: isMobile ? 2 : 3,
-          py: isMobile ? 1 : 2,
-          '&::-webkit-scrollbar': {
-            width: '6px',
-          },
-          '&::-webkit-scrollbar-track': {
-            background: 'transparent',
-          },
-          '&::-webkit-scrollbar-thumb': {
-            background: theme.palette.mode === 'dark' ? '#555' : '#ccc',
-            borderRadius: '3px',
-          },
-        }}
-      >
-        {/* Plan Title & Budget */}
-        <Stack spacing={2}>
-          <TextField
-            label="Plan Title"
-            fullWidth
-            value={planTitle}
-            onChange={(e) => setPlanTitle(e.target.value)}
-            size={isMobile ? 'medium' : 'medium'}
-            sx={{
-              '& .MuiInputBase-input': {
-                fontSize: isMobile ? '16px' : '14px',
-              },
-            }}
-          />
-
-          <TextField
-            label="Budget Limit (Rs)"
-            fullWidth
-            type="number"
-            value={budgetLimit}
-            onChange={(e) =>
-              setBudgetLimit(
-                e.target.value === '' ? '' : Number(e.target.value)
-              )
-            }
-            size={isMobile ? 'medium' : 'medium'}
-            sx={{
-              '& .MuiInputBase-input': {
-                fontSize: isMobile ? '16px' : '14px',
-              },
-            }}
-          />
+      <Box sx={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        p: 3,
+        color: 'white',
+        position: 'relative'
+      }}>
+        <Stack direction="row" alignItems="center" spacing={1.5}>
+          <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}>
+            <PlanIcon />
+          </Avatar>
+          <Box>
+            <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.2 }}>
+              Create Shopping Plan
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 600 }}>
+              Group items into a single budget-tracked list
+            </Typography>
+          </Box>
         </Stack>
+        <IconButton
+          onClick={handleCancel}
+          sx={{
+            position: 'absolute',
+            right: 12,
+            top: 12,
+            color: 'white',
+            '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
+          }}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Box>
 
-        <Divider sx={{ my: 3 }} />
-
-        {/* Collapsible Add Item Section */}
-        <Box>
-          <Button
-            variant="outlined"
-            onClick={() => setAddItemOpen((prev) => !prev)}
-            startIcon={<Add />}
-            sx={{ mb: 1 }}
-          >
-            {addItemOpen ? 'Hide Add Item Section' : 'Add Item'}
-          </Button>
-
-          <Collapse in={addItemOpen}>
-            <Stack spacing={2}>
-              <TextField
-                label="Item Title"
-                fullWidth
-                value={itemTitle}
-                onChange={(e) => setItemTitle(e.target.value)}
-                size={isMobile ? 'medium' : 'medium'}
-                sx={{
-                  '& .MuiInputBase-input': {
-                    fontSize: isMobile ? '16px' : '14px',
-                  },
-                }}
-              />
-
-              <TextField
-                label="Estimated Price (Rs)"
-                fullWidth
-                type="number"
-                value={estimatedPrice}
-                onChange={(e) =>
-                  setEstimatedPrice(
-                    e.target.value === '' ? '' : Number(e.target.value)
-                  )
-                }
-                size={isMobile ? 'medium' : 'medium'}
-                sx={{
-                  '& .MuiInputBase-input': {
-                    fontSize: isMobile ? '16px' : '14px',
-                  },
-                }}
-              />
-
-              <FormControl fullWidth size={isMobile ? 'medium' : 'medium'}>
-                <InputLabel>Priority</InputLabel>
-                <Select
-                  value={priority}
-                  label="Priority"
-                  onChange={(e) =>
-                    setPriority(e.target.value as BuyItemEntry['priority'])
-                  }
-                  sx={{
-                    '& .MuiSelect-select': {
-                      fontSize: isMobile ? '16px' : '14px',
-                    },
-                  }}
-                >
-                  {PRIORITIES.map((p) => (
-                    <MenuItem
-                      key={p}
-                      value={p}
-                      sx={{ fontSize: isMobile ? '16px' : '14px' }}
-                    >
-                      {p.charAt(0).toUpperCase() + p.slice(1)}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <TextField
-                label="Notes (optional)"
-                fullWidth
-                multiline
-                rows={isMobile ? 3 : 2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                size={isMobile ? 'medium' : 'medium'}
-                sx={{
-                  '& .MuiInputBase-input': {
-                    fontSize: isMobile ? '16px' : '14px',
-                  },
-                }}
-              />
-
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleAddItem}
-                disabled={estimatedPrice === '' || itemTitle === ''}
-                startIcon={<Add />}
-                size={isMobile ? 'large' : 'medium'}
-                sx={{
-                  py: isMobile ? 1.5 : 1,
-                  fontSize: isMobile ? '16px' : '14px',
-                  fontWeight: 'bold',
-                }}
-              >
-                Add Item
-              </Button>
-            </Stack>
-          </Collapse>
-        </Box>
-
-        {/* Error */}
-        {error && (
-          <Box mt={2}>
-            <Alert
-              severity="error"
-              sx={{ fontSize: isMobile ? '14px' : '13px' }}
-            >
-              {error}
-            </Alert>
-          </Box>
-        )}
-
-        {/* Items List */}
-        {items.length > 0 && (
-          <Box mt={4}>
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              mb={2}
-            >
-              <Typography
-                variant="subtitle1"
-                fontWeight="bold"
-                sx={{
-                  fontSize: isMobile ? '1rem' : '0.875rem',
-                }}
-              >
-                Items ({items.length})
+      <DialogContent sx={{ px: isMobile ? 2 : 4, py: 4 }}>
+        <Grid container spacing={4}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Stack spacing={3}>
+              <Typography variant="subtitle2" fontWeight="800" color="primary">
+                PLAN DETAILS
               </Typography>
-              <Chip
-                label={`Rs ${Number(totalEstimate || 0).toLocaleString()}`}
-                color="primary"
-                size={isMobile ? 'medium' : 'small'}
-                sx={{ fontWeight: 'bold' }}
+              
+              <TextField
+                fullWidth
+                label="Plan Title"
+                placeholder="e.g. Home Renovation"
+                value={planTitle}
+                onChange={(e) => setPlanTitle(e.target.value)}
               />
-            </Box>
 
-            <Stack spacing={1.5}>
-              {items.map((item, idx) => (
-                <Box
-                  key={idx}
-                  sx={{
-                    p: 2,
-                    bgcolor:
-                      theme.palette.mode === 'dark' ? '#1f2937' : '#f8fafc',
-                    borderRadius: 2,
-                    border: `1px solid ${
-                      theme.palette.mode === 'dark' ? '#374151' : '#e2e8f0'
-                    }`,
-                    position: 'relative',
-                  }}
-                >
-                  <Box
-                    display="flex"
-                    justifyContent="space-between"
-                    alignItems="flex-start"
-                  >
-                    <Box flex={1} pr={1}>
-                      <Typography
-                        fontWeight="bold"
-                        sx={{
-                          fontSize: isMobile ? '16px' : '14px',
-                          mb: 0.5,
-                        }}
-                      >
-                        {item.title ?? 'Untitled'}
-                      </Typography>
+              <TextField
+                fullWidth
+                label="Budget Limit"
+                type="number"
+                placeholder="0.00"
+                value={budgetLimit}
+                onChange={(e) =>
+                  setBudgetLimit(e.target.value === '' ? '' : Number(e.target.value))
+                }
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Typography sx={{ fontWeight: 900 }}>₨</Typography>
+                    </InputAdornment>
+                  ),
+                }}
+              />
 
-                      <Box display="flex" alignItems="center" gap={1} mb={1}>
-                        <Typography
-                          variant="body2"
-                          color="primary"
-                          fontWeight="bold"
-                          sx={{ fontSize: isMobile ? '15px' : '13px' }}
-                        >
-                          Rs {(item.estimatedPrice || 0).toLocaleString()}
-                        </Typography>
-                        <Chip
-                          label={item.priority}
-                          size="small"
-                          color={
-                            item.priority === 'urgent'
-                              ? 'error'
-                              : item.priority === 'needed'
-                              ? 'warning'
-                              : 'default'
-                          }
-                          sx={{ fontSize: isMobile ? '12px' : '10px' }}
-                        />
-                      </Box>
+              <Divider sx={{ my: 1 }} />
 
-                      {item.notes && (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{ fontSize: isMobile ? '14px' : '12px' }}
-                        >
-                          📝 {item.notes}
-                        </Typography>
-                      )}
-                    </Box>
-
-                    <IconButton
-                      onClick={() => handleRemoveItem(idx)}
-                      size={isMobile ? 'medium' : 'small'}
-                      sx={{
-                        color: 'error.main',
-                        '&:hover': {
-                          bgcolor: 'error.light',
-                          color: 'white',
-                        },
-                      }}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" fontWeight="800" color="primary">
+                  ADD ITEMS
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  {addItemOpen && (
+                    <Button 
+                      size="small"
+                      variant="contained"
+                      onClick={handleAddItem}
+                      disabled={!itemTitle || estimatedPrice === ''}
+                      startIcon={<AddIcon />}
+                      sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
                     >
-                      <Delete fontSize={isMobile ? 'medium' : 'small'} />
-                    </IconButton>
-                  </Box>
-                </Box>
-              ))}
+                      Add to List
+                    </Button>
+                  )}
+                  <Button 
+                    size="small" 
+                    onClick={() => setAddItemOpen(!addItemOpen)}
+                    sx={{ textTransform: 'none', fontWeight: 700 }}
+                  >
+                    {addItemOpen ? 'Collapse' : 'Expand'}
+                  </Button>
+                </Stack>
+              </Box>
+
+              <Collapse in={addItemOpen}>
+                <Stack spacing={2.5} sx={{ p: 2, borderRadius: 3, bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}` }}>
+                  <Collapse in={success}>
+                    <Alert severity="success" sx={{ borderRadius: 2, mb: 1 }}>Item added to local list!</Alert>
+                  </Collapse>
+                  
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Item Name"
+                    value={itemTitle}
+                    onChange={(e) => setItemTitle(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <ShoppingCartIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Est. Price"
+                    type="number"
+                    value={estimatedPrice}
+                    onChange={(e) => setEstimatedPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <MoneyIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Priority</InputLabel>
+                    <Select
+                      value={priority}
+                      label="Priority"
+                      onChange={(e) => setPriority(e.target.value as BuyItemEntry['priority'])}
+                      startAdornment={<PriorityIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />}
+                    >
+                      {PRIORITIES.map((p) => (
+                        <MenuItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <NoteIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Stack>
+              </Collapse>
             </Stack>
-          </Box>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Stack spacing={3} sx={{ height: '100%' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" fontWeight="800" color="primary">
+                  ITEMS PREVIEW ({items.length})
+                </Typography>
+                <Chip 
+                  label={`Total: ₨${totalEstimate.toLocaleString()}`} 
+                  color="primary" 
+                  sx={{ fontWeight: 800 }} 
+                />
+              </Box>
+
+              <Box sx={{ 
+                flexGrow: 1, 
+                overflowY: 'auto', 
+                maxHeight: isMobile ? '300px' : '450px',
+                p: 1,
+                bgcolor: isDark ? 'rgba(0,0,0,0.1)' : '#fdfdfd',
+                borderRadius: 4,
+                border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1'}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1.5
+              }}>
+                {items.length === 0 ? (
+                  <Box sx={{ m: 'auto', textAlign: 'center', opacity: 0.5 }}>
+                    <ShoppingCartIcon sx={{ fontSize: 48, mb: 1 }} />
+                    <Typography variant="body2" fontWeight="600">No items added yet</Typography>
+                  </Box>
+                ) : (
+                  items.map((item, idx) => (
+                    <Card key={idx} variant="outlined" sx={{ borderRadius: 3, border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}` }}>
+                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box>
+                            <Typography variant="body2" fontWeight="800">{item.title}</Typography>
+                            <Typography variant="caption" color="primary" fontWeight="700">₨{item.estimatedPrice.toLocaleString()}</Typography>
+                            {item.notes && (
+                              <Typography variant="caption" display="block" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                                {item.notes}
+                              </Typography>
+                            )}
+                          </Box>
+                          <IconButton size="small" color="error" onClick={() => handleRemoveItem(idx)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </Box>
+            </Stack>
+          </Grid>
+        </Grid>
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 3, borderRadius: 2 }}>{error}</Alert>
         )}
       </DialogContent>
 
-      <DialogActions
-        sx={{
-          px: isMobile ? 2 : 3,
-          py: isMobile ? 2 : 1,
-          gap: 1,
-          flexDirection: isMobile ? 'column' : 'row',
-        }}
-      >
-        <Button
-          onClick={handleCancel}
-          size={isMobile ? 'large' : 'medium'}
-          sx={{
-            width: isMobile ? '100%' : 'auto',
-            py: isMobile ? 1.5 : 1,
-            fontSize: isMobile ? '16px' : '14px',
-          }}
-        >
+      <DialogActions sx={{ px: 4, py: 3, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+        <Button onClick={handleCancel} disabled={saving} sx={{ fontWeight: 700, color: 'text.secondary' }}>
           Cancel
         </Button>
         <Button
           onClick={handleSavePlan}
           variant="contained"
           color="success"
-          disabled={!planTitle || !budgetLimit}
-          size={isMobile ? 'large' : 'medium'}
+          disabled={saving || !planTitle || !budgetLimit || items.length === 0}
+          startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SuccessIcon />}
           sx={{
-            width: isMobile ? '100%' : 'auto',
-            py: isMobile ? 1.5 : 1,
-            fontSize: isMobile ? '16px' : '14px',
-            fontWeight: 'bold',
+            borderRadius: 3,
+            px: 4,
+            fontWeight: 800,
+            textTransform: 'none',
+            boxShadow: '0 4px 14px 0 rgba(76, 175, 80, 0.39)',
+            bgcolor: '#10b981',
+            '&:hover': { bgcolor: '#059669' }
           }}
         >
-          Save Plan
+          {saving ? 'Saving Plan...' : 'Create Shopping Plan'}
         </Button>
       </DialogActions>
     </Dialog>

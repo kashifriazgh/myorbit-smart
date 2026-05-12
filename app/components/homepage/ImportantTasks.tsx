@@ -91,10 +91,15 @@ const ImportantTasks = () => {
   // Calculate task counts for each day
   const taskCounts = useMemo(() => {
     const counts: { [date: string]: number } = {};
+    const todayStr = moment().format('YYYY-MM-DD');
     todos.forEach((t) => {
-      if (t.status !== 'completed' && t.dueDate) {
-        const dueDate = moment(t.dueDate).format('YYYY-MM-DD');
-        counts[dueDate] = (counts[dueDate] || 0) + 1;
+      if (t.status !== 'completed') {
+        if (t.isFlexible) {
+          counts[todayStr] = (counts[todayStr] || 0) + 1;
+        } else if (t.dueDate) {
+          const dueDate = moment(t.dueDate).format('YYYY-MM-DD');
+          counts[dueDate] = (counts[dueDate] || 0) + 1;
+        }
       }
     });
     return counts;
@@ -106,10 +111,16 @@ const ImportantTasks = () => {
     const selectedStart = moment(selectedDate).startOf('day');
     const selectedEnd = moment(selectedDate).endOf('day');
 
+    const todayStr = moment().format('YYYY-MM-DD');
+
     return todos
       .filter((t) => {
+        if (t.status === 'completed') return false;
+        if (t.isFlexible && selectedDate === todayStr) return true;
+        
+        if (!t.dueDate) return false;
         const due = moment(t.dueDate);
-        return t.status !== 'completed' && due.isBetween(selectedStart, selectedEnd, 'day', '[]');
+        return due.isBetween(selectedStart, selectedEnd, 'day', '[]');
       })
       .sort((a, b) => {
         const dueA = moment(a.dueDate);
@@ -154,9 +165,9 @@ const ImportantTasks = () => {
   const handleReschedule = (task: Todo) => {
     setRescheduleTask(task);
     setNewDueDate(
-      task.dueDate instanceof Timestamp
-        ? task.dueDate.toDate()
-        : new Date(task.dueDate),
+      task.dueDate 
+        ? (task.dueDate instanceof Timestamp ? task.dueDate.toDate() : new Date(task.dueDate))
+        : new Date()
     );
     setRescheduleOpen(true);
   };
@@ -167,6 +178,7 @@ const ImportantTasks = () => {
     try {
       await updateDoc(doc(db, 'todos', rescheduleTask.id), {
         dueDate: Timestamp.fromDate(newDueDate),
+        isFlexible: false, // Turn off flexible if date is set
         updatedAt: new Date(),
       });
       setRescheduleOpen(false);
@@ -449,11 +461,27 @@ const ImportantTasks = () => {
                     flexWrap="wrap"
                     alignItems="center"
                   >
-                    <Chip
-                      size="small"
-                      label={`Due: ${moment(task.dueDate).format('MMM D')}`}
-                      variant="outlined"
-                    />
+                    {task.isFlexible ? (
+                      <Chip
+                        size="small"
+                        label="Flexible"
+                        icon={<Box sx={{ ml: 0.5, fontSize: '0.8rem' }}>✨</Box>}
+                        variant="outlined"
+                        sx={{ 
+                          borderColor: '#8b5cf6', 
+                          color: '#8b5cf6', 
+                          fontWeight: 900,
+                          borderWidth: '1.5px',
+                          '& .MuiChip-label': { px: 1 }
+                        }}
+                      />
+                    ) : (
+                      <Chip
+                        size="small"
+                        label={`Due: ${moment(task.dueDate).format('MMM D')}`}
+                        variant="outlined"
+                      />
+                    )}
                     <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
                     <Chip
                       size="small"

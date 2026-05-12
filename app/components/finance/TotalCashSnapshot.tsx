@@ -108,7 +108,8 @@ export default function TotalCashSnapshotComponent({
     bankId?: string,
     bankName?: string,
     customPaymentHeadId?: string,
-    customPaymentHeadName?: string
+    customPaymentHeadName?: string,
+    note?: string
   ) => {
     setSaving(true);
 
@@ -118,7 +119,7 @@ export default function TotalCashSnapshotComponent({
       type: isFreezed ? 'freeze_transfer' : 'add',
       source: isFreezed ? 'other' : source, // Use 'other' for freeze transfers
       category: 'manual',
-      note: isFreezed ? 'Freezed addition' : 'Manual addition',
+      note: note || (isFreezed ? 'Freezed addition' : 'Manual addition'),
       createdAt: serverTimestamp() as Timestamp,
     };
 
@@ -175,7 +176,8 @@ export default function TotalCashSnapshotComponent({
     bankName?: string,
     fromFreeze: boolean = false,
     customPaymentHeadId?: string,
-    customPaymentHeadName?: string
+    customPaymentHeadName?: string,
+    note?: string
   ) => {
     setSaving(true);
 
@@ -257,7 +259,7 @@ export default function TotalCashSnapshotComponent({
       source,
       fromFreeze,
       category: fromFreeze ? 'freeze' : 'manual',
-      note: fromFreeze ? 'Deducted from Freezed' : 'Manual deduction',
+      note: note || (fromFreeze ? 'Deducted from Freezed' : 'Manual deduction'),
       bankId: bankId || null,
       BankName: bankName || null,
       customPaymentHeadId: customPaymentHeadId || null,
@@ -275,7 +277,8 @@ export default function TotalCashSnapshotComponent({
     bankId?: string,
     bankName?: string,
     customPaymentHeadId?: string,
-    customPaymentHeadName?: string
+    customPaymentHeadName?: string,
+    note?: string
   ) => {
     setSaving(true);
 
@@ -338,7 +341,7 @@ export default function TotalCashSnapshotComponent({
       type: 'freeze_transfer',
       source: fromSource,
       category: 'freeze',
-      note: 'Transferred to Freezed',
+      note: note || 'Transferred to Freezed',
       bankId: bankId || null,
       BankName: bankName || null,
       customPaymentHeadId: customPaymentHeadId || null,
@@ -399,7 +402,7 @@ export default function TotalCashSnapshotComponent({
           saving={saving}
         />
         <FreezeTransfer onFreeze={handleFreezeTransfer} saving={saving} />
-        <LoanDialog />
+        <LoanDialog onAddMoney={handleAddMoney} />
       </Box>
 
       <Box mt={3} display="flex" justifyContent="center">

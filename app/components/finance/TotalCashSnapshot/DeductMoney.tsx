@@ -48,7 +48,8 @@ interface Props {
     bankName?: string,
     fromFreeze?: boolean,
     customPaymentHeadId?: string,
-    customPaymentHeadName?: string
+    customPaymentHeadName?: string,
+    note?: string
   ) => Promise<void>;
   saving: boolean;
 }
@@ -60,6 +61,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
   const [source, setSource] = useState<TransactionSource>('in_hand');
   const [selectedBank, setSelectedBank] = useState('');
   const [fromFreeze, setFromFreeze] = useState(false);
+  const [note, setNote] = useState('');
 
   const [banks, setBanks] = useState<Bank[]>([]);
   const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
@@ -172,7 +174,8 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
       bankName,
       fromFreeze,
       customPaymentHeadId,
-      customPaymentHeadName
+      customPaymentHeadName,
+      note
     );
 
     setShowModal(false);
@@ -181,6 +184,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
     setSelectedBank('');
     setSelectedCustomPaymentHead('');
     setFromFreeze(false);
+    setNote('');
   };
 
   // 🔹 Compute current balance for validation & display
@@ -455,6 +459,18 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
                 </Typography>
               </Box>
             </Box>
+
+            <TextField
+              fullWidth
+              label="Note / Reason"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Rent, Grocery, Bill payment, etc."
+              size="small"
+              multiline
+              rows={2}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
           </Stack>
         </DialogContent>
 

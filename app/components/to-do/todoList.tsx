@@ -534,20 +534,40 @@ export default function TodosList() {
                           />
 
                           {/* Due Date */}
-                          {dueDate && (
+                          {todo.isFlexible ? (
                             <Chip
-                              icon={<AccessTimeIcon sx={{ fontSize: 14 }} />}
-                              label={`Due: ${moment(dueDate).format('MMM D')}`}
+                              icon={<Box sx={{ ml: 0.5 }}>✨</Box>}
+                              label="Flexible"
                               size="small"
                               variant="outlined"
                               sx={{
-                                ...getDueDateColor(dueDate),
-                                fontWeight: 600,
+                                borderColor: '#8b5cf6',
+                                color: '#8b5cf6',
+                                fontWeight: 900,
+                                borderWidth: '1.5px',
+                                textTransform: 'uppercase',
+                                fontSize: '0.65rem',
                                 '& .MuiChip-icon': {
-                                  color: getDueDateColor(dueDate).text,
+                                  color: '#8b5cf6',
                                 },
                               }}
                             />
+                          ) : (
+                            dueDate && (
+                              <Chip
+                                icon={<AccessTimeIcon sx={{ fontSize: 14 }} />}
+                                label={`Due: ${moment(dueDate).format('MMM D')}`}
+                                size="small"
+                                variant="outlined"
+                                sx={{
+                                  ...getDueDateColor(dueDate),
+                                  fontWeight: 600,
+                                  '& .MuiChip-icon': {
+                                    color: getDueDateColor(dueDate).text,
+                                  },
+                                }}
+                              />
+                            )
                           )}
                           {/* Assignee (overall task) */}
                           {todo.assignee && (

@@ -56,7 +56,8 @@ interface Props {
     bankId?: string,
     bankName?: string,
     customPaymentHeadId?: string,
-    customPaymentHeadName?: string
+    customPaymentHeadName?: string,
+    note?: string
   ) => Promise<void>;
   saving: boolean;
 }
@@ -67,6 +68,7 @@ export default function AddMoney({ onSave, saving }: Props) {
   const [newAmount, setNewAmount] = useState<number | ''>('');
   const [newMode, setNewMode] = useState<TransactionSource>('in_hand');
   const [isFreezed, setIsFreezed] = useState(false);
+  const [note, setNote] = useState('');
 
   // Bank-specific state
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -174,7 +176,8 @@ export default function AddMoney({ onSave, saving }: Props) {
       bankId,
       bankName,
       customPaymentHeadId,
-      customPaymentHeadName
+      customPaymentHeadName,
+      note
     );
 
     // reset state
@@ -184,6 +187,7 @@ export default function AddMoney({ onSave, saving }: Props) {
     setIsFreezed(false);
     setSelectedBank('');
     setSelectedCustomPaymentHead('');
+    setNote('');
   };
 
   const { theme } = useCustomTheme();
@@ -418,6 +422,18 @@ export default function AddMoney({ onSave, saving }: Props) {
                 }}
               />
             </Box>
+
+            <TextField
+              fullWidth
+              label="Note / Reference"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Salary, Birthday gift, etc."
+              size="small"
+              multiline
+              rows={2}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
           </Stack>
         </DialogContent>
 

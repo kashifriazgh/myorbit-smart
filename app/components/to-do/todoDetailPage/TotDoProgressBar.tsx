@@ -1,6 +1,5 @@
 'use client';
-import { Box, Typography, LinearProgress } from '@mui/material';
-import { useEffect, useRef, useState } from 'react';
+import { Box, Typography } from '@mui/material';
 
 interface TodoProgressBarProps {
   progressPercent: number; // Actual percentage
@@ -13,45 +12,33 @@ export default function TodoProgressBar({
   status,
   hasSteps,
 }: TodoProgressBarProps) {
-  const [buffer, setBuffer] = useState(progressPercent + 10);
-  const progressRef = useRef(() => {});
-
   const actualProgress = hasSteps
     ? progressPercent
     : status === 'completed'
     ? 100
     : 0;
 
-  // Animate buffer to make it feel alive
-  useEffect(() => {
-    progressRef.current = () => {
-      setBuffer((prev) => (prev < 100 ? prev + 2 + Math.random() * 6 : 100));
-    };
-  });
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      progressRef.current();
-    }, 200);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    // Reset buffer if progress changes drastically
-    setBuffer(progressPercent + 10);
-  }, [progressPercent]);
-
   return (
     <Box mt={3}>
-      <Typography variant="subtitle2" fontWeight="500">
-        {actualProgress || 0}%
-      </Typography>
-      <LinearProgress
-        variant="buffer"
-        value={actualProgress}
-        valueBuffer={buffer}
-        sx={{ mt: 1, height: 8, borderRadius: 4 }}
-      />
+      <div className="flex justify-between items-center mb-2">
+        <Typography variant="subtitle2" fontWeight="700" className={status === 'completed' ? 'text-teal-600' : 'text-slate-600 dark:text-slate-300'}>
+          Overall Progress
+        </Typography>
+        <Typography variant="subtitle2" fontWeight="800" className="text-indigo-600">
+          {actualProgress || 0}%
+        </Typography>
+      </div>
+      
+      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner border border-slate-200/50 dark:border-slate-700">
+        <div
+          className={`h-full transition-all duration-1000 ease-out rounded-full ${
+            status === 'completed' 
+              ? 'bg-gradient-to-r from-teal-400 to-teal-600 shadow-[0_0_10px_rgba(20,184,166,0.3)]' 
+              : 'bg-gradient-to-r from-indigo-400 to-indigo-600 shadow-[0_0_10px_rgba(79,70,229,0.3)]'
+          }`}
+          style={{ width: `${actualProgress}%` }}
+        />
+      </div>
     </Box>
   );
 }

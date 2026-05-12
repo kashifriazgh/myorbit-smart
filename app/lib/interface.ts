@@ -112,7 +112,8 @@ export interface Todo {
   privacy?: 'private' | 'public' | 'specific';
   // Dates
   startDate?: Date;
-  dueDate?: Timestamp | Date; // 👈 Allow both types
+  dueDate?: Timestamp | Date;
+  isFlexible?: boolean; // If true, appears daily without a fixed due date
 
   completedAt?: Date | null;
   createdAt: Date;
@@ -339,6 +340,7 @@ export interface LoanRecord {
   note?: string;
   isSettled: boolean;
   createdAt: Date | Timestamp;
+  updatedAt?: Date | Timestamp;
 }
 export interface IncomeSource {
   id?: string;
@@ -748,6 +750,7 @@ export interface SchedulesProps {
   id?: string;
   userId: string;
   date: string; // 'YYYY-MM-DD' format
+  isFlexible?: boolean; // If true, appears daily in 'today' view
   title: string;
   startTime: string; // 'HH:mm' format
   endTime: string; // 'HH:mm' format

@@ -54,7 +54,8 @@ interface Props {
     bankId?: string,
     bankName?: string,
     customPaymentHeadId?: string,
-    customPaymentHeadName?: string
+    customPaymentHeadName?: string,
+    note?: string
   ) => Promise<void>;
   saving: boolean;
 }
@@ -64,6 +65,7 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
   const [showFreezeModal, setShowFreezeModal] = useState(false);
   const [freezeAmount, setFreezeAmount] = useState<number | ''>('');
   const [freezeFrom, setFreezeFrom] = useState<TransactionSource>('in_hand');
+  const [note, setNote] = useState('');
 
   // bank-specific state
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -158,7 +160,8 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
       bank?.id,
       bank?.name,
       customPaymentHead?.id,
-      customPaymentHead?.name
+      customPaymentHead?.name,
+      note
     );
 
     setShowFreezeModal(false);
@@ -166,6 +169,7 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
     setFreezeFrom('in_hand');
     setSelectedBank('');
     setSelectedCustomPaymentHead('');
+    setNote('');
   };
 
   const { theme } = useCustomTheme();
@@ -389,6 +393,18 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
                 )}
               </Stack>
             )}
+
+            <TextField
+              fullWidth
+              label="Note / Reference"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. For car insurance, Savings, etc."
+              size="small"
+              multiline
+              rows={2}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
           </Stack>
         </DialogContent>
 

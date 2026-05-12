@@ -38,6 +38,7 @@ import {
   updateSchedule,
   deleteSchedule,
   getSchedulesByUserAndDateRange,
+  getAllSchedulesByUser,
 } from '../../lib/functions/schedules';
 import SchedulesModal from './SchedulesModal';
 
@@ -156,8 +157,14 @@ const Schedules: React.FC = () => {
         );
         
         const countsMap: { [date: string]: number } = {};
+        const todayStr = new Date().toISOString().split('T')[0];
+        
         range.forEach(s => {
-          countsMap[s.date] = (countsMap[s.date] || 0) + 1;
+          if (s.isFlexible) {
+            countsMap[todayStr] = (countsMap[todayStr] || 0) + 1;
+          } else {
+            countsMap[s.date] = (countsMap[s.date] || 0) + 1;
+          }
         });
         setCounts(countsMap);
       } catch (error) {
@@ -171,12 +178,29 @@ const Schedules: React.FC = () => {
     if (selectedDate && user && viewMode === 'daily') {
       setLoading(true);
       try {
-        const fetchedSchedules = await getSchedulesByUserAndDate(
-          user.uid,
-          selectedDate,
-        );
-        setSchedules(fetchedSchedules);
-      } catch (error) {
+          const fetchedSchedules = await getSchedulesByUserAndDate(
+            user.uid,
+            selectedDate,
+          );
+          
+          // If viewing today, also fetch all flexible schedules
+          const todayStr = new Date().toISOString().split('T')[0];
+          const finalSchedules = fetchedSchedules;
+          
+          if (selectedDate === todayStr) {
+             const all = await getAllSchedulesByUser(user.uid, 500);
+             const flexible = all.filter(s => s.isFlexible);
+             // Merge and avoid duplicates if any
+             const existingIds = new Set(finalSchedules.map(s => s.id));
+             flexible.forEach(s => {
+               if (!existingIds.has(s.id)) {
+                 finalSchedules.push(s);
+               }
+             });
+          }
+          
+          setSchedules(finalSchedules.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+        } catch (error) {
         console.error('Error fetching schedules:', error);
         setSnackbar({
           open: true,
@@ -247,7 +271,8 @@ const Schedules: React.FC = () => {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
-  const getTimeRange = (startTime: string, endTime: string) => {
+  const getTimeRange = (startTime: string, endTime: string, isFlexible?: boolean) => {
+    if (isFlexible) return `Flexible Timing`;
     return `${formatTime(startTime)} - ${formatTime(endTime)}`;
   };
 
@@ -442,9 +467,12 @@ const Schedules: React.FC = () => {
               {/* Group schedules by date for future view */}
               {(() => {
                 const groups: { [date: string]: SchedulesProps[] } = {};
+                const todayStr = new Date().toISOString().split('T')[0];
+
                 schedules.forEach(s => {
-                  if (!groups[s.date]) groups[s.date] = [];
-                  groups[s.date].push(s);
+                  const effectiveDate = s.isFlexible ? todayStr : s.date;
+                  if (!groups[effectiveDate]) groups[effectiveDate] = [];
+                  groups[effectiveDate].push(s);
                 });
 
                 return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([date, items]) => (
@@ -486,12 +514,28 @@ const Schedules: React.FC = () => {
                           >
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%' }}>
                               <Typography variant="caption" sx={{ color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', fontWeight: 500 }}>
-                                {getTimeRange(schedule.startTime, schedule.endTime)}
+                                {getTimeRange(schedule.startTime, schedule.endTime, schedule.isFlexible)}
                               </Typography>
                               <Typography variant="body2" sx={{ fontWeight: 600, color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a' }}>
                                 {schedule.title}
                               </Typography>
                               <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                                {schedule.isFlexible && (
+                                  <Chip 
+                                    label="Flexible" 
+                                    size="small" 
+                                    variant="outlined"
+                                    icon={<Box sx={{ ml: 0.5 }}>✨</Box>}
+                                    sx={{ 
+                                      height: 20, 
+                                      fontSize: '0.65rem', 
+                                      fontWeight: 900,
+                                      borderColor: '#8b5cf6',
+                                      color: '#8b5cf6',
+                                      borderWidth: '1.5px'
+                                    }} 
+                                  />
+                                )}
                                 {schedule.objective && (
                                   <Chip label={schedule.objective} size="small" sx={{ height: 20, fontSize: '0.7rem', backgroundColor: getPriorityColor(schedule.priority || 'low'), color: 'white' }} />
                                 )}
@@ -502,7 +546,18 @@ const Schedules: React.FC = () => {
                             </Box>
                           </StepLabel>
                           <StepContent>
-                            <Box display="flex" justifyContent="flex-end" mt={1}>
+                            <Box display="flex" justifyContent="flex-end" alignItems="center" mt={1} gap={1}>
+                              {schedule.isFlexible && (
+                                <Button 
+                                  size="small" 
+                                  variant="text" 
+                                  startIcon={<CalendarIcon sx={{ fontSize: 14 }} />}
+                                  onClick={() => handleEditSchedule(schedule.id!)}
+                                  sx={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'none' }}
+                                >
+                                  Add Specific Date
+                                </Button>
+                              )}
                               <IconButton size="small" onClick={() => handleEditSchedule(schedule.id!)}>
                                 <EditIcon fontSize="small" />
                               </IconButton>

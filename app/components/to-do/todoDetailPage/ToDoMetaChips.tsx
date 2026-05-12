@@ -33,9 +33,10 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
     try {
       await updateDoc(doc(db, 'todos', todo.id), {
         dueDate: Timestamp.fromDate(newDueDate),
+        isFlexible: false, // Turn off flexible if date is set
         updatedAt: new Date(),
       });
-      onUpdate({ dueDate: newDueDate });
+      onUpdate({ dueDate: newDueDate, isFlexible: false });
       setDueDateOpen(false);
     } catch (err) {
       console.error('❌ Failed to reschedule:', err);
@@ -136,30 +137,48 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
         }}
       />
 
-      {/* Due Date Chip */}
-      {todo.dueDate && (
+      {/* Due Date Chip or Flexible Chip */}
+      {todo.isFlexible ? (
         <Chip
-          icon={<CalendarIcon sx={{ fontSize: '1rem !important' }} />}
-          label={
-            todo.dueDate instanceof Date
-              ? moment(todo.dueDate).format('MMM D, YYYY')
-              : moment(todo.dueDate.toDate()).format('MMM D, YYYY')
-          }
+          icon={<Box sx={{ ml: 0.5, fontSize: '1rem' }}>✨</Box>}
+          label="FLEXIBLE"
           onClick={() => {
-            const date = todo.dueDate instanceof Date 
-              ? todo.dueDate 
-              : todo.dueDate.toDate();
-            setNewDueDate(date);
+            setNewDueDate(new Date());
             setDueDateOpen(true);
           }}
-          className="rounded-xl px-2 font-bold transition-all hover:scale-105"
+          className="rounded-xl px-2 font-black tracking-wider text-[10px] transition-all hover:scale-105"
           sx={{
-            bgcolor: theme?.mode === 'dark' ? 'rgba(20, 184, 166, 0.1)' : '#f0fdfa',
-            color: '#0d9488',
-            border: '1px solid #ccfbf1',
+            bgcolor: theme?.mode === 'dark' ? 'rgba(139, 92, 246, 0.15)' : '#f5f3ff',
+            color: '#8b5cf6',
+            border: '1px solid #ddd6fe',
             '& .MuiChip-icon': { color: 'inherit' }
           }}
         />
+      ) : (
+        todo.dueDate && (
+          <Chip
+            icon={<CalendarIcon sx={{ fontSize: '1rem !important' }} />}
+            label={
+              todo.dueDate instanceof Date
+                ? moment(todo.dueDate).format('MMM D, YYYY')
+                : moment(todo.dueDate.toDate()).format('MMM D, YYYY')
+            }
+            onClick={() => {
+              const date = todo.dueDate instanceof Date 
+                ? todo.dueDate 
+                : todo.dueDate.toDate();
+              setNewDueDate(date);
+              setDueDateOpen(true);
+            }}
+            className="rounded-xl px-2 font-bold transition-all hover:scale-105"
+            sx={{
+              bgcolor: theme?.mode === 'dark' ? 'rgba(20, 184, 166, 0.1)' : '#f0fdfa',
+              color: '#0d9488',
+              border: '1px solid #ccfbf1',
+              '& .MuiChip-icon': { color: 'inherit' }
+            }}
+          />
+        )
       )}
     </Stack>
 

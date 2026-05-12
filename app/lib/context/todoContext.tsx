@@ -69,7 +69,7 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({
           return {
             ...(data as Todo),
             id: doc.id,
-            dueDate: data.dueDate?.toDate?.() || new Date(data.dueDate),
+            dueDate: data.dueDate?.toDate?.() || (data.dueDate ? new Date(data.dueDate) : null),
             createdAt: data.createdAt?.toDate?.() || new Date(data.createdAt),
             updatedAt: data.updatedAt?.toDate?.() || new Date(data.updatedAt),
           };

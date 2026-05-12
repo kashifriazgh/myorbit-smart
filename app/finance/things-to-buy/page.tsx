@@ -13,15 +13,14 @@ import {
   DialogActions,
   Card,
   CardContent,
-  Chip,
   LinearProgress,
   Fade,
-  Slide,
   Stack,
   useMediaQuery,
   Avatar,
-  Tooltip,
-  Divider,
+  Paper,
+  Zoom,
+  Grid,
 } from '@mui/material';
 import {
   collection,
@@ -42,12 +41,15 @@ import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import AddIcon from '@mui/icons-material/Add';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import HistoryIcon from '@mui/icons-material/History';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import moment from 'moment-timezone';
 
 export default function ThingsToBuyPage() {
   const { user } = useAuth();
   const theme = useTheme();
   const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [loading, setLoading] = useState(true);
@@ -96,512 +98,265 @@ export default function ThingsToBuyPage() {
 
   if (loading) {
     return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="60vh"
-        flexDirection="column"
-        gap={2}
-      >
-        <CircularProgress size={48} />
-        <Typography variant="body2" color="text.secondary">
-          Loading your shopping plans...
+      <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height="100vh" gap={2}>
+        <CircularProgress size={60} thickness={4} sx={{ color: '#667eea' }} />
+        <Typography variant="h6" fontWeight="bold" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+          Organizing your plans...
         </Typography>
       </Box>
     );
   }
 
-  // Calculate summary statistics
-  const totalPlans = plans.length;
   const totalItems = plans.reduce((sum, plan) => sum + plan.items.length, 0);
-  const totalBudget = plans.reduce(
-    (sum, plan) =>
-      sum +
-      plan.items.reduce(
-        (itemSum, item) => itemSum + (item.estimatedPrice ?? 0),
-        0
-      ),
-    0
-  );
   const totalPurchased = plans.reduce(
     (sum, plan) => sum + plan.items.filter((item) => item.isPurchased).length,
     0
   );
+  const totalBudget = plans.reduce(
+    (sum, plan) => sum + (plan.budgetLimit || 0),
+    0
+  );
+  const totalPlans = plans.length;
 
   return (
     <Box
+      maxWidth="1000px"
+      mx="auto"
       sx={{
-        maxWidth: 1200,
-        mx: 'auto',
-        my: 4,
-        px: isMobile ? 1 : 3,
-        backgroundColor: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-        color: customTheme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+        color: isDark ? '#f1f5f9' : '#0f172a',
         minHeight: '100vh',
-        borderRadius: customTheme?.mode === 'dark' ? '8px' : '0px',
+        p: isMobile ? 1.5 : 4,
       }}
     >
       {/* Hero Header */}
-      <Fade in={true} timeout={800}>
-        <Card
-          elevation={3}
+      <Fade in timeout={800}>
+        <Paper
+          elevation={0}
           sx={{
+            p: isMobile ? 4 : 6,
             mb: 4,
+            borderRadius: 6,
             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             color: 'white',
-            overflow: 'hidden',
             position: 'relative',
+            overflow: 'hidden',
+            boxShadow: '0 20px 25px -5px rgba(118, 75, 162, 0.3)'
           }}
         >
-          <CardContent sx={{ p: isMobile ? 3 : 4 }}>
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              flexWrap="wrap"
-              gap={2}
-            >
-              <Box>
-                <Typography variant="h4" fontWeight="bold" gutterBottom>
-                  Shopping Plans
-                </Typography>
-                <Typography variant="subtitle1" sx={{ opacity: 0.9 }}>
-                  Organize and track your shopping lists
-                </Typography>
-              </Box>
-              <Button
+          <ShoppingCartIcon sx={{ position: 'absolute', top: -30, right: -30, fontSize: 240, opacity: 0.1, transform: 'rotate(-15deg)' }} />
+          
+          <Stack spacing={2} position="relative" zIndex={1}>
+             <Typography variant={isMobile ? 'h3' : 'h2'} fontWeight="900" sx={{ letterSpacing: '-0.03em', lineHeight: 1 }}>
+               Shopping Plans
+             </Typography>
+             <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 500, maxWidth: '500px' }}>
+               Create, manage, and track your purchase goals with intelligent budgeting.
+             </Typography>
+             <Box pt={2}>
+               <Button
                 onClick={() => setOpenModal(true)}
                 variant="contained"
                 size="large"
                 startIcon={<AddIcon />}
                 sx={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                  backdropFilter: 'blur(10px)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                    transform: 'translateY(-2px)',
-                  },
+                  bgcolor: 'white',
+                  color: '#764ba2',
+                  fontWeight: 900,
+                  px: 4,
+                  py: 1.5,
+                  borderRadius: 4,
+                  textTransform: 'none',
+                  fontSize: '1.1rem',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.9)', transform: 'translateY(-2px)' },
                   transition: 'all 0.3s ease',
                 }}
               >
                 Create New Plan
               </Button>
-            </Box>
-          </CardContent>
-        </Card>
+             </Box>
+          </Stack>
+        </Paper>
       </Fade>
 
-      {/* Summary Statistics */}
+      {/* Stats Overview */}
       {totalPlans > 0 && (
-        <Fade in={true} timeout={1000}>
-          <Box mb={3}>
-            <Card
-              elevation={0}
-              sx={{
-                p: 2,
-                backgroundColor:
-                  theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.02)'
-                    : 'rgba(0, 0, 0, 0.02)',
-                border: `1px solid ${theme.palette.divider}`,
-                borderRadius: 2,
-              }}
-            >
-              <Typography
-                variant="subtitle1"
-                fontWeight="bold"
-                mb={2}
-                color="primary"
-              >
-                Quick Overview
-              </Typography>
-              <Stack
-                direction={isMobile ? 'column' : 'row'}
-                spacing={1.5}
-                divider={
-                  !isMobile ? <Divider orientation="vertical" flexItem /> : null
-                }
-              >
-                <Box display="flex" alignItems="center" gap={1.5} flex={1}>
-                  <Avatar
-                    sx={{ bgcolor: 'primary.main', width: 32, height: 32 }}
-                  >
-                    <ShoppingCartIcon sx={{ fontSize: 18 }} />
-                  </Avatar>
-                  <Box>
-                    <Typography
-                      variant="h6"
-                      fontWeight="bold"
-                      sx={{ lineHeight: 1.2 }}
-                    >
-                      {totalPlans}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Plans
-                    </Typography>
-                  </Box>
-                </Box>
-
-                <Box display="flex" alignItems="center" gap={1.5} flex={1}>
-                  <Avatar
-                    sx={{ bgcolor: 'success.main', width: 32, height: 32 }}
-                  >
-                    <CheckCircleIcon sx={{ fontSize: 18 }} />
-                  </Avatar>
-                  <Box>
-                    <Typography
-                      variant="h6"
-                      fontWeight="bold"
-                      sx={{ lineHeight: 1.2 }}
-                    >
-                      {totalPurchased}/{totalItems}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Purchased
-                    </Typography>
-                  </Box>
-                </Box>
-
-                <Box display="flex" alignItems="center" gap={1.5} flex={1}>
-                  <Avatar
-                    sx={{ bgcolor: 'warning.main', width: 32, height: 32 }}
-                  >
-                    <AttachMoneyIcon sx={{ fontSize: 18 }} />
-                  </Avatar>
-                  <Box>
-                    <Typography
-                      variant="h6"
-                      fontWeight="bold"
-                      sx={{ lineHeight: 1.2 }}
-                    >
-                      Rs {totalBudget.toLocaleString()}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Total Budget
-                    </Typography>
-                  </Box>
-                </Box>
-              </Stack>
-            </Card>
-          </Box>
+        <Fade in timeout={1000}>
+          <Grid container spacing={3} mb={6}>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <Paper sx={{ p: 2.5, borderRadius: 5, bgcolor: isDark ? '#1e293b' : '#ffffff', textAlign: 'center', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}` }}>
+                <Avatar sx={{ bgcolor: 'rgba(102, 126, 234, 0.1)', color: '#667eea', mx: 'auto', mb: 1 }}><ShoppingCartIcon /></Avatar>
+                <Typography variant="h5" fontWeight="900">{totalPlans}</Typography>
+                <Typography variant="caption" fontWeight="800" color="text.secondary">TOTAL PLANS</Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <Paper sx={{ p: 2.5, borderRadius: 5, bgcolor: isDark ? '#1e293b' : '#ffffff', textAlign: 'center', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}` }}>
+                <Avatar sx={{ bgcolor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', mx: 'auto', mb: 1 }}><CheckCircleIcon /></Avatar>
+                <Typography variant="h5" fontWeight="900">{totalPurchased}</Typography>
+                <Typography variant="caption" fontWeight="800" color="text.secondary">ITEMS BOUGHT</Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <Paper sx={{ p: 2.5, borderRadius: 5, bgcolor: isDark ? '#1e293b' : '#ffffff', textAlign: 'center', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}` }}>
+                <Avatar sx={{ bgcolor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', mx: 'auto', mb: 1 }}><AttachMoneyIcon /></Avatar>
+                <Typography variant="h5" fontWeight="900">₨{(totalBudget/1000).toFixed(1)}k</Typography>
+                <Typography variant="caption" fontWeight="800" color="text.secondary">EST. BUDGET</Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <Paper sx={{ p: 2.5, borderRadius: 5, bgcolor: isDark ? '#1e293b' : '#ffffff', textAlign: 'center', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}` }}>
+                <Avatar sx={{ bgcolor: 'rgba(148, 163, 184, 0.1)', color: '#94a3b8', mx: 'auto', mb: 1 }}><HistoryIcon /></Avatar>
+                <Typography variant="h5" fontWeight="900">{totalItems}</Typography>
+                <Typography variant="caption" fontWeight="800" color="text.secondary">TOTAL ITEMS</Typography>
+              </Paper>
+            </Grid>
+          </Grid>
         </Fade>
       )}
 
-      {/* Visual Separator */}
-      {totalPlans > 0 && (
-        <Box mb={3}>
-          <Divider sx={{ mb: 2 }} />
-          <Typography variant="h6" fontWeight="bold" color="primary">
-            Your Shopping Plans
-          </Typography>
-        </Box>
-      )}
-
-      {/* Plans Grid */}
+      {/* Plans List */}
       {totalPlans === 0 ? (
-        <Fade in={true} timeout={1200}>
-          <Card
-            elevation={2}
-            sx={{
-              textAlign: 'center',
-              p: 6,
-              background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-              border: '2px dashed',
-              borderColor: 'primary.main',
-              opacity: 0.7,
+        <Zoom in timeout={1200}>
+          <Box 
+            textAlign="center" 
+            py={10} 
+            sx={{ 
+              borderRadius: 8, 
+              border: `3px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`,
+              bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#ffffff'
             }}
           >
-            <Avatar
-              sx={{
-                width: 80,
-                height: 80,
-                mx: 'auto',
-                mb: 3,
-                bgcolor: 'primary.main',
-                opacity: 0.8,
-              }}
-            >
-              <ShoppingCartIcon sx={{ fontSize: 40 }} />
+            <Avatar sx={{ width: 100, height: 100, mx: 'auto', mb: 3, bgcolor: 'primary.main', opacity: 0.8 }}>
+              <ShoppingCartIcon sx={{ fontSize: 50 }} />
             </Avatar>
-            <Typography
-              variant="h5"
-              fontWeight="bold"
-              gutterBottom
-              color="primary"
-            >
-              No Shopping Plans Yet
-            </Typography>
-            <Typography variant="body1" color="text.secondary" mb={3}>
-              Start organizing your shopping by creating your first plan
-            </Typography>
-            <Button
-              onClick={() => setOpenModal(true)}
-              variant="contained"
-              size="large"
-              startIcon={<AddIcon />}
-              sx={{ px: 4 }}
-            >
-              Create Your First Plan
+            <Typography variant="h5" fontWeight="900" gutterBottom>No Plans Yet</Typography>
+            <Typography variant="body1" color="text.secondary" mb={4}>Every big purchase starts with a simple list.</Typography>
+            <Button variant="contained" size="large" onClick={() => setOpenModal(true)} sx={{ borderRadius: 4, fontWeight: 900, px: 6 }}>
+              Get Started
             </Button>
-          </Card>
-        </Fade>
+          </Box>
+        </Zoom>
       ) : (
-        <Box>
-          <Stack spacing={3}>
-            {plans.map((plan, index) => {
-              const totalBudget = plan.items.reduce(
-                (sum, item) => sum + (item.estimatedPrice ?? 0),
-                0
-              );
-              const purchasedItems = plan.items.filter(
-                (item) => item.isPurchased
-              ).length;
-              const totalItems = plan.items.length;
-              const progressPercentage =
-                totalItems > 0 ? (purchasedItems / totalItems) * 100 : 0;
-              const totalSpent = plan.items.reduce(
-                (sum, item) =>
-                  sum +
-                  (item.isPurchased
-                    ? item.purchasedPrice ?? item.estimatedPrice
-                    : 0),
-                0
-              );
-
-              return (
-                <Slide
-                  key={plan.id}
-                  direction="up"
-                  in={true}
-                  timeout={800 + index * 100}
-                >
-                  <Card
-                    elevation={2}
-                    sx={{
-                      transition: 'all 0.3s ease',
+        <Grid container spacing={4}>
+          {plans.map((plan, index) => {
+            const planBudget = plan.budgetLimit || 0;
+            const purchasedCount = plan.items.filter(i => i.isPurchased).length;
+            const totalCount = plan.items.length;
+            const progress = totalCount > 0 ? (purchasedCount / totalCount) * 100 : 0;
+            const spentAmount = plan.items.reduce((s, i) => s + (i.isPurchased ? (i.purchasedPrice ?? i.estimatedPrice) : 0), 0);
+            
+            return (
+              <Grid size={{ xs: 12, md: 6 }} key={plan.id}>
+                <Fade in timeout={500 + index * 100}>
+                  <Card 
+                    elevation={0}
+                    sx={{ 
+                      borderRadius: 6, 
+                      overflow: 'hidden',
+                      height: '100%',
+                      bgcolor: isDark ? '#1e293b' : '#ffffff',
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`,
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                       '&:hover': {
-                        transform: 'translateY(-4px)',
-                        boxShadow: theme.shadows[8],
-                      },
+                        transform: 'translateY(-8px)',
+                        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+                        borderColor: 'primary.main'
+                      }
                     }}
                   >
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Box
-                        display="flex"
-                        justifyContent="space-between"
-                        alignItems="flex-start"
-                        mb={2}
-                      >
-                        <Box flexGrow={1}>
-                          <Link
-                            href={`/finance/things-to-buy/${plan.id}`}
-                            style={{
-                              textDecoration: 'none',
-                              color: 'inherit',
-                              display: 'block',
+                    <Box sx={{ height: 8, bgcolor: 'primary.main', opacity: progress === 100 ? 1 : 0.3 }} />
+                    <CardContent sx={{ p: 4 }}>
+                       <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={3}>
+                          <Box>
+                             <Typography variant="h5" fontWeight="900" gutterBottom>{plan.title}</Typography>
+                             <Typography variant="caption" fontWeight="700" color="text.secondary">
+                               LAST UPDATED {moment(plan.updatedAt).fromNow().toUpperCase()}
+                             </Typography>
+                          </Box>
+                          <IconButton color="error" size="small" onClick={() => setDeleteTargetId(plan.id!)}>
+                             <DeleteIcon />
+                          </IconButton>
+                       </Box>
+
+                       <Grid container spacing={2} mb={3}>
+                          <Grid size={{ xs: 6 }}>
+                             <Typography variant="caption" fontWeight="900" color="text.secondary">BUDGET</Typography>
+                             <Typography variant="h6" fontWeight="900">₨ {planBudget.toLocaleString()}</Typography>
+                          </Grid>
+                          <Grid size={{ xs: 6 }}>
+                             <Typography variant="caption" fontWeight="900" color="text.secondary">SPENT</Typography>
+                             <Typography variant="h6" fontWeight="900" color="primary">₨ {spentAmount.toLocaleString()}</Typography>
+                          </Grid>
+                       </Grid>
+
+                       <Box mb={3}>
+                          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                             <Typography variant="caption" fontWeight="900" color="text.secondary">PROGRESS</Typography>
+                             <Typography variant="caption" fontWeight="900" color="primary">{purchasedCount}/{totalCount} ITEMS</Typography>
+                          </Box>
+                          <LinearProgress 
+                            variant="determinate" 
+                            value={progress} 
+                            sx={{ height: 8, borderRadius: 4, bgcolor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}
+                          />
+                       </Box>
+
+                       <Link href={`/finance/things-to-buy/${plan.id}`} passHref style={{ textDecoration: 'none' }}>
+                          <Button 
+                            fullWidth 
+                            variant="outlined" 
+                            endIcon={<ArrowForwardIcon />}
+                            sx={{ 
+                              borderRadius: 3, 
+                              fontWeight: 900, 
+                              py: 1.2, 
+                              textTransform: 'none',
+                              borderWidth: 2,
+                              '&:hover': { borderWidth: 2 }
                             }}
                           >
-                            <Typography
-                              variant="h6"
-                              fontWeight="bold"
-                              gutterBottom
-                            >
-                              {plan.title}
-                            </Typography>
-                          </Link>
-
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            flexWrap="wrap"
-                            gap={1}
-                            mb={2}
-                          >
-                            <Chip
-                              icon={<ShoppingCartIcon />}
-                              label={`${totalItems} items`}
-                              size="small"
-                              color="primary"
-                              variant="outlined"
-                            />
-                            <Chip
-                              icon={<CheckCircleIcon />}
-                              label={`${purchasedItems} purchased`}
-                              size="small"
-                              color="success"
-                              variant="outlined"
-                            />
-                            <Chip
-                              icon={<AttachMoneyIcon />}
-                              label={`Rs ${totalBudget.toLocaleString()}`}
-                              size="small"
-                              color="warning"
-                              variant="outlined"
-                            />
-                          </Stack>
-
-                          {/* Progress Bar */}
-                          <Box mb={2}>
-                            <Box
-                              display="flex"
-                              justifyContent="space-between"
-                              alignItems="center"
-                              mb={1}
-                            >
-                              <Typography
-                                variant="body2"
-                                color="text.secondary"
-                              >
-                                Progress
-                              </Typography>
-                              <Typography variant="body2" fontWeight="bold">
-                                {Math.round(progressPercentage)}%
-                              </Typography>
-                            </Box>
-                            <LinearProgress
-                              variant="determinate"
-                              value={progressPercentage}
-                              sx={{
-                                height: 8,
-                                borderRadius: 4,
-                                backgroundColor: theme.palette.grey[200],
-                                '& .MuiLinearProgress-bar': {
-                                  borderRadius: 4,
-                                  backgroundColor:
-                                    progressPercentage === 100
-                                      ? '#4caf50'
-                                      : '#2196f3',
-                                },
-                              }}
-                            />
-                          </Box>
-
-                          {/* Budget Info */}
-                          {plan.budgetLimit && (
-                            <Box
-                              display="flex"
-                              justifyContent="space-between"
-                              alignItems="center"
-                            >
-                              <Typography
-                                variant="body2"
-                                color="text.secondary"
-                              >
-                                Budget: Rs {plan.budgetLimit.toLocaleString()}
-                              </Typography>
-                              <Typography
-                                variant="body2"
-                                color={
-                                  totalSpent > plan.budgetLimit
-                                    ? 'error.main'
-                                    : 'text.secondary'
-                                }
-                                fontWeight="bold"
-                              >
-                                Spent: Rs {totalSpent.toLocaleString()}
-                              </Typography>
-                            </Box>
-                          )}
-
-                          {/* Created Date */}
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            mt={1}
-                            display="block"
-                          >
-                            Created:{' '}
-                            {moment(
-                              plan.createdAt instanceof Timestamp
-                                ? plan.createdAt.toDate()
-                                : plan.createdAt
-                            ).format('MMM D, YYYY')}
-                          </Typography>
-                        </Box>
-
-                        <Box
-                          display="flex"
-                          flexDirection="column"
-                          alignItems="center"
-                          gap={1}
-                        >
-                          <Tooltip title="Delete Plan">
-                            <IconButton
-                              color="error"
-                              onClick={() => setDeleteTargetId(plan.id!)}
-                              disabled={deleting}
-                              sx={{
-                                '&:hover': {
-                                  backgroundColor: 'error.light',
-                                  color: 'white',
-                                },
-                              }}
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-                      </Box>
+                            View Details
+                          </Button>
+                       </Link>
                     </CardContent>
                   </Card>
-                </Slide>
-              );
-            })}
-          </Stack>
-        </Box>
+                </Fade>
+              </Grid>
+            );
+          })}
+        </Grid>
       )}
 
-      {/* Add Plan Modal */}
-      <BuyItemModal
-        open={openModal}
-        onClose={() => setOpenModal(false)}
-        onItemCreated={(item) => setPlans((prev) => [...prev, item])}
-      />
-
-      {/* Confirm Delete Dialog */}
+      {/* Delete Confirmation */}
       <Dialog
-        open={!!deleteTargetId}
+        open={Boolean(deleteTargetId)}
         onClose={() => setDeleteTargetId(null)}
-        maxWidth="sm"
-        fullWidth
+        PaperProps={{ sx: { borderRadius: 5 } }}
       >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Box display="flex" alignItems="center" gap={1}>
-            <DeleteIcon color="error" />
-            Confirm Delete
-          </Box>
-        </DialogTitle>
-        <Divider />
-        <DialogContent sx={{ pt: 3 }}>
-          <Typography variant="body1">
-            Are you sure you want to delete this shopping plan? This action
-            cannot be undone.
-          </Typography>
-          <Typography variant="body2" color="text.secondary" mt={1}>
-            All items and progress in this plan will be permanently removed.
-          </Typography>
+        <DialogTitle sx={{ fontWeight: 900 }}>Delete Plan?</DialogTitle>
+        <DialogContent>
+          <Typography fontWeight="600">This will permanently remove the shopping plan and all its items. This action cannot be undone.</Typography>
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 1 }}>
-          <Button
-            onClick={() => setDeleteTargetId(null)}
-            disabled={deleting}
-            variant="outlined"
-          >
-            Cancel
-          </Button>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => setDeleteTargetId(null)} sx={{ fontWeight: 700 }}>Cancel</Button>
           <Button
             variant="contained"
             color="error"
             onClick={confirmDelete}
             disabled={deleting}
-            startIcon={deleting && <CircularProgress size={18} />}
+            sx={{ borderRadius: 3, fontWeight: 900, px: 3 }}
           >
-            {deleting ? 'Deleting...' : 'Delete Plan'}
+            {deleting ? 'Deleting...' : 'Delete Permanently'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <BuyItemModal
+        open={openModal}
+        onClose={() => setOpenModal(false)}
+        onItemCreated={(item) => setPlans((prev) => [...prev, item])}
+      />
     </Box>
   );
 }
