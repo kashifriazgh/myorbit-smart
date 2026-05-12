@@ -12,8 +12,20 @@ import {
   AlertTitle,
   IconButton,
   InputAdornment,
+  Paper,
+  Fade,
+  Avatar,
+  Divider,
 } from '@mui/material';
-import { Visibility, VisibilityOff } from '@mui/icons-material';
+import {
+  Visibility,
+  VisibilityOff,
+  PersonAdd as PersonAddIcon,
+  Email as EmailIcon,
+  Lock as LockIcon,
+  Person as PersonIcon,
+} from '@mui/icons-material';
+import Link from 'next/link';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import {
   doc,
@@ -33,6 +45,7 @@ import { migrateGuestDataToUser } from '@/app/lib/guestDataMigration';
 export default function SignupPage() {
   const router = useRouter();
   const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
   const { user: currentUser, isGuest } = useAuth();
 
   const [firstName, setFirstName] = useState('');
@@ -184,107 +197,185 @@ export default function SignupPage() {
 
   return (
     <Box
-      maxWidth={400}
-      mx="auto"
-      my={10}
       sx={{
-        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
         minHeight: '100vh',
-        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: isDark
+          ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
+          : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+        p: 2,
       }}
     >
-      <Typography variant="h5" mb={2}>
-        Sign Up
-      </Typography>
+      <Fade in timeout={800}>
+        <Paper
+          elevation={0}
+          sx={{
+            maxWidth: 480,
+            width: '100%',
+            p: { xs: 3, md: 5 },
+            borderRadius: 6,
+            bgcolor: isDark ? 'rgba(30, 41, 59, 0.8)' : 'rgba(255, 255, 255, 0.9)',
+            backdropFilter: 'blur(12px)',
+            border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.2)'}`,
+            boxShadow: isDark 
+              ? '0 25px 50px -12px rgba(0, 0, 0, 0.5)' 
+              : '0 25px 50px -12px rgba(0, 0, 0, 0.1)',
+          }}
+        >
+          <Box display="flex" flexDirection="column" alignItems="center" mb={4}>
+            <Avatar 
+              sx={{ 
+                width: 64, 
+                height: 64, 
+                mb: 2, 
+                background: 'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)',
+                boxShadow: '0 8px 16px rgba(236, 72, 153, 0.3)'
+              }}
+            >
+              <PersonAddIcon fontSize="large" />
+            </Avatar>
+            <Typography variant="h4" fontWeight="900" sx={{ 
+              background: 'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              mb: 1
+            }}>
+              Create Account
+            </Typography>
+            <Typography variant="body2" color="text.secondary" fontWeight="500">
+              Join us to start managing your data
+            </Typography>
+          </Box>
 
-      {isGuest && currentUser && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          <AlertTitle>🔄 Migrate Your Data</AlertTitle>
-          You&#39;re currently using MyOrbit as a guest. Sign up now to save
-          your data permanently and access it from any device!
-        </Alert>
-      )}
+          {isGuest && currentUser && (
+            <Alert severity="info" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
+              <AlertTitle sx={{ fontWeight: 800 }}>🔄 Migrate Your Data</AlertTitle>
+              You&apos;re currently using MyOrbit as a guest. Sign up now to save
+              your data permanently and access it from any device!
+            </Alert>
+          )}
 
-      {isMasterBlocked && !isInvitedUser && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          A master user already exists. Signup is restricted to invited users
-          only.
-        </Alert>
-      )}
+          {isMasterBlocked && !isInvitedUser && (
+            <Alert severity="warning" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
+              A master user already exists. Signup is restricted to invited users only.
+            </Alert>
+          )}
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+          {error && (
+            <Alert severity="error" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
+              {error}
+            </Alert>
+          )}
 
-      <TextField
-        fullWidth
-        label="First Name"
-        margin="normal"
-        value={firstName}
-        onChange={(e) => setFirstName(e.target.value)}
-        disabled={loading}
-      />
-
-      <TextField
-        fullWidth
-        label="Last Name"
-        margin="normal"
-        value={lastName}
-        onChange={(e) => setLastName(e.target.value)}
-        disabled={loading}
-      />
-
-      <TextField
-        fullWidth
-        label="Email"
-        margin="normal"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        disabled={loading}
-      />
-
-      <TextField
-        fullWidth
-        label="Password"
-        type={showPassword ? 'text' : 'password'}
-        margin="normal"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        disabled={loading}
-        InputProps={{
-          endAdornment: (
-            <InputAdornment position="end">
-              <IconButton
-                onClick={() => setShowPassword(!showPassword)}
-                edge="end"
+          <form onSubmit={(e) => { e.preventDefault(); handleSignup(); }}>
+            <Box display="flex" gap={2}>
+              <TextField
+                fullWidth
+                label="First Name"
+                margin="normal"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
                 disabled={loading}
-              >
-                {showPassword ? <VisibilityOff /> : <Visibility />}
-              </IconButton>
-            </InputAdornment>
-          ),
-        }}
-      />
+                InputProps={{
+                  startAdornment: <InputAdornment position="start"><PersonIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
+                  sx: { borderRadius: 3 }
+                }}
+              />
+              <TextField
+                fullWidth
+                label="Last Name"
+                margin="normal"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                disabled={loading}
+                InputProps={{
+                  sx: { borderRadius: 3 }
+                }}
+              />
+            </Box>
 
-      <Button
-        variant="contained"
-        fullWidth
-        onClick={handleSignup}
-        disabled={
-          loading ||
-          !firstName ||
-          !lastName ||
-          !email ||
-          !password ||
-          (isMasterBlocked && !isInvitedUser)
-        }
-        sx={{ mt: 2 }}
-      >
-        {loading ? 'Signing up...' : 'Sign Up'}
-      </Button>
+            <TextField
+              fullWidth
+              label="Email Address"
+              margin="normal"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
+              InputProps={{
+                startAdornment: <InputAdornment position="start"><EmailIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
+                sx: { borderRadius: 3 }
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="Password"
+              type={showPassword ? 'text' : 'password'}
+              margin="normal"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+              InputProps={{
+                startAdornment: <InputAdornment position="start"><LockIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" disabled={loading}>
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+                sx: { borderRadius: 3 }
+              }}
+            />
+
+            <Button
+              variant="contained"
+              fullWidth
+              type="submit"
+              disabled={loading || !firstName || !lastName || !email || !password || (isMasterBlocked && !isInvitedUser)}
+              sx={{ 
+                mt: 4, 
+                mb: 3, 
+                py: 1.5, 
+                borderRadius: 3,
+                fontWeight: 800,
+                fontSize: '1rem',
+                textTransform: 'none',
+                background: 'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)',
+                boxShadow: '0 8px 16px rgba(236, 72, 153, 0.3)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #db2777 0%, #e11d48 100%)',
+                  boxShadow: '0 12px 20px rgba(236, 72, 153, 0.4)',
+                },
+                '&.Mui-disabled': {
+                  background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                }
+              }}
+            >
+              {loading ? 'Creating Account...' : 'Sign Up'}
+            </Button>
+          </form>
+
+          <Divider sx={{ my: 3 }}>
+            <Typography variant="body2" color="text.secondary" fontWeight="500">
+              OR
+            </Typography>
+          </Divider>
+
+          <Box textAlign="center">
+            <Typography variant="body2" color="text.secondary" fontWeight="500">
+              Already have an account?{' '}
+              <Link href="/user/login" style={{ textDecoration: 'none' }}>
+                <Typography component="span" sx={{ color: '#ec4899', fontWeight: 700, '&:hover': { textDecoration: 'underline' } }}>
+                  Sign in
+                </Typography>
+              </Link>
+            </Typography>
+          </Box>
+        </Paper>
+      </Fade>
     </Box>
   );
 }

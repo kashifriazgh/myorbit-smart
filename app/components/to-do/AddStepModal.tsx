@@ -50,7 +50,7 @@ export default function AddStepModal({
   const handleAdd = () => {
     if (!text.trim()) return;
 
-    const payload: { text: string; description: string; assignee?: string; dueDate?: string } = {
+    const payload: NewStepPayload = {
       text: text.trim(),
       description: desc.trim() || '',
     };
