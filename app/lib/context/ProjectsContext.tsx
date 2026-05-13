@@ -21,6 +21,7 @@ import {
 import { db } from '@/app/lib/firebase';
 import { Project, Agenda, Point } from '@/app/lib/interface';
 import { useAuth } from './userContext';
+import { sanitizeObject } from '@/app/lib/utilts';
 
 interface ProjectsContextType {
   projects: Project[];
@@ -102,11 +103,11 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const addProject = async (projectData: Omit<Project, 'id' | 'createdAt'>) => {
     try {
-      const docRef = await addDoc(collection(db, 'projects'), {
+      const docRef = await addDoc(collection(db, 'projects'), sanitizeObject({
         ...projectData,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      }));
       return docRef.id;
     } catch (error) {
       console.error('Error adding project:', error);
@@ -117,10 +118,10 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({
   const updateProject = async (id: string, updates: Partial<Project>) => {
     try {
       const projectRef = doc(db, 'projects', id);
-      await updateDoc(projectRef, {
+      await updateDoc(projectRef, sanitizeObject({
         ...updates,
         updatedAt: serverTimestamp(),
-      });
+      }));
     } catch (error) {
       console.error('Error updating project:', error);
       throw error;

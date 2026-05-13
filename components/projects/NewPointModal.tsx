@@ -93,7 +93,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
           type: 'string', 
           content: stringContent, 
           colorScheme,
-          groupName: groupName.trim() || undefined
+          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
         });
       } else if (selectedType === 'todo') {
         const todoId = await addTodo({
@@ -113,7 +113,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
         await addPoint(projectId, agendaId, { 
           type: 'todo', 
           todoId,
-          groupName: groupName.trim() || undefined
+          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
         });
       } else if (selectedType === 'schedule') {
         const scheduleId = await addSchedule({
@@ -129,7 +129,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
         await addPoint(projectId, agendaId, { 
           type: 'schedule', 
           scheduleId,
-          groupName: groupName.trim() || undefined
+          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
         });
       } else if (selectedType === 'goal') {
         const goalId = await addGoal({
@@ -146,21 +146,21 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
         await addPoint(projectId, agendaId, { 
           type: 'goal', 
           goalId,
-          groupName: groupName.trim() || undefined
+          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
         });
       } else if (selectedType === 'streak') {
         await addPoint(projectId, agendaId, { 
           type: 'streak', 
           content: streakTitle,
           count: streakCount,
-          groupName: groupName.trim() || undefined
+          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
         });
       } else if (selectedType === 'keyvalue') {
         await addPoint(projectId, agendaId, { 
           type: 'keyvalue', 
           key: kvKey, 
           value: kvValue,
-          groupName: groupName.trim() || undefined
+          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
         });
       }
 

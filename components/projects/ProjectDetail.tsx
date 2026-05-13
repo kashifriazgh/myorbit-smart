@@ -23,7 +23,7 @@ interface ProjectDetailProps {
 }
 
 const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
-  const { deletePoint } = useProjects();
+  const { deletePoint, updatePoint } = useProjects();
   const [isAgendaModalOpen, setIsAgendaModalOpen] = useState(false);
   const [isPointModalOpen, setIsPointModalOpen] = useState(false);
   const [selectedAgendaId, setSelectedAgendaId] = useState<string | null>(null);
@@ -175,6 +175,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
               key={agenda.id} 
               agenda={agenda} 
               onAddPoint={handleAddPoint}
+              onUpdatePoint={(aId, pId, updates) => updatePoint(project.id!, aId, pId, updates)}
               onDeletePoint={(aId, pId) => deletePoint(project.id!, aId, pId)}
               isFirst={index === 0}
             />

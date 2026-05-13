@@ -13,11 +13,17 @@ import { Box, Typography, Button } from '@mui/material';
 interface AgendaBlockProps {
   agenda: Agenda;
   onAddPoint: (agendaId: string) => void;
+  onUpdatePoint: (agendaId: string, pointId: string, updates: Partial<Point>) => void;
   onDeletePoint: (agendaId: string, pointId: string) => void;
   isFirst?: boolean;
 }
 
-const GroupItem: React.FC<{ groupName: string, points: Point[], onDeletePoint: (pointId: string) => void }> = ({ groupName, points, onDeletePoint }) => {
+const GroupItem: React.FC<{ 
+  groupName: string, 
+  points: Point[], 
+  onDeletePoint: (pointId: string) => void,
+  onUpdatePoint: (pointId: string, updates: Partial<Point>) => void 
+}> = ({ groupName, points, onDeletePoint, onUpdatePoint }) => {
   const [open, setOpen] = useState(true);
   
   return (
@@ -46,13 +52,14 @@ const GroupItem: React.FC<{ groupName: string, points: Point[], onDeletePoint: (
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm mx-1"
+            className="overflow-hidden"
           >
             {points.map((point) => (
               <PointRow 
                 key={point.id} 
                 point={point} 
-                onDelete={onDeletePoint} 
+                onDelete={onDeletePoint}
+                onUpdate={(updates) => onUpdatePoint(point.id, updates)}
               />
             ))}
           </motion.div>
@@ -62,7 +69,7 @@ const GroupItem: React.FC<{ groupName: string, points: Point[], onDeletePoint: (
   );
 };
 
-const AgendaBlock: React.FC<AgendaBlockProps> = ({ agenda, onAddPoint, onDeletePoint, isFirst }) => {
+const AgendaBlock: React.FC<AgendaBlockProps> = ({ agenda, onAddPoint, onUpdatePoint, onDeletePoint, isFirst }) => {
   const [isExpanded, setIsExpanded] = useState(isFirst || false);
 
   return (
@@ -103,7 +110,8 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ agenda, onAddPoint, onDeleteP
                 <PointRow 
                   key={point.id} 
                   point={point} 
-                  onDelete={(pointId) => onDeletePoint(agenda.id, pointId)} 
+                  onDelete={(pointId) => onDeletePoint(agenda.id, pointId)}
+                  onUpdate={(updates) => onUpdatePoint(agenda.id, point.id, updates)}
                 />
               ))}
 
@@ -121,6 +129,7 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ agenda, onAddPoint, onDeleteP
                   groupName={groupName} 
                   points={points} 
                   onDeletePoint={(pointId) => onDeletePoint(agenda.id, pointId)} 
+                  onUpdatePoint={(pointId, updates) => onUpdatePoint(agenda.id, pointId, updates)}
                 />
               ))}
             </Box>

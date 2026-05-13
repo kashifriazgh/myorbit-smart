@@ -6,20 +6,32 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { useGoals } from '@/app/lib/context/GoalsContext';
 import { 
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  DriveFileRenameOutline as MoveIcon,
+  CheckCircle as DoneIcon
 } from '@mui/icons-material';
-import { Box, Typography, IconButton } from '@mui/material';
+import { Box, Typography, IconButton, TextField, ClickAwayListener } from '@mui/material';
 import { motion } from 'framer-motion';
 
 interface PointRowProps {
   point: Point;
   onDelete: (pointId: string) => void;
+  onUpdate?: (updates: Partial<Point>) => void;
 }
 
-const PointRow: React.FC<PointRowProps> = ({ point, onDelete }) => {
+const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
   const { todos, updateTodo } = useTodoContext();
   const { allSchedules } = useSchedules();
   const { goals, updateGoal } = useGoals();
+  const [isEditingGroup, setIsEditingGroup] = React.useState(false);
+  const [newGroupName, setNewGroupName] = React.useState(point.groupName || '');
+
+  const handleUpdateGroup = () => {
+    if (onUpdate) {
+      onUpdate({ groupName: newGroupName.trim() || undefined });
+    }
+    setIsEditingGroup(false);
+  };
 
   const getColorClasses = (scheme?: string) => {
     switch (scheme) {
@@ -169,9 +181,9 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete }) => {
       case 'keyvalue': {
         const accent = "#db2777";
         return (
-          <Box className="flex items-center justify-between py-2.5 px-3.5 border-b border-slate-50 dark:border-slate-800/50">
+          <Box className="flex items-center gap-4 py-2.5 px-3.5 border-b border-slate-50 dark:border-slate-800/50">
             <Typography variant="body2" sx={{ fontSize: '13px', color: "#64748b", fontWeight: 500 }}>
-              {point.key}
+              {point.key}:
             </Typography>
             <Typography 
               variant="body2" 
@@ -222,13 +234,45 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete }) => {
       <Box className="flex-1 overflow-hidden">
         {renderContent()}
       </Box>
-      <IconButton 
-        size="small" 
-        onClick={() => onDelete(point.id)}
-        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all z-10"
-      >
-        <DeleteIcon sx={{ fontSize: 14 }} />
-      </IconButton>
+
+      {isEditingGroup ? (
+        <ClickAwayListener onClickAway={() => setIsEditingGroup(false)}>
+          <Box className="absolute right-0 top-0 bottom-0 bg-white dark:bg-slate-900 z-20 flex items-center gap-1 px-2 shadow-xl rounded-lg border border-slate-200 dark:border-slate-800">
+            <TextField
+              size="small"
+              autoFocus
+              placeholder="Group Name"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleUpdateGroup()}
+              sx={{ 
+                '& .MuiInputBase-input': { fontSize: '12px', py: 0.5 },
+                width: 120
+              }}
+            />
+            <IconButton size="small" onClick={handleUpdateGroup} color="primary">
+              <DoneIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Box>
+        </ClickAwayListener>
+      ) : (
+        <Box className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 z-10 transition-all">
+          <IconButton 
+            size="small" 
+            onClick={() => setIsEditingGroup(true)}
+            className="text-slate-300 hover:text-indigo-500 transition-all"
+          >
+            <MoveIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+          <IconButton 
+            size="small" 
+            onClick={() => onDelete(point.id)}
+            className="text-slate-300 hover:text-red-500 transition-all"
+          >
+            <DeleteIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Box>
+      )}
     </motion.div>
   );
 };

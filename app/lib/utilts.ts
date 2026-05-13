@@ -98,3 +98,34 @@ export const logFocusTime = async (userId: string) => {
     }
   });
 };
+
+export function sanitizeObject(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeObject);
+  if (typeof obj === 'object') {
+    // Check if it's a Date, Timestamp, or FieldValue
+    if (obj instanceof Date) return obj;
+    
+    // For Firestore Timestamps and FieldValues (sentinels)
+    // They usually have a custom constructor or specific method
+    const constructorName = obj.constructor?.name;
+    if (constructorName === 'Timestamp' || constructorName === 'FieldValueImpl' || constructorName === 'FieldValue') {
+      return obj;
+    }
+
+    // Also check for toDate method which Timestamps have
+    if ('toDate' in obj && typeof (obj as { toDate: unknown }).toDate === 'function') {
+      return obj;
+    }
+    
+    const out: Record<string, unknown> = {};
+    const objAsRecord = obj as Record<string, unknown>;
+    Object.keys(objAsRecord).forEach((k) => {
+      const v = objAsRecord[k];
+      if (v === undefined) return; // skip undefined fields
+      out[k] = sanitizeObject(v);
+    });
+    return out;
+  }
+  return obj;
+}
