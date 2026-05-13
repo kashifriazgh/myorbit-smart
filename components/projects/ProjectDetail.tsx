@@ -6,6 +6,9 @@ import { useProjects } from '@/app/lib/context/ProjectsContext';
 import AgendaBlock from './AgendaBlock';
 import NewAgendaModal from './NewAgendaModal';
 import NewPointModal from './NewPointModal';
+import { useTodoContext } from '@/app/lib/context/todoContext';
+import { useGoals } from '@/app/lib/context/GoalsContext';
+import { Point } from '@/app/lib/interface';
 import { Box, Typography, Button, Container } from '@mui/material';
 import { 
   ArrowBack as ArrowBackIcon, 
@@ -27,6 +30,48 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
   const [isAgendaModalOpen, setIsAgendaModalOpen] = useState(false);
   const [isPointModalOpen, setIsPointModalOpen] = useState(false);
   const [selectedAgendaId, setSelectedAgendaId] = useState<string | null>(null);
+  const [selectedGroupName, setSelectedGroupName] = useState<string | undefined>(undefined);
+  const [editingPoint, setEditingPoint] = useState<Point | null>(null);
+
+  const { todos } = useTodoContext();
+  const { goals } = useGoals();
+
+  const existingGroups = useMemo(() => {
+    const groups = new Set<string>();
+    project.agendas?.forEach(a => a.points?.forEach(p => {
+      if (p.groupName) groups.add(p.groupName);
+    }));
+    return Array.from(groups);
+  }, [project.agendas]);
+
+  const overallProgress = useMemo(() => {
+    const allPoints = project.agendas?.flatMap(a => a.points || []) || [];
+    if (allPoints.length === 0) return 0;
+
+    let totalProgress = 0;
+    allPoints.forEach(p => {
+      if (p.type === 'todo') {
+        const todo = todos.find(t => t.id === p.todoId);
+        totalProgress += todo?.status === 'completed' ? 100 : (todo?.progressPercent || 0);
+      } else if (p.type === 'goal') {
+        const goal = goals.find(g => g.id === p.goalId);
+        totalProgress += goal?.status === 'Completed' ? 100 : (goal?.progress || 0);
+      } else {
+        totalProgress += p.done ? 100 : 0;
+      }
+    });
+
+    return Math.round(totalProgress / allPoints.length);
+  }, [project.agendas, todos, goals]);
+
+
+  // Actually use updateProject
+  const { updateProject: updateProjectInDB } = useProjects();
+  React.useEffect(() => {
+    if (project.id && overallProgress !== project.progress) {
+      updateProjectInDB(project.id, { progress: overallProgress });
+    }
+  }, [overallProgress, project.id, project.progress, updateProjectInDB]);
 
   const stats = useMemo(() => {
     const agendas = project.agendas?.length || 0;
@@ -45,9 +90,23 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
     return { agendas, points, daysLeft };
   }, [project]);
 
-  const handleAddPoint = (agendaId: string) => {
+  const handleAddPoint = (agendaId: string, groupName?: string) => {
+    setEditingPoint(null);
     setSelectedAgendaId(agendaId);
+    setSelectedGroupName(groupName);
     setIsPointModalOpen(true);
+  };
+
+  const handleUpdatePoint = (agendaId: string, pointId: string, updates: Partial<Point>) => {
+    if (updates.id) {
+      // It's a full point object, open edit modal
+      setEditingPoint(updates as Point);
+      setSelectedAgendaId(agendaId);
+      setIsPointModalOpen(true);
+    } else {
+      // It's a partial update
+      updatePoint(project.id!, agendaId, pointId, updates);
+    }
   };
 
   return (
@@ -173,12 +232,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
           project.agendas.map((agenda, index) => (
             <AgendaBlock 
               key={agenda.id} 
+              projectId={project.id!}
               agenda={agenda} 
-              onAddPoint={handleAddPoint}
-              onUpdatePoint={(aId, pId, updates) => updatePoint(project.id!, aId, pId, updates)}
-              onDeletePoint={(aId, pId) => deletePoint(project.id!, aId, pId)}
-              isFirst={index === 0}
-            />
+            onAddPoint={handleAddPoint}
+            onUpdatePoint={handleUpdatePoint}
+            onDeletePoint={(aId, pId) => deletePoint(project.id!, aId, pId)}
+            isFirst={index === 0}
+          />
           ))
         ) : (
           <Box className="py-12 text-center opacity-30">
@@ -206,11 +266,19 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
       />
       <NewPointModal 
         open={isPointModalOpen} 
-        onClose={() => setIsPointModalOpen(false)} 
+        onClose={() => {
+          setIsPointModalOpen(false);
+          setSelectedGroupName(undefined);
+          setEditingPoint(null);
+        }} 
         projectId={project.id!} 
         agendaId={selectedAgendaId!} 
+        initialGroupName={selectedGroupName}
+        editPoint={editingPoint}
+        existingGroups={existingGroups}
       />
     </Box>
+
   );
 };
 

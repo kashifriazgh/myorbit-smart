@@ -35,6 +35,7 @@ interface ProjectsContextType {
   addPoint: (projectId: string, agendaId: string, point: Omit<Point, 'id'>) => Promise<void>;
   updatePoint: (projectId: string, agendaId: string, pointId: string, updates: Partial<Point>) => Promise<void>;
   deletePoint: (projectId: string, agendaId: string, pointId: string) => Promise<void>;
+  updateMultiplePoints: (projectId: string, agendaId: string, pointIds: string[], updates: Partial<Point>) => Promise<void>;
 }
 
 const ProjectsContext = createContext<ProjectsContextType | undefined>(undefined);
@@ -219,6 +220,24 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({
     await updateProject(projectId, { agendas: updatedAgendas });
   };
 
+  const updateMultiplePoints = async (projectId: string, agendaId: string, pointIds: string[], updates: Partial<Point>) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedAgendas = project.agendas.map(a => {
+      if (a.id === agendaId) {
+        const updatedPoints = a.points.map(pt => 
+          pointIds.includes(pt.id) ? { ...pt, ...updates } : pt
+        );
+        return { ...a, points: updatedPoints };
+      }
+      return a;
+    });
+
+    await updateProject(projectId, { agendas: updatedAgendas });
+  };
+
+
   const value: ProjectsContextType = {
     projects,
     loading,
@@ -231,6 +250,7 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({
     addPoint,
     updatePoint,
     deletePoint,
+    updateMultiplePoints,
   };
 
   return <ProjectsContext.Provider value={value}>{children}</ProjectsContext.Provider>;

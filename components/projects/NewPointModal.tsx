@@ -21,7 +21,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { useGoals } from '@/app/lib/context/GoalsContext';
 import { useAuth } from '@/app/lib/context/userContext';
-import { PointType, GoalType } from '@/app/lib/interface';
+import { PointType, GoalType, Point } from '@/app/lib/interface';
 import { FormControl, InputLabel, Select, MenuItem, Chip } from '@mui/material';
 
 interface NewPointModalProps {
@@ -29,6 +29,9 @@ interface NewPointModalProps {
   onClose: () => void;
   projectId: string;
   agendaId: string;
+  initialGroupName?: string;
+  editPoint?: Point | null;
+  existingGroups?: string[];
 }
 
 const pointTypes = [
@@ -40,10 +43,12 @@ const pointTypes = [
   { id: 'keyvalue', label: 'Key Value', icon: <KeyIcon />, color: '#db2777' },
 ];
 
-const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId, agendaId }) => {
+const NewPointModal: React.FC<NewPointModalProps> = ({ 
+  open, onClose, projectId, agendaId, initialGroupName, editPoint, existingGroups = [] 
+}) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { addPoint } = useProjects();
+  const { addPoint, updatePoint } = useProjects();
   const { addTodo } = useTodoContext();
   const { addSchedule } = useSchedules();
   const { addGoal } = useGoals();
@@ -74,7 +79,45 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
   const [kvValue, setKvValue] = useState('');
 
   const [colorScheme, setColorScheme] = useState<'default' | 'success' | 'warning' | 'info' | 'error' | 'grey'>('default');
-  const [groupName, setGroupName] = useState('');
+  const [groupName, setGroupName] = useState(initialGroupName || '');
+  const [isCreatingNewGroup, setIsCreatingNewGroup] = useState(false);
+
+  // Effect to pre-fill for editing
+  React.useEffect(() => {
+    if (editPoint) {
+      setSelectedType(editPoint.type);
+      setStep(2);
+      setGroupName(editPoint.groupName || '');
+      
+      switch (editPoint.type) {
+        case 'string':
+          setStringContent(editPoint.content || '');
+          setColorScheme(editPoint.colorScheme || 'default');
+          break;
+        case 'streak':
+          setStreakTitle(editPoint.content || '');
+          setStreakCount(editPoint.count || 0);
+          break;
+        case 'keyvalue':
+          setKvKey(editPoint.key || '');
+          setKvValue(editPoint.value || '');
+          break;
+        // Note: todo, schedule, goal might need different handling if they refer to other collections
+      }
+    } else {
+      // If not editing, reset to defaults or initialGroupName
+      setGroupName(initialGroupName || '');
+      setSelectedType(null);
+      setStep(1);
+    }
+  }, [editPoint, initialGroupName]);
+
+  // Reset groupName when initialGroupName changes
+  React.useEffect(() => {
+    if (initialGroupName) {
+      setGroupName(initialGroupName);
+    }
+  }, [initialGroupName]);
 
   const handleTypeSelect = (type: PointType) => {
     setSelectedType(type);
@@ -88,80 +131,94 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
     try {
       if (!user) return;
 
-      if (selectedType === 'string') {
-        await addPoint(projectId, agendaId, { 
-          type: 'string', 
-          content: stringContent, 
-          colorScheme,
-          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
+      const finalGroupName = groupName.trim() || initialGroupName?.trim();
+
+      if (editPoint) {
+        await updatePoint(projectId, agendaId, editPoint.id, {
+          type: selectedType,
+          content: selectedType === 'string' || selectedType === 'streak' ? (selectedType === 'string' ? stringContent : streakTitle) : undefined,
+          colorScheme: selectedType === 'string' ? colorScheme : undefined,
+          count: selectedType === 'streak' ? streakCount : undefined,
+          key: selectedType === 'keyvalue' ? kvKey : undefined,
+          value: selectedType === 'keyvalue' ? kvValue : undefined,
+          groupName: finalGroupName
         });
-      } else if (selectedType === 'todo') {
-        const todoId = await addTodo({
-          title: todoTitle,
-          status: 'in_progress',
-          priority: 'routine',
-          projectId,
-          authorId: user.uid,
-          dueDate: new Date(todoDueDate),
-          steps: [],
-          tags: [],
-          progressPercent: 0,
-          assignedUsers: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-        await addPoint(projectId, agendaId, { 
-          type: 'todo', 
-          todoId,
-          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
-        });
-      } else if (selectedType === 'schedule') {
-        const scheduleId = await addSchedule({
-          title: scheduleTitle,
-          date: scheduleDate,
-          startTime: startTime,
-          endTime: endTime,
-          projectId,
-          userId: user.uid,
-          status: 'pending',
-          priority: 'medium',
-        });
-        await addPoint(projectId, agendaId, { 
-          type: 'schedule', 
-          scheduleId,
-          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
-        });
-      } else if (selectedType === 'goal') {
-        const goalId = await addGoal({
-          title: goalTitle,
-          type: goalType as GoalType,
-          status: 'Not Started',
-          priority: 'Medium',
-          projectId,
-          userId: user.uid,
-          progress: 0,
-          steps: [],
-          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Default 1 month
-        });
-        await addPoint(projectId, agendaId, { 
-          type: 'goal', 
-          goalId,
-          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
-        });
-      } else if (selectedType === 'streak') {
-        await addPoint(projectId, agendaId, { 
-          type: 'streak', 
-          content: streakTitle,
-          count: streakCount,
-          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
-        });
-      } else if (selectedType === 'keyvalue') {
-        await addPoint(projectId, agendaId, { 
-          type: 'keyvalue', 
-          key: kvKey, 
-          value: kvValue,
-          ...(groupName.trim() ? { groupName: groupName.trim() } : {})
-        });
+      } else {
+        if (selectedType === 'string') {
+          await addPoint(projectId, agendaId, { 
+            type: 'string', 
+            content: stringContent, 
+            colorScheme,
+            ...(finalGroupName ? { groupName: finalGroupName } : {})
+          });
+        } else if (selectedType === 'todo') {
+          const todoId = await addTodo({
+            title: todoTitle,
+            status: 'in_progress',
+            priority: 'routine',
+            projectId,
+            authorId: user.uid,
+            dueDate: new Date(todoDueDate),
+            steps: [],
+            tags: [],
+            progressPercent: 0,
+            assignedUsers: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+          await addPoint(projectId, agendaId, { 
+            type: 'todo', 
+            todoId,
+            ...(finalGroupName ? { groupName: finalGroupName } : {})
+          });
+        } else if (selectedType === 'schedule') {
+          const scheduleId = await addSchedule({
+            title: scheduleTitle,
+            date: scheduleDate,
+            startTime: startTime,
+            endTime: endTime,
+            projectId,
+            userId: user.uid,
+            status: 'pending',
+            priority: 'medium',
+          });
+          await addPoint(projectId, agendaId, { 
+            type: 'schedule', 
+            scheduleId,
+            ...(finalGroupName ? { groupName: finalGroupName } : {})
+          });
+        } else if (selectedType === 'goal') {
+          const goalId = await addGoal({
+            title: goalTitle,
+            type: goalType as GoalType,
+            status: 'Not Started',
+            priority: 'Medium',
+            projectId,
+            userId: user.uid,
+            progress: 0,
+            steps: [],
+            dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Default 1 month
+          });
+          await addPoint(projectId, agendaId, { 
+            type: 'goal', 
+            goalId,
+            ...(finalGroupName ? { groupName: finalGroupName } : {})
+          });
+        } else if (selectedType === 'streak') {
+          await addPoint(projectId, agendaId, { 
+            type: 'streak', 
+            content: streakTitle,
+            count: streakCount,
+            ...(finalGroupName ? { groupName: finalGroupName } : {})
+          });
+        } else if (selectedType === 'keyvalue') {
+          await addPoint(projectId, agendaId, { 
+            type: 'keyvalue', 
+            key: kvKey, 
+            value: kvValue,
+            ...(finalGroupName ? { groupName: finalGroupName } : {})
+          });
+        }
       }
 
       resetAndClose();
@@ -184,7 +241,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
     setKvKey('');
     setKvValue('');
     setColorScheme('default');
-    setGroupName('');
+    setGroupName(initialGroupName || '');
     onClose();
   };
 
@@ -198,10 +255,13 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
               placeholder="Write your note here..."
               value={stringContent}
               onChange={(e) => setStringContent(e.target.value)}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+              sx={{ 
+                '& .MuiOutlinedInput-root': { borderRadius: '16px', bgcolor: 'rgba(0,0,0,0.02)' },
+                '& .MuiInputBase-input': { color: 'text.primary' }
+              }}
             />
             <Box>
-              <Typography variant="caption" className="text-slate-400 font-bold uppercase ml-1 block mb-2">
+              <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-bold uppercase ml-1 block mb-2">
                 Color Scheme
               </Typography>
               <Box className="flex flex-wrap gap-2">
@@ -389,19 +449,24 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
       maxWidth="xs"
       fullWidth
       PaperProps={{
-        sx: { borderRadius: isMobile ? 0 : '28px', bgcolor: 'background.paper', overflow: 'hidden' }
+        sx: { 
+          borderRadius: isMobile ? 0 : '28px', 
+          bgcolor: 'background.paper', 
+          overflow: 'hidden',
+          backgroundImage: 'none' 
+        }
       }}
     >
-      <Box className="p-6 flex justify-between items-center border-b border-slate-100 dark:border-slate-800">
-        <Typography variant="h6" className="font-black tracking-tight">
-          {step === 1 ? 'Add New Point' : `New ${selectedType?.toUpperCase()}`}
+      <Box className="p-6 flex justify-between items-center border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <Typography variant="h6" className="font-black tracking-tight text-slate-900 dark:text-slate-100">
+          {editPoint ? 'Edit Point' : (step === 1 ? 'Add New Point' : `New ${selectedType?.toUpperCase()}`)}
         </Typography>
-        <IconButton onClick={resetAndClose} size="small" className="bg-slate-50 dark:bg-slate-800">
+        <IconButton onClick={resetAndClose} size="small" className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
           <CloseIcon fontSize="small" />
         </IconButton>
       </Box>
 
-      <DialogContent className="p-6">
+      <DialogContent className="p-6 bg-white dark:bg-slate-900">
         <AnimatePresence mode="wait">
           {step === 1 ? (
             <motion.div
@@ -415,7 +480,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
                   <Grid size={12} key={t.id}>
                     <Box
                       onClick={() => handleTypeSelect(t.id as PointType)}
-                      className="flex items-center gap-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-indigo-50/10 cursor-pointer transition-all group"
+                      className="flex items-center gap-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-indigo-50/10 cursor-pointer transition-all group bg-slate-50 dark:bg-slate-800/40"
                       sx={{
                         '&:hover': {
                           borderColor: t.color,
@@ -433,7 +498,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
                         <Typography variant="subtitle2" className="font-black text-slate-800 dark:text-slate-100">
                           {t.label}
                         </Typography>
-                        <Typography variant="caption" className="text-slate-400 font-medium">
+                        <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-medium">
                           Add a {t.id} to this agenda
                         </Typography>
                       </Box>
@@ -451,27 +516,65 @@ const NewPointModal: React.FC<NewPointModalProps> = ({ open, onClose, projectId,
             >
               <Stack spacing={4}>
                 {renderForm()}
-                <TextField
-                  fullWidth
-                  placeholder="Group Name (Optional)"
-                  label="Group"
-                  value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
-                />
+                {(!initialGroupName) && (
+                  <Box>
+                    <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-bold uppercase ml-1 block mb-2">
+                      Group Assignment
+                    </Typography>
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <Select
+                        value={isCreatingNewGroup ? 'NEW' : groupName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'NEW') {
+                            setIsCreatingNewGroup(true);
+                            setGroupName('');
+                          } else if (val === 'NONE') {
+                            setIsCreatingNewGroup(false);
+                            setGroupName('');
+                          } else {
+                            setIsCreatingNewGroup(false);
+                            setGroupName(val);
+                          }
+                        }}
+                        sx={{ borderRadius: '16px', fontWeight: 700 }}
+                      >
+                        <MenuItem value="NONE"><em>No Group</em></MenuItem>
+                        {existingGroups.map(g => (
+                          <MenuItem key={g} value={g}>{g}</MenuItem>
+                        ))}
+                        <MenuItem value="NEW" sx={{ color: 'indigo.600', fontWeight: 800 }}>+ Create New Group</MenuItem>
+                      </Select>
+                    </FormControl>
+
+                    {isCreatingNewGroup && (
+                      <TextField
+                        fullWidth
+                        autoFocus
+                        placeholder="New Group Name..."
+                        value={groupName}
+                        onChange={(e) => setGroupName(e.target.value)}
+                        sx={{ 
+                          '& .MuiOutlinedInput-root': { borderRadius: '16px' },
+                          '& .MuiInputBase-input': { color: 'text.primary' }
+                        }}
+                      />
+                    )}
+                  </Box>
+                )}
                 <Button
                   fullWidth
                   variant="contained"
                   onClick={handleCreate}
                   disabled={!isFormValid() || loading}
-                  className="py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-500/30 normal-case font-black text-lg"
+                  className="py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-500/30 normal-case font-black text-lg text-white"
                 >
-                  {loading ? <CircularProgress size={24} color="inherit" /> : 'Confirm & Add'}
+                  {loading ? <CircularProgress size={24} color="inherit" /> : (editPoint ? 'Update Point' : 'Confirm & Add')}
                 </Button>
                 <Button 
                   fullWidth 
                   onClick={() => setStep(1)} 
-                  className="text-slate-400 font-bold normal-case"
+                  className="text-slate-400 dark:text-slate-500 font-bold normal-case"
                 >
                   Back to types
                 </Button>

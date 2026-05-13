@@ -886,6 +886,7 @@ export interface Point {
   count?: number; // for streaks
   colorScheme?: 'default' | 'success' | 'warning' | 'info' | 'error' | 'grey';
   groupName?: string;
+  done?: boolean;
 }
 
 export interface Agenda {
