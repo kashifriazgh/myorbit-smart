@@ -741,6 +741,7 @@ export interface TimeTableProps {
   userId: string;
   title: string;
   description?: string;
+  type?: string; // e.g. Learning, Health/ fitness, work, education, family, transport, religious, events
   steps: TimeTableStep[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;

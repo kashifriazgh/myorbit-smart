@@ -52,15 +52,26 @@ export default function NotesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
 
-  // Helpers to format title and preview
+  // Helpers to format title and preview (stripping markdown syntax for clean presentation)
+  const stripMarkdown = (mdText: string) => {
+    if (!mdText) return '';
+    return mdText
+      .replace(/\*\*|__|\*|_|~~/g, '') // Strip bold, italic, strikethrough
+      .replace(/^\s*([-*•]|\d+\.)\s+/gm, '') // Strip bullet & numbered list markers
+      .replace(/^\s*#+\s+/gm, '') // Strip headers
+      .replace(/---|\*\*\*/g, ''); // Strip horizontal rules
+  };
+
   const getNoteTitle = (content: string) => {
-    const firstLine = (content || '').split('\n')[0].trim();
+    const cleanContent = stripMarkdown(content);
+    const firstLine = cleanContent.split('\n')[0].trim();
     if (!firstLine) return 'Untitled';
     return firstLine.length > 80 ? firstLine.slice(0, 80) + '…' : firstLine;
   };
 
   const getNotePreview = (content: string) => {
-    const text = (content || '').replace(/\s+/g, ' ').trim();
+    const cleanContent = stripMarkdown(content);
+    const text = cleanContent.replace(/\s+/g, ' ').trim();
     return text.length > 140 ? text.slice(0, 140) + '…' : text;
   };
 

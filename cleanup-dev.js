@@ -3,33 +3,51 @@
 const fs = require('fs');
 const path = require('path');
 
+const args = process.argv.slice(2);
+const forceClean = args.includes('--force') || args.includes('-f') || args.includes('--all');
+
 console.log('🧹 Cleaning up dev environment...');
 
-// Remove .next folder
-if (fs.existsSync('.next')) {
-  console.log('Removing .next folder...');
-  fs.rmSync('.next', { recursive: true, force: true });
+if (forceClean) {
+  // Remove .next folder (Only on explicit force)
+  if (fs.existsSync('.next')) {
+    console.log('⚠️  Removing .next folder (Full Cold Clean)...');
+    fs.rmSync('.next', { recursive: true, force: true });
+  }
+  
+  // Clear npm cache (Only on explicit force)
+  console.log('⚠️  Clearing npm cache...');
+  try {
+    require('child_process').execSync('npm cache clean --force', {
+      stdio: 'inherit',
+    });
+  } catch (err) {
+    console.error('Failed to clear npm cache (non-critical):', err.message);
+  }
+} else {
+  console.log('💡 Keeping Next.js compiler cache (.next/cache) to ensure fast startup and quick page navigation.');
+  console.log('👉 To perform a full cold-rebuild clean, run: npm run clean -- --force');
 }
 
-// Remove TypeScript cache
+// Always safe to clean lightweight caches
+// Remove TypeScript build cache
+if (fs.existsSync('tsconfig.tsbuildinfo')) {
+  console.log('🧹 Removing TypeScript build info...');
+  fs.unlinkSync('tsconfig.tsbuildinfo');
+}
+
 if (fs.existsSync('.tsbuildinfo')) {
-  console.log('Removing TypeScript cache...');
+  console.log('🧹 Removing TypeScript cache...');
   fs.unlinkSync('.tsbuildinfo');
 }
 
 // Remove ESLint cache
 if (fs.existsSync('.eslintcache')) {
-  console.log('Removing ESLint cache...');
+  console.log('🧹 Removing ESLint cache...');
   fs.unlinkSync('.eslintcache');
 }
 
-// Clear npm cache
-console.log('Clearing npm cache...');
-require('child_process').execSync('npm cache clean --force', {
-  stdio: 'inherit',
-});
-
-console.log('✅ Cleanup complete! Dev mode should be faster now.');
-console.log('💡 Run: npm run dev');
-
-
+console.log('✅ Lightweight cleanup complete!');
+console.log('🚀 Start your dev server:');
+console.log('   npm run dev        (Standard dev server)');
+console.log('   npm run dev:turbo  (Ultra-fast Turbopack - HIGHLY RECOMMENDED!)');

@@ -12,13 +12,26 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Optimize for development
   experimental: {
-    optimizePackageImports: ['@mui/material', '@mui/icons-material'],
-    turbo: {
-      rules: {
-        '*.svg': {
-          loaders: ['@svgr/webpack'],
-          as: '*.js',
-        },
+    optimizePackageImports: [
+      '@mui/material',
+      '@mui/icons-material',
+      '@mui/lab',
+      '@mui/x-date-pickers',
+      'recharts',
+      'chart.js',
+      'framer-motion',
+      'moment',
+      'moment-timezone',
+      '@tiptap/react',
+      '@tiptap/starter-kit',
+      'dexie',
+    ],
+  },
+  turbopack: {
+    rules: {
+      '*.svg': {
+        loaders: ['@svgr/webpack'],
+        as: '*.js',
       },
     },
   },
@@ -27,9 +40,10 @@ const nextConfig: NextConfig = {
   // Optimize webpack for development
   webpack: (config, { dev }) => {
     if (dev) {
+      // Use ultra-fast cheap source maps for development compiles
+      config.devtool = 'eval-cheap-module-source-map';
+
       config.watchOptions = {
-        poll: 1000,
-        aggregateTimeout: 300,
         // Ignore specific directories to improve performance
         ignored: [
           '**/node_modules/**',

@@ -113,7 +113,7 @@ export default function AppBarTop() {
     >
       {user?.role === 'master' && !isGuest && (
         <MenuItem onClick={handleMenuClose}>
-          <Link href="/user/dashboard">Dashboard</Link>
+          <Link href="/user/dashboard" prefetch={false}>Dashboard</Link>
         </MenuItem>
       )}
       {user?.role === 'master' && !isGuest && <Divider />}
@@ -125,13 +125,14 @@ export default function AppBarTop() {
                   <MenuItem key="guest-signup" onClick={handleMenuClose}>
                     <Link
                       href="/user/signup"
+                      prefetch={false}
                       style={{ color: '#1976d2', fontWeight: 'bold' }}
                     >
                       🚀 Sign Up to Save Data
                     </Link>
                   </MenuItem>,
                   <MenuItem key="guest-login" onClick={handleMenuClose}>
-                    <Link href="/user/login">Login</Link>
+                    <Link href="/user/login" prefetch={false}>Login</Link>
                   </MenuItem>,
                   <Divider key="guest-divider" />,
                 ]
@@ -142,11 +143,11 @@ export default function AppBarTop() {
           ]
         : [
             <MenuItem key="login" onClick={handleMenuClose}>
-              <Link href="/user/login">Login</Link>
+              <Link href="/user/login" prefetch={false}>Login</Link>
             </MenuItem>,
             <Divider key="divider" />,
             <MenuItem key="signup" onClick={handleMenuClose}>
-              <Link href="/user/signup">SignUp</Link>
+              <Link href="/user/signup" prefetch={false}>SignUp</Link>
             </MenuItem>,
           ]}
     </Menu>
@@ -166,6 +167,7 @@ export default function AppBarTop() {
       <MenuItem>
         <Link
           href="/2/change-log"
+          prefetch={false}
           style={{ textDecoration: 'none', color: 'inherit' }}
         >
           <IconButton size="large" color="inherit">
@@ -254,7 +256,7 @@ export default function AppBarTop() {
 
           <Box sx={{ flexGrow: 1 }} />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-            <Link href="/2/change-log">
+            <Link href="/2/change-log" prefetch={false}>
               <IconButton size="large" color="inherit" aria-label="change log">
                 <HistoryIcon />
               </IconButton>

@@ -118,6 +118,7 @@ export default function BottomNav() {
             icon={item.icon}
             component={Link}
             href={user ? item.path : '#'}
+            prefetch={false}
             disabled={!user}
             sx={
               item.label === 'Home'
@@ -148,23 +149,23 @@ export default function BottomNav() {
         transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <List sx={{ minWidth: 200 }}>
-          <ListItemButton disabled={!user} component={Link} href="/goals">
+          <ListItemButton disabled={!user} component={Link} href="/goals" prefetch={false}>
             <FlagIcon sx={{ mr: 1 }} />
             <ListItemText primary="Goals" />
           </ListItemButton>
-          <ListItemButton disabled={!user} component={Link} href="/ideas">
+          <ListItemButton disabled={!user} component={Link} href="/ideas" prefetch={false}>
             <LightbulbIcon sx={{ mr: 1 }} />
             <ListItemText primary="Ideas" />
           </ListItemButton>
-          <ListItemButton disabled={!user} component={Link} href="/time-table">
+          <ListItemButton disabled={!user} component={Link} href="/time-table" prefetch={false}>
             <EventAvailableIcon sx={{ mr: 1 }} />
             <ListItemText primary="Time Table" />
           </ListItemButton>
-          <ListItemButton disabled={!user} component={Link} href="/streaks">
+          <ListItemButton disabled={!user} component={Link} href="/streaks" prefetch={false}>
             <TimelineIcon sx={{ mr: 1 }} />
             <ListItemText primary="Streaks" />
           </ListItemButton>
-          <ListItemButton disabled={!user} component={Link} href="/notes">
+          <ListItemButton disabled={!user} component={Link} href="/notes" prefetch={false}>
             <NoteIcon sx={{ mr: 1 }} />
             <ListItemText primary="Notes" />
           </ListItemButton>

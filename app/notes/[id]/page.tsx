@@ -37,7 +37,11 @@ import EditIcon from '@mui/icons-material/Edit';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import PriorityHighIcon from '@mui/icons-material/PriorityHigh';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { Stack, Tooltip } from '@mui/material';
+
+// Import our rich editor, markdown parser, and help dialog
+import NoteInput, { renderMarkdown, MarkdownHelpDialog } from '@/app/components/global/NoteInput';
 
 export default function NoteDetailPage() {
   const { id } = useParams();
@@ -52,7 +56,9 @@ export default function NoteDetailPage() {
   const [deleting, setDeleting] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
-  const [editContent, setEditContent] = useState('');
+
+  // Markdown Formatting Guide state
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const [savingMeta, setSavingMeta] = useState(false);
 
@@ -239,6 +245,11 @@ export default function NoteDetailPage() {
           </Typography>
 
           <Stack direction="row" spacing={1}>
+            <Tooltip title="Markdown Formatting Guide">
+              <IconButton onClick={() => setHelpOpen(true)} color="primary">
+                <HelpOutlineIcon />
+              </IconButton>
+            </Tooltip>
             <Tooltip title={note.isFav ? 'Remove from Favorites' : 'Add to Favorites'}>
               <IconButton
                 onClick={handleToggleFav}
@@ -261,7 +272,35 @@ export default function NoteDetailPage() {
         </Box>
       </Box>
 
-      {/* Content */}
+      {/* Markdown Info & Education Banner */}
+      <Box 
+        onClick={() => setHelpOpen(true)}
+        sx={{
+          mb: 2,
+          p: 1.5,
+          borderRadius: 3,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.25,
+          cursor: 'pointer',
+          border: '1px dashed',
+          borderColor: customTheme?.mode === 'dark' ? '#3b82f660' : '#2563eb40',
+          backgroundColor: customTheme?.mode === 'dark' ? '#1d4ed810' : '#eff6ff',
+          color: customTheme?.mode === 'dark' ? '#93c5fd' : '#1e40af',
+          transition: 'all 0.2s',
+          '&:hover': {
+            transform: 'translateY(-1px)',
+            backgroundColor: customTheme?.mode === 'dark' ? '#1d4ed820' : '#dbeafe',
+          }
+        }}
+      >
+        <HelpOutlineIcon fontSize="small" sx={{ color: customTheme?.mode === 'dark' ? '#60a5fa' : '#2563eb' }} />
+        <Typography variant="caption" fontWeight="700" sx={{ letterSpacing: '0.01em', cursor: 'pointer' }}>
+          Formatted using Markdown. Click here to open the Formatting Guide & Shortcuts!
+        </Typography>
+      </Box>
+
+      {/* Content Card with Markdown rendering support */}
       <Card
         className={
           customTheme?.mode === 'dark'
@@ -274,27 +313,18 @@ export default function NoteDetailPage() {
         }}
       >
         <CardContent sx={{ p: 4 }}>
-          <Typography
-            variant="body1"
-            className={
-              customTheme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-800'
-            }
+          <Box
             sx={{
-              fontSize: '1.125rem',
-              fontWeight: 500,
-              lineHeight: 1.8,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
               fontFamily:
                 '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
             }}
           >
-            {note.content}
-          </Typography>
+            {renderMarkdown(note.content, customTheme?.mode)}
+          </Box>
         </CardContent>
       </Card>
 
-      {/* ACTION BUTTONS MOVED TO BOTTOM */}
+      {/* ACTION BUTTONS */}
       <Box
         mt={3}
         display="flex"
@@ -306,7 +336,6 @@ export default function NoteDetailPage() {
           <IconButton
             color="primary"
             onClick={() => {
-              setEditContent(note.content);
               setEditOpen(true);
             }}
           >
@@ -378,51 +407,39 @@ export default function NoteDetailPage() {
         </Box>
       </Box>
 
-      {/* EDIT DIALOG */}
+      {/* NEW INTEGRATED RICH EDIT DIALOG */}
       <Dialog
         open={editOpen}
         onClose={() => setEditOpen(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '1rem',
+            background: customTheme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+            p: 2,
+          },
+        }}
       >
-        <DialogTitle>Edit Note</DialogTitle>
-        <DialogContent>
-          <textarea
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            style={{
-              width: '100%',
-              minHeight: 200,
-              padding: 12,
-              fontFamily: 'inherit',
+        <DialogTitle sx={{ fontWeight: 700 }}>Edit Note</DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <NoteInput
+            variant="compact"
+            noteId={note.id}
+            initialContent={note.content}
+            initialIsImportant={note.isImportant}
+            initialIsFav={note.isFav}
+            onSaveSuccess={(updatedText) => {
+              setNote((prev) =>
+                prev
+                  ? { ...prev, content: updatedText, updatedAt: new Date() }
+                  : prev
+              );
+              setEditOpen(false);
             }}
+            onCancel={() => setEditOpen(false)}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={async () => {
-              if (!id) return;
-              try {
-                await updateDoc(doc(db, 'notes', id as string), {
-                  content: editContent,
-                  updatedAt: serverTimestamp(),
-                });
-                setNote((prev) =>
-                  prev
-                    ? { ...prev, content: editContent, updatedAt: new Date() }
-                    : prev,
-                );
-                setEditOpen(false);
-              } catch (e) {
-                console.error('Failed to update note', e);
-              }
-            }}
-          >
-            Save
-          </Button>
-        </DialogActions>
       </Dialog>
 
       {/* DELETE DIALOG */}
@@ -439,7 +456,7 @@ export default function NoteDetailPage() {
             note?
           </Typography>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ p: 2.5, gap: 1 }}>
           <Button onClick={() => setDeleteOpen(false)} disabled={deleting}>
             Cancel
           </Button>
@@ -453,6 +470,9 @@ export default function NoteDetailPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Global Formatting Education Dialog */}
+      <MarkdownHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </Container>
   );
 }
