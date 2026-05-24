@@ -141,14 +141,7 @@ function ExpendituresComponent({ userId }: { userId: string }) {
   expenditures.forEach((e) => groupedByType[e.type].push(e));
 
   const isDark = theme?.mode === 'dark';
-  const categoryWiseData = useMemo(() => {
-    const result: Record<string, number> = {};
-    expenditures.forEach((exp) => {
-      const cat = exp.category || 'Uncategorized';
-      result[cat] = (result[cat] || 0) + exp.amount;
-    });
-    return Object.entries(result).map(([name, value]) => ({ name, value }));
-  }, [expenditures]);
+
 
   // ---- Available funds refresh ----
   const refreshAvailableFunds = async (

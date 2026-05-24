@@ -8,9 +8,9 @@ import {
   Button,
   Stack,
   Typography,
-  Box,
+
   Collapse,
-  Slider,
+
   Chip,
   useMediaQuery,
   useTheme,
@@ -37,8 +37,7 @@ export default function JournalModal({ open, onClose }: Props) {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
 
-  const [mood, setMood] = useState<string | null>(null);
-  const [moodLevel, setMoodLevel] = useState<number>(5);
+
   const [title, setTitle] = useState('');
   const [showTitleInput, setShowTitleInput] = useState(false);
   const [body, setBody] = useState('');
@@ -63,7 +62,7 @@ export default function JournalModal({ open, onClose }: Props) {
       userId: user!.uid,
       authorName: user?.firstName || '',
       createdAt: serverTimestamp(),
-      mood: mood ? { type: mood, level: moodLevel } : null,
+
       title: finalTitle,
       content: body.trim(),
       tags,
@@ -160,19 +159,7 @@ export default function JournalModal({ open, onClose }: Props) {
           </Typography>
 
           {/* Mood Level Slider */}
-          {mood && (
-            <Box px={4}>
-              <Typography gutterBottom>
-                How strong is your {mood} feeling?
-              </Typography>
-              <Slider
-                value={moodLevel}
-                onChange={(_, val) => setMoodLevel(val as number)}
-                min={1}
-                max={10}
-              />
-            </Box>
-          )}
+
 
           {/* Collapsible Title */}
           {!showTitleInput ? (

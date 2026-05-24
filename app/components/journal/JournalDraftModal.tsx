@@ -21,7 +21,6 @@ import { Close as CloseIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { db } from '@/app/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import moment from 'moment';
-import MoodSelector from './moodSelector';
 import Slider from '@mui/material/Slider';
 
 interface Props {
@@ -171,12 +170,12 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
             : null,
         moodLevel:
           parsedData.moodLevel &&
-          parsedData.moodLevel >= 1 &&
-          parsedData.moodLevel <= 10
+            parsedData.moodLevel >= 1 &&
+            parsedData.moodLevel <= 10
             ? parsedData.moodLevel
             : parsedData.mood
-            ? 5
-            : 5,
+              ? 5
+              : 5,
         tags: Array.isArray(parsedData.tags) ? parsedData.tags : [],
       };
 
@@ -270,9 +269,9 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
         createdAt: serverTimestamp(),
         mood: editableJournal.mood
           ? {
-              type: editableJournal.mood,
-              level: editableJournal.moodLevel || 5,
-            }
+            type: editableJournal.mood,
+            level: editableJournal.moodLevel || 5,
+          }
           : null,
         title: finalTitle,
         content: editableJournal.content.trim(),
@@ -382,21 +381,11 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
               placeholder="What happened today?"
             />
 
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                Mood
-              </Typography>
-              <MoodSelector
-                selectedMood={editableJournal.mood}
-                onSelect={(val) => handleInputChange('mood', val)}
-              />
-            </Box>
+
 
             {editableJournal.mood && (
               <Box px={2}>
-                <Typography gutterBottom>
-                  How strong is your {editableJournal.mood} feeling?
-                </Typography>
+
                 <Slider
                   value={editableJournal.moodLevel || 5}
                   onChange={(_, val) => handleInputChange('moodLevel', val)}

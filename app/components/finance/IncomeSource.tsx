@@ -1,5 +1,5 @@
 'use client';
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Button,
@@ -96,17 +96,7 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
     return diffDays;
   };
 
-  const categoryChartData = useMemo(() => {
-    const categoryMap = new Map<string, number>();
-    displayedSources.forEach((src) => {
-      const cat = src.category || 'Uncategorized';
-      categoryMap.set(cat, (categoryMap.get(cat) || 0) + src.amount);
-    });
-    return Array.from(categoryMap.entries()).map(([name, value]) => ({
-      name,
-      value,
-    }));
-  }, [displayedSources]);
+
 
   const onClickMark = (src: IncomeSource) => {
     setSelectedIncome(src);
