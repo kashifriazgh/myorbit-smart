@@ -5,15 +5,13 @@ import { Point } from '@/app/lib/interface';
 import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { useGoals } from '@/app/lib/context/GoalsContext';
-import { 
-  Delete as DeleteIcon,
-  CalendarToday as CalendarIcon,
-  Timer as TimerIcon,
-  ExpandMore as ExpandMoreIcon,
-  CheckCircleOutline as CheckCircleIcon,
-  RadioButtonUnchecked as UncheckedIcon,
-  Edit as EditIcon,
-} from '@mui/icons-material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import CalendarIcon from '@mui/icons-material/CalendarToday';
+import TimerIcon from '@mui/icons-material/Timer';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import CheckCircleIcon from '@mui/icons-material/CheckCircleOutline';
+import UncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import EditIcon from '@mui/icons-material/Edit';
 import { Box, Typography, IconButton, LinearProgress, useMediaQuery, useTheme } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import moment from 'moment';

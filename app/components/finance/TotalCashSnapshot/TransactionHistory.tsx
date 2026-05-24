@@ -19,13 +19,11 @@ import {
   Avatar,
   Fade,
 } from '@mui/material';
-import {
-  Close as CloseIcon,
-  TrendingUp,
-  TrendingDown,
-  SwapHoriz,
-  History,
-} from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
+import TrendingUp from '@mui/icons-material/TrendingUp';
+import TrendingDown from '@mui/icons-material/TrendingDown';
+import SwapHoriz from '@mui/icons-material/SwapHoriz';
+import History from '@mui/icons-material/History';
 import { db } from '@/app/lib/firebase';
 import {
   collection,

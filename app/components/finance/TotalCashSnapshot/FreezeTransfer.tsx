@@ -28,14 +28,12 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
-import { 
-  Close as CloseIcon,
-  AcUnit as FreezeIcon,
-  AccountBalance as BankIcon,
-  Wallet as WalletIcon,
-  Payments as PaymentsIcon,
-  AttachMoney as MoneyIcon,
-} from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
+import FreezeIcon from '@mui/icons-material/AcUnit';
+import BankIcon from '@mui/icons-material/AccountBalance';
+import WalletIcon from '@mui/icons-material/Wallet';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import MoneyIcon from '@mui/icons-material/AttachMoney';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 const SOURCE_OPTIONS: TransactionSource[] = [

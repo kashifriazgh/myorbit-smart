@@ -16,7 +16,9 @@ import {
   Fab,
   Divider,
 } from '@mui/material';
-import { Search, Add, FilterList } from '@mui/icons-material';
+import Search from '@mui/icons-material/Search';
+import Add from '@mui/icons-material/Add';
+import FilterList from '@mui/icons-material/FilterList';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGoals } from '../lib/context/GoalsContext';
 import { useAuth } from '../lib/context/userContext';

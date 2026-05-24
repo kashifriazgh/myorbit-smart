@@ -25,15 +25,13 @@ import {
   MenuItem,
   TextField
 } from '@mui/material';
-import { 
-  Delete as DeleteIcon, 
-  ArrowBack as ArrowBackIcon,
-  AccountBalance as AccountBalanceIcon,
-  Payments as PaymentsIcon,
-  AccountBalanceWallet as WalletIcon,
-  Warning as WarningIcon,
-  Add as AddIcon
-} from '@mui/icons-material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import WalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import WarningIcon from '@mui/icons-material/Warning';
+import AddIcon from '@mui/icons-material/Add';
 import Link from 'next/link';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';

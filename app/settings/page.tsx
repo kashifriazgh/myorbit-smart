@@ -1,15 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import {
-  Notifications as PushIcon,
-  WhatsApp as WhatsAppIcon,
-  ChevronRight as ChevronRightIcon,
-  Tune as TuneIcon,
-  AccountCircle as AccountIcon,
-  Security as SecurityIcon,
-  Palette as PaletteIcon,
-} from '@mui/icons-material';
+import PushIcon from '@mui/icons-material/Notifications';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import TuneIcon from '@mui/icons-material/Tune';
+import AccountIcon from '@mui/icons-material/AccountCircle';
+import SecurityIcon from '@mui/icons-material/Security';
+import PaletteIcon from '@mui/icons-material/Palette';
 
 const settingsSections = [
   {

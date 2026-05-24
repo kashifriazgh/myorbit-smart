@@ -25,7 +25,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import SaveIcon from '@mui/icons-material/Save';
 import moment from 'moment';
-import MoodSelector from './moodSelector';
 import { useRef } from 'react';
 
 
@@ -81,7 +80,7 @@ export default function JournalModal({ open, onClose }: Props) {
       setTags([...tags, clean]);
     }
     setTagInput('');
-  
+
     // Keep the input focused
     tagInputRef.current?.focus();
   };
@@ -155,7 +154,6 @@ export default function JournalModal({ open, onClose }: Props) {
       >
         <Stack spacing={3}>
           {/* Display Current Date/Time below mood selector */}
-          <MoodSelector selectedMood={mood} onSelect={(val) => setMood(val)} />
 
           <Typography variant="h5" textAlign="center" fontWeight="bold">
             {currentDate}
@@ -208,15 +206,15 @@ export default function JournalModal({ open, onClose }: Props) {
 
           {/* Tags */}
           <Stack direction="row" spacing={1} alignItems="center">
-  <TextField
-    inputRef={tagInputRef} // <-- attach ref here
-    label="Add Tag"
-    value={tagInput}
-    onChange={(e) => setTagInput(e.target.value)}
-    onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
-  />
-  <Button onClick={handleAddTag}>Add</Button>
-</Stack>
+            <TextField
+              inputRef={tagInputRef} // <-- attach ref here
+              label="Add Tag"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+            />
+            <Button onClick={handleAddTag}>Add</Button>
+          </Stack>
 
           <Stack direction="row" spacing={1} flexWrap="wrap">
             {tags.map((tag, idx) => (

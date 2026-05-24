@@ -40,14 +40,12 @@ import {
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
 import Link from 'next/link';
-import {
-  ArrowBack as ArrowBackIcon,
-  Delete as DeleteIcon,
-  Payment as PaymentIcon,
-  LockOutlined as LockIcon,
-  Login as LoginIcon,
-  AccountBalanceWallet as WalletIcon,
-} from '@mui/icons-material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import DeleteIcon from '@mui/icons-material/Delete';
+import PaymentIcon from '@mui/icons-material/Payment';
+import LockIcon from '@mui/icons-material/LockOutlined';
+import LoginIcon from '@mui/icons-material/Login';
+import WalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import LoanDialog from '@/app/components/finance/TotalCashSnapshot/LoanRecord';
 

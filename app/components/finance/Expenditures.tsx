@@ -20,7 +20,20 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { ExpandLess, ExpandMore, Event, Receipt, ShoppingCart, DirectionsCar, Restaurant, LocalHospital, HomeWork, Bolt, Delete, CheckCircle, Info, TrendingUp } from '@mui/icons-material';
+import ExpandLess from '@mui/icons-material/ExpandLess';
+import ExpandMore from '@mui/icons-material/ExpandMore';
+import Event from '@mui/icons-material/Event';
+import Receipt from '@mui/icons-material/Receipt';
+import ShoppingCart from '@mui/icons-material/ShoppingCart';
+import DirectionsCar from '@mui/icons-material/DirectionsCar';
+import Restaurant from '@mui/icons-material/Restaurant';
+import LocalHospital from '@mui/icons-material/LocalHospital';
+import HomeWork from '@mui/icons-material/HomeWork';
+import Bolt from '@mui/icons-material/Bolt';
+import Delete from '@mui/icons-material/Delete';
+import CheckCircle from '@mui/icons-material/CheckCircle';
+import Info from '@mui/icons-material/Info';
+import TrendingUp from '@mui/icons-material/TrendingUp';
 import {
   Card,
   CardContent,
@@ -31,7 +44,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { Expenditure, TransactionSource } from '@/app/lib/interface';
-import ExpenditureChart from './ChartViewByCategories';
+
 // Note: user filtering is handled by ExpendituresProvider context using userId prop
 import AddExpenditureDialog from './utilsCompos/addExpenditureModal';
 import {
@@ -283,7 +296,7 @@ function ExpendituresComponent({ userId }: { userId: string }) {
         Expenditures
       </Typography>
 
-      <ExpenditureChart data={categoryWiseData} />
+
 
       <Button
         variant="contained"
@@ -308,7 +321,7 @@ function ExpendituresComponent({ userId }: { userId: string }) {
             </Typography>
             {groupedByType[group].map((exp) => {
               const daysDiff = exp.dueDate ? getDaysDifference(exp.dueDate instanceof Date ? exp.dueDate : exp.dueDate.toDate()) : null;
-              
+
               const getCategoryIcon = (category?: string) => {
                 const cat = category?.toLowerCase() || '';
                 if (cat.includes('food') || cat.includes('restaurant')) return <Restaurant />;
@@ -353,9 +366,9 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                     <Box sx={{ p: 2.5 }}>
                       <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                         <Stack direction="row" spacing={2} alignItems="center">
-                          <Avatar 
-                            sx={{ 
-                              bgcolor: `${getCategoryColor(exp.category)}15`, 
+                          <Avatar
+                            sx={{
+                              bgcolor: `${getCategoryColor(exp.category)}15`,
                               color: getCategoryColor(exp.category),
                               width: 48,
                               height: 48,
@@ -369,17 +382,17 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                               {exp.title}
                             </Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                              <Chip 
-                                label={exp.category || 'Other'} 
-                                size="small" 
-                                sx={{ 
-                                  height: 20, 
-                                  fontSize: '10px', 
+                              <Chip
+                                label={exp.category || 'Other'}
+                                size="small"
+                                sx={{
+                                  height: 20,
+                                  fontSize: '10px',
                                   fontWeight: 700,
                                   bgcolor: `${getCategoryColor(exp.category)}10`,
                                   color: getCategoryColor(exp.category),
                                   border: `1px solid ${getCategoryColor(exp.category)}30`
-                                }} 
+                                }}
                               />
                               • {exp.frequency}
                             </Typography>
@@ -445,14 +458,14 @@ function ExpendituresComponent({ userId }: { userId: string }) {
 
                       <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                         {exp.dueDate && (
-                          <Box 
-                            sx={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: 0.5, 
-                              px: 1.5, 
-                              py: 0.5, 
-                              borderRadius: 1.5, 
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              px: 1.5,
+                              py: 0.5,
+                              borderRadius: 1.5,
                               bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#fef2f2',
                               border: `1px solid ${isDark ? 'rgba(239, 68, 68, 0.1)' : '#fee2e2'}`
                             }}
@@ -479,14 +492,14 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                         )}
 
                         {daysDiff !== null && (
-                          <Box 
-                            sx={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: 0.5, 
-                              px: 1.5, 
-                              py: 0.5, 
-                              borderRadius: 1.5, 
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              px: 1.5,
+                              py: 0.5,
+                              borderRadius: 1.5,
                               bgcolor: daysDiff <= 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)',
                               border: `1px solid ${daysDiff <= 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`
                             }}
@@ -510,12 +523,12 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                             Notes
                           </Button>
                           <Collapse in={notesOpen}>
-                            <Typography 
-                              variant="body2" 
-                              sx={{ 
-                                mt: 1, 
-                                p: 1.5, 
-                                borderRadius: 2, 
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                mt: 1,
+                                p: 1.5,
+                                borderRadius: 2,
                                 bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc',
                                 color: 'text.secondary',
                                 fontSize: '0.75rem',
@@ -532,11 +545,11 @@ function ExpendituresComponent({ userId }: { userId: string }) {
 
                     <Divider sx={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                    <Stack 
-                      direction="row" 
-                      spacing={0.5} 
-                      sx={{ 
-                        p: 1, 
+                    <Stack
+                      direction="row"
+                      spacing={0.5}
+                      sx={{
+                        p: 1,
                         bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fafafa',
                         justifyContent: 'flex-end'
                       }}
@@ -544,8 +557,8 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                       {!exp.isPaid && (
                         <>
                           <Tooltip title="Mark as Paid">
-                            <IconButton 
-                              size="small" 
+                            <IconButton
+                              size="small"
                               onClick={() => openMarkPaidDialog(exp)}
                               disabled={actionLoading}
                               sx={{ color: '#10b981', '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.1)' } }}
@@ -554,8 +567,8 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="Reschedule">
-                            <IconButton 
-                              size="small" 
+                            <IconButton
+                              size="small"
                               onClick={() => handleReschedule(exp)}
                               disabled={reschedulingLoading}
                               sx={{ color: '#f59e0b', '&:hover': { bgcolor: 'rgba(245, 158, 11, 0.1)' } }}
@@ -566,8 +579,8 @@ function ExpendituresComponent({ userId }: { userId: string }) {
                         </>
                       )}
                       <Tooltip title="Delete">
-                        <IconButton 
-                          size="small" 
+                        <IconButton
+                          size="small"
                           onClick={() => exp.id && setDeleteId(exp.id)}
                           disabled={deleting}
                           sx={{ color: '#ef4444', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }}
@@ -718,7 +731,7 @@ function ExpendituresComponent({ userId }: { userId: string }) {
       <AddExpenditureDialog
         open={openModal}
         onClose={() => setOpenModal(false)}
-        onAdded={() => {}} // Context will handle the update automatically
+        onAdded={() => { }} // Context will handle the update automatically
       />
 
       {/* Reschedule Modal */}

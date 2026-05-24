@@ -6,14 +6,12 @@ import {
   IconButton, MenuItem, Stack, Grid, useTheme, useMediaQuery, 
   CircularProgress 
 } from '@mui/material';
-import { 
-  Close as CloseIcon, 
-  Assignment as ProjectIcon,
-  School as LearningIcon,
-  Work as FreelanceIcon,
-  Favorite as HealthIcon,
-  Person as PersonalIcon,
-} from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
+import ProjectIcon from '@mui/icons-material/Assignment';
+import LearningIcon from '@mui/icons-material/School';
+import FreelanceIcon from '@mui/icons-material/Work';
+import HealthIcon from '@mui/icons-material/Favorite';
+import PersonalIcon from '@mui/icons-material/Person';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProjects } from '@/app/lib/context/ProjectsContext';
 import { useAuth } from '@/app/lib/context/userContext';

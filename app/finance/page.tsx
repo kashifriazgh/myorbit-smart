@@ -22,7 +22,6 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import TotalCashSnapshotComponent from '../components/finance/TotalCashSnapshot';
 import { useAuth } from '../lib/context/userContext';
 import { useCustomTheme } from '../lib/context/themeContext';
-import CashFlowChart from '../components/finance/CashFlowChart';
 
 export default function Finance() {
   const { user } = useAuth();
@@ -103,7 +102,7 @@ export default function Finance() {
     >
       <Container maxWidth="md" sx={{ py: 4 }}>
         <TotalCashSnapshotComponent userId={user.uid} />
-        <CashFlowChart />
+
 
         <div className="mt-8">
           <p

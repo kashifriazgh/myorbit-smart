@@ -41,20 +41,18 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
-import {
-  Close as CloseIcon,
-  AttachMoney as MoneyIcon,
-  Person as PersonIcon,
-  CalendarMonth as DateIcon,
-  AccountBalance as BankIcon,
-  Wallet as WalletIcon,
-  Payments as PaymentsIcon,
-  Description as NoteIcon,
-  SwapHoriz as SwapIcon,
-  ArrowForward as ArrowForwardIcon,
-  AddCircle as AddIcon,
-  WarningAmber as WarningIcon,
-} from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
+import MoneyIcon from '@mui/icons-material/AttachMoney';
+import PersonIcon from '@mui/icons-material/Person';
+import DateIcon from '@mui/icons-material/CalendarMonth';
+import BankIcon from '@mui/icons-material/AccountBalance';
+import WalletIcon from '@mui/icons-material/Wallet';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import NoteIcon from '@mui/icons-material/Description';
+import SwapIcon from '@mui/icons-material/SwapHoriz';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import AddIcon from '@mui/icons-material/AddCircle';
+import WarningIcon from '@mui/icons-material/WarningAmber';
 import Link from 'next/link';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';

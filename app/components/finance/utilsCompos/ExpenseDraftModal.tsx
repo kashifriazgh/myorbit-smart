@@ -19,7 +19,7 @@ import {
 import { useEffect, useState, useCallback } from 'react';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
-import { Close as CloseIcon } from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
 import { EXPENSE_CATEGORIES } from '@/app/lib/constant';
 import { Expenditure } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';

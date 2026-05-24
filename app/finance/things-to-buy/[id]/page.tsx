@@ -38,22 +38,20 @@ import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { BuyItem } from '@/app/lib/interface';
 import moment from 'moment';
-import {
-  Delete as DeleteIcon,
-  Edit as EditIcon,
-  Save as SaveIcon,
-  ShoppingCart as ShoppingCartIcon,
-  Warning as WarningIcon,
-  TrendingUp as TrendingUpIcon,
-  ArrowBack as ArrowBackIcon,
-  Close as CloseIcon,
-  AddShoppingCart as AddItemIcon,
-  CheckCircle as CheckCircleIcon,
-  Add as AddIcon,
-  RemoveShoppingCart as EmptyIcon,
-  Payments as PaymentsIcon,
-  ReceiptLong as SummaryIcon,
-} from '@mui/icons-material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import WarningIcon from '@mui/icons-material/Warning';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import CloseIcon from '@mui/icons-material/Close';
+import AddItemIcon from '@mui/icons-material/AddShoppingCart';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import AddIcon from '@mui/icons-material/Add';
+import EmptyIcon from '@mui/icons-material/RemoveShoppingCart';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import SummaryIcon from '@mui/icons-material/ReceiptLong';
 import { useTheme } from '@mui/material/styles';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import Link from 'next/link';

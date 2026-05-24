@@ -28,7 +28,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
-import { 
+import {
   Close as CloseIcon,
   Add as AddIcon,
   AccountBalance as BankIcon,
@@ -53,6 +53,7 @@ interface Props {
     amount: number,
     source: TransactionSource,
     isFreezed: boolean,
+
     bankId?: string,
     bankName?: string,
     customPaymentHeadId?: string,
@@ -195,12 +196,12 @@ export default function AddMoney({ onSave, saving }: Props) {
 
   return (
     <>
-      <Button 
-        variant="contained" 
+      <Button
+        variant="contained"
         onClick={() => setShowModal(true)}
         startIcon={<AddIcon />}
-        sx={{ 
-          borderRadius: 2, 
+        sx={{
+          borderRadius: 2,
           fontWeight: 700,
           textTransform: 'none',
           boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
@@ -209,8 +210,8 @@ export default function AddMoney({ onSave, saving }: Props) {
         Add Money
       </Button>
 
-      <Dialog 
-        open={showModal} 
+      <Dialog
+        open={showModal}
         onClose={() => !saving && setShowModal(false)}
         fullWidth
         maxWidth="xs"
@@ -223,7 +224,7 @@ export default function AddMoney({ onSave, saving }: Props) {
           }
         }}
       >
-        <Box sx={{ 
+        <Box sx={{
           background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
           p: 3,
           color: 'white',
@@ -242,12 +243,12 @@ export default function AddMoney({ onSave, saving }: Props) {
               </Typography>
             </Box>
           </Stack>
-          <IconButton 
+          <IconButton
             onClick={() => setShowModal(false)}
-            sx={{ 
-              position: 'absolute', 
-              right: 12, 
-              top: 12, 
+            sx={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
               color: 'white',
               '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
             }}
@@ -287,7 +288,7 @@ export default function AddMoney({ onSave, saving }: Props) {
               </Select>
             </FormControl>
 
-          {/* Extra bank select if source = bank and not freezed */}
+            {/* Extra bank select if source = bank and not freezed */}
             {!isFreezed && newMode === 'bank' && (
               <Stack spacing={2}>
                 <FormControl fullWidth>
@@ -308,9 +309,9 @@ export default function AddMoney({ onSave, saving }: Props) {
                 </FormControl>
 
                 {!selectedBank && (
-                  <Box sx={{ 
-                    p: 2, 
-                    borderRadius: 2, 
+                  <Box sx={{
+                    p: 2,
+                    borderRadius: 2,
                     bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc',
                     border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1'}`
                   }}>
@@ -340,7 +341,7 @@ export default function AddMoney({ onSave, saving }: Props) {
               </Stack>
             )}
 
-          {/* Custom payment head select if source = custom and not freezed */}
+            {/* Custom payment head select if source = custom and not freezed */}
             {!isFreezed && newMode === 'custom' && (
               <Stack spacing={2}>
                 <FormControl fullWidth>
@@ -361,9 +362,9 @@ export default function AddMoney({ onSave, saving }: Props) {
                 </FormControl>
 
                 {!selectedCustomPaymentHead && (
-                  <Box sx={{ 
-                    p: 2, 
-                    borderRadius: 2, 
+                  <Box sx={{
+                    p: 2,
+                    borderRadius: 2,
                     bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc',
                     border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1'}`
                   }}>
@@ -394,10 +395,10 @@ export default function AddMoney({ onSave, saving }: Props) {
               </Stack>
             )}
 
-            <Box 
-              sx={{ 
-                p: 1.5, 
-                borderRadius: 2, 
+            <Box
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
                 bgcolor: isFreezed ? 'rgba(239, 68, 68, 0.05)' : 'transparent',
                 border: `1px solid ${isFreezed ? 'rgba(239, 68, 68, 0.2)' : 'rgba(0,0,0,0.05)'}`,
                 display: 'flex',
@@ -450,9 +451,9 @@ export default function AddMoney({ onSave, saving }: Props) {
               (!isFreezed && newMode === 'custom' && !selectedCustomPaymentHead) ||
               !newAmount || newAmount <= 0
             }
-            sx={{ 
-              borderRadius: 2, 
-              fontWeight: 800, 
+            sx={{
+              borderRadius: 2,
+              fontWeight: 800,
               px: 4,
               boxShadow: '0 4px 14px 0 rgba(59, 130, 246, 0.39)',
               textTransform: 'none'

@@ -5,7 +5,7 @@ import {
   Dialog, DialogContent, Box, Typography, Button, TextField, 
   IconButton, Stack 
 } from '@mui/material';
-import { Close as CloseIcon } from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
 import { useProjects } from '@/app/lib/context/ProjectsContext';
 
 interface NewAgendaModalProps {

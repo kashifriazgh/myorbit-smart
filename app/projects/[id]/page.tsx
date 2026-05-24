@@ -6,7 +6,7 @@ import { useProjects } from '@/app/lib/context/ProjectsContext';
 import ProjectDetail from '@/components/projects/ProjectDetail';
 import { Box, CircularProgress, Typography, Button } from '@mui/material';
 import Link from 'next/link';
-import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 export default function ProjectDetailPage() {
   const params = useParams();

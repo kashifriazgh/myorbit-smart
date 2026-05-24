@@ -2,14 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import {
-  NotificationsActive as BellOnIcon,
-  NotificationsOff as BellOffIcon,
-  ArrowBack as BackIcon,
-  CheckCircle as CheckIcon,
-  InfoOutlined as InfoIcon,
-  DevicesOther as DevicesIcon,
-} from '@mui/icons-material';
+import BellOnIcon from '@mui/icons-material/NotificationsActive';
+import BellOffIcon from '@mui/icons-material/NotificationsOff';
+import BackIcon from '@mui/icons-material/ArrowBack';
+import CheckIcon from '@mui/icons-material/CheckCircle';
+import InfoIcon from '@mui/icons-material/InfoOutlined';
+import DevicesIcon from '@mui/icons-material/DevicesOther';
 import { requestNotificationPermissionAndGetToken } from '@/app/lib/utils/fcm';
 import { useAuth } from '@/app/lib/context/userContext';
 

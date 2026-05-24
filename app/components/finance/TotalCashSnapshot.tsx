@@ -1,7 +1,8 @@
 'use client';
 
 import { Box, Typography, CircularProgress, IconButton, Button } from '@mui/material';
-import { Visibility, VisibilityOff } from '@mui/icons-material';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import { useEffect, useState } from 'react';
 import { db } from '@/app/lib/firebase';
 import {

@@ -4,10 +4,8 @@ import React from 'react';
 import { Project } from '@/app/lib/interface';
 import { Box, Typography, AvatarGroup, Avatar, Chip, LinearProgress } from '@mui/material';
 import { motion } from 'framer-motion';
-import { 
-  AccessTime as TimeIcon,
-  Assignment as ProjectIcon,
-} from '@mui/icons-material';
+import TimeIcon from '@mui/icons-material/AccessTime';
+import ProjectIcon from '@mui/icons-material/Assignment';
 import Link from 'next/link';
 import { toDateSafe } from '@/app/lib/utilts';
 

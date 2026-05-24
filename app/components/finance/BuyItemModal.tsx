@@ -28,17 +28,15 @@ import {
   Card,
   CardContent,
 } from '@mui/material';
-import {
-  Add as AddIcon,
-  Delete as DeleteIcon,
-  Close as CloseIcon,
-  ShoppingCart as ShoppingCartIcon,
-  AttachMoney as MoneyIcon,
-  PriorityHigh as PriorityIcon,
-  Description as NoteIcon,
-  PlaylistAdd as PlanIcon,
-  CheckCircle as SuccessIcon,
-} from '@mui/icons-material';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+import CloseIcon from '@mui/icons-material/Close';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import MoneyIcon from '@mui/icons-material/AttachMoney';
+import PriorityIcon from '@mui/icons-material/PriorityHigh';
+import NoteIcon from '@mui/icons-material/Description';
+import PlanIcon from '@mui/icons-material/PlaylistAdd';
+import SuccessIcon from '@mui/icons-material/CheckCircle';
 import { useState } from 'react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';

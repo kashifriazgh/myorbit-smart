@@ -6,7 +6,7 @@ import { useCustomTheme } from '@/app/lib/context/themeContext';
 import ProjectCard from '@/components/projects/ProjectCard';
 import NewProjectModal from '@/components/projects/NewProjectModal';
 import { Box, Typography, Button, Tabs, Tab, CircularProgress, Container } from '@mui/material';
-import { Add as AddIcon } from '@mui/icons-material';
+import AddIcon from '@mui/icons-material/Add';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ProjectsPage() {

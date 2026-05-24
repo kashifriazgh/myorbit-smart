@@ -6,12 +6,10 @@ import {
   IconButton, Checkbox, Stack,
   useTheme, useMediaQuery, Chip
 } from '@mui/material';
-import { 
-  Close as CloseIcon,
-  CheckCircle as SelectedIcon,
-  RadioButtonUnchecked as UnselectedIcon,
-  FilterList as FilterIcon
-} from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
+import SelectedIcon from '@mui/icons-material/CheckCircle';
+import UnselectedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import FilterIcon from '@mui/icons-material/FilterList';
 import { Point } from '@/app/lib/interface';
 import { motion, AnimatePresence } from 'framer-motion';
 

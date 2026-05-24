@@ -6,7 +6,7 @@ import TimeTableList from '../components/time-table/TimeTableList';
 import TimeTableModal from '../components/time-table/TimeTableModal';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
-import { Add } from '@mui/icons-material';
+import Add from '@mui/icons-material/Add';
 
 const TimeTablePage = () => {
   const [modalOpen, setModalOpen] = useState(false);

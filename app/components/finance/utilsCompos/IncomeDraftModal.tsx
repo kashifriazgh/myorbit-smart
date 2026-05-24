@@ -19,7 +19,7 @@ import {
 import { useEffect, useState, useCallback } from 'react';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
-import { Close as CloseIcon } from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
 import { INCOME_CATEGORIES } from '@/app/lib/constant';
 import { IncomeSource } from '@/app/lib/interface';
 import { saveIncomeSource } from '@/app/lib/functions/incomeSources';

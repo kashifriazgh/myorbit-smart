@@ -26,16 +26,14 @@ import {
 import { db } from '@/app/lib/firebase';
 import { collection, getDocs, query, where, addDoc, Timestamp } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
-import { 
-  Close as CloseIcon,
-  RemoveCircle as DeductIcon,
-  AccountBalance as BankIcon,
-  Wallet as WalletIcon,
-  Payments as PaymentsIcon,
-  AttachMoney as MoneyIcon,
-  AccountBalanceWallet as BalanceIcon,
-  Layers as LayersIcon
-} from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
+import DeductIcon from '@mui/icons-material/RemoveCircle';
+import BankIcon from '@mui/icons-material/AccountBalance';
+import WalletIcon from '@mui/icons-material/Wallet';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import MoneyIcon from '@mui/icons-material/AttachMoney';
+import BalanceIcon from '@mui/icons-material/AccountBalanceWallet';
+import LayersIcon from '@mui/icons-material/Layers';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';
 

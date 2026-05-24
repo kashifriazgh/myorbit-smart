@@ -10,13 +10,11 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useGoals } from '@/app/lib/context/GoalsContext';
 import { Point } from '@/app/lib/interface';
 import { Box, Typography, Button, Container } from '@mui/material';
-import { 
-  ArrowBack as ArrowBackIcon, 
-  Add as AddIcon,
-  AttachMoney as MoneyIcon,
-  People as PeopleIcon,
-  CalendarToday as CalendarIcon
-} from '@mui/icons-material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import AddIcon from '@mui/icons-material/Add';
+import MoneyIcon from '@mui/icons-material/AttachMoney';
+import PeopleIcon from '@mui/icons-material/People';
+import CalendarIcon from '@mui/icons-material/CalendarToday';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { toDateSafe } from '@/app/lib/utilts';

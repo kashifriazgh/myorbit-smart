@@ -4,14 +4,12 @@ import React, { useState, useMemo } from 'react';
 import { Agenda, Point } from '@/app/lib/interface';
 import PointRow from './PointRow';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ExpandMore as ExpandMoreIcon,
-  Add as AddIcon,
-  FolderOpen as GroupIcon,
-  AddCircleOutline as AddPointIcon,
-  CheckCircle as SelectedIcon,
-  RadioButtonUnchecked as UnselectedIcon
-} from '@mui/icons-material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import AddIcon from '@mui/icons-material/Add';
+import GroupIcon from '@mui/icons-material/FolderOpen';
+import AddPointIcon from '@mui/icons-material/AddCircleOutline';
+import SelectedIcon from '@mui/icons-material/CheckCircle';
+import UnselectedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import { Box, Typography, Button, IconButton, TextField, ClickAwayListener, Checkbox, FormControlLabel } from '@mui/material';
 import { useProjects } from '@/app/lib/context/ProjectsContext';
 import PointSelectionModal from './PointSelectionModal';

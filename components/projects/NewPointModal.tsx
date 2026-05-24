@@ -6,15 +6,13 @@ import {
   IconButton, Stack, Grid, CircularProgress, 
   useTheme, useMediaQuery
 } from '@mui/material';
-import { 
-  Close as CloseIcon,
-  FormatQuote as StringIcon,
-  Checklist as TodoIcon,
-  Event as ScheduleIcon,
-  Flag as GoalIcon,
-  VpnKey as KeyIcon,
-  Whatshot as StreakIcon,
-} from '@mui/icons-material';
+import CloseIcon from '@mui/icons-material/Close';
+import StringIcon from '@mui/icons-material/FormatQuote';
+import TodoIcon from '@mui/icons-material/Checklist';
+import ScheduleIcon from '@mui/icons-material/Event';
+import GoalIcon from '@mui/icons-material/Flag';
+import KeyIcon from '@mui/icons-material/VpnKey';
+import StreakIcon from '@mui/icons-material/Whatshot';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProjects } from '@/app/lib/context/ProjectsContext';
 import { useTodoContext } from '@/app/lib/context/todoContext';

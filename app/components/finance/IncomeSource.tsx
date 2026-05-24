@@ -10,7 +10,6 @@ import {
 } from '@mui/material';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { IncomeSource, TransactionSource } from '@/app/lib/interface';
-import ChartViewByCategory from './ChartViewByCategories';
 import AddIncomeModal from './utilsCompos/addIncomeModal';
 import { useIncomeSources } from '@/app/lib/context/IncomeSourcesContext';
 import MarkAsReceivedDialog from './MarkAsReceivedDialog';
@@ -195,7 +194,7 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
         bgcolor: 'transparent', // Let the parent container handle background
       }}
     >
-      <ChartViewByCategory data={categoryChartData} />
+
 
       <Box
         display="flex"
@@ -217,7 +216,7 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
       {displayedSources.map((src) => {
         const isDark = theme.mode === 'dark';
         const daysDiff = src.effectiveFromDate ? getDaysDifference(src.effectiveFromDate instanceof Date ? src.effectiveFromDate : src.effectiveFromDate.toDate()) : null;
-        
+
         // Category icons mapping
         const getCategoryIcon = (category?: string) => {
           const cat = category?.toLowerCase() || '';
@@ -259,9 +258,9 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
               <Box sx={{ p: 2.5 }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                   <Stack direction="row" spacing={2} alignItems="center">
-                    <Avatar 
-                      sx={{ 
-                        bgcolor: `${getCategoryColor(src.category)}15`, 
+                    <Avatar
+                      sx={{
+                        bgcolor: `${getCategoryColor(src.category)}15`,
                         color: getCategoryColor(src.category),
                         width: 48,
                         height: 48,
@@ -275,17 +274,17 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                         {src.title}
                       </Typography>
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                        <Chip 
-                          label={src.category || 'Other'} 
-                          size="small" 
-                          sx={{ 
-                            height: 20, 
-                            fontSize: '10px', 
+                        <Chip
+                          label={src.category || 'Other'}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '10px',
                             fontWeight: 700,
                             bgcolor: `${getCategoryColor(src.category)}10`,
                             color: getCategoryColor(src.category),
                             border: `1px solid ${getCategoryColor(src.category)}30`
-                          }} 
+                          }}
                         />
                         • {src.frequency}
                       </Typography>
@@ -354,14 +353,14 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
 
                 <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                   {src.expectedDate && (
-                    <Box 
-                      sx={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: 0.5, 
-                        px: 1.5, 
-                        py: 0.5, 
-                        borderRadius: 1.5, 
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: 1.5,
                         bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
                         border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`
                       }}
@@ -396,12 +395,12 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                 </Box>
 
                 {src.notes && (
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      mt: 2, 
-                      p: 1.5, 
-                      borderRadius: 2, 
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      mt: 2,
+                      p: 1.5,
+                      borderRadius: 2,
                       bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc',
                       color: 'text.secondary',
                       fontSize: '0.75rem',
@@ -416,11 +415,11 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
 
               <Divider sx={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-              <Stack 
-                direction="row" 
-                spacing={0.5} 
-                sx={{ 
-                  p: 1, 
+              <Stack
+                direction="row"
+                spacing={0.5}
+                sx={{
+                  p: 1,
                   bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fafafa',
                   justifyContent: 'flex-end'
                 }}
@@ -428,8 +427,8 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                 {!src.isReceived && (
                   <>
                     <Tooltip title="Mark as Received">
-                      <IconButton 
-                        size="small" 
+                      <IconButton
+                        size="small"
                         onClick={() => onClickMark(src)}
                         disabled={actionLoading}
                         sx={{ color: '#10b981', '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.1)' } }}
@@ -438,8 +437,8 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="Reschedule">
-                      <IconButton 
-                        size="small" 
+                      <IconButton
+                        size="small"
                         onClick={() => onClickReschedule(src)}
                         disabled={rescheduleLoading}
                         sx={{ color: '#6366f1', '&:hover': { bgcolor: 'rgba(99, 102, 241, 0.1)' } }}
@@ -450,8 +449,8 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
                   </>
                 )}
                 <Tooltip title="Delete">
-                  <IconButton 
-                    size="small" 
+                  <IconButton
+                    size="small"
                     onClick={() => onClickDelete(src)}
                     disabled={deleteLoading}
                     sx={{ color: '#ef4444', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }}
@@ -499,7 +498,7 @@ export default function IncomeSourceComponent({ userId }: { userId: string }) {
         open={openModal}
         onClose={() => setOpenModal(false)}
         userId={userId}
-        onAdded={() => {}} // Context will handle the update automatically
+        onAdded={() => { }} // Context will handle the update automatically
       />
     </Box>
   );

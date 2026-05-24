@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
-const WHATSAPP_API = 'http://localhost:3001';
-const CLIENT_ID = 'test_user_123'; // In production, this will be dynamic per user
+const WHATSAPP_API = process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || 'http://localhost:3001';
+const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID || 'test_user_123'; // Dynamic per client in production
 
 export default function WhatsAppSettingsPage() {
     const [qrCode, setQrCode] = useState<string | null>(null);
