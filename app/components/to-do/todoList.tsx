@@ -38,6 +38,7 @@ import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { Todo } from '@/app/lib/interface';
 import Link from 'next/link';
+import { deleteTodoReminder } from '@/app/lib/utils/whatsapp-reminder';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -215,9 +216,10 @@ export default function TodosList() {
   const handleDeleteSelected = async () => {
     setDeleting(true);
     try {
-      const deletePromises = selectedIds.map((id) =>
-        deleteDoc(doc(db, 'todos', id)),
-      );
+      const deletePromises = selectedIds.map(async (id) => {
+        await deleteTodoReminder(id);
+        await deleteDoc(doc(db, 'todos', id));
+      });
       await Promise.all(deletePromises);
       setTodos((prev) =>
         prev.filter((todo) => !selectedIds.includes(todo.id!)),

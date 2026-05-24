@@ -7,6 +7,7 @@ import Navbar from './components/global/Navbar';
 import EmotionRegistry from './emotionRegistry';
 import AppBarTop from './components/global/AppBarTop';
 import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingInitializer';
+import FcmForegroundHandler from './components/global/FcmForegroundHandler';
 
 
 // Google Fonts
@@ -62,6 +63,8 @@ export default function RootLayout({
           <ClientThemeProvider>
             <div className="flex min-h-screen flex-col  ">
               <OnBoardingInitializer />
+              {/* FCM foreground notification handler — shows push notifications when app is focused */}
+              <FcmForegroundHandler />
               {/* Top App Bar */}
               <AppBarTop />
 

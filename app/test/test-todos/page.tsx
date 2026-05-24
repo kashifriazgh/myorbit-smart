@@ -42,10 +42,13 @@ import {
     Settings as SettingsIcon,
     Alarm as AlarmIcon,
     NotificationsNone as NoReminderIcon,
+    Notifications as NotificationsIcon,
+    NotificationsActive as PushIcon,
     History as HistoryIcon
 } from '@mui/icons-material';
 
-import { db, database } from '@/app/lib/firebase';
+import { db } from '@/app/lib/firebase';
+import { getSharedDatabase, requestNotificationPermissionAndGetToken, getSharedMessaging } from '@/app/lib/utils/fcm';
 import {
     createWhatsAppReminder,
     updateWhatsAppReminder,
@@ -60,6 +63,7 @@ interface Task {
     reminderOption: 'due' | '15m' | '30m' | '1h' | 'custom' | 'none';
     customReminderTime: string;
     reminderDate?: string; // Stored as ISO string
+    reminderMethod?: 'whatsapp' | 'push';
     priority: 'low' | 'medium' | 'high';
     completed: boolean;
     createdAt: number;
@@ -92,6 +96,7 @@ export default function TestTodosPage() {
     const [formHasReminder, setFormHasReminder] = useState(false);
     const [formReminderOption, setFormReminderOption] = useState<'due' | '15m' | '30m' | '1h' | 'custom'>('15m');
     const [formCustomReminderTime, setFormCustomReminderTime] = useState('');
+    const [formReminderMethod, setFormReminderMethod] = useState<'whatsapp' | 'push'>('whatsapp');
 
     // Previews / Validation
     const [computedReminderTimeStr, setComputedReminderTimeStr] = useState<string>('');
@@ -99,7 +104,9 @@ export default function TestTodosPage() {
 
     // Test Config States
     const [testPhone, setTestPhone] = useState('923164709208');
-    const [testClientId, setTestClientId] = useState('test_user_123');
+    const [testClientId, setTestClientId] = useState(() => {
+        return process.env.NEXT_PUBLIC_CLIENT_ID || 'client-a-prod';
+    });
 
     // SnackBar notification state
     const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
@@ -189,47 +196,105 @@ export default function TestTodosPage() {
 
     // RTDB task completions listener
     useEffect(() => {
-        addLog('🔄 Listening to RTDB "task-completions" events...', 'info');
-        const completionsRef = rtdbRef(database, 'task-completions');
-        
-        const unsubscribe = onValue(completionsRef, async (snapshot) => {
-            const completions = snapshot.val();
-            
-            if (!completions) {
-                return;
-            }
+        addLog('🔄 Connecting to shared RTDB for "task-completions" events...', 'info');
+        let unsubscribe: (() => void) | undefined;
+        let isCancelled = false;
 
-            // Process completions
-            for (const [key, completion] of Object.entries(completions) as [string, { itemId?: string; taskId?: string; completedAt?: number }][]) {
-                const targetTaskId = completion.itemId || completion.taskId;
-                if (targetTaskId) {
-                    try {
-                        addLog(`📩 Detected WhatsApp Completion signal for Task ID: ${targetTaskId}`, 'warning');
-                        
-                        const taskRef = doc(db, 'test-todos', targetTaskId);
-                        
-                        await updateDoc(taskRef, {
-                            completed: true,
-                            completedAt: completion.completedAt || Date.now(),
-                            completedViaWhatsApp: true,
-                            updatedAt: Date.now()
-                        });
+        async function setupListener() {
+            try {
+                const dbInstance = await getSharedDatabase();
+                if (isCancelled) return;
+                
+                const completionsRef = rtdbRef(dbInstance, 'task-completions');
+                
+                unsubscribe = onValue(completionsRef, async (snapshot) => {
+                    const completions = snapshot.val();
+                    if (!completions) return;
 
-                        addLog(`✅ Firestore Updated: Task "${targetTaskId}" completed via WhatsApp!`, 'success');
-
-                        // Remove event from RTDB
-                        await remove(rtdbRef(database, `task-completions/${key}`));
-                        addLog(`🗑️ RTDB Cleared: Removed completion signal "${key}"`, 'success');
-                        showToast('Task completed via WhatsApp response!', 'success');
+                    // Process completions
+                    for (const [key, completion] of Object.entries(completions) as [string, { itemId?: string; taskId?: string; completedAt?: number; clientId?: string }][]) {
+                        const targetTaskId = completion.itemId || completion.taskId;
                         
-                    } catch (err) {
-                        addLog(`❌ Sync Error: ${(err as Error).message}`, 'error');
+                        // SECURITY CHECK: Only process completions matching our own clientId!
+                        if (completion.clientId && completion.clientId !== testClientId) {
+                            continue; // Skip completions belonging to other clients
+                        }
+
+                        if (targetTaskId) {
+                            try {
+                                addLog(`📩 Detected WhatsApp Completion signal for Task ID: ${targetTaskId}`, 'warning');
+                                
+                                const taskRef = doc(db, 'test-todos', targetTaskId);
+                                
+                                await updateDoc(taskRef, {
+                                    completed: true,
+                                    completedAt: completion.completedAt || Date.now(),
+                                    completedViaWhatsApp: true,
+                                    updatedAt: Date.now()
+                                });
+
+                                addLog(`✅ Firestore Updated: Task "${targetTaskId}" completed via response!`, 'success');
+
+                                // Remove event from RTDB using dbInstance
+                                await remove(rtdbRef(dbInstance, `task-completions/${key}`));
+                                addLog(`🗑️ RTDB Cleared: Removed completion signal "${key}"`, 'success');
+                                showToast('Task completed via response!', 'success');
+                                
+                            } catch (err) {
+                                addLog(`❌ Sync Error: ${(err as Error).message}`, 'error');
+                            }
+                        }
                     }
-                }
+                });
+            } catch (err) {
+                addLog(`❌ RTDB Connection Error: ${(err as Error).message}`, 'error');
             }
-        });
+        }
 
-        return () => unsubscribe();
+        setupListener();
+
+        return () => {
+            isCancelled = true;
+            if (unsubscribe) unsubscribe();
+        };
+    }, [testClientId]);
+
+    // FCM Foreground Notification Listener
+    useEffect(() => {
+        addLog('🔄 Setting up FCM foreground notification listener...', 'info');
+        let unsubscribe: (() => void) | undefined;
+        let isCancelled = false;
+
+        async function setupFCMListener() {
+            try {
+                const messagingInstance = await getSharedMessaging();
+                if (isCancelled) return;
+
+                if (messagingInstance) {
+                    const { onMessage } = await import('firebase/messaging');
+                    unsubscribe = onMessage(messagingInstance, (payload) => {
+                        console.log('Foreground message received in page:', payload);
+                        const title = payload.notification?.title || 'FCM Reminder';
+                        const body = payload.notification?.body || payload.data?.message || '';
+                        
+                        addLog(`🔔 Foreground FCM: "${title}" - ${body}`, 'success');
+                        showToast(`🔔 ${title}: ${body}`, 'info');
+                    });
+                    addLog('✅ FCM foreground notification listener active!', 'success');
+                } else {
+                    addLog('⚠️ FCM not supported or initialized in this browser context.', 'warning');
+                }
+            } catch (err) {
+                addLog(`❌ FCM Foreground Listener Error: ${(err as Error).message}`, 'error');
+            }
+        }
+
+        setupFCMListener();
+
+        return () => {
+            isCancelled = true;
+            if (unsubscribe) unsubscribe();
+        };
     }, []);
 
     // Create a new task
@@ -248,6 +313,7 @@ export default function TestTodosPage() {
                 reminderOption: formHasReminder ? formReminderOption : 'none',
                 customReminderTime: formHasReminder ? formCustomReminderTime : '',
                 reminderDate: computedReminderDate ? computedReminderDate.toISOString() : null,
+                reminderMethod: formHasReminder ? formReminderMethod : 'whatsapp',
                 priority: formPriority,
                 completed: false,
                 createdAt: Date.now(),
@@ -258,23 +324,26 @@ export default function TestTodosPage() {
             const todoRef = await addDoc(collection(db, 'test-todos'), todoData);
             addLog(`✅ Saved: Firestore ID is ${todoRef.id}`, 'success');
 
-            // Save to RTDB WhatsApp Reminder if date is set
+            // Save to RTDB Reminder if date is set
             if (computedReminderDate) {
                 // If it is past, skip with warning
                 if (computedReminderDate.getTime() <= Date.now()) {
-                    addLog('⚠️ Reminder date is in the past! Skipping WhatsApp reminder creation.', 'warning');
+                    addLog('⚠️ Reminder date is in the past! Skipping reminder creation.', 'warning');
                 } else {
-                    addLog('⏰ Creating WhatsApp reminder in Firebase RTDB...', 'info');
+                    addLog(`⏰ Creating reminder (${todoData.reminderMethod}) in Firebase RTDB...`, 'info');
                     
                     const config = getUserWhatsAppConfig(testClientId, testPhone);
                     config.itemType = 'todo';
                     config.clientId = testClientId;
+                    config.method = todoData.reminderMethod;
 
                     await createWhatsAppReminder(
                         {
                             title: todoData.title,
                             reminderDate: computedReminderDate,
-                            id: todoRef.id
+                            id: todoRef.id,
+                            priority: todoData.priority,
+                            dueDate: todoData.dueDate
                         },
                         config
                     );
@@ -309,6 +378,7 @@ export default function TestTodosPage() {
                 reminderOption: formHasReminder ? formReminderOption : 'none',
                 customReminderTime: formHasReminder ? formCustomReminderTime : '',
                 reminderDate: computedReminderDate ? computedReminderDate.toISOString() : null,
+                reminderMethod: formHasReminder ? formReminderMethod : 'whatsapp',
                 priority: formPriority,
                 updatedAt: Date.now()
             };
@@ -317,23 +387,26 @@ export default function TestTodosPage() {
             await updateDoc(doc(db, 'test-todos', editingTask.id), updatedTodoData);
             addLog('✅ Firestore document updated', 'success');
 
-            // Update WhatsApp reminder
+            // Update reminder in RTDB
             const oldReminderDate = editingTask.reminderDate ? new Date(editingTask.reminderDate) : undefined;
             const config = getUserWhatsAppConfig(testClientId, testPhone);
             config.itemType = 'todo';
             config.clientId = testClientId;
+            config.method = updatedTodoData.reminderMethod;
 
-            addLog('⏰ Syncing/Updating WhatsApp reminder in RTDB...', 'info');
+            addLog(`⏰ Syncing/Updating reminder (${updatedTodoData.reminderMethod}) in RTDB...`, 'info');
             await updateWhatsAppReminder(
                 oldReminderDate,
                 {
                     title: updatedTodoData.title,
                     reminderDate: computedReminderDate || undefined,
-                    id: editingTask.id
+                    id: editingTask.id,
+                    priority: updatedTodoData.priority,
+                    dueDate: updatedTodoData.dueDate
                 },
                 config
             );
-            addLog('✅ WhatsApp reminder updated in RTDB', 'success');
+            addLog('✅ Reminder updated in RTDB', 'success');
 
             showToast('Task updated successfully!');
             handleCloseModal();
@@ -412,6 +485,7 @@ export default function TestTodosPage() {
         setFormHasReminder(false);
         setFormReminderOption('15m');
         setFormCustomReminderTime('');
+        setFormReminderMethod('whatsapp');
         setIsModalOpen(true);
     };
 
@@ -425,6 +499,7 @@ export default function TestTodosPage() {
         setFormHasReminder(!!task.reminderDate);
         setFormReminderOption(task.reminderOption !== 'none' ? task.reminderOption : '15m');
         setFormCustomReminderTime(task.customReminderTime || '');
+        setFormReminderMethod(task.reminderMethod || 'whatsapp');
         setIsModalOpen(true);
     };
 
@@ -432,6 +507,7 @@ export default function TestTodosPage() {
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setEditingTask(null);
+        setFormReminderMethod('whatsapp');
     };
 
     // Quick set test phone suggestions
@@ -603,7 +679,7 @@ export default function TestTodosPage() {
                                                 </div>
                                             </div>
 
-                                            {/* WhatsApp status details */}
+                                            {/* Reminder status details */}
                                             <div className="mt-4 pt-3 border-t border-slate-900 flex items-center justify-between flex-wrap gap-2 text-xs">
                                                 {hasReminder ? (
                                                     <Tooltip title={`Triggering at: ${new Date(task.reminderDate!).toLocaleString()}`}>
@@ -611,18 +687,31 @@ export default function TestTodosPage() {
                                                             flex items-center gap-1.5 px-2.5 py-1 rounded-full font-bold
                                                             ${isReminderPast 
                                                                 ? 'bg-slate-800 text-slate-400' 
-                                                                : 'bg-teal-500/10 text-teal-400 border border-teal-500/20'}
+                                                                : task.reminderMethod === 'push'
+                                                                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                                                    : 'bg-teal-500/10 text-teal-400 border border-teal-500/20'}
                                                         `}>
-                                                            <WhatsAppIcon className="text-[14px] text-teal-400" />
-                                                            {isReminderPast 
-                                                                ? 'Reminder Sent/Passed' 
-                                                                : `WhatsApp: ${new Date(task.reminderDate!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                                            {task.reminderMethod === 'push' ? (
+                                                                <>
+                                                                    <PushIcon className="text-[14px] text-amber-400" />
+                                                                    {isReminderPast 
+                                                                        ? 'Push Sent/Passed' 
+                                                                        : `Push: ${new Date(task.reminderDate!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <WhatsAppIcon className="text-[14px] text-teal-400" />
+                                                                    {isReminderPast 
+                                                                        ? 'Reminder Sent/Passed' 
+                                                                        : `WhatsApp: ${new Date(task.reminderDate!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                                                </>
+                                                            )}
                                                         </span>
                                                     </Tooltip>
                                                 ) : (
                                                     <span className="flex items-center gap-1 text-slate-500 font-bold px-2.5 py-1">
                                                         <NoReminderIcon className="text-[14px]" />
-                                                        No WhatsApp Reminder
+                                                        No Reminder
                                                     </span>
                                                 )}
 
@@ -710,21 +799,47 @@ export default function TestTodosPage() {
                             </div>
 
                             {/* Shortcut config suggestions */}
-                            <div>
-                                <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-500 mb-2">
-                                    🎯 Quick-Load Presets
-                                </label>
-                                <div className="flex flex-wrap gap-2">
-                                    <button
-                                        onClick={() => setQuickPhone('923164709208')}
-                                        className="text-[10px] font-extrabold bg-slate-900 hover:bg-teal-500/10 hover:text-teal-400 border border-slate-800 rounded-lg px-2.5 py-1.5 transition-colors"
-                                    >
-                                        kashif (+92 316...)
-                                    </button>
+                                <div>
+                                    <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-500 mb-2">
+                                        🎯 Quick-Load Presets
+                                    </label>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            onClick={() => setQuickPhone('923164709208')}
+                                            className="text-[10px] font-extrabold bg-slate-900 hover:bg-teal-500/10 hover:text-teal-400 border border-slate-800 rounded-lg px-2.5 py-1.5 transition-colors"
+                                        >
+                                            kashif (+92 316...)
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* Push Notifications Configuration */}
+                            <div className="pt-4 border-t border-slate-900 space-y-3">
+                                <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
+                                    🔔 Web Push Notifications
+                                </label>
+                                <button
+                                    onClick={async () => {
+                                        addLog('🔔 Requesting Push Notification permissions & token...', 'info');
+                                        try {
+                                            const token = await requestNotificationPermissionAndGetToken(testClientId, testClientId);
+                                            if (token) {
+                                                addLog('✅ Push notifications enabled! Token saved to RTDB.', 'success');
+                                                showToast('Push Notifications enabled successfully!', 'success');
+                                            }
+                                        } catch (err) {
+                                            addLog(`❌ FCM Permission Error: ${(err as Error).message}`, 'error');
+                                            showToast((err as Error).message, 'error');
+                                        }
+                                    }}
+                                    className="w-full bg-slate-900 hover:bg-teal-500/15 hover:text-teal-400 border border-slate-800 hover:border-teal-500/30 text-teal-300 font-bold py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2"
+                                >
+                                    <NotificationsIcon className="text-[14px]" />
+                                    Enable Push (Request Token)
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
                     {/* Live Diagnostic Logs Terminal */}
                     <div className="bg-slate-950/40 border border-slate-800 rounded-[28px] p-6 backdrop-blur-xl flex flex-col h-[400px]">
@@ -866,12 +981,16 @@ export default function TestTodosPage() {
                         </div>
                     </div>
 
-                    {/* WhatsApp Reminder Section */}
+                    {/* Task Reminder Section */}
                     <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-4">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <WhatsAppIcon className="text-teal-400" />
-                                <span className="text-sm font-bold text-slate-200">Set WhatsApp Reminder</span>
+                                {formReminderMethod === 'push' ? (
+                                    <PushIcon className="text-amber-400" />
+                                ) : (
+                                    <WhatsAppIcon className="text-teal-400" />
+                                )}
+                                <span className="text-sm font-bold text-slate-200">Set Task Reminder</span>
                             </div>
                             <button
                                 type="button"
@@ -889,6 +1008,42 @@ export default function TestTodosPage() {
 
                         {formHasReminder && (
                             <div className="space-y-4 pt-3 border-t border-slate-900 animate-fadeIn">
+                                {/* Reminder Method Selection */}
+                                <div>
+                                    <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
+                                        Reminder Dispatch Method
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormReminderMethod('whatsapp')}
+                                            className={`
+                                                py-2.5 px-2 rounded-xl text-xs font-extrabold border transition-all flex items-center justify-center gap-1.5
+                                                ${formReminderMethod === 'whatsapp'
+                                                    ? 'bg-teal-500/10 text-teal-400 border-teal-500/50 shadow-inner'
+                                                    : 'bg-slate-900 text-slate-500 border-slate-800/80 hover:text-slate-400'}
+                                            `}
+                                        >
+                                            <WhatsAppIcon className="text-[14px]" />
+                                            WhatsApp Message
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormReminderMethod('push')}
+                                            className={`
+                                                py-2.5 px-2 rounded-xl text-xs font-extrabold border transition-all flex items-center justify-center gap-1.5
+                                                ${formReminderMethod === 'push'
+                                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/50 shadow-inner'
+                                                    : 'bg-slate-900 text-slate-500 border-slate-800/80 hover:text-slate-400'}
+                                            `}
+                                        >
+                                            <PushIcon className="text-[14px]" />
+                                            Push Notification
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Predefined Offset Selector */}
                                 <div>
                                     <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
                                         Predefined Reminder Trigger Offset

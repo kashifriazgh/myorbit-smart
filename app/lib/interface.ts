@@ -763,7 +763,7 @@ export interface SchedulesProps {
   status: 'pending' | 'completed' | 'cancelled';
   reminder?: {
     before: number; // minutes before
-    method: 'whatsapp' | 'notification' | 'email';
+    method: 'whatsapp' | 'push' | 'notification' | 'email';
   };
   repeat?: 'none' | 'daily' | 'weekly' | 'monthly';
   priority?: 'low' | 'medium' | 'high' | 'critical';
@@ -773,6 +773,8 @@ export interface SchedulesProps {
   linkedTaskId?: string; // id from to-do tasks item (optional)
   linkedGoalId?: string | null; // id from goals item (optional) later on
   colorCode?: string; // for UI color coding, like "#E3F2FD"
+  hasReminder?: boolean;
+  reminderDate?: Timestamp | Date | string | number | null;
   createdAt?: Timestamp | Date;
   updatedAt?: Timestamp | Date;
 }

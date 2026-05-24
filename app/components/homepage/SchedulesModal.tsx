@@ -18,6 +18,8 @@ import {
   Collapse,
   useTheme,
   useMediaQuery,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -25,9 +27,15 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { SchedulesProps } from '../../lib/interface';
+import {
+  WhatsApp as WhatsAppIcon,
+  NotificationsActive as PushIcon,
+} from '@mui/icons-material';
 
 interface SchedulesModalProps {
   open: boolean;
@@ -77,18 +85,29 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
   });
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [customReminderDate, setCustomReminderDate] = useState<Date | null>(
+    null,
+  );
+  const [reminderMethod, setReminderMethod] = useState<'whatsapp' | 'push'>(
+    'whatsapp',
+  );
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
+      // Small delay to ensure Dialog transition is underway and focus trap is ready
       const timer = setTimeout(() => {
-        titleInputRef.current?.focus();
+        if (titleInputRef.current) {
+          titleInputRef.current.focus();
+        }
       }, 100);
       return () => clearTimeout(timer);
     }
   }, [open]);
 
-  const handleQuickDate = (type: 'tomorrow' | 'afterTomorrow' | 'endOfWeek') => {
+  const handleQuickDate = (
+    type: 'tomorrow' | 'afterTomorrow' | 'endOfWeek',
+  ) => {
     const date = new Date();
     if (type === 'tomorrow') {
       date.setDate(date.getDate() + 1);
@@ -109,7 +128,6 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
       onDateChange(formattedDate);
     }
   };
-
 
   const priorityOptions = [
     { value: 'low', label: 'Low', color: '#4caf50' },
@@ -134,13 +152,13 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
   const dynamicQuickTimes = useMemo(() => {
     const now = new Date();
     const today = now.toISOString().split('T')[0];
-    
+
     // For future dates, show standard slots
     if (selectedDate !== today) return ['09:00', '13:00', '17:00', '21:00'];
 
     const currentHour = now.getHours();
     let offsets: number[] = [];
-    
+
     if (currentHour <= 14) {
       // First two: 1h distance | Next two: 2h distance
       // e.g. at 14:00 (2 PM) -> 15:00, 16:00, 18:00, 20:00
@@ -152,9 +170,9 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
     }
 
     return offsets
-      .map(offset => currentHour + offset)
-      .filter(h => h < 24)
-      .map(h => `${String(h).padStart(2, '0')}:00`);
+      .map((offset) => currentHour + offset)
+      .filter((h) => h < 24)
+      .map((h) => `${String(h).padStart(2, '0')}:00`);
   }, [selectedDate]);
 
   const applyDuration = (minutes: number) => {
@@ -168,7 +186,6 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
     handleInputChange('endTime', newEndTime);
     handleDurationChange(formData.startTime, newEndTime);
   };
-
 
   // Initialize form data when modal opens
   useEffect(() => {
@@ -187,6 +204,33 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           colorCode: schedule.colorCode,
           isFlexible: schedule.isFlexible || false,
         });
+        if (schedule.hasReminder && schedule.reminderDate) {
+          const reminderDate = schedule.reminderDate;
+          if (
+            typeof reminderDate === 'object' &&
+            reminderDate !== null &&
+            'toDate' in reminderDate &&
+            typeof (reminderDate as { toDate?: unknown }).toDate === 'function'
+          ) {
+            setCustomReminderDate(
+              (reminderDate as { toDate: () => Date }).toDate(),
+            );
+          } else {
+            setCustomReminderDate(
+              new Date(reminderDate as string | number | Date),
+            );
+          }
+        } else {
+          setCustomReminderDate(null);
+        }
+        // Restore reminder method from saved schedule
+        if (schedule.reminder?.method === 'push') {
+          setReminderMethod('push');
+        } else if (schedule.reminder?.method === 'whatsapp') {
+          setReminderMethod('whatsapp');
+        } else {
+          setReminderMethod('whatsapp');
+        }
       } else {
         setFormData({
           title: '',
@@ -205,6 +249,8 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           colorCode: '#E3F2FD',
           isFlexible: false,
         });
+        setCustomReminderDate(null);
+        setReminderMethod('whatsapp');
       }
     }
   }, [open, schedule]);
@@ -249,7 +295,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
         user: !!user,
         title: formData.title,
         startTime: formData.startTime,
-        isFlexible
+        isFlexible,
       });
       return;
     }
@@ -268,6 +314,30 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
         .padStart(2, '0')}`;
     }
 
+    // Determine if we need an RTDB reminder entry
+    const isRtdbReminder =
+      reminderMethod === 'whatsapp' || reminderMethod === 'push';
+    let hasReminder = false;
+    let reminderDateVal: Date | null = null;
+
+    if (isRtdbReminder) {
+      hasReminder = true;
+      if (customReminderDate) {
+        reminderDateVal = customReminderDate;
+      } else if (selectedDate && startTime) {
+        const scheduleStart = new Date(`${selectedDate}T${startTime}`);
+        const beforeMinutes = formData.reminder?.before ?? 10;
+        reminderDateVal = new Date(
+          scheduleStart.getTime() - beforeMinutes * 60 * 1000,
+        );
+      }
+
+      // Safety check to avoid adding past dates to RTDB
+      if (reminderDateVal && reminderDateVal.getTime() <= Date.now()) {
+        reminderDateVal = new Date(Date.now() + 5 * 60000); // 5 mins buffer
+      }
+    }
+
     const scheduleData: SchedulesProps = {
       ...(schedule?.id ? { id: schedule.id } : {}),
       userId: user.uid,
@@ -281,8 +351,10 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
       priority: formData.priority || 'medium',
       reminder: {
         before: formData.reminder?.before ?? 10,
-        method: (formData.reminder?.method as SchedulesProps['reminder']['method']) || 'notification',
+        method: reminderMethod as SchedulesProps['reminder']['method'],
       },
+      hasReminder,
+      reminderDate: reminderDateVal,
       repeat: formData.repeat || 'none',
       autoGenerated: formData.autoGenerated || false,
       colorCode: formData.colorCode || '#E3F2FD',
@@ -311,8 +383,9 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
       fullWidth
       fullScreen={isMobile}
       PaperProps={{
-        className: "rounded-[28px] overflow-hidden shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800",
-        sx: { borderRadius: '28px' } // MUI fallback
+        className:
+          'rounded-[28px] overflow-hidden shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800',
+        sx: { borderRadius: '28px' }, // MUI fallback
       }}
     >
       {/* Premium Gradient Header */}
@@ -322,10 +395,15 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
             {schedule ? 'Edit Schedule' : 'Plan Your Day'}
           </Typography>
           <Typography variant="body2" className="opacity-90">
-            {schedule ? 'Refine your session details' : 'Create a new productive session'}
+            {schedule
+              ? 'Refine your session details'
+              : 'Create a new productive session'}
           </Typography>
         </Box>
-        <IconButton onClick={onClose} className="text-white hover:bg-white/20 transition-colors">
+        <IconButton
+          onClick={onClose}
+          className="text-white hover:bg-white/20 transition-colors"
+        >
           <CloseIcon />
         </IconButton>
       </Box>
@@ -348,29 +426,37 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: '16px',
-                  backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                  backgroundColor:
+                    theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
                   fontSize: '1.15rem',
                   fontWeight: 700,
                   transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  '& fieldset': { borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0' },
+                  '& fieldset': {
+                    borderColor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0',
+                  },
                   '&:hover fieldset': { borderColor: '#8b5cf6' },
-                  '&.Mui-focused fieldset': { borderColor: '#8b5cf6', borderWidth: '2px' },
-                  '&.Mui-focused': { boxShadow: '0 0 0 4px rgba(139, 92, 246, 0.1)' }
-                }
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#8b5cf6',
+                    borderWidth: '2px',
+                  },
+                  '&.Mui-focused': {
+                    boxShadow: '0 0 0 4px rgba(139, 92, 246, 0.1)',
+                  },
+                },
               }}
             />
           </Box>
 
           {/* Date / Deadline Section */}
-          <Box
-            className="p-6 rounded-[24px] border transition-all bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-700"
-          >
+          <Box className="p-6 rounded-[24px] border transition-all bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-700">
             <Box className="flex items-center justify-between mb-4">
               <Typography className="text-[11px] font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-[0.2em]">
                 📅 Schedule Date
               </Typography>
               <Button
-                onClick={() => handleInputChange('isFlexible', !formData.isFlexible)}
+                onClick={() =>
+                  handleInputChange('isFlexible', !formData.isFlexible)
+                }
                 variant={formData.isFlexible ? 'contained' : 'outlined'}
                 size="small"
                 className={`rounded-full px-4 font-bold transition-all text-[10px] ${formData.isFlexible ? 'bg-violet-600 shadow-lg shadow-violet-500/30' : ''}`}
@@ -389,24 +475,40 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       borderRadius: '16px',
-                      backgroundColor: theme?.mode === 'dark' ? '#1e3a8a20' : '#f0f7ff',
-                      '& fieldset': { borderColor: '#3b82f6', borderWidth: '2px' },
+                      backgroundColor:
+                        theme?.mode === 'dark' ? '#1e3a8a20' : '#f0f7ff',
+                      '& fieldset': {
+                        borderColor: '#3b82f6',
+                        borderWidth: '2px',
+                      },
                     },
                     '& .MuiInputBase-input': {
                       textAlign: 'center',
                       fontWeight: 800,
                       color: '#2563eb',
                       fontSize: '1.1rem',
-                      letterSpacing: '1px'
-                    }
+                      letterSpacing: '1px',
+                    },
                   }}
                   helperText={
-                    <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-bold ml-1 uppercase tracking-wider">
-                      {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                    <Typography
+                      variant="caption"
+                      className="text-slate-400 dark:text-slate-500 font-bold ml-1 uppercase tracking-wider"
+                    >
+                      {new Date(selectedDate).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
                     </Typography>
                   }
                 />
-                <Stack direction="row" spacing={1} mt={2.5} className="overflow-x-auto pb-1 no-scrollbar flex-nowrap">
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  mt={2.5}
+                  className="overflow-x-auto pb-1 no-scrollbar flex-nowrap"
+                >
                   {[
                     { label: 'Tomorrow', value: 'tomorrow' },
                     { label: 'In 2 Days', value: 'afterTomorrow' },
@@ -415,7 +517,14 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     <Button
                       key={item.value}
                       variant="outlined"
-                      onClick={() => handleQuickDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
+                      onClick={() =>
+                        handleQuickDate(
+                          item.value as
+                            | 'tomorrow'
+                            | 'afterTomorrow'
+                            | 'endOfWeek',
+                        )
+                      }
                       className="rounded-full normal-case text-[12px] font-bold px-5 py-1.5 whitespace-nowrap border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-violet-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/10 transition-all"
                     >
                       {item.label}
@@ -431,9 +540,13 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
             <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
               ⏰ Session Timing
             </Typography>
-            
+
             <Box className="p-4 rounded-[20px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-              <Stack direction={{ xs: 'column', sm: 'row' }} alignItems="center" spacing={2}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                alignItems="center"
+                spacing={2}
+              >
                 {/* Start Time Pill */}
                 <Box className="flex-1 w-full">
                   <TextField
@@ -441,19 +554,25 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     value={formData.startTime}
                     onChange={(e) => {
                       handleInputChange('startTime', e.target.value);
-                      if (formData.endTime) handleDurationChange(e.target.value, formData.endTime);
+                      if (formData.endTime)
+                        handleDurationChange(e.target.value, formData.endTime);
                     }}
                     fullWidth
                     InputLabelProps={{ shrink: true }}
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         borderRadius: '12px',
-                        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#f8fafc',
+                        backgroundColor:
+                          theme?.mode === 'dark' ? '#1e293b' : '#f8fafc',
                         border: 'none',
                         '& fieldset': { border: 'none' },
                         height: '48px',
                       },
-                      '& .MuiInputBase-input': { fontWeight: 800, textAlign: 'center', fontSize: '1rem' }
+                      '& .MuiInputBase-input': {
+                        fontWeight: 800,
+                        textAlign: 'center',
+                        fontSize: '1rem',
+                      },
                     }}
                   />
                   <Box className="flex flex-wrap justify-center gap-1.5 mt-2">
@@ -481,19 +600,28 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     value={formData.endTime}
                     onChange={(e) => {
                       handleInputChange('endTime', e.target.value);
-                      if (formData.startTime) handleDurationChange(formData.startTime, e.target.value);
+                      if (formData.startTime)
+                        handleDurationChange(
+                          formData.startTime,
+                          e.target.value,
+                        );
                     }}
                     fullWidth
                     InputLabelProps={{ shrink: true }}
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         borderRadius: '12px',
-                        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#f8fafc',
+                        backgroundColor:
+                          theme?.mode === 'dark' ? '#1e293b' : '#f8fafc',
                         border: 'none',
                         '& fieldset': { border: 'none' },
                         height: '48px',
                       },
-                      '& .MuiInputBase-input': { fontWeight: 800, textAlign: 'center', fontSize: '1rem' }
+                      '& .MuiInputBase-input': {
+                        fontWeight: 800,
+                        textAlign: 'center',
+                        fontSize: '1rem',
+                      },
                     }}
                   />
                   <Box className="flex flex-wrap justify-center gap-1.5 mt-2">
@@ -510,7 +638,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                   </Box>
                 </Box>
               </Stack>
-              
+
               {formData.duration ? (
                 <Box className="mt-3 pt-3 border-t border-slate-50 dark:border-slate-800 text-center">
                   <Typography className="text-[10px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">
@@ -535,13 +663,219 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: '16px',
-                  backgroundColor: theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                  backgroundColor:
+                    theme?.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
                   '&:hover fieldset': { borderColor: '#8b5cf6' },
                   '&.Mui-focused fieldset': { borderColor: '#8b5cf6' },
-                }
+                },
               }}
-              helperText={<span className="text-[11px] font-medium text-slate-400">💡 A clear goal significantly improves focus</span>}
+              helperText={
+                <span className="text-[11px] font-medium text-slate-400">
+                  💡 A clear goal significantly improves focus
+                </span>
+              }
             />
+          </Box>
+
+          {/* Reminder Section — WhatsApp or Push Notification */}
+          <Box
+            className={`
+              p-5 rounded-[24px] border transition-all
+              ${theme?.mode === 'dark' ? 'bg-slate-800/30 border-slate-700' : 'bg-slate-50 border-slate-100'}
+            `}
+          >
+            <Box className="flex items-center justify-between">
+              <Typography className="text-[11px] font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-[0.2em]">
+                🔔 Reminder
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={
+                      reminderMethod === 'whatsapp' || reminderMethod === 'push'
+                    }
+                    onChange={(e) => {
+                      const isChecked = e.target.checked;
+                      if (isChecked) {
+                        // Default to last used or whatsapp
+                        if (!customReminderDate) {
+                          const d = new Date();
+                          d.setHours(d.getHours() + 1, 0, 0, 0);
+                          setCustomReminderDate(d);
+                        }
+                      } else {
+                        setReminderMethod('whatsapp'); // reset method
+                        setCustomReminderDate(null);
+                      }
+                      // Toggling via switch toggles a "reminder active" flag in the UI
+                      // We track this implicitly by whether customReminderDate is set
+                      handleInputChange('reminder', {
+                        before: formData.reminder?.before ?? 10,
+                        method: isChecked ? reminderMethod : 'notification',
+                      });
+                    }}
+                    sx={{
+                      '& .MuiSwitch-switchBase.Mui-checked': {
+                        color: '#8b5cf6',
+                      },
+                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track':
+                        { backgroundColor: '#8b5cf6' },
+                    }}
+                  />
+                }
+                label=""
+                sx={{ mr: 0 }}
+              />
+            </Box>
+
+            <Collapse
+              in={
+                formData.reminder?.method === 'whatsapp' ||
+                formData.reminder?.method === 'push' ||
+                reminderMethod === 'whatsapp' ||
+                reminderMethod === 'push'
+              }
+              timeout="auto"
+            >
+              <Box className="mt-4 pt-4 border-t border-slate-200/20 dark:border-slate-700/50 space-y-4">
+                {/* Method Selector */}
+                <Box>
+                  <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 ml-1">
+                    Reminder Method
+                  </Typography>
+                  <Box className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReminderMethod('whatsapp');
+                        handleInputChange('reminder', {
+                          before: formData.reminder?.before ?? 10,
+                          method: 'whatsapp',
+                        });
+                      }}
+                      className={`
+                        flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all
+                        ${
+                          reminderMethod === 'whatsapp'
+                            ? 'bg-teal-500/10 text-teal-500 border-teal-500/50 shadow-inner'
+                            : 'bg-white dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-teal-400 hover:text-teal-500'
+                        }
+                      `}
+                    >
+                      <WhatsAppIcon style={{ fontSize: 15 }} />
+                      WhatsApp
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReminderMethod('push');
+                        handleInputChange('reminder', {
+                          before: formData.reminder?.before ?? 10,
+                          method: 'push',
+                        });
+                      }}
+                      className={`
+                        flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all
+                        ${
+                          reminderMethod === 'push'
+                            ? 'bg-amber-500/10 text-amber-500 border-amber-500/50 shadow-inner'
+                            : 'bg-white dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-amber-400 hover:text-amber-500'
+                        }
+                      `}
+                    >
+                      <PushIcon style={{ fontSize: 15 }} />
+                      Push Notification
+                    </button>
+                  </Box>
+                </Box>
+
+                {/* Date & Time + optional phone/hint */}
+                <Box className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                  <Box className="flex-1 w-full">
+                    <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 ml-1">
+                      Reminder Date & Time
+                    </Typography>
+                    <DatePicker
+                      selected={customReminderDate}
+                      onChange={(date: Date | null) =>
+                        setCustomReminderDate(date)
+                      }
+                      showTimeSelect
+                      dateFormat="MMMM d, yyyy h:mm aa"
+                      className="custom-datepicker-premium w-full"
+                      placeholderText="Leave empty to auto-schedule"
+                      minDate={new Date()}
+                    />
+                  </Box>
+
+                  {reminderMethod === 'whatsapp' ? (
+                    <Box className="flex-1 w-full">
+                      <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 ml-1">
+                        Reminder Offset (mins before)
+                      </Typography>
+                      <TextField
+                        type="number"
+                        value={formData.reminder?.before}
+                        onChange={(e) =>
+                          handleInputChange('reminder', {
+                            ...formData.reminder,
+                            before: parseInt(e.target.value) || 0,
+                          })
+                        }
+                        fullWidth
+                        size="small"
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '12px',
+                            backgroundColor:
+                              theme?.mode === 'dark'
+                                ? 'rgba(15, 23, 42, 0.5)'
+                                : '#fff',
+                            fontWeight: 600,
+                          },
+                        }}
+                      />
+                    </Box>
+                  ) : (
+                    <Box className="flex-1 w-full">
+                      <Box
+                        className="flex items-start gap-2 p-3 rounded-xl border border-amber-500/20"
+                        style={{ background: 'rgba(245,158,11,0.05)' }}
+                      >
+                        <PushIcon
+                          style={{
+                            fontSize: 14,
+                            color: '#f59e0b',
+                            flexShrink: 0,
+                            marginTop: 2,
+                          }}
+                        />
+                        <Typography className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold leading-relaxed">
+                          Browser push fires at the reminder time. Enable push
+                          in{' '}
+                          <a
+                            href="/settings/push-notifications"
+                            target="_blank"
+                            className="underline font-bold"
+                          >
+                            Settings
+                          </a>
+                          .
+                        </Typography>
+                      </Box>
+                    </Box>
+                  )}
+                </Box>
+
+                {reminderMethod === 'whatsapp' && (
+                  <Typography className="text-[10px] text-slate-400 dark:text-slate-500 ml-1 leading-relaxed">
+                    💡 Leave Date & Time empty to auto-send{' '}
+                    <strong>{formData.reminder?.before} minutes</strong> before
+                    start time.
+                  </Typography>
+                )}
+              </Box>
+            </Collapse>
           </Box>
 
           {/* Advanced Section */}
@@ -561,15 +895,22 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                   <InputLabel className="font-bold">Priority Level</InputLabel>
                   <Select
                     value={formData.priority}
-                    onChange={(e) => handleInputChange('priority', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange('priority', e.target.value)
+                    }
                     label="Priority Level"
                     sx={{ borderRadius: '16px' }}
                   >
                     {priorityOptions.map((option) => (
                       <MenuItem key={option.value} value={option.value}>
                         <Box className="flex items-center gap-3">
-                          <Box className="w-3 h-3 rounded-full" sx={{ backgroundColor: option.color }} />
-                          <Typography className="font-semibold text-sm">{option.label}</Typography>
+                          <Box
+                            className="w-3 h-3 rounded-full"
+                            sx={{ backgroundColor: option.color }}
+                          />
+                          <Typography className="font-semibold text-sm">
+                            {option.label}
+                          </Typography>
                         </Box>
                       </MenuItem>
                     ))}
@@ -581,19 +922,33 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     label="Reminder (mins before)"
                     type="number"
                     value={formData.reminder?.before}
-                    onChange={(e) => handleInputChange('reminder', { ...formData.reminder, before: parseInt(e.target.value) || 0 })}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+                    onChange={(e) =>
+                      handleInputChange('reminder', {
+                        ...formData.reminder,
+                        before: parseInt(e.target.value) || 0,
+                      })
+                    }
+                    sx={{
+                      '& .MuiOutlinedInput-root': { borderRadius: '16px' },
+                    }}
                   />
                   <FormControl>
                     <InputLabel>Alert Method</InputLabel>
                     <Select
                       value={formData.reminder?.method}
-                      onChange={(e) => handleInputChange('reminder', { ...formData.reminder, method: e.target.value })}
+                      onChange={(e) =>
+                        handleInputChange('reminder', {
+                          ...formData.reminder,
+                          method: e.target.value,
+                        })
+                      }
                       label="Alert Method"
                       sx={{ borderRadius: '16px' }}
                     >
                       {reminderMethods.map((m) => (
-                        <MenuItem key={m.value} value={m.value}>{m.label}</MenuItem>
+                        <MenuItem key={m.value} value={m.value}>
+                          {m.label}
+                        </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -603,12 +958,16 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                   <InputLabel>Repeat Interval</InputLabel>
                   <Select
                     value={formData.repeat}
-                    onChange={(e) => handleInputChange('repeat', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange('repeat', e.target.value)
+                    }
                     label="Repeat Interval"
                     sx={{ borderRadius: '16px' }}
                   >
                     {repeatOptions.map((o) => (
-                      <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                      <MenuItem key={o.value} value={o.value}>
+                        {o.label}
+                      </MenuItem>
                     ))}
                   </Select>
                 </FormControl>
@@ -630,13 +989,18 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
             <span className="hidden sm:inline">Delete</span>
           </Button>
         )}
-        <Button onClick={onClose} className="rounded-xl font-bold px-6 py-2 normal-case text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+        <Button
+          onClick={onClose}
+          className="rounded-xl font-bold px-6 py-2 normal-case text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
           Cancel
         </Button>
         <Button
           onClick={handleSave}
           variant="contained"
-          disabled={!formData.title || (!formData.isFlexible && !formData.startTime)}
+          disabled={
+            !formData.title || (!formData.isFlexible && !formData.startTime)
+          }
           className="rounded-xl font-extrabold px-8 py-2 normal-case bg-gradient-to-r from-violet-600 to-indigo-600 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50"
         >
           {schedule ? 'Update Session' : 'Start Planning'}

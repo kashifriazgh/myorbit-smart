@@ -14,6 +14,8 @@ import {
   useTheme,
   IconButton,
   Collapse,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   PlaylistAdd as AddTaskIcon,
@@ -30,6 +32,8 @@ import {
   collection,
   serverTimestamp,
   Timestamp,
+  getDoc,
+  doc,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -38,11 +42,19 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import AIStepGeneratorModal from '@/app/components/to-do/AI/AIStepGeneratorModal';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import {
+  WhatsApp as WhatsAppIcon,
+  NotificationsActive as PushIcon,
+} from '@mui/icons-material';
+import { createWhatsAppReminder, getUserWhatsAppConfig } from '@/app/lib/utils/whatsapp-reminder';
+import { requestNotificationPermissionAndGetToken } from '@/app/lib/utils/fcm';
 
 type Props = {
   open: boolean;
   onClose: () => void;
 };
+
+type TaskPriority = 'routine' | 'urgent' | 'critical';
 
 export default function ToDoModal({ open, onClose }: Props) {
   const { user } = useAuth();
@@ -52,7 +64,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   const [title, setTitle] = useState('');
   const [showDescription, setShowDescription] = useState(false);
   const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState('routine');
+  const [priority, setPriority] = useState<TaskPriority>('routine');
   const [privacy, setPrivacy] = useState<'private' | 'public'>('private');
   const [dueDate, setDueDate] = useState<Date | null>(new Date());
   const [loading, setLoading] = useState(false);
@@ -75,6 +87,35 @@ export default function ToDoModal({ open, onClose }: Props) {
 
   const [assignee, setAssignee] = useState('Me');
 
+  const [hasReminder, setHasReminder] = useState(false);
+  const [reminderMethod, setReminderMethod] = useState<'whatsapp' | 'push'>('whatsapp');
+  const [reminderDate, setReminderDate] = useState<Date | null>(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 1, 0, 0, 0); // Default to 1 hour from now
+    return d;
+  });
+  const [whatsappPhone, setWhatsappPhone] = useState('923164709208');
+
+  // Load user phone number from Firestore if available
+  useEffect(() => {
+    if (user?.uid) {
+      const fetchUserPhone = async () => {
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            if (data.phone || data.whatsapp) {
+              setWhatsappPhone(data.phone || data.whatsapp);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching user phone:', err);
+        }
+      };
+      fetchUserPhone();
+    }
+  }, [user]);
 
   const handleQuickDate = (type: 'tomorrow' | 'afterTomorrow' | 'endOfWeek') => {
     const date = new Date();
@@ -177,6 +218,11 @@ export default function ToDoModal({ open, onClose }: Props) {
     setSteps([]);
     setAiStepModalOpen(false);
     setLoading(false);
+    setHasReminder(false);
+    setReminderMethod('whatsapp');
+    const d = new Date();
+    d.setHours(d.getHours() + 1, 0, 0, 0);
+    setReminderDate(d);
   };
   // handle cancle
   const handleCancel = () => {
@@ -225,9 +271,45 @@ export default function ToDoModal({ open, onClose }: Props) {
       updatedAt: serverTimestamp(),
       privacy,
       isImportant,
+      hasReminder,
+      reminderDate: hasReminder && reminderDate ? Timestamp.fromDate(reminderDate) : null,
     };
 
-    await addDoc(collection(db, 'todos'), docData);
+    const docRef = await addDoc(collection(db, 'todos'), docData);
+
+    if (hasReminder && reminderDate && user) {
+      try {
+        const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${user.uid}`;
+        const config = getUserWhatsAppConfig(user.uid, whatsappPhone);
+        config.itemType = 'todo';
+        config.method = reminderMethod; // 'whatsapp' or 'push'
+
+        // For push reminders, ensure the FCM token is registered under the
+        // actual user.uid so the Node.js worker can find it at
+        // fcm-tokens/{clientId}/{user.uid}
+        if (reminderMethod === 'push') {
+          try {
+            await requestNotificationPermissionAndGetToken(clientId, user.uid);
+          } catch (tokenErr) {
+            console.warn('Could not refresh FCM token before saving push reminder:', tokenErr);
+          }
+        }
+
+        await createWhatsAppReminder(
+          {
+            id: docRef.id,
+            title: title.trim(),
+            reminderDate: reminderDate,
+            priority: priority === 'routine' ? 'low' : priority,
+            dueDate: isFlexible ? undefined : (dueDate || new Date()).toISOString()
+          },
+          config
+        );
+      } catch (err) {
+        console.error('Failed to schedule reminder:', err);
+      }
+    }
+
     setLoading(false);
     resetForm();
     onClose();
@@ -354,6 +436,134 @@ export default function ToDoModal({ open, onClose }: Props) {
             </Collapse>
           </Box>
 
+          {/* 2b. Reminder Section (WhatsApp or Push Notification) */}
+          <Box
+            className={`
+              p-6 rounded-[24px] border transition-all
+              ${theme.palette.mode === 'dark' ? 'bg-slate-800/30 border-slate-700' : 'bg-slate-50 border-slate-100'}
+            `}
+          >
+            <Box className="flex items-center justify-between">
+              <Typography className="text-[11px] font-extrabold text-teal-600 dark:text-teal-400 uppercase tracking-[0.2em]">
+                🔔 Task Reminder
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={hasReminder}
+                    onChange={(e) => setHasReminder(e.target.checked)}
+                    sx={{
+                      '& .MuiSwitch-switchBase.Mui-checked': { color: '#14b8a6' },
+                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#14b8a6' },
+                    }}
+                  />
+                }
+                label=""
+                sx={{ mr: 0 }}
+              />
+            </Box>
+
+            <Collapse in={hasReminder}>
+              <Box className="mt-4 pt-4 border-t border-slate-200/30 dark:border-slate-700/50 space-y-5">
+
+                {/* Method Selector: WhatsApp / Push */}
+                <Box>
+                  <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 ml-1">
+                    Reminder Method
+                  </Typography>
+                  <Box className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setReminderMethod('whatsapp')}
+                      className={`
+                        flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all
+                        ${reminderMethod === 'whatsapp'
+                          ? 'bg-teal-500/10 text-teal-500 border-teal-500/50 shadow-inner dark:bg-teal-500/10 dark:text-teal-400'
+                          : 'bg-white dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-teal-400 hover:text-teal-500'}
+                      `}
+                    >
+                      <WhatsAppIcon style={{ fontSize: 16 }} />
+                      WhatsApp
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReminderMethod('push')}
+                      className={`
+                        flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all
+                        ${reminderMethod === 'push'
+                          ? 'bg-amber-500/10 text-amber-500 border-amber-500/50 shadow-inner dark:bg-amber-500/10 dark:text-amber-400'
+                          : 'bg-white dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-amber-400 hover:text-amber-500'}
+                      `}
+                    >
+                      <PushIcon style={{ fontSize: 16 }} />
+                      Push Notification
+                    </button>
+                  </Box>
+                </Box>
+
+                {/* Date & Time Picker */}
+                <Box className="flex flex-col md:flex-row gap-6 items-start md:items-center">
+                  <Box className="flex-1 w-full">
+                    <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 ml-1">
+                      Reminder Date & Time
+                    </Typography>
+                    <DatePicker
+                      selected={reminderDate}
+                      onChange={(date: Date | null) => setReminderDate(date)}
+                      showTimeSelect
+                      dateFormat="MMMM d, yyyy h:mm aa"
+                      className="custom-datepicker-premium w-full"
+                      minDate={new Date()}
+                    />
+                  </Box>
+
+                  {/* WhatsApp phone — only shown when method is whatsapp */}
+                  {reminderMethod === 'whatsapp' && (
+                    <Box className="flex-1 w-full">
+                      <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 ml-1">
+                        WhatsApp Phone Number
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        value={whatsappPhone}
+                        onChange={(e) => setWhatsappPhone(e.target.value)}
+                        placeholder="e.g. 923164709208"
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '12px',
+                            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(15, 23, 42, 0.5)' : '#fff',
+                            fontWeight: 600,
+                          }
+                        }}
+                        helperText={
+                          <span className="text-[10px] text-slate-400">
+                            Include country code, no + or spaces (e.g. 923164709208)
+                          </span>
+                        }
+                      />
+                    </Box>
+                  )}
+
+                  {/* Push info hint */}
+                  {reminderMethod === 'push' && (
+                    <Box className="flex-1 w-full">
+                      <Box className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 dark:bg-amber-500/5">
+                        <PushIcon style={{ fontSize: 15, color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+                        <Typography className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold leading-relaxed">
+                          A browser push notification will fire at the selected time. Make sure you&apos;ve enabled push in{' '}
+                          <a href="/settings/push-notifications" target="_blank" className="underline font-bold">
+                            Settings → Push Notifications
+                          </a>.
+                        </Typography>
+                      </Box>
+                    </Box>
+                  )}
+                </Box>
+              </Box>
+            </Collapse>
+          </Box>
+
           {/* 3. Priority & Privacy & Starred Row */}
           <Box className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 items-end">
             <Box>
@@ -363,7 +573,7 @@ export default function ToDoModal({ open, onClose }: Props) {
               <TextField
                 select
                 value={priority}
-                onChange={(e) => setPriority(e.target.value)}
+                onChange={(e) => setPriority(e.target.value as TaskPriority)}
                 fullWidth
                 sx={{
                   '& .MuiOutlinedInput-root': {

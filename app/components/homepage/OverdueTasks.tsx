@@ -38,6 +38,7 @@ import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { Todo } from '@/app/lib/interface';
 import Link from 'next/link';
+import { deleteTodoReminder, rescheduleTodoReminder } from '@/app/lib/utils/whatsapp-reminder';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
@@ -106,6 +107,9 @@ export default function OverdueTasks() {
         updatedAt: new Date(),
       });
 
+      // Delete WhatsApp reminder if active
+      await deleteTodoReminder(task.id);
+
       // Trigger fade out animation
       setFadeOutId(task.id);
       setTimeout(() => {
@@ -143,6 +147,12 @@ export default function OverdueTasks() {
         dueDate: Timestamp.fromDate(newDueDate),
         updatedAt: new Date(),
       });
+
+      // Reschedule WhatsApp reminder if active
+      if (user) {
+        await rescheduleTodoReminder(rescheduleTask.id, newDueDate, user.uid);
+      }
+
       setRescheduleOpen(false);
       setRescheduleTask(null);
       await fetchTasks();

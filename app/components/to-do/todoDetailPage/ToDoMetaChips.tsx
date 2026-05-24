@@ -11,6 +11,8 @@ import { db } from '@/app/lib/firebase';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { useAuth } from '@/app/lib/context/userContext';
+import { deleteTodoReminder, rescheduleTodoReminder } from '@/app/lib/utils/whatsapp-reminder';
 
 interface TodoMetaChipsProps {
   todo: Todo;
@@ -19,6 +21,7 @@ interface TodoMetaChipsProps {
 
 export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
   const { theme } = useCustomTheme();
+  const { user } = useAuth();
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [dueDateOpen, setDueDateOpen] = useState(false);
@@ -36,6 +39,11 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
         isFlexible: false, // Turn off flexible if date is set
         updatedAt: new Date(),
       });
+      
+      if (user) {
+        await rescheduleTodoReminder(todo.id, newDueDate, user.uid);
+      }
+
       onUpdate({ dueDate: newDueDate, isFlexible: false });
       setDueDateOpen(false);
     } catch (err) {
@@ -209,11 +217,14 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
           key: o.value,
           label: o.label,
         }))}
-        onChange={(value) =>
+        onChange={async (value) => {
+          if (value === 'completed') {
+            await deleteTodoReminder(todo.id!);
+          }
           onUpdate({
             status: value as 'in_progress' | 'completed' | 'hold' | 'left-over',
-          })
-        }
+          });
+        }}
       />
 
       {/* Reschedule Due Date Modal */}

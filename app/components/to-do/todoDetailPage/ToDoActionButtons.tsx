@@ -9,6 +9,7 @@ import DeleteConfirmModal from '@/app/components/global/DeleteConfirmModal';
 import PrivacyModal from '@/app/components/global/PrivacyModal';
 import TodoEnhancementPanel from '@/app/components/to-do/TodoEnhancementPanel';
 import { AutoAwesome } from '@mui/icons-material';
+import { deleteTodoReminder } from '@/app/lib/utils/whatsapp-reminder';
 
 interface TodoActionButtonsProps {
   todo: Todo;
@@ -26,6 +27,7 @@ export default function TodoActionButtons({
   const [enhanceOpen, setEnhanceOpen] = useState(false);
 
   const handleDelete = async () => {
+    await deleteTodoReminder(todo.id!);
     await updateDoc(doc(db, 'todos', todo.id!), { deleted: true });
     setDeleteOpen(false);
     onDeleted?.();

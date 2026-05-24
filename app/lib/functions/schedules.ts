@@ -8,11 +8,35 @@ import {
   query,
   where,
   Timestamp,
+  getDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { SchedulesProps } from '../interface';
+import {
+  createWhatsAppReminder,
+  updateWhatsAppReminder,
+  deleteWhatsAppReminder,
+  deleteScheduleReminder,
+  rescheduleScheduleReminder,
+  getUserWhatsAppConfig,
+} from '../utils/whatsapp-reminder';
+import { requestNotificationPermissionAndGetToken } from '../utils/fcm';
 
 const COLLECTION_NAME = 'schedules';
+
+type DateWithToDate = {
+  toDate: () => Date;
+};
+
+const hasToDate = (value: unknown): value is DateWithToDate =>
+  typeof value === 'object' &&
+  value !== null &&
+  'toDate' in value &&
+  typeof (value as DateWithToDate).toDate === 'function';
+
+const toReminderDate = (
+  reminderDate: NonNullable<SchedulesProps['reminderDate']>
+): Date => (hasToDate(reminderDate) ? reminderDate.toDate() : new Date(reminderDate));
 
 // Create a new schedule
 export const createSchedule = async (
@@ -26,6 +50,51 @@ export const createSchedule = async (
       updatedAt: Timestamp.now(),
     });
     console.log('Schedule created with ID:', docRef.id);
+
+    // Schedule WhatsApp/push reminder if enabled
+    if (scheduleData.hasReminder && scheduleData.reminderDate) {
+      try {
+        let phone = '923164709208';
+        const userDoc = await getDoc(doc(db, 'users', scheduleData.userId));
+        if (userDoc.exists()) {
+          const uData = userDoc.data();
+          phone = uData.phone || uData.whatsapp || '923164709208';
+        }
+
+        const config = getUserWhatsAppConfig(scheduleData.userId, phone);
+        config.itemType = 'schedule';
+        // Pass the reminder method so the RTDB worker knows whether to send WhatsApp or push
+        config.method = (scheduleData.reminder?.method as 'whatsapp' | 'push') || 'whatsapp';
+
+        // For push reminders: ensure the FCM token is registered under the real userId
+        // so the Node.js worker finds it at fcm-tokens/{clientId}/{userId}
+        if (config.method === 'push' && typeof window !== 'undefined') {
+          try {
+            const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${scheduleData.userId}`;
+            await requestNotificationPermissionAndGetToken(clientId, scheduleData.userId);
+          } catch (tokenErr) {
+            console.warn('Could not refresh FCM token before push reminder:', tokenErr);
+          }
+        }
+        
+        const rDate = toReminderDate(scheduleData.reminderDate);
+
+        await createWhatsAppReminder(
+          {
+            id: docRef.id,
+            title: scheduleData.title,
+            reminderDate: rDate,
+            priority: scheduleData.priority || 'medium',
+            scheduleTime: scheduleData.startTime
+          },
+          config
+        );
+        console.log(`✅ Reminder (${config.method}) created for schedule ${docRef.id} at ${rDate}`);
+      } catch (err) {
+        console.error('Failed to create reminder for schedule:', err);
+      }
+    }
+
     return docRef.id;
   } catch (error) {
     console.error('Error creating schedule:', error);
@@ -40,6 +109,86 @@ export const updateSchedule = async (
 ): Promise<void> => {
   try {
     const scheduleRef = doc(db, COLLECTION_NAME, scheduleId);
+    
+    // Fetch old data to calculate dynamic changes and keep reminder in sync
+    try {
+      const oldDoc = await getDoc(scheduleRef);
+      if (oldDoc.exists()) {
+        const oldData = oldDoc.data();
+
+        // 1. If it was completed/cancelled OR toggled off, delete reminder
+        const isCancelledOrCompleted = updates.status === 'completed' || updates.status === 'cancelled';
+        const toggledOff = updates.hasReminder === false;
+
+        if ((isCancelledOrCompleted || toggledOff) && oldData.reminderDate) {
+          const rDate = toReminderDate(oldData.reminderDate);
+          await deleteWhatsAppReminder(rDate, scheduleId, 'schedule');
+        }
+        // 2. If reminder is toggled on OR updated
+        else if (updates.hasReminder === true || (updates.reminderDate && oldData.hasReminder)) {
+          const newRDate = updates.reminderDate
+            ? toReminderDate(updates.reminderDate)
+            : null;
+          
+          const oldRDate = oldData.reminderDate
+            ? toReminderDate(oldData.reminderDate)
+            : null;
+
+          if (newRDate) {
+            let phone = '923164709208';
+            const userDoc = await getDoc(doc(db, 'users', oldData.userId));
+            if (userDoc.exists()) {
+              const uData = userDoc.data();
+              phone = uData.phone || uData.whatsapp || '923164709208';
+            }
+            
+            const config = getUserWhatsAppConfig(oldData.userId, phone);
+            config.itemType = 'schedule';
+            // Use the updated method if provided, else fall back to stored method
+            const resolvedMethod = (updates.reminder?.method || oldData.reminder?.method || 'whatsapp') as 'whatsapp' | 'push';
+            config.method = resolvedMethod;
+
+            // For push reminders: ensure FCM token is under the real userId
+            if (resolvedMethod === 'push' && typeof window !== 'undefined') {
+              try {
+                const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${oldData.userId}`;
+                await requestNotificationPermissionAndGetToken(clientId, oldData.userId);
+              } catch (tokenErr) {
+                console.warn('Could not refresh FCM token on schedule update:', tokenErr);
+              }
+            }
+
+            await updateWhatsAppReminder(
+              oldRDate || undefined,
+              {
+                id: scheduleId,
+                title: updates.title || oldData.title,
+                reminderDate: newRDate,
+                priority: updates.priority || oldData.priority || 'medium',
+                scheduleTime: updates.startTime || oldData.startTime
+              },
+              config
+            );
+          }
+        }
+        // 3. Rescheduled via date or startTime change (without explicit reminderDate update)
+        else if ((updates.date || updates.startTime) && oldData.hasReminder && oldData.reminderDate && !updates.reminderDate) {
+          const newDate = updates.date || oldData.date;
+          const newStart = updates.startTime || oldData.startTime;
+          let phone = '923164709208';
+          const userDoc = await getDoc(doc(db, 'users', oldData.userId));
+          if (userDoc.exists()) {
+            const uData = userDoc.data();
+            phone = uData.phone || uData.whatsapp || '923164709208';
+          }
+          // Pass method through so reschedule helper can carry it
+          await rescheduleScheduleReminder(scheduleId, newDate, newStart, oldData.userId, phone);
+        }
+      }
+    } catch (err) {
+      console.error('Error syncing schedule reminder updates:', err);
+    }
+
     await updateDoc(scheduleRef, {
       ...updates,
       updatedAt: Timestamp.now(),
@@ -53,6 +202,7 @@ export const updateSchedule = async (
 // Delete a schedule
 export const deleteSchedule = async (scheduleId: string): Promise<void> => {
   try {
+    await deleteScheduleReminder(scheduleId);
     const scheduleRef = doc(db, COLLECTION_NAME, scheduleId);
     await deleteDoc(scheduleRef);
   } catch (error) {
@@ -248,6 +398,9 @@ export const updateScheduleStatus = async (
   status: 'pending' | 'completed' | 'cancelled'
 ): Promise<void> => {
   try {
+    if (status === 'completed' || status === 'cancelled') {
+      await deleteScheduleReminder(scheduleId);
+    }
     const scheduleRef = doc(db, COLLECTION_NAME, scheduleId);
     await updateDoc(scheduleRef, {
       status,
