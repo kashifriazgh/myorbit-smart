@@ -54,24 +54,30 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             setUser(userData);
             setIsGuest(false);
 
-            // Set cookies for session persistence
-            Cookies.set('uid', firebaseUser.uid, { expires: 7 });
-            Cookies.set('role', data.role || 'viewer', { expires: 7 });
+            // Set cookies for session persistence with path '/'
+            Cookies.set('uid', firebaseUser.uid, { expires: 7, path: '/' });
+            Cookies.set('role', data.role || 'viewer', { expires: 7, path: '/' });
 
             console.log('✅ Firebase user authenticated and cookies set');
           } else {
             console.warn('⚠️ No Firestore user document found.');
+            Cookies.remove('uid', { path: '/' });
+            Cookies.remove('role', { path: '/' });
             setUser(null);
             setIsGuest(false);
           }
         } catch (err) {
           console.error('❌ Error fetching Firestore user:', err);
+          Cookies.remove('uid', { path: '/' });
+          Cookies.remove('role', { path: '/' });
           setUser(null);
           setIsGuest(false);
         }
       } else {
         // No Firebase user - check for guest user or create one
         console.log('🔍 No Firebase user, checking for guest user');
+        Cookies.remove('uid', { path: '/' });
+        Cookies.remove('role', { path: '/' });
         const guestUser = getOrCreateGuestUser();
         setUser(guestUser);
         setIsGuest(true);

@@ -73,8 +73,8 @@ export default function LoginPage() {
         throw new Error('User data not found.');
       }
 
-      Cookies.set('uid', user.uid, { expires: 7 });
-      Cookies.set('role', userDoc.data().role, { expires: 7 });
+      Cookies.set('uid', user.uid, { expires: 7, path: '/' });
+      Cookies.set('role', userDoc.data().role, { expires: 7, path: '/' });
 
       setSnack({ message: 'Login successful.', type: 'success', open: true });
 

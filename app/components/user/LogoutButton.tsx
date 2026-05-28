@@ -23,8 +23,8 @@ export default function LogoutButton() {
       } else {
         // Firebase logout for authenticated users
         await signOut(auth);
-        Cookies.remove('uid');
-        Cookies.remove('role');
+        Cookies.remove('uid', { path: '/' });
+        Cookies.remove('role', { path: '/' });
         router.push('/');
       }
     } catch (err) {

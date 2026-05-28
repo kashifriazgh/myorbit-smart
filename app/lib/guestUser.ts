@@ -49,10 +49,11 @@ export function getOrCreateGuestUser(): GuestUser {
   // Create new guest user
   const guestUID = generateGuestUID();
 
-  // Store guest UID in cookies for 30 days
+  // Store guest UID in cookies for 30 days with path '/'
   Cookies.set(GUEST_UID_KEY, guestUID, {
     expires: GUEST_EXPIRY_DAYS,
     sameSite: 'lax',
+    path: '/',
   });
 
   return {
@@ -74,10 +75,10 @@ export function isGuestUser(uid: string): boolean {
 }
 
 /**
- * Clear guest user data
+ * Clear guest user data with path '/'
  */
 export function clearGuestUser(): void {
-  Cookies.remove(GUEST_UID_KEY);
+  Cookies.remove(GUEST_UID_KEY, { path: '/' });
 }
 
 /**
