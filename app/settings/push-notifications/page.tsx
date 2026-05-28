@@ -29,6 +29,22 @@ export default function PushNotificationsPage() {
     }
   }, []);
 
+  // Background token assert/refresh when permission is already granted and user is loaded
+  useEffect(() => {
+    if (user && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      console.log('PushNotificationsPage: Notification permission already granted. Syncing FCM token in background...');
+      const silentSync = async () => {
+        try {
+          const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${user.uid}`;
+          await requestNotificationPermissionAndGetToken(clientId, user.uid);
+        } catch (err) {
+          console.warn('Background FCM token sync failed:', err);
+        }
+      };
+      silentSync();
+    }
+  }, [user]);
+
   const handleSubscribe = async () => {
     if (!user) return;
     setStatus('loading');
@@ -146,9 +162,18 @@ export default function PushNotificationsPage() {
                 </p>
               </div>
             ) : isSubscribed ? (
-              <div className="flex items-center gap-2.5 px-5 py-2.5 bg-emerald-500/15 border border-emerald-500/30 rounded-full">
-                <CheckIcon className="text-emerald-400 text-[18px]" />
-                <span className="text-emerald-300 text-sm font-extrabold">Subscribed</span>
+              <div className="flex flex-col items-center gap-4">
+                <div className="flex items-center gap-2.5 px-5 py-2.5 bg-emerald-500/15 border border-emerald-500/30 rounded-full">
+                  <CheckIcon className="text-emerald-400 text-[18px]" />
+                  <span className="text-emerald-300 text-sm font-extrabold">Subscribed</span>
+                </div>
+                <button
+                  onClick={handleSubscribe}
+                  disabled={isLoading}
+                  className="text-xs font-bold text-slate-500 hover:text-amber-400 hover:scale-105 active:scale-95 transition-all underline underline-offset-4 decoration-slate-700 hover:decoration-amber-500/50"
+                >
+                  {isLoading ? 'Syncing Token...' : '🔄 Sync/Re-register device token'}
+                </button>
               </div>
             ) : (
               <button

@@ -17,14 +17,14 @@ export async function getSharedFirebaseConfig(): Promise<SharedFirebaseConfig> {
   if (sharedConfig) return sharedConfig;
   
   sharedConfig = {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-    databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
-    vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || "BFGvN2a5o2rX6a_mJmDk0jH3lQc_7g7wK9xH5V2hE9zD0vH8zJ7hL0dM7pX9vI1uS2tV4wX5yZ6aB7cDeFgHiJk"
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDZFNapAjmnS0TZIM1lK8wNA4PDgedVnRo",
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "forms-389a6.firebaseapp.com",
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "forms-389a6",
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "forms-389a6.firebasestorage.app",
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "721032079467",
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:721032079467:web:b525c93448811b8bf4292e",
+    databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app",
+    vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || "BH-Py3hgXNTO92ksco5vUvezLLth_VbVhS_eSUt4PzUtfJrHTbB4PMfnm6QS15N-oDCSukq_sSKcrTVNklQfacs"
   };
   return sharedConfig;
 }

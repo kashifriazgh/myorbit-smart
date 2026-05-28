@@ -132,7 +132,7 @@ export default function Homepage() {
         </div>
       </div>
 
-      <div className="w-full mb-8 p-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-center">
+      <div className="w-full mb-8">
         <QuickLinks />
       </div>
 

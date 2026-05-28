@@ -20,10 +20,8 @@ import {
     Dialog,
     DialogContent,
     DialogActions,
-    TextField,
     Button,
     IconButton,
-    MenuItem,
     LinearProgress,
     CircularProgress,
     Snackbar,
@@ -58,11 +56,11 @@ interface Task {
     id: string;
     title: string;
     dueDate: string;
-    reminderOption: 'due' | '15m' | '30m' | '1h' | 'custom' | 'none';
+    reminderOption: 'custom' | 'none';
     customReminderTime: string;
     reminderDate?: string; // Stored as ISO string
     reminderMethod?: 'whatsapp' | 'push';
-    priority: 'low' | 'medium' | 'high';
+    priority?: 'low' | 'medium' | 'high';
     completed: boolean;
     createdAt: number;
     updatedAt: number;
@@ -90,9 +88,7 @@ export default function TestTodosPage() {
     // Form fields
     const [formTitle, setFormTitle] = useState('');
     const [formDueDate, setFormDueDate] = useState('');
-    const [formPriority, setFormPriority] = useState<'low' | 'medium' | 'high'>('medium');
     const [formHasReminder, setFormHasReminder] = useState(false);
-    const [formReminderOption, setFormReminderOption] = useState<'due' | '15m' | '30m' | '1h' | 'custom'>('15m');
     const [formCustomReminderTime, setFormCustomReminderTime] = useState('');
     const [formReminderMethod, setFormReminderMethod] = useState<'whatsapp' | 'push'>('whatsapp');
 
@@ -130,35 +126,19 @@ export default function TestTodosPage() {
     };
 
     // Calculate dynamic reminder time
-    const calculateReminderDate = (dueStr: string, option: string, customStr: string): Date | null => {
-        if (!dueStr) return null;
-        const dueDateObj = new Date(dueStr);
-        
-        switch (option) {
-            case 'due':
-                return dueDateObj;
-            case '15m':
-                return new Date(dueDateObj.getTime() - 15 * 60 * 1000);
-            case '30m':
-                return new Date(dueDateObj.getTime() - 30 * 60 * 1000);
-            case '1h':
-                return new Date(dueDateObj.getTime() - 60 * 60 * 1000);
-            case 'custom':
-                return customStr ? new Date(customStr) : null;
-            default:
-                return null;
-        }
+    const calculateReminderDate = (customStr: string): Date | null => {
+        return customStr ? new Date(customStr) : null;
     };
 
     // Real-time recalculation of preview reminder time
     useEffect(() => {
-        if (!formHasReminder || !formDueDate) {
+        if (!formHasReminder) {
             setComputedReminderTimeStr('');
             setReminderIsPast(false);
             return;
         }
 
-        const computedDate = calculateReminderDate(formDueDate, formReminderOption, formCustomReminderTime);
+        const computedDate = calculateReminderDate(formCustomReminderTime);
         if (computedDate) {
             setComputedReminderTimeStr(computedDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }));
             setReminderIsPast(computedDate.getTime() <= Date.now());
@@ -166,7 +146,7 @@ export default function TestTodosPage() {
             setComputedReminderTimeStr('');
             setReminderIsPast(false);
         }
-    }, [formDueDate, formHasReminder, formReminderOption, formCustomReminderTime]);
+    }, [formHasReminder, formCustomReminderTime]);
 
     // Firestore Tasks Listener
     useEffect(() => {
@@ -302,17 +282,16 @@ export default function TestTodosPage() {
         setOpLoading(true);
         try {
             const computedReminderDate = formHasReminder 
-                ? calculateReminderDate(formDueDate, formReminderOption, formCustomReminderTime)
+                ? calculateReminderDate(formCustomReminderTime)
                 : null;
 
             const todoData = {
                 title: formTitle.trim(),
                 dueDate: formDueDate,
-                reminderOption: formHasReminder ? formReminderOption : 'none',
+                reminderOption: formHasReminder ? 'custom' : 'none',
                 customReminderTime: formHasReminder ? formCustomReminderTime : '',
                 reminderDate: computedReminderDate ? computedReminderDate.toISOString() : null,
                 reminderMethod: formHasReminder ? formReminderMethod : 'whatsapp',
-                priority: formPriority,
                 completed: false,
                 createdAt: Date.now(),
                 updatedAt: Date.now()
@@ -340,7 +319,6 @@ export default function TestTodosPage() {
                             title: todoData.title,
                             reminderDate: computedReminderDate,
                             id: todoRef.id,
-                            priority: todoData.priority,
                             dueDate: todoData.dueDate
                         },
                         config
@@ -367,17 +345,16 @@ export default function TestTodosPage() {
         setOpLoading(true);
         try {
             const computedReminderDate = formHasReminder 
-                ? calculateReminderDate(formDueDate, formReminderOption, formCustomReminderTime)
+                ? calculateReminderDate(formCustomReminderTime)
                 : null;
 
             const updatedTodoData = {
                 title: formTitle.trim(),
                 dueDate: formDueDate,
-                reminderOption: formHasReminder ? formReminderOption : 'none',
+                reminderOption: formHasReminder ? 'custom' : 'none',
                 customReminderTime: formHasReminder ? formCustomReminderTime : '',
                 reminderDate: computedReminderDate ? computedReminderDate.toISOString() : null,
                 reminderMethod: formHasReminder ? formReminderMethod : 'whatsapp',
-                priority: formPriority,
                 updatedAt: Date.now()
             };
 
@@ -399,7 +376,6 @@ export default function TestTodosPage() {
                     title: updatedTodoData.title,
                     reminderDate: computedReminderDate || undefined,
                     id: editingTask.id,
-                    priority: updatedTodoData.priority,
                     dueDate: updatedTodoData.dueDate
                 },
                 config
@@ -473,16 +449,35 @@ export default function TestTodosPage() {
         }
     };
 
+    // Helper to format datetime-local input value
+    const formatDateTimeLocal = (date: Date): string => {
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+
     // Open creation modal
     const handleOpenCreateModal = () => {
         setModalMode('create');
         setEditingTask(null);
-        setFormTitle('');
-        setFormDueDate('');
-        setFormPriority('medium');
-        setFormHasReminder(false);
-        setFormReminderOption('15m');
-        setFormCustomReminderTime('');
+        
+        // Set default values for 1-click test task creation
+        const now = new Date();
+        const defaultTitle = `Test Task No #${tasks.length + 1} - ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const defaultDueDate = formatDateTimeLocal(now);
+        
+        // Calculate reminder time: current time + 2 or 3 minutes based on seconds
+        const reminderDate = new Date(now);
+        if (now.getSeconds() < 30) {
+            reminderDate.setMinutes(reminderDate.getMinutes() + 2);
+        } else {
+            reminderDate.setMinutes(reminderDate.getMinutes() + 3);
+        }
+        const defaultReminderTime = formatDateTimeLocal(reminderDate);
+        
+        setFormTitle(defaultTitle);
+        setFormDueDate(defaultDueDate);
+        setFormHasReminder(true); // Reminder ON by default
+        setFormCustomReminderTime(defaultReminderTime);
         setFormReminderMethod('whatsapp');
         setIsModalOpen(true);
     };
@@ -493,9 +488,7 @@ export default function TestTodosPage() {
         setEditingTask(task);
         setFormTitle(task.title);
         setFormDueDate(task.dueDate || '');
-        setFormPriority(task.priority || 'medium');
         setFormHasReminder(!!task.reminderDate);
-        setFormReminderOption(task.reminderOption !== 'none' ? task.reminderOption : '15m');
         setFormCustomReminderTime(task.customReminderTime || '');
         setFormReminderMethod(task.reminderMethod || 'whatsapp');
         setIsModalOpen(true);
@@ -505,7 +498,6 @@ export default function TestTodosPage() {
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setEditingTask(null);
-        setFormReminderMethod('whatsapp');
     };
 
     // Quick set test phone suggestions
@@ -618,13 +610,6 @@ export default function TestTodosPage() {
                                 {tasks.map((task) => {
                                     const hasReminder = !!task.reminderDate;
                                     const isReminderPast = hasReminder && new Date(task.reminderDate!).getTime() < Date.now();
-                                    
-                                    // Set border colors based on priority
-                                    const priorityBorders = {
-                                        high: 'border-l-[6px] border-l-red-500 border border-slate-800',
-                                        medium: 'border-l-[6px] border-l-amber-500 border border-slate-800',
-                                        low: 'border-l-[6px] border-l-sky-500 border border-slate-800'
-                                    };
 
                                     return (
                                         <div
@@ -632,7 +617,7 @@ export default function TestTodosPage() {
                                             className={`
                                                 group relative bg-slate-950/40 rounded-2xl p-5 hover:bg-slate-950/60 
                                                 transition-all duration-300 hover:shadow-xl hover:shadow-slate-950/40 hover:-translate-y-0.5
-                                                ${priorityBorders[task.priority]} ${task.completed ? 'opacity-70' : ''}
+                                                border border-slate-800 ${task.completed ? 'opacity-70' : ''}
                                             `}
                                         >
                                             {/* Header Section of card */}
@@ -652,27 +637,16 @@ export default function TestTodosPage() {
                                                         <h3 className={`text-base font-bold text-white tracking-tight ${task.completed ? 'line-through text-slate-400' : ''}`}>
                                                             {task.title}
                                                         </h3>
-                                                        
-                                                        {/* Priority & Due info */}
-                                                        <div className="flex items-center gap-2 flex-wrap mt-2">
-                                                            {/* Priority tag */}
-                                                            <span className={`
-                                                                text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md
-                                                                ${task.priority === 'high' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : ''}
-                                                                ${task.priority === 'medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : ''}
-                                                                ${task.priority === 'low' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' : ''}
-                                                            `}>
-                                                                {task.priority}
-                                                            </span>
 
-                                                            {/* Due Date tag */}
-                                                            {task.dueDate && (
+                                                        {/* Due info */}
+                                                        {task.dueDate && (
+                                                            <div className="flex items-center gap-2 flex-wrap mt-2">
                                                                 <span className="flex items-center gap-1 text-slate-400 text-xs font-semibold">
                                                                     <CalendarIcon className="text-[14px]" />
                                                                     {new Date(task.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                                                 </span>
-                                                            )}
-                                                        </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -925,58 +899,17 @@ export default function TestTodosPage() {
                         />
                     </div>
 
-                    {/* Grid for Due Date & Priority */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Due Date */}
-                        <div>
-                            <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
-                                Due Date & Time <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                                type="datetime-local"
-                                value={formDueDate}
-                                onChange={(e) => setFormDueDate(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-800 focus:border-teal-500 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none transition-all"
-                            />
-                        </div>
-
-                        {/* Priority Selector */}
-                        <div>
-                            <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
-                                Task Priority
-                            </label>
-                            <TextField
-                                select
-                                value={formPriority}
-                                onChange={(e) => setFormPriority(e.target.value as 'low' | 'medium' | 'high')}
-                                fullWidth
-                                variant="outlined"
-                                slotProps={{
-                                    select: {
-                                        MenuProps: {
-                                            PaperProps: {
-                                                className: "bg-slate-900 border border-slate-800 text-slate-100",
-                                                sx: { backgroundImage: 'none' }
-                                            }
-                                        }
-                                    }
-                                }}
-                                sx={{
-                                    '& .MuiOutlinedInput-root': {
-                                        borderRadius: '16px',
-                                        backgroundColor: '#020617', // slate-950
-                                        color: '#f8fafc', // slate-50
-                                        '& fieldset': { borderColor: '#1e293b' },
-                                        '&:hover fieldset': { borderColor: '#14b8a6' },
-                                        '&.Mui-focused fieldset': { borderColor: '#14b8a6' },
-                                    }
-                                }}
-                            >
-                                <MenuItem value="low" className="font-bold text-slate-200">🔵 Low Priority</MenuItem>
-                                <MenuItem value="medium" className="font-bold text-slate-200">🟡 Medium Priority</MenuItem>
-                                <MenuItem value="high" className="font-bold text-slate-200">🔴 High Priority</MenuItem>
-                            </TextField>
-                        </div>
+                    {/* Due Date */}
+                    <div>
+                        <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
+                            Due Date & Time <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            type="datetime-local"
+                            value={formDueDate}
+                            onChange={(e) => setFormDueDate(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-teal-500 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none transition-all"
+                        />
                     </div>
 
                     {/* Task Reminder Section */}
@@ -1041,61 +974,18 @@ export default function TestTodosPage() {
                                     </div>
                                 </div>
 
-                                {/* Predefined Offset Selector */}
+                                {/* Custom Reminder Time */}
                                 <div>
                                     <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
-                                        Predefined Reminder Trigger Offset
+                                        Reminder Date & Time
                                     </label>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                        {[
-                                            { label: 'At Due Time', value: 'due' },
-                                            { label: '15m Before', value: '15m' },
-                                            { label: '30m Before', value: '30m' },
-                                            { label: '1h Before', value: '1h' },
-                                        ].map((opt) => (
-                                            <button
-                                                key={opt.value}
-                                                type="button"
-                                                onClick={() => setFormReminderOption(opt.value as 'due' | '15m' | '30m' | '1h' | 'custom')}
-                                                className={`
-                                                    py-2 px-1 rounded-xl text-xs font-extrabold tracking-tight border transition-all
-                                                    ${formReminderOption === opt.value
-                                                        ? 'bg-teal-500/10 text-teal-400 border-teal-500/50 shadow-inner'
-                                                        : 'bg-slate-900 text-slate-500 border-slate-800/80 hover:text-slate-400'}
-                                                `}
-                                            >
-                                                {opt.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormReminderOption('custom')}
-                                        className={`
-                                            w-full mt-2 py-2.5 rounded-xl text-xs font-extrabold border transition-all
-                                            ${formReminderOption === 'custom'
-                                                ? 'bg-teal-500/10 text-teal-400 border-teal-500/50'
-                                                : 'bg-slate-900 text-slate-500 border-slate-800/80 hover:text-slate-400'}
-                                        `}
-                                    >
-                                        ⚙️ Select Custom Date & Time
-                                    </button>
+                                    <input
+                                        type="datetime-local"
+                                        value={formCustomReminderTime}
+                                        onChange={(e) => setFormCustomReminderTime(e.target.value)}
+                                        className="w-full bg-slate-950 border border-slate-800 focus:border-teal-500 rounded-xl px-4 py-3 text-sm font-semibold text-white focus:outline-none transition-all"
+                                    />
                                 </div>
-
-                                {/* Custom time picker */}
-                                {formReminderOption === 'custom' && (
-                                    <div className="space-y-2 animate-fadeIn">
-                                        <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
-                                            Custom Reminder DateTime
-                                        </label>
-                                        <input
-                                            type="datetime-local"
-                                            value={formCustomReminderTime}
-                                            onChange={(e) => setFormCustomReminderTime(e.target.value)}
-                                            className="w-full bg-slate-950 border border-slate-800 focus:border-teal-500 rounded-xl px-4 py-3 text-sm font-semibold text-white focus:outline-none transition-all"
-                                        />
-                                    </div>
-                                )}
 
                                 {/* Live preview text */}
                                 {computedReminderTimeStr && (
@@ -1133,7 +1023,7 @@ export default function TestTodosPage() {
                     </Button>
                     <Button
                         onClick={modalMode === 'create' ? handleCreateTask : handleUpdateTask}
-                        disabled={opLoading || !formTitle.trim() || !formDueDate || (formHasReminder && formReminderOption === 'custom' && !formCustomReminderTime)}
+                        disabled={opLoading || !formTitle.trim() || !formDueDate || (formHasReminder && !formCustomReminderTime)}
                         variant="contained"
                         className="rounded-xl font-extrabold px-6 py-2.5 normal-case bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 shadow-lg shadow-teal-500/20 disabled:opacity-50 transition-all"
                     >

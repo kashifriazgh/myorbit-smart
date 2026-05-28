@@ -170,20 +170,28 @@ export default function OverdueTasks() {
   const activeTask = tasks[activeStep];
 
   return (
-    <Box mt={4} className="px-4">
-      {!loading && tasks.length > 0 && (
-        <Typography
-          fontWeight={700}
-          fontSize={17}
-          mb={2}
-          color={theme?.mode === 'dark' ? '#f87171' : '#b91c1c'}
-        >
-          ⏰ Overdue Tasks – Take Action!
-        </Typography>
-      )}
+    <Card
+      sx={{
+        height: '100%',
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
+        position: 'relative',
+      }}
+    >
+      <CardContent sx={{ p: 2 }}>
+        {!loading && tasks.length > 0 && (
+          <Typography
+            fontWeight={700}
+            fontSize={17}
+            mb={2}
+            color={theme?.mode === 'dark' ? '#f87171' : '#b91c1c'}
+          >
+            ⏰ Overdue Tasks – Take Action!
+          </Typography>
+        )}
 
       {loading ? (
-        <Box className="p-4">
+        <Box className="p-2">
           <Typography variant="subtitle1" fontWeight="bold" className="mb-3">
             ⏰ Overdue Tasks
           </Typography>
@@ -458,6 +466,7 @@ export default function OverdueTasks() {
           </Box>
         </Fade>
       </Modal>
-    </Box>
+      </CardContent>
+    </Card>
   );
 }

@@ -36,6 +36,7 @@ import moment from 'moment';
 import { updateDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useTodoContext } from '@/app/lib/context/todoContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { Todo } from '@/app/lib/interface';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -55,6 +56,7 @@ const StyledBadge = styled(Badge)(({ theme }) => ({
 
 const ImportantTasks = () => {
   const { todos, loading, updateStepStatus } = useTodoContext();
+  const { theme } = useCustomTheme();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -214,64 +216,83 @@ const ImportantTasks = () => {
 
   if (loading) {
     return (
-      <Box className="p-4">
-        <Box className="flex justify-between items-center mb-3">
-          <Typography variant="subtitle1" fontWeight="bold">
-            🚀 On Going Plans
-          </Typography>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<Add />}
-            onClick={() => setTodoModalOpen(true)}
+      <Card
+        sx={{
+          height: '100%',
+          backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+          border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
+          position: 'relative',
+        }}
+      >
+        <CardContent sx={{ p: 2 }}>
+          <Box className="flex justify-between items-center mb-3">
+            <Typography variant="subtitle1" fontWeight="bold">
+              🚀 On Going Plans
+            </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<Add />}
+              onClick={() => setTodoModalOpen(true)}
+            >
+              New Task
+            </Button>
+          </Box>
+
+          {/* Skeleton Card */}
+          <Card className="rounded-xl shadow-sm mb-2"
+            sx={{ backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#f8fafc', border: `1px solid ${theme?.mode === 'dark' ? '#1e293b' : '#e2e8f0'}` }}
           >
-            New Task
-          </Button>
-        </Box>
-
-        {/* Skeleton Card */}
-        <Card className="rounded-xl shadow-sm mb-2">
-          <CardContent>
-            <Box className="flex justify-between mb-2">
-              <Box>
-                <Skeleton width={140} height={20} />
-                <Skeleton width={100} height={16} sx={{ mt: 0.5 }} />
-              </Box>
-              <Skeleton width={60} height={20} />
-            </Box>
-
-            <Stack direction="row" spacing={1} mb={2}>
-              <Skeleton width={80} height={16} />
-              <Skeleton width={60} height={16} />
-            </Stack>
-
-            {/* Steps Skeleton */}
-            <Box>
-              {[...Array(3)].map((_, idx) => (
-                <Box key={idx} className="flex items-center gap-2 my-1">
-                  <Skeleton variant="circular" width={24} height={24} />
-                  <Skeleton width="80%" height={16} />
+            <CardContent>
+              <Box className="flex justify-between mb-2">
+                <Box>
+                  <Skeleton width={140} height={20} />
+                  <Skeleton width={100} height={16} sx={{ mt: 0.5 }} />
                 </Box>
-              ))}
-            </Box>
-          </CardContent>
-        </Card>
+                <Skeleton width={60} height={20} />
+              </Box>
 
-        <ToDoModal
-          open={todoModalOpen}
-          onClose={() => setTodoModalOpen(false)}
-        />
-      </Box>
+              <Stack direction="row" spacing={1} mb={2}>
+                <Skeleton width={80} height={16} />
+                <Skeleton width={60} height={16} />
+              </Stack>
+
+              {/* Steps Skeleton */}
+              <Box>
+                {[...Array(3)].map((_, idx) => (
+                  <Box key={idx} className="flex items-center gap-2 my-1">
+                    <Skeleton variant="circular" width={24} height={24} />
+                    <Skeleton width="80%" height={16} />
+                  </Box>
+                ))}
+              </Box>
+            </CardContent>
+          </Card>
+
+          <ToDoModal
+            open={todoModalOpen}
+            onClose={() => setTodoModalOpen(false)}
+          />
+        </CardContent>
+      </Card>
     );
   }
 
   
   return (
-    <Box className="p-4">
-      <Box className="flex justify-between items-center mb-3">
-        <Typography variant="subtitle1" fontWeight="bold">
-          🚀 On Going Plans
-        </Typography>
+    <Card
+      sx={{
+        height: '100%',
+        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+        border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
+        position: 'relative',
+      }}
+    >
+      <CardContent sx={{ p: 2 }}>
+        <Box className="flex justify-between items-center mb-3">
+          <Typography variant="subtitle1" fontWeight="bold">
+            🚀 On Going Plans
+          </Typography>
         <Button
           variant="outlined"
           size="small"
@@ -744,7 +765,8 @@ const ImportantTasks = () => {
 
       {/* Todo Modal */}
       <ToDoModal open={todoModalOpen} onClose={() => setTodoModalOpen(false)} />
-    </Box>
+      </CardContent>
+    </Card>
   );
 };
 

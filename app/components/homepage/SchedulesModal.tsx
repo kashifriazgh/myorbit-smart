@@ -20,6 +20,7 @@ import {
   useMediaQuery,
   Switch,
   FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -27,8 +28,6 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
 import CustomWheelTimePicker from '@/app/test/time-picker/TimePicker';
 import {
   DateRange as CustomDateIcon,
@@ -94,83 +93,24 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
     'whatsapp',
   );
   const [reminderActive, setReminderActive] = useState(false);
-  const [showCustomTimeWheel, setShowCustomTimeWheel] = useState(true);
-  const [activeReminderPreset, setActiveReminderPreset] = useState('custom');
-  const [datesList, setDatesList] = useState<{ dayName: string; dayNum: string; fullDate: Date }[]>([]);
-
-  useEffect(() => {
-    const list = [];
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    for (let i = 0; i < 14; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      list.push({
-        dayName: days[d.getDay()],
-        dayNum: String(d.getDate()).padStart(2, '0'),
-        fullDate: d,
-      });
+  const handleQuickReminderDate = (
+    type: 'tomorrow' | 'afterTomorrow' | 'endOfWeek',
+  ) => {
+    const date = new Date();
+    if (type === 'tomorrow') {
+      date.setDate(date.getDate() + 1);
+    } else if (type === 'afterTomorrow') {
+      date.setDate(date.getDate() + 2);
+    } else if (type === 'endOfWeek') {
+      const day = date.getDay();
+      const diff = day === 0 ? 7 : 7 - day;
+      date.setDate(date.getDate() + diff);
     }
-    setDatesList(list);
-  }, []);
-
-  const isSameReminderDay = (d1: Date, d2: Date | null) => {
-    if (!d2) return false;
-    return (
-      d1.getDate() === d2.getDate() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getFullYear() === d2.getFullYear()
-    );
-  };
-
-  const handleReminderDateSelect = (date: Date) => {
     const current = customReminderDate ? new Date(customReminderDate) : new Date();
     current.setFullYear(date.getFullYear());
     current.setMonth(date.getMonth());
     current.setDate(date.getDate());
     setCustomReminderDate(current);
-    setActiveReminderPreset('custom');
-  };
-
-  const setRelativeReminder = (minutesFromNow: number) => {
-    const date = new Date();
-    date.setMinutes(date.getMinutes() + minutesFromNow);
-    date.setSeconds(0, 0);
-    setCustomReminderDate(date);
-  };
-
-  const setTomorrowMorningReminder = () => {
-    const date = new Date();
-    date.setDate(date.getDate() + 1);
-    date.setHours(9, 0, 0, 0);
-    setCustomReminderDate(date);
-  };
-
-  const handleApplyReminderPreset = (preset: string) => {
-    setActiveReminderPreset(preset);
-    if (preset === 'none') {
-      setCustomReminderDate(null);
-      setShowCustomTimeWheel(false);
-    } else if (preset === '15m') {
-      setRelativeReminder(15);
-      setShowCustomTimeWheel(false);
-    } else if (preset === '30m') {
-      setRelativeReminder(30);
-      setShowCustomTimeWheel(false);
-    } else if (preset === '1h') {
-      setRelativeReminder(60);
-      setShowCustomTimeWheel(false);
-    } else if (preset === '3h') {
-      setRelativeReminder(180);
-      setShowCustomTimeWheel(false);
-    } else if (preset === 'tomorrow') {
-      setTomorrowMorningReminder();
-      setShowCustomTimeWheel(false);
-    } else if (preset === 'custom') {
-      setShowCustomTimeWheel(true);
-      if (!customReminderDate) {
-        setCustomReminderDate(new Date());
-      }
-    }
   };
 
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -495,7 +435,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           {/* Title Input */}
           <Box>
             <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
-              🏷️ Session Title
+              🏷️ Title
             </Typography>
             <TextField
               inputRef={titleInputRef}
@@ -543,7 +483,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                 size="small"
                 className={`rounded-full px-4 font-bold transition-all text-[10px] ${formData.isFlexible ? 'bg-violet-600 shadow-lg shadow-violet-500/30' : ''}`}
               >
-                {formData.isFlexible ? '✨ Flexible Active' : 'Make Flexible'}
+                {formData.isFlexible ? '✨ Daily Active' : 'Show me Daily'}
               </Button>
             </Box>
 
@@ -641,11 +581,12 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     }}
                     fullWidth
                     InputLabelProps={{ shrink: true }}
+                    InputProps={{
+                      className: 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 [color-scheme:light] dark:[color-scheme:dark]',
+                    }}
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         borderRadius: '12px',
-                        backgroundColor:
-                          theme?.mode === 'dark' ? '#1e293b' : '#f8fafc',
                         border: 'none',
                         '& fieldset': { border: 'none' },
                         height: '48px',
@@ -690,11 +631,12 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     }}
                     fullWidth
                     InputLabelProps={{ shrink: true }}
+                    InputProps={{
+                      className: 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 [color-scheme:light] dark:[color-scheme:dark]',
+                    }}
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         borderRadius: '12px',
-                        backgroundColor:
-                          theme?.mode === 'dark' ? '#1e293b' : '#f8fafc',
                         border: 'none',
                         '& fieldset': { border: 'none' },
                         height: '48px',
@@ -844,116 +786,90 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                   {/* Date Picker Section */}
                   <Box>
                     <Box className="flex items-center justify-between mb-2.5 px-1">
-
-                      {customReminderDate && (
-                        <Typography className="text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full border border-violet-500/20 dark:border-violet-400/20">
-                          {customReminderDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                        </Typography>
-                      )}
+                      <Typography className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <CustomDateIcon style={{ fontSize: 13 }} />
+                        Select Reminder Date
+                      </Typography>
                     </Box>
-
-                    {/* Premium Horizontal Day Slider */}
-                    <Box className="flex gap-1.5 overflow-x-auto pb-2 mb-1 scrollbar-none snap-x">
-                      {datesList.map((item, idx) => {
-                        const isSelected = isSameReminderDay(item.fullDate, customReminderDate);
-                        const isToday = isSameReminderDay(item.fullDate, new Date());
-                        return (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => handleReminderDateSelect(item.fullDate)}
-                            className={`flex flex-col items-center justify-center min-w-[50px] h-[64px] rounded-xl border transition-all duration-200 snap-center cursor-pointer ${isSelected
-                              ? 'bg-gradient-to-br from-violet-500 to-indigo-600 border-violet-400 text-white shadow-md shadow-violet-500/10 scale-102 font-black'
-                              : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
-                              }`}
+                    <TextField
+                      type="date"
+                      value={customReminderDate ? `${customReminderDate.getFullYear()}-${String(customReminderDate.getMonth() + 1).padStart(2, '0')}-${String(customReminderDate.getDate()).padStart(2, '0')}` : ''}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const [y, m, d] = e.target.value.split('-').map(Number);
+                          const current = customReminderDate ? new Date(customReminderDate) : new Date();
+                          current.setFullYear(y);
+                          current.setMonth(m - 1);
+                          current.setDate(d);
+                          setCustomReminderDate(current);
+                        } else {
+                          setCustomReminderDate(null);
+                        }
+                      }}
+                      fullWidth
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '16px',
+                          backgroundColor:
+                            theme?.mode === 'dark' ? '#1e3a8a20' : '#f0f7ff',
+                          '& fieldset': {
+                            borderColor: '#3b82f6',
+                            borderWidth: '2px',
+                          },
+                        },
+                        '& .MuiInputBase-input': {
+                          textAlign: 'center',
+                          fontWeight: 800,
+                          color: '#2563eb',
+                          fontSize: '1.1rem',
+                          letterSpacing: '1px',
+                        },
+                      }}
+                      helperText={
+                        customReminderDate && (
+                          <Typography
+                            variant="caption"
+                            className="text-slate-400 dark:text-slate-500 font-bold ml-1 uppercase tracking-wider"
                           >
-                            <span className={`text-[8.5px] font-bold uppercase ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
-                              {item.dayName}
-                            </span>
-                            <span className="text-sm font-black mt-0.5 tracking-tight">{item.dayNum}</span>
-                            {isToday && !isSelected && (
-                              <span className="w-1 h-1 rounded-full bg-violet-500 dark:bg-violet-400 mt-0.5" />
-                            )}
-                          </button>
-                        );
-                      })}
-
-                      {/* Custom Date Picker Popup Selector */}
-                      <Box className="flex items-center justify-center">
-                        <DatePicker
-                          selected={customReminderDate}
-                          onChange={(date: Date | null) => {
-                            if (date) {
-                              const current = customReminderDate ? new Date(customReminderDate) : new Date();
-                              current.setFullYear(date.getFullYear());
-                              current.setMonth(date.getMonth());
-                              current.setDate(date.getDate());
-                              setCustomReminderDate(current);
-                              setActiveReminderPreset('custom');
-                            }
-                          }}
-                          minDate={new Date()}
-                          customInput={
-                            <button
-                              type="button"
-                              className="flex flex-col items-center justify-center min-w-[50px] h-[64px] rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-transparent text-slate-400 hover:text-violet-500 hover:border-violet-500 transition-all cursor-pointer"
-                            >
-                              <CustomDateIcon style={{ fontSize: 18 }} />
-                              <span className="text-[7.5px] font-bold mt-1 uppercase">Custom</span>
-                            </button>
-                          }
-                        />
-                      </Box>
-                    </Box>
-                  </Box>
-
-                  {/* Predefined Time Slots / Quick Presets & Custom Time Trigger */}
-                  <Box>
-
-
-                    <Box className="flex flex-wrap gap-1.5">
+                            {customReminderDate.toLocaleDateString('en-US', {
+                              weekday: 'long',
+                              month: 'long',
+                              day: 'numeric',
+                            })}
+                          </Typography>
+                        )
+                      }
+                    />
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      mt={2}
+                      className="overflow-x-auto pb-1 no-scrollbar flex-nowrap"
+                    >
                       {[
-                        { id: '15m', label: 'In 15m' },
-                        { id: '30m', label: 'In 30m' },
-                        { id: '1h', label: 'In 1h' },
-                        { id: '3h', label: 'In 3h' },
-                        { id: 'tomorrow', label: 'Tomorrow Morning (9 AM)' },
-                      ].map((preset) => (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          onClick={() => handleApplyReminderPreset(preset.id)}
-                          className={`px-3 py-2 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${activeReminderPreset === preset.id
-                            ? 'bg-violet-600 text-white shadow-sm border border-violet-600'
-                            : 'bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                            }`}
+                        { label: 'Tomorrow', value: 'tomorrow' },
+                        { label: 'In 2 Days', value: 'afterTomorrow' },
+                        { label: 'Weekend', value: 'endOfWeek' },
+                      ].map((item) => (
+                        <Button
+                          key={item.value}
+                          variant="outlined"
+                          onClick={() => handleQuickReminderDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
+                          className="rounded-full normal-case text-[12px] font-bold px-5 py-1.5 whitespace-nowrap border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-violet-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/10 transition-all"
                         >
-                          {preset.label}
-                        </button>
+                          {item.label}
+                        </Button>
                       ))}
-
-                      {/* Custom Time Wheel Picker Trigger */}
-                      <button
-                        type="button"
-                        onClick={() => handleApplyReminderPreset('custom')}
-                        className={`px-3.5 py-2 rounded-xl font-extrabold text-xs transition-all duration-200 flex items-center gap-1 cursor-pointer border ${activeReminderPreset === 'custom' && showCustomTimeWheel
-                          ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white border-violet-500 shadow-sm'
-                          : 'bg-white dark:bg-slate-800/60 text-violet-600 dark:text-violet-400 border-violet-500/20 dark:border-violet-400/20 hover:bg-slate-50 dark:hover:bg-slate-800'
-                          }`}
-                      >
-                        ⏰ Custom Time
-                      </button>
-                    </Box>
+                    </Stack>
                   </Box>
 
                   {/* Expandable Reusable Custom Wheel Picker */}
-                  {showCustomTimeWheel && customReminderDate && (
-                    <Box className="mt-3 animate-fadeIn">
+                  {customReminderDate && (
+                    <Box className="mt-3">
                       <CustomWheelTimePicker
                         value={customReminderDate}
                         onChange={(nextDate) => {
                           setCustomReminderDate(nextDate);
-                          setActiveReminderPreset('custom');
                         }}
                       />
                     </Box>
@@ -961,27 +877,29 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                 </Box>
 
                 {reminderMethod === 'whatsapp' ? (
-                  <TextField
-                    type="number"
-                    label="Reminder offset (mins before)"
-                    value={formData.reminder?.before}
-                    onChange={(e) =>
-                      handleInputChange('reminder', {
-                        ...formData.reminder,
-                        before: parseInt(e.target.value, 10) || 0,
-                      })
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={formData.reminder?.before === 10}
+                        onChange={(e) =>
+                          handleInputChange('reminder', {
+                            ...formData.reminder,
+                            before: e.target.checked ? 10 : 0,
+                          })
+                        }
+                        sx={{
+                          color: '#8b5cf6',
+                          '&.Mui-checked': {
+                            color: '#8b5cf6',
+                          },
+                        }}
+                      />
                     }
-                    fullWidth
-                    size="small"
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: '14px',
-                        backgroundColor:
-                          theme?.mode === 'dark'
-                            ? 'rgba(15, 23, 42, 0.5)'
-                            : '#fff',
-                      },
-                    }}
+                    label={
+                      <Typography className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        Reminded me 10 mins before
+                      </Typography>
+                    }
                   />
                 ) : (
                   <Box className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3 text-sm text-violet-700 dark:border-violet-700/30 dark:bg-violet-950/20 dark:text-violet-200">
@@ -1077,7 +995,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                       sx={{ borderRadius: '16px' }}
                     >
                       {reminderMethods.map((m) => (
-                        <MenuItem key={m.value} value={m.value}>
+                        <MenuItem key={m.value} value={m.value} disabled={m.value === 'email'}>
                           {m.label}
                         </MenuItem>
                       ))}

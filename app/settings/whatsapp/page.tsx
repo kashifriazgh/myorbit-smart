@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
-const WHATSAPP_API = process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || 'http://localhost:3001';
+const WHATSAPP_API = process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || 'https://myorbit-whatsapp-service-production.up.railway.app';
 const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID || 'test_user_123'; // Dynamic per client in production
 
 export default function WhatsAppSettingsPage() {
@@ -101,10 +101,13 @@ export default function WhatsAppSettingsPage() {
 
                 {/* Error State */}
                 {error && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                        <p className="text-red-800">{error}</p>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-5 mb-6">
+                        <p className="text-red-800 font-semibold">{error}</p>
                         <p className="text-sm text-red-600 mt-2">
-                            Make sure WhatsApp service is running on localhost:3001
+                            Attempted connection to: <code className="bg-red-100/80 px-1.5 py-0.5 rounded font-mono text-xs text-red-700">{WHATSAPP_API}</code>
+                        </p>
+                        <p className="text-xs text-red-500 mt-3 leading-relaxed">
+                            💡 <strong>Deployment Diagnostic:</strong> If this is your deployed app, make sure you have configured the environment variable <code className="bg-red-100/60 px-1 py-0.5 rounded font-mono text-[10px]">NEXT_PUBLIC_WHATSAPP_SERVER_URL</code> in Netlify, pointing to your public Railway service domain (e.g., <code className="bg-red-100/60 px-1 py-0.5 rounded font-mono text-[10px]">https://your-app.up.railway.app</code>).
                         </p>
                     </div>
                 )}
