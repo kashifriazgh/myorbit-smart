@@ -14,36 +14,61 @@ import { useAuth } from '@/app/lib/context/userContext';
 type SubscriptionStatus = 'idle' | 'loading' | 'subscribed' | 'denied' | 'error';
 
 export default function PushNotificationsPage() {
-  const { user } = useAuth();
-  const [status, setStatus] = useState<SubscriptionStatus>('idle');
+  const { user, loading: authLoading } = useAuth();
+  const [status, setStatus] = useState<SubscriptionStatus>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [checkingStatus, setCheckingStatus] = useState(true);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
-  // On mount, check if the browser already has notification permission granted
+  // Initialize and check subscription status when auth and user are loaded
   useEffect(() => {
+    if (authLoading || hasInitialized) return;
+
+    setHasInitialized(true);
+
+    if (!user) {
+      setStatus('idle');
+      setCheckingStatus(false);
+      return;
+    }
+
     if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'granted') {
-        setStatus('subscribed');
-      } else if (Notification.permission === 'denied') {
+      if (Notification.permission === 'denied') {
         setStatus('denied');
+        setCheckingStatus(false);
+      } else if (Notification.permission === 'granted') {
+        // Auto-sync/check token
+        setStatus('loading');
+        setCheckingStatus(true);
+        const autoSync = async () => {
+          try {
+            const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${user.uid}`;
+            const token = await requestNotificationPermissionAndGetToken(clientId, user.uid);
+            if (token) {
+              setStatus('subscribed');
+            } else {
+              setStatus('error');
+              setErrorMessage('Failed to retrieve push token. Please try again.');
+            }
+          } catch (err) {
+            console.error('Auto-sync FCM token failed:', err);
+            setStatus('error');
+            setErrorMessage((err as Error).message || 'Failed to auto-sync notification token.');
+          } finally {
+            setCheckingStatus(false);
+          }
+        };
+        autoSync();
+      } else {
+        setStatus('idle');
+        setCheckingStatus(false);
       }
+    } else {
+      setStatus('error');
+      setErrorMessage('Push notifications are not supported by this browser.');
+      setCheckingStatus(false);
     }
-  }, []);
-
-  // Background token assert/refresh when permission is already granted and user is loaded
-  useEffect(() => {
-    if (user && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      console.log('PushNotificationsPage: Notification permission already granted. Syncing FCM token in background...');
-      const silentSync = async () => {
-        try {
-          const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${user.uid}`;
-          await requestNotificationPermissionAndGetToken(clientId, user.uid);
-        } catch (err) {
-          console.warn('Background FCM token sync failed:', err);
-        }
-      };
-      silentSync();
-    }
-  }, [user]);
+  }, [user, authLoading, hasInitialized]);
 
   const handleSubscribe = async () => {
     if (!user) return;
@@ -151,7 +176,12 @@ export default function PushNotificationsPage() {
             </div>
 
             {/* CTA Button */}
-            {status === 'denied' ? (
+            {checkingStatus ? (
+              <div className="flex flex-col items-center gap-3">
+                <span className="inline-block w-8 h-8 border-2 border-slate-800 border-t-amber-500 rounded-full animate-spin" />
+                <span className="text-slate-400 text-xs font-bold animate-pulse">Verifying subscription status...</span>
+              </div>
+            ) : status === 'denied' ? (
               <div className="flex flex-col items-center gap-3">
                 <div className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 border border-red-500/25 rounded-full">
                   <BellOffIcon className="text-red-400 text-[16px]" />

@@ -129,7 +129,7 @@ export default function TodosList() {
     if (!todo.id) return;
     try {
       await deleteDoc; // no-op to keep imports stable
-    } catch {}
+    } catch { }
     try {
       await (
         await import('firebase/firestore')
@@ -217,7 +217,10 @@ export default function TodosList() {
     setDeleting(true);
     try {
       const deletePromises = selectedIds.map(async (id) => {
-        await deleteTodoReminder(id);
+        // Fire-and-forget reminder deletion so it doesn't block the document delete
+        deleteTodoReminder(id).catch((err) =>
+          console.error('❌ Error deleting todo reminder:', err)
+        );
         await deleteDoc(doc(db, 'todos', id));
       });
       await Promise.all(deletePromises);
@@ -305,7 +308,7 @@ export default function TodosList() {
             sx={{
               textAlign: 'center',
               p: 6,
-              background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+              background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%) dark:bg-slate-850',
               border: '2px dashed',
               borderColor: 'primary.main',
               opacity: 0.8,

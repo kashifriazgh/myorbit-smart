@@ -478,8 +478,12 @@ export default function ToDoModal({ open, onClose }: Props) {
               className={`
                 flex cursor-pointer select-none items-center justify-between rounded-xl border px-3 py-2 transition-all
                 ${isFlexible
-                  ? 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-300'
-                  : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 hover:border-teal-200 hover:text-teal-600 dark:hover:border-teal-800'
+                  ? theme.palette.mode === 'dark'
+                    ? 'border-teal-800 bg-teal-950/30 text-teal-300'
+                    : 'border-teal-200 bg-teal-50 text-teal-700'
+                  : theme.palette.mode === 'dark'
+                    ? 'border-slate-700 bg-slate-900/50 text-slate-400 hover:border-teal-800 hover:text-teal-300'
+                    : 'border-slate-100 bg-white text-slate-500 hover:border-teal-200 hover:text-teal-600'
                 }
               `}
             >
@@ -499,8 +503,12 @@ export default function ToDoModal({ open, onClose }: Props) {
             className={`
               -mt-6 flex cursor-pointer select-none items-center justify-between rounded-xl border px-3 py-2 transition-all
               ${isImportant
-                ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300'
-                : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 hover:border-amber-200 hover:text-amber-600 dark:hover:border-amber-800 dark:hover:text-amber-300'
+                ? theme.palette.mode === 'dark'
+                  ? 'border-amber-800 bg-amber-950/30 text-amber-300'
+                  : 'border-amber-200 bg-amber-50 text-amber-700'
+                : theme.palette.mode === 'dark'
+                  ? 'border-slate-700 bg-slate-900/50 text-slate-400 hover:border-amber-800 hover:text-amber-300'
+                  : 'border-slate-100 bg-white text-slate-500 hover:border-amber-200 hover:text-amber-600'
               }
             `}
           >
@@ -557,8 +565,12 @@ export default function ToDoModal({ open, onClose }: Props) {
                       className={`
                         flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-extrabold border transition-all
                         ${reminderMethod === 'whatsapp'
-                          ? 'bg-teal-500/10 text-teal-500 border-teal-500/50 shadow-inner dark:bg-teal-500/10 dark:text-teal-400'
-                          : 'bg-white dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-teal-400 hover:text-teal-500'
+                          ? theme.palette.mode === 'dark'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 shadow-inner'
+                            : 'bg-emerald-500/10 text-emerald-600 border-emerald-500 shadow-sm'
+                          : theme.palette.mode === 'dark'
+                            ? 'bg-slate-900/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
+                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-700'
                         }
                       `}
                     >
@@ -571,8 +583,12 @@ export default function ToDoModal({ open, onClose }: Props) {
                       className={`
                         flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-extrabold border transition-all
                         ${reminderMethod === 'push'
-                          ? 'bg-amber-500/10 text-amber-500 border-amber-500/50 shadow-inner dark:bg-amber-500/10 dark:text-amber-400'
-                          : 'bg-white dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-amber-400 hover:text-amber-500'
+                          ? theme.palette.mode === 'dark'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-450 shadow-inner'
+                            : 'bg-amber-500/10 text-amber-600 border-amber-500 shadow-sm'
+                          : theme.palette.mode === 'dark'
+                            ? 'bg-slate-900/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
+                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-700'
                         }
                       `}
                     >
@@ -654,7 +670,11 @@ export default function ToDoModal({ open, onClose }: Props) {
                             key={item.value}
                             variant="outlined"
                             onClick={() => handleQuickReminderDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
-                            className="rounded-full normal-case text-[12px] font-bold px-5 py-1.5 whitespace-nowrap border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-teal-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/10 transition-all"
+                            className={`rounded-full normal-case text-[12px] font-bold px-5 py-1.5 whitespace-nowrap transition-all ${
+                              theme.palette.mode === 'dark'
+                                ? 'border-slate-700 text-slate-300 hover:border-teal-400 hover:text-teal-400 hover:bg-teal-950/20'
+                                : 'border-slate-200 text-slate-500 hover:border-teal-400 hover:text-teal-500 hover:bg-teal-50'
+                            }`}
                           >
                             {item.label}
                           </Button>
@@ -667,6 +687,7 @@ export default function ToDoModal({ open, onClose }: Props) {
                       <Box className="mt-3">
                         <CustomWheelTimePicker
                           value={reminderDate}
+                          isDark={theme.palette.mode === 'dark'}
                           onChange={(nextDate) => {
                             setReminderDate(nextDate);
                           }}

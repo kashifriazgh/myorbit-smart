@@ -18,6 +18,7 @@ import CalendarIcon from '@mui/icons-material/CalendarToday';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { toDateSafe } from '@/app/lib/utilts';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface ProjectDetailProps {
   project: Project;
@@ -33,6 +34,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
 
   const { todos } = useTodoContext();
   const { goals } = useGoals();
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
 
   const existingGroups = useMemo(() => {
     const groups = new Set<string>();
@@ -74,7 +77,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
   const stats = useMemo(() => {
     const agendas = project.agendas?.length || 0;
     const points = project.agendas?.reduce((acc, a) => acc + (a.points?.length || 0), 0) || 0;
-    
+
     // Days left calculation
     let daysLeft = 'N/A';
     if (project.estimatedCompletion) {
@@ -108,7 +111,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
   };
 
   return (
-    <Box className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-32">
+    <Box 
+      className="min-h-screen pb-32"
+      sx={{ bgcolor: isDark ? '#0b0f19' : '#f8fafc' }}
+    >
       {/* ── Hero Header ── */}
       <Box className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 pt-12 pb-8 px-6 text-white">
         {/* Decorative elements */}
@@ -116,8 +122,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
         <Box className="absolute bottom-[-20px] left-[-20px] w-32 h-32 rounded-full bg-emerald-500/10 blur-2xl" />
 
         <Link href="/projects" passHref>
-          <Button 
-            startIcon={<ArrowBackIcon />} 
+          <Button
+            startIcon={<ArrowBackIcon />}
             className="mb-6 text-slate-400 hover:text-white normal-case font-bold"
           >
             Projects
@@ -173,10 +179,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
           <Box className="relative w-20 h-20 flex-shrink-0">
             <svg width="80" height="80" className="transform -rotate-90">
               <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
-              <motion.circle 
-                cx="40" cy="40" r="34" 
-                fill="none" 
-                stroke="#6366f1" 
+              <motion.circle
+                cx="40" cy="40" r="34"
+                fill="none"
+                stroke="#6366f1"
                 strokeWidth="8"
                 strokeDasharray={213.6}
                 initial={{ strokeDashoffset: 213.6 }}
@@ -198,7 +204,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
             <Typography variant="caption" className="text-indigo-400 font-black tracking-tighter uppercase text-[10px]">Auto Calculated</Typography>
           </Box>
           <Box className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
-            <motion.div 
+            <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${project.progress}%` }}
               className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400"
@@ -208,40 +214,54 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
       </Box>
 
       {/* ── Stats Strip ── */}
-      <Box className="grid grid-cols-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
+      <Box 
+        className="grid grid-cols-3 border-b"
+        sx={{
+          bgcolor: isDark ? '#0f172a' : '#ffffff',
+          borderColor: isDark ? '#1e293b' : '#f1f5f9'
+        }}
+      >
         {[
           { label: 'Agendas', value: stats.agendas },
           { label: 'Points', value: stats.points },
           { label: 'Days Left', value: stats.daysLeft },
         ].map((s, i) => (
-          <Box key={i} className="py-4 text-center border-r border-slate-50 dark:border-slate-800 last:border-0">
-            <Typography variant="h5" className="font-black text-slate-900 dark:text-white">{s.value}</Typography>
-            <Typography variant="caption" className="text-slate-400 font-bold uppercase tracking-widest text-[9px]">{s.label}</Typography>
+          <Box 
+            key={i} 
+            className="py-4 text-center border-r last:border-0"
+            sx={{ borderColor: isDark ? '#1e293b' : '#f1f5f9' }}
+          >
+            <Typography variant="h5" className="font-black" sx={{ color: isDark ? '#ffffff' : '#0f172a' }}>{s.value}</Typography>
+            <Typography variant="caption" className="font-bold uppercase tracking-widest text-[9px]" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>{s.label}</Typography>
           </Box>
         ))}
       </Box>
 
       {/* ── Agenda List ── */}
       <Container maxWidth="sm" className="mt-8 px-4">
-        <Typography variant="caption" className="block mb-4 ml-1 font-black text-slate-400 uppercase tracking-widest text-[10px]">
+        <Typography 
+          variant="caption" 
+          className="block mb-4 ml-1 font-black uppercase tracking-widest text-[10px]"
+          sx={{ color: isDark ? '#94a3b8' : '#64748b' }}
+        >
           Agendas
         </Typography>
         {project.agendas?.length > 0 ? (
           project.agendas.map((agenda, index) => (
-            <AgendaBlock 
-              key={agenda.id} 
+            <AgendaBlock
+              key={agenda.id}
               projectId={project.id!}
-              agenda={agenda} 
-            onAddPoint={handleAddPoint}
-            onUpdatePoint={handleUpdatePoint}
-            onDeletePoint={(aId, pId) => deletePoint(project.id!, aId, pId)}
-            isFirst={index === 0}
-          />
+              agenda={agenda}
+              onAddPoint={handleAddPoint}
+              onUpdatePoint={handleUpdatePoint}
+              onDeletePoint={(aId, pId) => deletePoint(project.id!, aId, pId)}
+              isFirst={index === 0}
+            />
           ))
         ) : (
           <Box className="py-12 text-center opacity-30">
-            <Typography variant="h6" className="font-black mb-1">No agendas yet</Typography>
-            <Typography variant="body2">Break down your project into agendas</Typography>
+            <Typography variant="h6" className="font-black mb-1" sx={{ color: isDark ? '#f1f5f9' : '#0f172a' }}>No agendas yet</Typography>
+            <Typography variant="body2" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>Break down your project into agendas</Typography>
           </Box>
         )}
 
@@ -250,27 +270,36 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project }) => {
           variant="outlined"
           startIcon={<AddIcon />}
           onClick={() => setIsAgendaModalOpen(true)}
-          className="mt-4 py-4 rounded-[20px] border-2 border-dashed border-slate-200 dark:border-slate-800 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 normal-case font-black transition-all"
+          className="mt-4 py-4 rounded-[20px] border-2 border-dashed normal-case font-black transition-all"
+          sx={{
+            borderColor: isDark ? '#1e293b' : '#e2e8f0',
+            color: isDark ? '#94a3b8' : '#64748b',
+            '&:hover': {
+              borderColor: '#6366f1',
+              color: '#6366f1',
+              bgcolor: isDark ? 'rgba(99, 102, 241, 0.05)' : 'rgba(99, 102, 241, 0.02)'
+            }
+          }}
         >
           Add New Agenda
         </Button>
       </Container>
 
       {/* Modals */}
-      <NewAgendaModal 
-        open={isAgendaModalOpen} 
-        onClose={() => setIsAgendaModalOpen(false)} 
-        projectId={project.id!} 
+      <NewAgendaModal
+        open={isAgendaModalOpen}
+        onClose={() => setIsAgendaModalOpen(false)}
+        projectId={project.id!}
       />
-      <NewPointModal 
-        open={isPointModalOpen} 
+      <NewPointModal
+        open={isPointModalOpen}
         onClose={() => {
           setIsPointModalOpen(false);
           setSelectedGroupName(undefined);
           setEditingPoint(null);
-        }} 
-        projectId={project.id!} 
-        agendaId={selectedAgendaId!} 
+        }}
+        projectId={project.id!}
+        agendaId={selectedAgendaId!}
         initialGroupName={selectedGroupName}
         editPoint={editingPoint}
         existingGroups={existingGroups}

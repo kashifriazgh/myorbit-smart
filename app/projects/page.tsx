@@ -11,7 +11,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ProjectsPage() {
   const { projects, loading } = useProjects();
-  useCustomTheme();
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
   const [filter, setFilter] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -32,10 +33,10 @@ export default function ProjectsPage() {
     <Container maxWidth="sm" className="px-4 py-8 pb-32">
       <Box className="flex justify-between items-center mb-8">
         <Box>
-          <Typography variant="h4" className="font-black text-slate-900 dark:text-white tracking-tighter">
+          <Typography variant="h4" className={`font-black tracking-tighter ${isDark ? 'text-white' : 'text-slate-900'}`}>
             Projects
           </Typography>
-          <Typography variant="body2" className="text-slate-500 font-medium">
+          <Typography variant="body2" className={`font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
             Manage your big ideas and goals
           </Typography>
         </Box>
@@ -44,14 +45,14 @@ export default function ProjectsPage() {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setIsModalOpen(true)}
-            className="rounded-2xl px-6 py-3 bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 normal-case font-black"
+            className="rounded-2xl px-6 py-3 bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 normal-case font-black text-white"
           >
             New Project
           </Button>
         </motion.div>
       </Box>
 
-      <Box className="mb-8 sticky top-0 z-10 bg-gray-50/80 dark:bg-gray-900/80 backdrop-blur-md py-2">
+      <Box className={`mb-8 sticky top-0 z-10 backdrop-blur-md py-2 ${isDark ? 'bg-slate-950/80' : 'bg-gray-50/80'}`}>
         <Tabs
           value={filter}
           onChange={(_, val) => setFilter(val)}
@@ -59,7 +60,7 @@ export default function ProjectsPage() {
           scrollButtons="auto"
           sx={{
             '& .MuiTabs-indicator': { height: 4, borderRadius: '4px 4px 0 0', bgcolor: '#6366f1' },
-            '& .MuiTab-root': { textTransform: 'none', fontWeight: 900, fontSize: '0.875rem', minWidth: 80, color: '#94a3b8' },
+            '& .MuiTab-root': { textTransform: 'none', fontWeight: 900, fontSize: '0.875rem', minWidth: 80, color: isDark ? '#64748b' : '#94a3b8' },
             '& .Mui-selected': { color: '#6366f1 !important' },
           }}
         >

@@ -13,6 +13,7 @@ import UnselectedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import { Box, Typography, Button, IconButton, TextField, ClickAwayListener, Checkbox, FormControlLabel } from '@mui/material';
 import { useProjects } from '@/app/lib/context/ProjectsContext';
 import PointSelectionModal from './PointSelectionModal';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface AgendaBlockProps {
   projectId: string;
@@ -31,21 +32,43 @@ const GroupItem: React.FC<{
   onAddPoint: () => void
 }> = ({ groupName, points, onDeletePoint, onUpdatePoint, onAddPoint }) => {
   const [open, setOpen] = useState(true);
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
   
   return (
-    <Box className="mb-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl border border-slate-100 dark:border-slate-800/50 overflow-hidden">
+    <Box 
+      className="mb-4 rounded-xl border overflow-hidden"
+      sx={{
+        bgcolor: isDark ? 'rgba(30, 41, 59, 0.2)' : 'rgba(241, 245, 249, 0.5)',
+        borderColor: isDark ? '#1e293b' : '#f1f5f9'
+      }}
+    >
       <Box 
-        className="flex items-center justify-between p-3 cursor-pointer bg-white dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800/50"
+        className="flex items-center justify-between p-3 cursor-pointer border-b"
+        sx={{
+          bgcolor: isDark ? '#0f172a' : '#ffffff',
+          borderColor: isDark ? '#1e293b' : '#f1f5f9'
+        }}
       >
         <Box 
           onClick={() => setOpen(!open)}
           className="flex items-center gap-3 flex-1"
         >
           <GroupIcon sx={{ fontSize: 16, color: '#6366f1' }} />
-          <Typography variant="caption" className="font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest text-[11px]">
+          <Typography 
+            variant="caption" 
+            className="font-black uppercase tracking-widest text-[11px]"
+            sx={{ color: isDark ? '#cbd5e1' : '#334155' }}
+          >
             {groupName}
           </Typography>
-          <Box className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[9px] font-bold text-slate-500">
+          <Box 
+            className="px-1.5 py-0.5 rounded text-[9px] font-bold"
+            sx={{
+              bgcolor: isDark ? '#1e293b' : '#f1f5f9',
+              color: isDark ? '#94a3b8' : '#64748b'
+            }}
+          >
             {points.length}
           </Box>
         </Box>
@@ -101,6 +124,8 @@ const GroupItem: React.FC<{
 
 const AgendaBlock: React.FC<AgendaBlockProps> = ({ projectId, agenda, onAddPoint, onUpdatePoint, onDeletePoint, isFirst }) => {
   const { updateMultiplePoints } = useProjects();
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
   const [isExpanded, setIsExpanded] = useState(isFirst || false);
   const [isAddingGroup, setIsAddingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
@@ -165,7 +190,11 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ projectId, agenda, onAddPoint
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 border-t-0 rounded-b-[18px] p-3"
+            className="overflow-hidden border border-t-0 rounded-b-[18px] p-3"
+            style={{
+              backgroundColor: isDark ? 'rgba(15, 23, 42, 0.4)' : '#ffffff',
+              borderColor: isDark ? '#1e293b' : '#e2e8f0'
+            }}
           >
             <Box className="flex flex-col gap-1">
               {/* Ungrouped Points */}
@@ -199,7 +228,16 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ projectId, agenda, onAddPoint
                   e.stopPropagation();
                   onAddPoint(agenda.id);
                 }}
-                className="flex-1 py-3 rounded-xl border-dashed border-2 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-indigo-600 hover:border-indigo-300 hover:bg-white dark:hover:bg-slate-800 transition-all normal-case font-black text-[11px] tracking-wider uppercase"
+                className="flex-1 py-3 rounded-xl border-dashed border-2 transition-all normal-case font-black text-[11px] tracking-wider uppercase"
+                sx={{
+                  borderColor: isDark ? '#1e293b' : '#e2e8f0',
+                  color: isDark ? '#94a3b8' : '#64748b',
+                  '&:hover': {
+                    borderColor: '#6366f1',
+                    color: '#6366f1',
+                    bgcolor: isDark ? 'rgba(99, 102, 241, 0.05)' : 'rgba(99, 102, 241, 0.02)'
+                  }
+                }}
               >
                 Add Point
               </Button>
@@ -210,7 +248,16 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ projectId, agenda, onAddPoint
                   e.stopPropagation();
                   setIsAddingGroup(true);
                 }}
-                className="flex-1 py-3 rounded-xl border-dashed border-2 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-indigo-600 hover:border-indigo-300 hover:bg-white dark:hover:bg-slate-800 transition-all normal-case font-black text-[11px] tracking-wider uppercase"
+                className="flex-1 py-3 rounded-xl border-dashed border-2 transition-all normal-case font-black text-[11px] tracking-wider uppercase"
+                sx={{
+                  borderColor: isDark ? '#1e293b' : '#e2e8f0',
+                  color: isDark ? '#94a3b8' : '#64748b',
+                  '&:hover': {
+                    borderColor: '#6366f1',
+                    color: '#6366f1',
+                    bgcolor: isDark ? 'rgba(99, 102, 241, 0.05)' : 'rgba(99, 102, 241, 0.02)'
+                  }
+                }}
               >
                 Add Group
               </Button>
@@ -218,7 +265,13 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ projectId, agenda, onAddPoint
 
             {isAddingGroup && (
               <ClickAwayListener onClickAway={() => setIsAddingGroup(false)}>
-                <Box className="mt-3 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-lg">
+                <Box 
+                  className="mt-3 p-3 rounded-xl border shadow-lg"
+                  sx={{
+                    bgcolor: isDark ? '#0f172a' : '#ffffff',
+                    borderColor: isDark ? '#1e293b' : '#e2e8f0'
+                  }}
+                >
                   <TextField
                     fullWidth
                     size="small"
@@ -227,12 +280,26 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ projectId, agenda, onAddPoint
                     value={newGroupName}
                     onChange={(e) => setNewGroupName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleCreateGroup()}
-                    sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                    sx={{ 
+                      mb: 2, 
+                      '& .MuiOutlinedInput-root': { 
+                        borderRadius: '12px',
+                        bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+                        color: isDark ? '#f1f5f9' : '#0f172a',
+                        '& fieldset': {
+                          borderColor: isDark ? '#334155' : '#e2e8f0',
+                        }
+                      } 
+                    }}
                   />
                   
                   {/* Point Selection */}
                   <Box className="mb-3">
-                    <Typography variant="caption" className="font-black text-slate-400 uppercase tracking-widest text-[9px] mb-1 block">
+                    <Typography 
+                      variant="caption" 
+                      className="font-black uppercase tracking-widest text-[9px] mb-1 block"
+                      sx={{ color: isDark ? '#94a3b8' : '#64748b' }}
+                    >
                       Select points to add to group
                     </Typography>
                     <Box className="max-h-40 overflow-y-auto pr-1">
@@ -255,7 +322,7 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ projectId, agenda, onAddPoint
                             />
                           }
                           label={
-                            <Typography variant="caption" className="font-bold text-slate-600 dark:text-slate-400">
+                            <Typography variant="caption" className="font-bold" sx={{ color: isDark ? '#cbd5e1' : '#475569' }}>
                               {p.type === 'keyvalue' ? `${p.key}: ${p.value}` : (p.content || p.type.toUpperCase())}
                             </Typography>
                           }
@@ -263,22 +330,26 @@ const AgendaBlock: React.FC<AgendaBlockProps> = ({ projectId, agenda, onAddPoint
                         />
                       ))}
                       {agenda.points?.filter(p => !p.groupName).length === 0 && (
-                        <Typography variant="caption" className="italic text-slate-400 block py-2">No ungrouped points available</Typography>
+                        <Typography variant="caption" className="italic block py-2" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>No ungrouped points available</Typography>
                       )}
                     </Box>
                   </Box>
 
-                  <Box className="flex justify-end gap-2 border-t border-slate-100 dark:border-slate-700 pt-2">
+                  <Box 
+                    className="flex justify-end gap-2 border-t pt-2"
+                    sx={{ borderColor: isDark ? '#1e293b' : '#f1f5f9' }}
+                  >
                     <Button size="small" onClick={() => {
                       setIsAddingGroup(false);
                       setSelectedPointIds([]);
-                    }} className="text-slate-400 font-bold">Cancel</Button>
+                    }} className="font-bold" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>Cancel</Button>
                     <Button 
                       size="small" 
                       variant="contained" 
                       onClick={handleCreateGroup} 
                       disabled={!newGroupName.trim()}
-                      className="bg-indigo-600 text-white font-bold rounded-lg px-4"
+                      className="text-white font-bold rounded-lg px-4"
+                      sx={{ bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
                     >
                       Create & Add
                     </Button>

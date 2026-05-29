@@ -16,6 +16,7 @@ import { Box, Typography, IconButton, LinearProgress, useMediaQuery, useTheme } 
 import { motion, AnimatePresence } from 'framer-motion';
 import moment from 'moment';
 import { toDateSafe } from '@/app/lib/utilts';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface PointRowProps {
   point: Point;
@@ -30,6 +31,8 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
   const { allSchedules } = useSchedules();
   const { goals, updateGoal } = useGoals();
   const [isExpanded, setIsExpanded] = useState(false);
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
 
   const getColorClasses = (scheme?: string) => {
     switch (scheme) {
@@ -47,15 +50,15 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
       case 'string': {
         const colors = getColorClasses(point.colorScheme);
         return (
-          <Box 
-            className="py-4 px-4 my-2 rounded-xl border-l-[4px] shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900"
-            sx={{ 
-              borderColor: colors.border, 
-              bgcolor: { xs: undefined, sm: colors.bg },
-              '&.dark': { bgcolor: colors.darkBg }
+          <Box
+            className="py-4 px-4 my-2 rounded-xl border-l-[4px] shadow-sm hover:shadow-md transition-shadow"
+            sx={{
+              borderColor: colors.border,
+              bgcolor: isDark ? colors.darkBg : colors.bg,
+              color: isDark ? colors.darkText : colors.text
             }}
           >
-            <Typography variant="body2" className="text-slate-800 dark:text-slate-200" sx={{ fontSize: '15px', lineHeight: 1.6, fontWeight: 500 }}>
+            <Typography variant="body2" sx={{ fontSize: '15px', lineHeight: 1.6, fontWeight: 500, color: 'inherit' }}>
               {point.content}
             </Typography>
           </Box>
@@ -65,20 +68,26 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
       case 'todo': {
         const todo = todos.find((t) => t.id === point.todoId);
         if (!todo) return <Typography variant="caption" className="text-slate-400 dark:text-slate-500 italic p-4 block">Todo not found</Typography>;
-        
+
         const isDone = todo.status === 'completed';
         const accent = "#4f46e5";
         const dueDate = toDateSafe(todo.dueDate);
 
         return (
-          <Box className="flex items-start gap-4 py-4 px-4 my-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all group/todo">
-            <Box 
+          <Box
+            className="flex items-start gap-4 py-4 px-4 my-2 rounded-xl border shadow-sm hover:shadow-md transition-all group/todo"
+            sx={{
+              bgcolor: isDark ? '#0f172a' : '#ffffff',
+              borderColor: isDark ? '#1e293b' : '#f1f5f9',
+            }}
+          >
+            <Box
               onClick={(e) => {
                 e.stopPropagation();
                 updateTodo(todo.id!, { status: isDone ? 'in_progress' : 'completed' });
               }}
-              sx={{ 
-                width: 22, height: 22, borderRadius: '6px', 
+              sx={{
+                width: 22, height: 22, borderRadius: '6px',
                 border: `2px solid ${isDone ? accent : "#cbd5e1"}`,
                 bgcolor: isDone ? accent : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -89,17 +98,16 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
             >
               {isDone && (
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 6L9 17l-5-5"/>
+                  <path d="M20 6L9 17l-5-5" />
                 </svg>
               )}
             </Box>
             <Box className="flex-1">
-              <Typography 
-                variant="body1" 
-                className="text-slate-900 dark:text-slate-100"
-                sx={{ 
-                  fontSize: '15px', 
-                  color: isDone ? "#94a3b8" : undefined, 
+              <Typography
+                variant="body1"
+                sx={{
+                  fontSize: '15px',
+                  color: isDone ? "#94a3b8" : (isDark ? '#f1f5f9' : '#0f172a'),
                   textDecoration: isDone ? "line-through" : "none",
                   fontWeight: 600,
                   mb: 0.5
@@ -126,14 +134,20 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
         const accent = "#0891b2";
 
         return (
-          <Box className="flex items-center gap-4 py-4 px-4 my-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
+          <Box
+            className="flex items-center gap-4 py-4 px-4 my-2 rounded-xl border shadow-sm hover:shadow-md transition-all"
+            sx={{
+              bgcolor: isDark ? '#0f172a' : '#ffffff',
+              borderColor: isDark ? '#1e293b' : '#f1f5f9',
+            }}
+          >
             <Box sx={{ p: 1, bgcolor: `${accent}10`, borderRadius: '10px' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
               </svg>
             </Box>
             <Box>
-              <Typography variant="body1" className="text-slate-900 dark:text-slate-100" sx={{ fontSize: '15px', fontWeight: 600 }}>
+              <Typography variant="body1" sx={{ fontSize: '15px', fontWeight: 600, color: isDark ? '#f1f5f9' : '#0f172a' }}>
                 {schedule.title}
               </Typography>
               <Box className="flex items-center gap-2 mt-0.5 opacity-70">
@@ -156,15 +170,21 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
         const progress = goal.progress || 0;
 
         return (
-          <Box className="flex flex-col gap-3 py-4 px-4 my-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
+          <Box
+            className="flex flex-col gap-3 py-4 px-4 my-2 rounded-xl border shadow-sm hover:shadow-md transition-all"
+            sx={{
+              bgcolor: isDark ? '#0f172a' : '#ffffff',
+              borderColor: isDark ? '#1e293b' : '#f1f5f9',
+            }}
+          >
             <Box className="flex items-center gap-4">
-              <Box 
+              <Box
                 onClick={(e) => {
                   e.stopPropagation();
                   updateGoal(goal.id!, { status: isCompleted ? 'In Progress' : 'Completed' });
                 }}
-                sx={{ 
-                  width: 22, height: 22, borderRadius: '50%', 
+                sx={{
+                  width: 22, height: 22, borderRadius: '50%',
                   border: `2px solid ${isCompleted ? accent : "#cbd5e1"}`,
                   bgcolor: isCompleted ? accent : "transparent",
                   display: "flex", alignItems: "center", justifyContent: "center",
@@ -174,26 +194,26 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
               >
                 {isCompleted && (
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6L9 17l-5-5"/>
+                    <path d="M20 6L9 17l-5-5" />
                   </svg>
                 )}
               </Box>
-              <Typography 
-                variant="body1" 
-                className="flex-1 text-slate-900 dark:text-slate-100"
-                sx={{ 
-                  fontSize: '15px', 
-                  color: isCompleted ? "#94a3b8" : undefined, 
+              <Typography
+                variant="body1"
+                sx={{
+                  fontSize: '15px',
+                  color: isCompleted ? "#94a3b8" : (isDark ? '#f1f5f9' : '#0f172a'),
                   textDecoration: isCompleted ? "line-through" : "none",
-                  fontWeight: 700
+                  fontWeight: 700,
+                  flex: 1
                 }}
               >
                 {goal.title}
               </Typography>
-              <Typography 
-                variant="caption" 
-                sx={{ 
-                  fontSize: '11px', fontWeight: 900, color: accent, 
+              <Typography
+                variant="caption"
+                sx={{
+                  fontSize: '11px', fontWeight: 900, color: accent,
                   border: `1.5px solid ${accent}44`, padding: "2px 10px", borderRadius: '20px',
                   letterSpacing: '0.5px', textTransform: 'uppercase'
                 }}
@@ -211,18 +231,18 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
                   {progress}%
                 </Typography>
               </Box>
-              <LinearProgress 
-                variant="determinate" 
-                value={progress} 
-                sx={{ 
-                  height: 6, 
+              <LinearProgress
+                variant="determinate"
+                value={progress}
+                sx={{
+                  height: 6,
                   borderRadius: 3,
                   bgcolor: `${accent}15`,
                   '& .MuiLinearProgress-bar': {
                     bgcolor: accent,
                     borderRadius: 3
                   }
-                }} 
+                }}
               />
             </Box>
           </Box>
@@ -232,14 +252,20 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
       case 'keyvalue': {
         const accent = "#db2777";
         return (
-          <Box className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-4 px-4 my-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
-            <Typography variant="body2" className="text-slate-500 dark:text-slate-400" sx={{ fontSize: '15px', fontWeight: 600, minWidth: '80px' }}>
+          <Box
+            className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-4 px-4 my-2 rounded-xl border shadow-sm hover:shadow-md transition-all"
+            sx={{
+              bgcolor: isDark ? '#0f172a' : '#ffffff',
+              borderColor: isDark ? '#1e293b' : '#f1f5f9',
+            }}
+          >
+            <Typography variant="body2" sx={{ fontSize: '15px', fontWeight: 600, minWidth: '80px', color: isDark ? '#94a3b8' : '#64748b' }}>
               {point.key}:
             </Typography>
-            <Typography 
-              variant="body1" 
-              sx={{ 
-                fontSize: '15px', fontWeight: 700, color: accent, 
+            <Typography
+              variant="body1"
+              sx={{
+                fontSize: '15px', fontWeight: 700, color: accent,
                 bgcolor: accent + '10', padding: "4px 14px", borderRadius: '12px',
                 display: 'inline-block',
                 width: 'fit-content'
@@ -254,15 +280,21 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
       case 'streak': {
         const accent = "#d97706";
         return (
-          <Box className="flex items-center gap-4 py-4 px-4 my-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
+          <Box
+            className="flex items-center gap-4 py-4 px-4 my-2 rounded-xl border shadow-sm hover:shadow-md transition-all"
+            sx={{
+              bgcolor: isDark ? '#0f172a' : '#ffffff',
+              borderColor: isDark ? '#1e293b' : '#f1f5f9',
+            }}
+          >
             <Box sx={{ fontSize: 24, filter: 'drop-shadow(0 2px 4px rgba(217, 119, 6, 0.2))' }}>🔥</Box>
-            <Typography variant="body1" className="flex-1 text-slate-900 dark:text-slate-100" sx={{ fontSize: '15px', fontWeight: 600 }}>
+            <Typography variant="body1" sx={{ fontSize: '15px', fontWeight: 600, color: isDark ? '#f1f5f9' : '#0f172a', flex: 1 }}>
               {point.content}
             </Typography>
-            <Typography 
-              variant="caption" 
-              sx={{ 
-                fontSize: '13px', fontWeight: 800, color: accent, 
+            <Typography
+              variant="caption"
+              sx={{
+                fontSize: '13px', fontWeight: 800, color: accent,
                 bgcolor: accent + '15', padding: "4px 12px", borderRadius: '12px',
                 border: `1px solid ${accent}30`
               }}
@@ -297,11 +329,12 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden bg-slate-50 dark:bg-slate-800/50 rounded-b-xl border border-t-0 border-slate-100 dark:border-slate-800 mx-1"
+            className={`overflow-hidden rounded-b-xl border border-t-0 mx-1 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'
+              }`}
           >
             <Box className="flex items-center justify-around py-2">
-              <IconButton 
-                size="medium" 
+              <IconButton
+                size="medium"
                 onClick={(e) => {
                   e.stopPropagation();
                   onUpdate?.(point); // Pass the whole point for editing
@@ -311,8 +344,8 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
                 <EditIcon sx={{ fontSize: 20 }} />
                 <Typography variant="caption" className="font-bold text-[10px]">Edit</Typography>
               </IconButton>
-              <IconButton 
-                size="medium" 
+              <IconButton
+                size="medium"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(point.id);
@@ -324,8 +357,8 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
               </IconButton>
 
               {point.type !== 'todo' && point.type !== 'goal' && (
-                <IconButton 
-                  size="medium" 
+                <IconButton
+                  size="medium"
                   onClick={(e) => {
                     e.stopPropagation();
                     onUpdate?.({ done: !point.done });
@@ -348,18 +381,18 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
       {/* Desktop Hover Actions */}
       {!isMobile && (
         <Box className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-1 z-10 transition-all">
-          <IconButton 
-            size="small" 
+          <IconButton
+            size="small"
             onClick={(e) => {
               e.stopPropagation();
-              onUpdate?.(point); 
+              onUpdate?.(point);
             }}
             className="bg-white/90 dark:bg-slate-800/90 backdrop-blur shadow-sm hover:text-indigo-500 transition-all border border-slate-200 dark:border-slate-700"
           >
             <EditIcon sx={{ fontSize: 16 }} />
           </IconButton>
-          <IconButton 
-            size="small" 
+          <IconButton
+            size="small"
             onClick={(e) => {
               e.stopPropagation();
               onDelete(point.id);
@@ -370,8 +403,8 @@ const PointRow: React.FC<PointRowProps> = ({ point, onDelete, onUpdate }) => {
           </IconButton>
 
           {point.type !== 'todo' && point.type !== 'goal' && (
-            <IconButton 
-              size="small" 
+            <IconButton
+              size="small"
               onClick={(e) => {
                 e.stopPropagation();
                 onUpdate?.({ done: !point.done });

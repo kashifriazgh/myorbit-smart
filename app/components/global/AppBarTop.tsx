@@ -116,40 +116,50 @@ export default function AppBarTop() {
           <Link href="/user/dashboard" prefetch={false}>Dashboard</Link>
         </MenuItem>
       )}
+      {user?.role === 'master' && !isGuest && (
+        <MenuItem onClick={handleMenuClose}>
+          <Link href="/settings/whatsapp" prefetch={false}>Whatsapp QR</Link>
+        </MenuItem>
+      )}
+      {user?.role === 'master' && !isGuest && (
+        <MenuItem onClick={handleMenuClose}>
+          <Link href="/settings/push-notifications" prefetch={false}>Push Notification</Link>
+        </MenuItem>
+      )}
       {user?.role === 'master' && !isGuest && <Divider />}
 
       {!loading && user
         ? [
-            ...(isGuest
-              ? [
-                  <MenuItem key="guest-signup" onClick={handleMenuClose}>
-                    <Link
-                      href="/user/signup"
-                      prefetch={false}
-                      style={{ color: '#1976d2', fontWeight: 'bold' }}
-                    >
-                      🚀 Sign Up to Save Data
-                    </Link>
-                  </MenuItem>,
-                  <MenuItem key="guest-login" onClick={handleMenuClose}>
-                    <Link href="/user/login" prefetch={false}>Login</Link>
-                  </MenuItem>,
-                  <Divider key="guest-divider" />,
-                ]
-              : []),
-            <MenuItem key="logout" onClick={handleMenuClose}>
-              <LogoutButton />
-            </MenuItem>,
-          ]
+          ...(isGuest
+            ? [
+              <MenuItem key="guest-signup" onClick={handleMenuClose}>
+                <Link
+                  href="/user/signup"
+                  prefetch={false}
+                  style={{ color: '#1976d2', fontWeight: 'bold' }}
+                >
+                  🚀 Sign Up to Save Data
+                </Link>
+              </MenuItem>,
+              <MenuItem key="guest-login" onClick={handleMenuClose}>
+                <Link href="/user/login" prefetch={false}>Login</Link>
+              </MenuItem>,
+              <Divider key="guest-divider" />,
+            ]
+            : []),
+          <MenuItem key="logout" onClick={handleMenuClose}>
+            <LogoutButton />
+          </MenuItem>,
+        ]
         : [
-            <MenuItem key="login" onClick={handleMenuClose}>
-              <Link href="/user/login" prefetch={false}>Login</Link>
-            </MenuItem>,
-            <Divider key="divider" />,
-            <MenuItem key="signup" onClick={handleMenuClose}>
-              <Link href="/user/signup" prefetch={false}>SignUp</Link>
-            </MenuItem>,
-          ]}
+          <MenuItem key="login" onClick={handleMenuClose}>
+            <Link href="/user/login" prefetch={false}>Login</Link>
+          </MenuItem>,
+          <Divider key="divider" />,
+          <MenuItem key="signup" onClick={handleMenuClose}>
+            <Link href="/user/signup" prefetch={false}>SignUp</Link>
+          </MenuItem>,
+        ]}
     </Menu>
   );
 

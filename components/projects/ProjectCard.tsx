@@ -8,6 +8,7 @@ import TimeIcon from '@mui/icons-material/AccessTime';
 import ProjectIcon from '@mui/icons-material/Assignment';
 import Link from 'next/link';
 import { toDateSafe } from '@/app/lib/utilts';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface ProjectCardProps {
   project: Project;
@@ -30,6 +31,8 @@ const statusColors: Record<string, string> = {
 
 const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
   const styles = typeColors[project.type] || typeColors.general;
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
 
   return (
     <motion.div
@@ -37,13 +40,19 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
       whileTap={{ scale: 0.98 }}
     >
       <Link href={`/projects/${project.id}`}>
-        <Box className="relative overflow-hidden p-5 rounded-[24px] border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm hover:shadow-xl hover:shadow-indigo-500/10 transition-all">
+        <Box 
+          className="relative overflow-hidden p-5 rounded-[24px] border shadow-sm hover:shadow-xl hover:shadow-indigo-500/10 transition-all"
+          sx={{
+            bgcolor: isDark ? '#0f172a' : '#ffffff',
+            borderColor: isDark ? '#1e293b' : '#f1f5f9',
+          }}
+        >
           <Box className="flex justify-between items-start mb-4">
             <Box 
               className="p-3 rounded-2xl" 
-              sx={{ bgcolor: styles.iconBg }}
+              sx={{ bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : styles.iconBg }}
             >
-              <ProjectIcon sx={{ color: styles.text }} />
+              <ProjectIcon sx={{ color: isDark ? '#818cf8' : styles.text }} />
             </Box>
             <Chip 
               label={project.status.toUpperCase()} 
@@ -59,16 +68,16 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             />
           </Box>
 
-          <Typography variant="h6" className="font-black text-slate-800 dark:text-slate-100 mb-1 leading-tight">
+          <Typography variant="h6" className="font-black mb-1 leading-tight" sx={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
             {project.title}
           </Typography>
-          <Typography variant="caption" className="text-slate-400 block mb-4 line-clamp-2">
+          <Typography variant="caption" className="block mb-4 line-clamp-2" sx={{ color: isDark ? '#94a3b8' : '#94a3b8' }}>
             {project.description || 'No description provided.'}
           </Typography>
 
           <Box className="mb-4">
             <Box className="flex justify-between items-center mb-1.5">
-              <Typography variant="caption" className="font-bold text-slate-500">
+              <Typography variant="caption" className="font-bold" sx={{ color: isDark ? '#64748b' : '#64748b' }}>
                 Progress
               </Typography>
               <Typography variant="caption" className="font-black text-indigo-600">
@@ -81,7 +90,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
               sx={{ 
                 height: 6, 
                 borderRadius: 3, 
-                bgcolor: '#f1f5f9',
+                bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f1f5f9',
                 '& .MuiLinearProgress-bar': {
                   borderRadius: 3,
                   backgroundImage: 'linear-gradient(90deg, #6366f1, #a855f7)'
@@ -90,15 +99,15 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             />
           </Box>
 
-          <Box className="flex justify-between items-center mt-6 pt-4 border-t border-slate-50 dark:border-slate-800">
+          <Box className="flex justify-between items-center mt-6 pt-4 border-t" sx={{ borderColor: isDark ? '#1e293b' : '#f1f5f9' }}>
             <Box className="flex items-center gap-1.5">
-              <TimeIcon sx={{ fontSize: 14, color: '#94a3b8' }} />
-              <Typography variant="caption" className="text-slate-400 font-medium">
+              <TimeIcon sx={{ fontSize: 14, color: isDark ? '#64748b' : '#94a3b8' }} />
+              <Typography variant="caption" className="font-medium" sx={{ color: isDark ? '#64748b' : '#94a3b8' }}>
                 {project.estimatedCompletion ? toDateSafe(project.estimatedCompletion)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No deadline'}
               </Typography>
             </Box>
             
-            <AvatarGroup max={3} sx={{ '& .MuiAvatar-root': { width: 24, height: 24, fontSize: '10px', border: '2px solid #fff' } }}>
+            <AvatarGroup max={3} sx={{ '& .MuiAvatar-root': { width: 24, height: 24, fontSize: '10px', border: isDark ? '2px solid #0f172a' : '2px solid #fff' } }}>
               {project.assignees?.map((name, i) => (
                 <Avatar key={i} alt={name}>{name.charAt(0)}</Avatar>
               ))}

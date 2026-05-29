@@ -405,9 +405,16 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
       fullWidth
       fullScreen={isMobile}
       PaperProps={{
-        className:
-          'rounded-[28px] overflow-hidden shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800',
-        sx: { borderRadius: '28px' }, // MUI fallback
+        className: `rounded-[28px] overflow-hidden shadow-2xl border transition-all ${
+          theme?.mode === 'dark'
+            ? 'bg-slate-900 border-slate-800 text-slate-100'
+            : 'bg-white border-slate-100 text-slate-850'
+        }`,
+        sx: { 
+          borderRadius: '28px',
+          backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#ffffff',
+          color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+        },
       }}
     >
       {/* Premium Gradient Header */}
@@ -470,7 +477,11 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           </Box>
 
           {/* Date / Deadline Section */}
-          <Box className="p-6 rounded-[24px] border transition-all bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-700">
+          <Box className={`p-6 rounded-[24px] border transition-all ${
+            theme?.mode === 'dark'
+              ? 'bg-slate-900/30 border-slate-800'
+              : 'bg-slate-50 border-slate-100'
+          }`}>
             <Box className="flex items-center justify-between mb-4">
               <Typography className="text-[11px] font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-[0.2em]">
                 📅 Schedule Date
@@ -563,7 +574,11 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
               ⏰ Session Timing
             </Typography>
 
-            <Box className="p-4 rounded-[20px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
+            <Box className={`p-4 rounded-[20px] border shadow-sm ${
+              theme?.mode === 'dark'
+                ? 'bg-slate-950/40 border-slate-800'
+                : 'bg-white border-slate-100'
+            }`}>
               <Stack
                 direction={{ xs: 'column', sm: 'row' }}
                 alignItems="center"
@@ -582,7 +597,9 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     fullWidth
                     InputLabelProps={{ shrink: true }}
                     InputProps={{
-                      className: 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 [color-scheme:light] dark:[color-scheme:dark]',
+                      className: theme?.mode === 'dark'
+                        ? 'bg-slate-800 text-slate-100 [color-scheme:dark]'
+                        : 'bg-slate-50 text-slate-900 [color-scheme:light]',
                     }}
                     sx={{
                       '& .MuiOutlinedInput-root': {
@@ -590,11 +607,13 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                         border: 'none',
                         '& fieldset': { border: 'none' },
                         height: '48px',
+                        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#f8fafc',
                       },
                       '& .MuiInputBase-input': {
                         fontWeight: 800,
                         textAlign: 'center',
                         fontSize: '1rem',
+                        color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
                       },
                     }}
                   />
@@ -632,7 +651,9 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     fullWidth
                     InputLabelProps={{ shrink: true }}
                     InputProps={{
-                      className: 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 [color-scheme:light] dark:[color-scheme:dark]',
+                      className: theme?.mode === 'dark'
+                        ? 'bg-slate-800 text-slate-100 [color-scheme:dark]'
+                        : 'bg-slate-50 text-slate-900 [color-scheme:light]',
                     }}
                     sx={{
                       '& .MuiOutlinedInput-root': {
@@ -640,11 +661,13 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                         border: 'none',
                         '& fieldset': { border: 'none' },
                         height: '48px',
+                        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#f8fafc',
                       },
                       '& .MuiInputBase-input': {
                         fontWeight: 800,
                         textAlign: 'center',
                         fontSize: '1rem',
+                        color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
                       },
                     }}
                   />
@@ -868,6 +891,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     <Box className="mt-3">
                       <CustomWheelTimePicker
                         value={customReminderDate}
+                        isDark={theme?.mode === 'dark'}
                         onChange={(nextDate) => {
                           setCustomReminderDate(nextDate);
                         }}
@@ -1026,7 +1050,11 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
         </Box>
       </DialogContent>
 
-      <DialogActions className="p-6 bg-slate-50/50 dark:bg-slate-800/20 border-t border-slate-100 dark:border-slate-800 gap-2">
+      <DialogActions className={`p-6 border-t gap-2 ${
+        theme?.mode === 'dark'
+          ? 'bg-slate-950/20 border-slate-800'
+          : 'bg-slate-50/50 border-slate-100'
+      }`}>
         {schedule && onDelete && (
           <Button
             onClick={handleDelete}
@@ -1040,7 +1068,9 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
         )}
         <Button
           onClick={onClose}
-          className="rounded-xl font-bold px-6 py-2 normal-case text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+          variant="outlined"
+          color="error"
+          className="rounded-xl font-bold px-6 py-2 normal-case border border-red-500 text-red-500 hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-950/30 transition-all"
         >
           Cancel
         </Button>

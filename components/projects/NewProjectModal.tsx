@@ -19,6 +19,7 @@ import { ProjectType, ProjectStatus } from '@/app/lib/interface';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useRouter } from 'next/navigation';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface NewProjectModalProps {
   open: boolean;
@@ -39,6 +40,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
   const router = useRouter();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -50,6 +53,32 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
     budget: '',
     estimatedCompletion: new Date(),
     assignees: '',
+  });
+
+  const getFieldSx = () => ({
+    '& .MuiOutlinedInput-root': {
+      borderRadius: '16px',
+      backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#ffffff',
+      color: isDark ? '#f1f5f9' : '#0f172a',
+      '& fieldset': {
+        borderColor: isDark ? '#334155' : '#e2e8f0',
+      },
+      '&:hover fieldset': {
+        borderColor: '#6366f1',
+      },
+      '&.Mui-focused fieldset': {
+        borderColor: '#6366f1',
+      },
+    },
+    '& .MuiInputLabel-root': {
+      color: isDark ? '#94a3b8' : '#6b7280',
+      '&.Mui-focused': {
+        color: '#6366f1',
+      }
+    },
+    '& .MuiInputBase-input': {
+      color: isDark ? '#f1f5f9' : '#0f172a',
+    }
   });
 
   const handleTypeSelect = (type: ProjectType) => {
@@ -105,19 +134,27 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
       maxWidth="sm"
       fullWidth
       PaperProps={{
-        sx: { borderRadius: isMobile ? 0 : '28px', bgcolor: 'background.paper', overflow: 'hidden' }
+        sx: { 
+          borderRadius: isMobile ? 0 : '28px', 
+          bgcolor: isDark ? '#0f172a' : '#ffffff', 
+          color: isDark ? '#f1f5f9' : '#0f172a',
+          overflow: 'hidden' 
+        }
       }}
     >
-      <Box className="p-6 flex justify-between items-center border-b border-slate-100 dark:border-slate-800">
-        <Typography variant="h6" className="font-black tracking-tight">
+      <Box 
+        className="p-6 flex justify-between items-center border-b"
+        sx={{ borderColor: isDark ? '#1e293b' : '#f1f5f9' }}
+      >
+        <Typography variant="h6" className="font-black tracking-tight" sx={{ color: isDark ? '#f1f5f9' : '#0f172a' }}>
           {step === 1 ? 'Select Project Type' : 'Project Details'}
         </Typography>
-        <IconButton onClick={resetAndClose} size="small" className="bg-slate-50 dark:bg-slate-800">
+        <IconButton onClick={resetAndClose} size="small" className={isDark ? "bg-slate-800 text-slate-400" : "bg-slate-50 text-slate-500"}>
           <CloseIcon fontSize="small" />
         </IconButton>
       </Box>
 
-      <DialogContent className="p-6">
+      <DialogContent className="p-6" sx={{ bgcolor: isDark ? '#0f172a' : '#ffffff' }}>
         <AnimatePresence mode="wait">
           {step === 1 ? (
             <motion.div
@@ -131,7 +168,11 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                   <Grid size={{ xs: 6, sm: 4 }} key={t.id}>
                     <Box
                       onClick={() => handleTypeSelect(t.id as ProjectType)}
-                      className="flex flex-col items-center justify-center p-6 rounded-[24px] border border-slate-100 dark:border-slate-800 hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/10 cursor-pointer transition-all group"
+                      className="flex flex-col items-center justify-center p-6 rounded-[24px] border hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/10 cursor-pointer transition-all group"
+                      sx={{
+                        borderColor: isDark ? '#1e293b' : '#f1f5f9',
+                        bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#ffffff',
+                      }}
                     >
                       <Box 
                         className="p-4 rounded-2xl mb-3 group-hover:scale-110 transition-transform" 
@@ -139,7 +180,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                       >
                         {t.icon}
                       </Box>
-                      <Typography variant="body2" className="font-black text-slate-700 dark:text-slate-300">
+                      <Typography variant="body2" className="font-black" sx={{ color: isDark ? '#cbd5e1' : '#334155' }}>
                         {t.label}
                       </Typography>
                     </Box>
@@ -163,7 +204,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                     variant="outlined"
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 700 } }}
+                    sx={getFieldSx()}
                   />
                 </Box>
 
@@ -175,7 +216,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                       fullWidth
                       value={formData.type}
                       onChange={(e) => setFormData({ ...formData, type: e.target.value as ProjectType })}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 700 } }}
+                      sx={getFieldSx()}
                     >
                       {types.map(t => <MenuItem key={t.id} value={t.id}>{t.label}</MenuItem>)}
                     </TextField>
@@ -184,7 +225,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                       fullWidth
                       value={formData.status}
                       onChange={(e) => setFormData({ ...formData, status: e.target.value as ProjectStatus })}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 700 } }}
+                      sx={getFieldSx()}
                     >
                       <MenuItem value="active">Active</MenuItem>
                       <MenuItem value="planning">Planning</MenuItem>
@@ -204,7 +245,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                     variant="outlined"
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+                    sx={getFieldSx()}
                   />
                 </Box>
 
@@ -214,7 +255,9 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                     <DatePicker
                       selected={formData.estimatedCompletion}
                       onChange={(date: Date | null) => setFormData(prev => ({ ...prev, estimatedCompletion: date || new Date() }))}
-                      className="w-full p-4 rounded-[16px] border border-slate-200 dark:border-slate-800 bg-transparent dark:text-white font-bold"
+                      className={`w-full p-4 rounded-[16px] border font-bold ${
+                        isDark ? 'border-slate-800 bg-slate-900/50 text-white' : 'border-slate-200 bg-transparent text-slate-800'
+                      }`}
                     />
                   </Box>
                   {formData.type === 'freelance' && (
@@ -226,7 +269,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                         placeholder="0.00"
                         value={formData.budget}
                         onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 700 } }}
+                        sx={getFieldSx()}
                       />
                     </Box>
                   )}
@@ -239,7 +282,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                     placeholder="Alice, Bob..."
                     value={formData.assignees}
                     onChange={(e) => setFormData({ ...formData, assignees: e.target.value })}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+                    sx={getFieldSx()}
                   />
                 </Box>
 
@@ -249,7 +292,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ open, onClose }) => {
                   size="large"
                   onClick={handleCreate}
                   disabled={!formData.title || loading}
-                  className="py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-500/30 normal-case font-black text-lg"
+                  className="py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-500/30 normal-case font-black text-lg text-white"
                 >
                   {loading ? <CircularProgress size={24} color="inherit" /> : 'Create Project'}
                 </Button>

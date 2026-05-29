@@ -12,6 +12,7 @@ import UnselectedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import FilterIcon from '@mui/icons-material/FilterList';
 import { Point } from '@/app/lib/interface';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface PointSelectionModalProps {
   open: boolean;
@@ -27,6 +28,8 @@ const PointSelectionModal: React.FC<PointSelectionModalProps> = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
 
   const handleToggle = (id: string) => {
     setSelectedIds(prev => 
@@ -50,7 +53,8 @@ const PointSelectionModal: React.FC<PointSelectionModalProps> = ({
       PaperProps={{
         sx: { 
           borderRadius: isMobile ? 0 : '28px', 
-          bgcolor: 'background.paper',
+          bgcolor: isDark ? '#0f172a' : '#ffffff', 
+          color: isDark ? '#f1f5f9' : '#0f172a',
           overflow: 'hidden',
           backgroundImage: 'none'
         }
@@ -72,12 +76,18 @@ const PointSelectionModal: React.FC<PointSelectionModalProps> = ({
         </Box>
       </Box>
 
-      <DialogContent className="p-6 bg-slate-50 dark:bg-slate-900">
+      <DialogContent className="p-6" sx={{ bgcolor: isDark ? '#0f172a' : '#ffffff' }}>
         <Box className="mb-4 flex items-center justify-between">
-          <Typography variant="caption" className="font-black text-slate-400 uppercase tracking-widest text-[10px]">
+          <Typography variant="caption" className="font-black uppercase tracking-widest text-[10px]" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>
             Available Points ({availablePoints.length})
           </Typography>
-          <Box className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-[9px] font-black text-indigo-600 uppercase">
+          <Box 
+            className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase"
+            sx={{
+              bgcolor: isDark ? 'rgba(99, 102, 241, 0.2)' : '#e0e7ff',
+              color: '#6366f1'
+            }}
+          >
             {selectedIds.length} Selected
           </Box>
         </Box>
@@ -93,11 +103,15 @@ const PointSelectionModal: React.FC<PointSelectionModalProps> = ({
               >
                 <Box 
                   onClick={() => handleToggle(point.id)}
-                  className={`flex items-center gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${
-                    selectedIds.includes(point.id)
-                      ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 shadow-sm'
-                      : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700'
-                  }`}
+                  className="flex items-center gap-3 p-3 rounded-2xl border transition-all cursor-pointer shadow-sm"
+                  style={{
+                    backgroundColor: selectedIds.includes(point.id)
+                      ? (isDark ? 'rgba(99, 102, 241, 0.15)' : '#e0e7ff')
+                      : (isDark ? '#1e293b' : '#ffffff'),
+                    borderColor: selectedIds.includes(point.id)
+                      ? '#6366f1'
+                      : (isDark ? '#334155' : '#f1f5f9'),
+                  }}
                 >
                   <Checkbox 
                     size="small"
@@ -107,7 +121,7 @@ const PointSelectionModal: React.FC<PointSelectionModalProps> = ({
                     sx={{ p: 0 }}
                   />
                   <Box className="flex-1 overflow-hidden">
-                    <Typography variant="body2" className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                    <Typography variant="body2" className="font-bold truncate" sx={{ color: isDark ? '#cbd5e1' : '#475569' }}>
                       {point.type === 'keyvalue' ? `${point.key}: ${point.value}` : (point.content || point.type.toUpperCase())}
                     </Typography>
                     <Box className="flex items-center gap-2 mt-0.5">
@@ -118,8 +132,8 @@ const PointSelectionModal: React.FC<PointSelectionModalProps> = ({
                           height: 14, 
                           fontSize: '8px', 
                           fontWeight: 900,
-                          bgcolor: 'slate.100',
-                          color: 'slate.500',
+                          bgcolor: isDark ? '#334155' : '#f1f5f9',
+                          color: isDark ? '#cbd5e1' : '#64748b',
                           borderRadius: '4px'
                         }} 
                       />
@@ -156,7 +170,8 @@ const PointSelectionModal: React.FC<PointSelectionModalProps> = ({
           <Button 
             fullWidth 
             onClick={onClose}
-            className="mt-2 text-slate-400 dark:text-slate-500 font-bold normal-case"
+            className="mt-2 font-bold normal-case"
+            sx={{ color: isDark ? '#94a3b8' : '#64748b' }}
           >
             Cancel
           </Button>

@@ -86,3 +86,43 @@ body {
     display: none !important;
   }
 }
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}
+
+/* Custom scrollbars for dark mode to prevent bright white tracks */
+.dark ::-webkit-scrollbar-track {
+  background: #0f172a !important;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155 !important;
+  border-radius: 4px;
+  border: 2px solid #0f172a;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-track {
+    background: #0f172a !important;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #334155 !important;
+    border-radius: 4px;
+    border: 2px solid #0f172a;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #475569 !important;
+  }
+}

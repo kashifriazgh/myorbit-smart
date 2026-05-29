@@ -22,6 +22,7 @@ import { Timestamp } from 'firebase/firestore';
 import HistoryIcon from '@mui/icons-material/History';
 import AddIcon from '@mui/icons-material/Add';
 import StreaksModal from './StreaksModal';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 /* ---------------------- Helpers ---------------------- */
 
@@ -169,6 +170,8 @@ function StreaksSkeleton() {
 
 export default function StreaksList() {
   const { streaks, loading, markStreakDone, updateRemarks } = useStreaks();
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
 
   const [selectedStreak, setSelectedStreak] =
     useState<StreakProps | null>(null);
@@ -298,7 +301,7 @@ export default function StreaksList() {
                   <Typography
                     variant="body2"
                     mt={1}
-                    sx={{ color: 'green', fontWeight: 600 }}
+                    sx={{ color: isDark ? '#4ade80' : 'green', fontWeight: 600 }}
                   >
                     {streak.habitType.toUpperCase()} •{' '}
                     {timeFormatted || '—'} • {streak.streaksCount}🔥
@@ -332,10 +335,10 @@ export default function StreaksList() {
                             flexShrink: 0,
 
                             bgcolor: u.isDone
-                              ? '#d1fae5'
+                              ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#d1fae5')
                               : u.isMissed
-                              ? '#fee2e2'
-                              : '#f3f4f6',
+                              ? (isDark ? 'rgba(239, 68, 68, 0.15)' : '#fee2e2')
+                              : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6'),
                           }}
                         >
                           {/* circle */}
@@ -346,23 +349,30 @@ export default function StreaksList() {
                               borderRadius: '50%',
                               border: '2px solid',
                               borderColor: u.isDone
-                                ? 'green'
+                                ? (isDark ? '#4ade80' : 'green')
                                 : u.isMissed
-                                ? 'red'
-                                : '#ccc',
+                                ? (isDark ? '#f87171' : 'red')
+                                : (isDark ? '#4b5563' : '#ccc'),
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               fontSize: 11,
                               fontWeight: 700,
-                              color: u.isDone ? 'green' : 'red',
+                              color: u.isDone
+                                ? (isDark ? '#4ade80' : 'green')
+                                : (isDark ? '#f87171' : 'red'),
                             }}
                           >
                             {u.isDone ? '✓' : u.isMissed ? '!' : ''}
                           </Box>
 
                           {/* label */}
-                          <Typography fontSize={10} mt={0.5} align="center">
+                          <Typography
+                            fontSize={10}
+                            mt={0.5}
+                            align="center"
+                            sx={{ color: isDark ? 'rgba(255, 255, 255, 0.7)' : 'text.secondary' }}
+                          >
                             {u.short}
                           </Typography>
 
@@ -375,7 +385,7 @@ export default function StreaksList() {
                                 width: 18,
                                 height: 3,
                                 borderRadius: 2,
-                                bgcolor: 'blue',
+                                bgcolor: isDark ? '#60a5fa' : 'blue',
                               }}
                             />
                           )}

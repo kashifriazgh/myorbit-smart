@@ -35,6 +35,7 @@ import {
   ExpandLess,
   PushPin,
   AutoAwesome as MagicIcon,
+  InfoOutlined as InfoIcon,
 } from '@mui/icons-material';
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useAuth } from '../../lib/context/userContext';
@@ -399,7 +400,9 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
                         flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer select-none transition-all duration-200 border
                         ${active 
                           ? 'text-white shadow-lg' 
-                          : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                          : isDark
+                            ? 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                            : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
                         }
                       `}
                       style={{ 
@@ -546,7 +549,12 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
                       onClick={() => set('priority', p)}
                       className={`
                         flex-1 py-3 text-center cursor-pointer rounded-2xl text-sm font-extrabold select-none transition-all duration-200 border-2
-                        ${active ? '' : 'bg-slate-50 dark:bg-slate-800/50 border-transparent text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}
+                        ${active 
+                          ? 'border-2' 
+                          : isDark
+                            ? 'bg-slate-900 border-transparent text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                            : 'bg-slate-50 border-transparent text-slate-400 hover:bg-slate-105 hover:text-slate-600'
+                        }
                       `}
                       style={{ 
                         backgroundColor: active ? cfg.bg : undefined,
@@ -723,33 +731,58 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
                       }}
                     />
                   </Box>
-
                 </Stack>
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Info Message Box at the bottom */}
+          <Box className={`flex items-start gap-3 p-4 rounded-2xl border transition-all mt-4 ${
+            isDark 
+              ? 'bg-violet-950/25 border-violet-500/20 text-violet-200' 
+              : 'bg-violet-50 border-violet-100 text-violet-750'
+          }`}>
+            <InfoIcon className={`flex-shrink-0 text-lg mt-0.5 ${isDark ? 'text-violet-400' : 'text-violet-500'}`} />
+            <Typography className="text-xs font-semibold leading-relaxed">
+              <strong>Tip:</strong> After creating a goal, you can create milestones on the goal details page to make it easier to achieve!
+            </Typography>
+          </Box>
         </Box>
       </DialogContent>
 
         {/* ── Footer ── */}
-        <DialogActions className="p-6 bg-slate-50/50 dark:bg-slate-800/20 border-t border-slate-100 dark:border-slate-800 gap-3">
+        <DialogActions className={`p-6 border-t gap-3 ${
+          isDark 
+            ? 'bg-slate-950/20 border-slate-800' 
+            : 'bg-slate-50/50 border-slate-100'
+        }`}>
           <Button 
             onClick={onClose} 
             disabled={loading}
-            className="rounded-xl font-bold px-6 py-2 normal-case text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+            variant="outlined"
+            color="error"
+            className={`rounded-xl font-bold px-6 py-2 normal-case border transition-all ${
+              isDark 
+                ? 'border-red-500/40 text-red-400 hover:bg-red-950/20' 
+                : 'border-red-500 text-red-500 hover:bg-red-50'
+            }`}
           >
             Cancel
           </Button>
           <Button
-            variant="contained"
+            variant="outlined"
+            color="success"
             onClick={handleSubmit}
             disabled={loading || !canSubmit}
-            className="rounded-xl font-extrabold px-8 py-2 normal-case shadow-lg transition-all"
-            style={{ 
-              backgroundColor: canSubmit ? activeColor : undefined,
-              boxShadow: canSubmit ? `0 8px 16px ${activeColor}40` : undefined,
-              opacity: canSubmit ? 1 : 0.5
-            }}
+            className={`rounded-xl font-extrabold px-8 py-2 normal-case transition-all border ${
+              canSubmit
+                ? isDark
+                  ? 'border-emerald-500/50 text-emerald-400 hover:bg-emerald-950/20'
+                  : 'border-emerald-500 text-emerald-600 hover:bg-emerald-50'
+                : isDark
+                  ? 'border-slate-800 text-slate-700 cursor-not-allowed'
+                  : 'border-slate-200 text-slate-300 cursor-not-allowed'
+            }`}
           >
             {loading ? 'Saving…' : goal ? 'Update Goal' : 'Launch Goal'}
           </Button>

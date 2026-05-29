@@ -6,6 +6,7 @@ interface TimePickerProps {
     value: Date | null;
     onChange: (date: Date) => void;
     className?: string;
+    isDark?: boolean;
 }
 
 // Generate static arrays for hours (1-12), minutes (00-59), and AM/PM outside the component to prevent recreating them on every render
@@ -13,7 +14,7 @@ const HOURS_LIST = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2
 const MINUTES_LIST = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
 const AMPMS_LIST = ["AM", "PM"];
 
-export default function TimePicker({ value, onChange, className = "" }: TimePickerProps) {
+export default function TimePicker({ value, onChange, className = "", isDark = false }: TimePickerProps) {
     const hourRef = useRef<HTMLDivElement>(null);
     const minuteRef = useRef<HTMLDivElement>(null);
     const ampmRef = useRef<HTMLDivElement>(null);
@@ -115,16 +116,20 @@ export default function TimePicker({ value, onChange, className = "" }: TimePick
     };
 
     return (
-        <div className={`relative bg-slate-50 dark:bg-slate-900/60 rounded-3xl h-[180px] flex items-center justify-center overflow-hidden px-6 select-none border border-slate-100 dark:border-slate-800 ${className}`}>
+        <div className={`relative h-[180px] flex items-center justify-center overflow-hidden px-6 select-none border transition-all ${
+            isDark 
+                ? "bg-slate-900 border-slate-800 text-slate-100" 
+                : "bg-slate-50 border-slate-100 text-slate-850"
+        } ${className}`}>
             {/* Subtle Ruler-style Ticks on Sides */}
             <div className="absolute left-4 top-0 bottom-0 w-3 flex flex-col justify-between py-6 opacity-20 pointer-events-none">
                 {Array.from({ length: 7 }).map((_, i) => (
-                    <div key={i} className={`h-[1px] bg-slate-800 dark:bg-white ${i % 2 === 0 ? "w-3" : "w-1.5"}`} />
+                    <div key={i} className={`h-[1px] ${isDark ? "bg-white" : "bg-slate-800"} ${i % 2 === 0 ? "w-3" : "w-1.5"}`} />
                 ))}
             </div>
             <div className="absolute right-4 top-0 bottom-0 w-3 flex flex-col justify-between py-6 opacity-20 pointer-events-none">
                 {Array.from({ length: 7 }).map((_, i) => (
-                    <div key={i} className={`h-[1px] bg-slate-800 dark:bg-white ${i % 2 === 0 ? "w-3" : "w-1.5"}`} />
+                    <div key={i} className={`h-[1px] ${isDark ? "bg-white" : "bg-slate-800"} ${i % 2 === 0 ? "w-3" : "w-1.5"}`} />
                 ))}
             </div>
 
@@ -148,7 +153,9 @@ export default function TimePicker({ value, onChange, className = "" }: TimePick
                                 className={`h-[40px] flex items-center justify-center snap-center text-2xl font-bold transition-all duration-200 ${
                                     isSelected
                                         ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
-                                        : "text-slate-300 dark:text-slate-600 hover:text-slate-400"
+                                        : isDark
+                                            ? "text-slate-600 hover:text-slate-400"
+                                            : "text-slate-300 hover:text-slate-400"
                                 }`}
                             >
                                 {hour}
@@ -175,7 +182,9 @@ export default function TimePicker({ value, onChange, className = "" }: TimePick
                                 className={`h-[40px] flex items-center justify-center snap-center text-2xl font-bold transition-all duration-200 ${
                                     isSelected
                                         ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
-                                        : "text-slate-300 dark:text-slate-600 hover:text-slate-400"
+                                        : isDark
+                                            ? "text-slate-600 hover:text-slate-400"
+                                            : "text-slate-300 hover:text-slate-400"
                                 }`}
                             >
                                 {minute}
@@ -202,7 +211,9 @@ export default function TimePicker({ value, onChange, className = "" }: TimePick
                                 className={`h-[40px] flex items-center justify-center snap-center text-lg font-extrabold transition-all duration-200 ${
                                     isSelected
                                         ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
-                                        : "text-slate-300 dark:text-slate-600 hover:text-slate-400"
+                                        : isDark
+                                            ? "text-slate-600 hover:text-slate-400"
+                                            : "text-slate-300 hover:text-slate-400"
                                 }`}
                             >
                                 {ampm}
@@ -213,8 +224,12 @@ export default function TimePicker({ value, onChange, className = "" }: TimePick
             </div>
 
             {/* Top & Bottom Vignette Gradient Blur */}
-            <div className="absolute top-0 inset-x-0 h-10 bg-gradient-to-b from-slate-50 dark:from-[#111c30] to-transparent pointer-events-none z-20" />
-            <div className="absolute bottom-0 inset-x-0 h-10 bg-gradient-to-t from-slate-50 dark:from-[#111c30] to-transparent pointer-events-none z-20" />
+            <div className={`absolute top-0 inset-x-0 h-10 bg-gradient-to-b to-transparent pointer-events-none z-20 ${
+                isDark ? "from-slate-900" : "from-slate-50"
+            }`} />
+            <div className={`absolute bottom-0 inset-x-0 h-10 bg-gradient-to-t to-transparent pointer-events-none z-20 ${
+                isDark ? "from-slate-900" : "from-slate-50"
+            }`} />
         </div>
     );
 }

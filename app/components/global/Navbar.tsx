@@ -123,11 +123,11 @@ export default function BottomNav() {
             sx={
               item.label === 'Home'
                 ? {
-                    fontWeight: 600,
-                    '& .MuiBottomNavigationAction-label': {
-                      fontSize: '0.75rem',
-                    },
-                  }
+                  fontWeight: 600,
+                  '& .MuiBottomNavigationAction-label': {
+                    fontSize: '0.75rem',
+                  },
+                }
                 : {}
             }
           />
@@ -149,6 +149,10 @@ export default function BottomNav() {
         transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <List sx={{ minWidth: 200 }}>
+          <ListItemButton disabled={!user} component={Link} href="/journals" prefetch={false}>
+            <FlagIcon sx={{ mr: 1 }} />
+            <ListItemText primary="Journals" />
+          </ListItemButton>
           <ListItemButton disabled={!user} component={Link} href="/goals" prefetch={false}>
             <FlagIcon sx={{ mr: 1 }} />
             <ListItemText primary="Goals" />

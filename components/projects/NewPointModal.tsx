@@ -21,6 +21,7 @@ import { useGoals } from '@/app/lib/context/GoalsContext';
 import { useAuth } from '@/app/lib/context/userContext';
 import { PointType, GoalType, Point } from '@/app/lib/interface';
 import { FormControl, InputLabel, Select, MenuItem, Chip } from '@mui/material';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface NewPointModalProps {
   open: boolean;
@@ -51,6 +52,34 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
   const { addSchedule } = useSchedules();
   const { addGoal } = useGoals();
   const { user } = useAuth();
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
+
+  const getFieldSx = () => ({
+    '& .MuiOutlinedInput-root': {
+      borderRadius: '16px',
+      backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : '#ffffff',
+      color: isDark ? '#f1f5f9' : '#0f172a',
+      '& fieldset': {
+        borderColor: isDark ? '#334155' : '#e2e8f0',
+      },
+      '&:hover fieldset': {
+        borderColor: '#6366f1',
+      },
+      '&.Mui-focused fieldset': {
+        borderColor: '#6366f1',
+      },
+    },
+    '& .MuiInputLabel-root': {
+      color: isDark ? '#94a3b8' : '#6b7280',
+      '&.Mui-focused': {
+        color: '#6366f1',
+      }
+    },
+    '& .MuiInputBase-input': {
+      color: isDark ? '#f1f5f9' : '#0f172a',
+    }
+  });
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -253,13 +282,10 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               placeholder="Write your note here..."
               value={stringContent}
               onChange={(e) => setStringContent(e.target.value)}
-              sx={{ 
-                '& .MuiOutlinedInput-root': { borderRadius: '16px', bgcolor: 'rgba(0,0,0,0.02)' },
-                '& .MuiInputBase-input': { color: 'text.primary' }
-              }}
+              sx={getFieldSx()}
             />
             <Box>
-              <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-bold uppercase ml-1 block mb-2">
+              <Typography variant="caption" className="font-bold uppercase ml-1 block mb-2" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>
                 Color Scheme
               </Typography>
               <Box className="flex flex-wrap gap-2">
@@ -300,7 +326,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               label="Task Title"
               value={todoTitle}
               onChange={(e) => setTodoTitle(e.target.value)}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 700 } }}
+              sx={getFieldSx()}
             />
             <TextField
               fullWidth type="date"
@@ -308,7 +334,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               value={todoDueDate}
               onChange={(e) => setTodoDueDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+              sx={getFieldSx()}
             />
           </Stack>
         );
@@ -321,7 +347,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               label="Schedule Title"
               value={scheduleTitle}
               onChange={(e) => setScheduleTitle(e.target.value)}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 700 } }}
+              sx={getFieldSx()}
             />
             <TextField
               fullWidth type="date"
@@ -329,7 +355,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               value={scheduleDate}
               onChange={(e) => setScheduleDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+              sx={getFieldSx()}
             />
             <Grid container spacing={2}>
               <Grid size={6}>
@@ -339,7 +365,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
                   InputLabelProps={{ shrink: true }}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+                  sx={getFieldSx()}
                 />
               </Grid>
               <Grid size={6}>
@@ -349,7 +375,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
                   InputLabelProps={{ shrink: true }}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+                  sx={getFieldSx()}
                 />
               </Grid>
             </Grid>
@@ -364,15 +390,24 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               label="Goal Title"
               value={goalTitle}
               onChange={(e) => setGoalTitle(e.target.value)}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 700 } }}
+              sx={getFieldSx()}
             />
-            <FormControl fullWidth>
-              <InputLabel>Goal Category</InputLabel>
+            <FormControl fullWidth sx={getFieldSx()}>
+              <InputLabel id="goal-category-label">Goal Category</InputLabel>
               <Select
+                labelId="goal-category-label"
                 value={goalType}
                 label="Goal Category"
                 onChange={(e) => setGoalType(e.target.value as GoalType)}
                 sx={{ borderRadius: '16px' }}
+                MenuProps={{
+                  PaperProps: {
+                    sx: {
+                      bgcolor: isDark ? '#1e293b' : '#ffffff',
+                      color: isDark ? '#f1f5f9' : '#0f172a',
+                    }
+                  }
+                }}
               >
                 <MenuItem value="lifestyle">🌟 Lifestyle</MenuItem>
                 <MenuItem value="work">💼 Work</MenuItem>
@@ -392,14 +427,14 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               label="Habit Title"
               value={streakTitle}
               onChange={(e) => setStreakTitle(e.target.value)}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 700 } }}
+              sx={getFieldSx()}
             />
             <TextField
               fullWidth type="number"
               label="Current Streak"
               value={streakCount}
               onChange={(e) => setStreakCount(Number(e.target.value))}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+              sx={getFieldSx()}
             />
           </Stack>
         );
@@ -412,7 +447,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               label="Key"
               value={kvKey}
               onChange={(e) => setKvKey(e.target.value)}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px', fontWeight: 900 } }}
+              sx={getFieldSx()}
             />
             <TextField
               fullWidth
@@ -420,7 +455,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
               label="Value"
               value={kvValue}
               onChange={(e) => setKvValue(e.target.value)}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '16px' } }}
+              sx={getFieldSx()}
             />
           </Stack>
         );
@@ -449,22 +484,29 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
       PaperProps={{
         sx: { 
           borderRadius: isMobile ? 0 : '28px', 
-          bgcolor: 'background.paper', 
+          bgcolor: isDark ? '#0f172a' : '#ffffff', 
+          color: isDark ? '#f1f5f9' : '#0f172a',
           overflow: 'hidden',
           backgroundImage: 'none' 
         }
       }}
     >
-      <Box className="p-6 flex justify-between items-center border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <Typography variant="h6" className="font-black tracking-tight text-slate-900 dark:text-slate-100">
+      <Box 
+        className="p-6 flex justify-between items-center border-b"
+        sx={{
+          bgcolor: isDark ? '#0f172a' : '#ffffff',
+          borderColor: isDark ? '#1e293b' : '#f1f5f9'
+        }}
+      >
+        <Typography variant="h6" className="font-black tracking-tight" sx={{ color: isDark ? '#f1f5f9' : '#0f172a' }}>
           {editPoint ? 'Edit Point' : (step === 1 ? 'Add New Point' : `New ${selectedType?.toUpperCase()}`)}
         </Typography>
-        <IconButton onClick={resetAndClose} size="small" className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+        <IconButton onClick={resetAndClose} size="small" className={isDark ? "bg-slate-800 text-slate-400" : "bg-slate-50 text-slate-500"}>
           <CloseIcon fontSize="small" />
         </IconButton>
       </Box>
 
-      <DialogContent className="p-6 bg-white dark:bg-slate-900">
+      <DialogContent className="p-6" sx={{ bgcolor: isDark ? '#0f172a' : '#ffffff' }}>
         <AnimatePresence mode="wait">
           {step === 1 ? (
             <motion.div
@@ -478,8 +520,10 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
                   <Grid size={12} key={t.id}>
                     <Box
                       onClick={() => handleTypeSelect(t.id as PointType)}
-                      className="flex items-center gap-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-indigo-50/10 cursor-pointer transition-all group bg-slate-50 dark:bg-slate-800/40"
+                      className="flex items-center gap-4 p-4 rounded-2xl border cursor-pointer transition-all group"
                       sx={{
+                        borderColor: isDark ? '#1e293b' : '#f1f5f9',
+                        bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#f8fafc',
                         '&:hover': {
                           borderColor: t.color,
                           bgcolor: t.color + '10'
@@ -493,10 +537,10 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
                         {t.icon}
                       </Box>
                       <Box className="flex-1">
-                        <Typography variant="subtitle2" className="font-black text-slate-800 dark:text-slate-100">
+                        <Typography variant="subtitle2" className="font-black" sx={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                           {t.label}
                         </Typography>
-                        <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-medium">
+                        <Typography variant="caption" className="font-medium" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>
                           Add a {t.id} to this agenda
                         </Typography>
                       </Box>
@@ -516,10 +560,14 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
                 {renderForm()}
                 {(!initialGroupName) && (
                   <Box>
-                    <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-bold uppercase ml-1 block mb-2">
+                    <Typography 
+                      variant="caption" 
+                      className="font-bold uppercase ml-1 block mb-2"
+                      sx={{ color: isDark ? '#94a3b8' : '#64748b' }}
+                    >
                       Group Assignment
                     </Typography>
-                    <FormControl fullWidth sx={{ mb: 2 }}>
+                    <FormControl fullWidth sx={{ mb: 2, ...getFieldSx() }}>
                       <Select
                         value={isCreatingNewGroup ? 'NEW' : groupName}
                         onChange={(e) => {
@@ -536,12 +584,20 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
                           }
                         }}
                         sx={{ borderRadius: '16px', fontWeight: 700 }}
+                        MenuProps={{
+                          PaperProps: {
+                            sx: {
+                              bgcolor: isDark ? '#1e293b' : '#ffffff',
+                              color: isDark ? '#f1f5f9' : '#0f172a',
+                            }
+                          }
+                        }}
                       >
                         <MenuItem value="NONE"><em>No Group</em></MenuItem>
                         {existingGroups.map(g => (
                           <MenuItem key={g} value={g}>{g}</MenuItem>
                         ))}
-                        <MenuItem value="NEW" sx={{ color: 'indigo.600', fontWeight: 800 }}>+ Create New Group</MenuItem>
+                        <MenuItem value="NEW" sx={{ color: '#6366f1', fontWeight: 800 }}>+ Create New Group</MenuItem>
                       </Select>
                     </FormControl>
 
@@ -552,10 +608,7 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
                         placeholder="New Group Name..."
                         value={groupName}
                         onChange={(e) => setGroupName(e.target.value)}
-                        sx={{ 
-                          '& .MuiOutlinedInput-root': { borderRadius: '16px' },
-                          '& .MuiInputBase-input': { color: 'text.primary' }
-                        }}
+                        sx={getFieldSx()}
                       />
                     )}
                   </Box>
@@ -572,7 +625,8 @@ const NewPointModal: React.FC<NewPointModalProps> = ({
                 <Button 
                   fullWidth 
                   onClick={() => setStep(1)} 
-                  className="text-slate-400 dark:text-slate-500 font-bold normal-case"
+                  className="font-bold normal-case"
+                  sx={{ color: isDark ? '#94a3b8' : '#64748b' }}
                 >
                   Back to types
                 </Button>
