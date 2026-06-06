@@ -32,7 +32,8 @@ interface IncomeSourcesContextType {
     updateMainFund: boolean,
     fundSource?: TransactionSource,
     bankId?: string,
-    customPaymentHeadId?: string
+    customPaymentHeadId?: string,
+    holderName?: string
   ) => Promise<void>;
   rescheduleIncome: (incomeId: string, newDate: Date) => Promise<void>;
   updateIncomeAmount: (incomeId: string, amount: number) => Promise<void>;
@@ -138,12 +139,23 @@ export const IncomeSourcesProvider = ({
     };
   }, [userId]);
 
+  const getSourceKey = (
+    source: string,
+    bankName?: string | null,
+    customPaymentHeadName?: string | null
+  ): string => {
+    if (source === 'bank' && bankName) return `bank:${bankName}`;
+    if (source === 'custom' && customPaymentHeadName) return `custom:${customPaymentHeadName}`;
+    return source;
+  };
+
   const markAsReceived = async (
     income: IncomeSource,
     updateMainFund: boolean,
     fundSource: TransactionSource = 'in_hand',
     bankId?: string,
-    customPaymentHeadId?: string
+    customPaymentHeadId?: string,
+    holderName?: string
   ) => {
     if (!income.id) return;
 
@@ -194,6 +206,7 @@ export const IncomeSourcesProvider = ({
           BankName: bankName || null,
           customPaymentHeadId: customPaymentHeadId || null,
           customPaymentHeadName: customPaymentHeadName || null,
+          holderName: holderName || null,
           createdAt: serverTimestamp(),
         });
 
@@ -206,6 +219,7 @@ export const IncomeSourcesProvider = ({
             ...data.sources,
             custom: data.sources.custom ?? {},
           };
+          const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
 
           if (fundSource === 'bank' && bankName) {
             updatedSources.bank[bankName] =
@@ -219,9 +233,25 @@ export const IncomeSourcesProvider = ({
               (updatedSources[fundSource] as number) + income.amount;
           }
 
+          if (holderName && holderName !== 'Unassigned' && holderName !== 'Self') {
+            const key = getSourceKey(fundSource, bankName, customPaymentHeadName);
+            const holders = [...(updatedHeldBy[key] || [])];
+            const idx = holders.findIndex((h) => h.holderName === holderName);
+            if (idx > -1) {
+              holders[idx] = {
+                ...holders[idx],
+                amount: holders[idx].amount + income.amount,
+              };
+            } else {
+              holders.push({ holderName, amount: income.amount });
+            }
+            updatedHeldBy[key] = holders;
+          }
+
           await setDoc(docRef, {
             ...data,
             sources: updatedSources,
+            heldBy: updatedHeldBy,
             totalAmount: data.totalAmount + income.amount,
             updatedAt: serverTimestamp(),
           });

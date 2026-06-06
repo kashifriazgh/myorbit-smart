@@ -7,7 +7,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
-import { Goal } from '../interface';
+import { Goal, GoalStep, GoalStepStatus, StepCheckIn } from '../interface';
 import {
   collection,
   addDoc,
@@ -27,7 +27,7 @@ interface GoalsContextType {
   loading: boolean;
   error: string | null;
   addGoal: (
-    goal: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>
+    goal: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>,
   ) => Promise<string>;
   updateGoal: (id: string, updates: Partial<Goal>) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
@@ -35,17 +35,24 @@ interface GoalsContextType {
   updateStepStatus: (
     goalId: string,
     stepId: string,
-    completed: boolean
+    status: GoalStepStatus,
+    completionData?: {
+      finalValue?: number;
+      finalNote?: string;
+    },
   ) => Promise<void>;
-  setStepSkipped: (
+  addGoalStep: (goalId: string, step: Partial<GoalStep>) => Promise<void>;
+  updateGoalStep: (
     goalId: string,
     stepId: string,
-    skipped: boolean
+    updates: Partial<GoalStep>,
   ) => Promise<void>;
-  extendGoalDueDate: (
+  deleteGoalStep: (goalId: string, stepId: string) => Promise<void>;
+  reorderGoalSteps: (goalId: string, orderedStepIds: string[]) => Promise<void>;
+  addStepCheckIn: (
     goalId: string,
-    newDueDate: Date,
-    additionalMilestones: number
+    stepId: string,
+    checkIn: StepCheckIn,
   ) => Promise<void>;
   getGoalsByType: (type: Goal['type']) => Goal[];
   getGoalsByStatus: (status: Goal['status']) => Goal[];
@@ -77,7 +84,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     const goalsRef = collection(db, 'goals');
     const q = query(
       goalsRef,
-      where('status', 'in', ['In Progress', 'Not Started', 'Completed'])
+      where('status', 'in', ['In Progress', 'Not Started', 'Completed']),
     );
 
     const unsubscribe = onSnapshot(
@@ -100,7 +107,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         console.error('Error fetching goals:', err);
         setError(err.message);
         setLoading(false);
-      }
+      },
     );
 
     return () => unsubscribe();
@@ -136,128 +143,134 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     return null;
   };
 
-  const setStepSkipped = async (
+  const calculateWeightedProgress = (steps: GoalStep[]) => {
+    const completedWeight = steps.reduce((acc, step) => {
+      return (
+        acc +
+        (step.status === GoalStepStatus.COMPLETED ? (step.weight ?? 1) : 0)
+      );
+    }, 0);
+    const totalWeight = steps.reduce(
+      (acc, step) => acc + (step.weight ?? 1),
+      0,
+    );
+    return totalWeight > 0
+      ? Math.round((completedWeight / totalWeight) * 100)
+      : 0;
+  };
+
+  const addGoalStep = async (
     goalId: string,
-    stepId: string,
-    skipped: boolean
+    stepData: Partial<GoalStep>,
   ): Promise<void> => {
     try {
       const goal = goals.find((g) => g.id === goalId);
       if (!goal) throw new Error('Goal not found');
 
-      const updatedSteps = goal.steps.map((step) =>
-        step.id === stepId
-          ? {
-              ...step,
-              skipped,
-              completed: skipped ? false : step.completed,
-            }
-          : step
-      );
+      const nextOrder =
+        Math.max(0, ...(goal.steps || []).map((step) => step.order)) + 1;
+      const id =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-      const activeSteps = updatedSteps.filter((s) => !s.skipped);
-      const completedSteps = activeSteps.filter((s) => s.completed).length;
-      const nextProgress =
-        activeSteps.length > 0
-          ? Math.round((completedSteps / activeSteps.length) * 100)
-          : goal.progress ?? 0;
+      const defaultStatus = stepData.status ?? GoalStepStatus.IN_PROGRESS;
+      const newStep: GoalStep = {
+        id,
+        title: stepData.title?.trim() || 'New milestone',
+        description: stepData.description,
+        order: stepData.order ?? nextOrder,
+        status: defaultStatus,
+        targetValue: stepData.targetValue,
+        actualValue: stepData.actualValue,
+        unit: stepData.unit,
+        startDate:
+          stepData.startDate ??
+          (defaultStatus === GoalStepStatus.IN_PROGRESS
+            ? new Date()
+            : undefined),
+        endDate: stepData.endDate || new Date(),
+        weight: stepData.weight ?? 1,
+        effortEstimate: stepData.effortEstimate,
+        dependsOn: stepData.dependsOn,
+        recurrence: stepData.recurrence,
+        checkIns: stepData.checkIns,
+        linkedTodoIds: stepData.linkedTodoIds,
+        completionRecord: stepData.completionRecord,
+      };
+
+      const updatedSteps = [...(goal.steps || []), newStep];
+      const progress = calculateWeightedProgress(updatedSteps);
 
       await updateGoal(goalId, {
         steps: updatedSteps,
-        progress: nextProgress,
-        status: deriveStatusFromProgress(nextProgress),
+        progress,
+        status: deriveStatusFromProgress(progress),
       });
     } catch (err) {
-      console.error('Error updating step skipped status:', err);
+      console.error('Error adding goal step:', err);
       throw err;
     }
   };
 
-  const extendGoalDueDate = async (
+  const reorderGoalSteps = async (
     goalId: string,
-    newDueDate: Date,
-    additionalMilestones: number
+    orderedStepIds: string[],
   ): Promise<void> => {
     try {
       const goal = goals.find((g) => g.id === goalId);
       if (!goal) throw new Error('Goal not found');
 
-      const currentDueDate = toDateSafe(goal.dueDate);
-      const targetDueDate = toDateSafe(newDueDate) ?? new Date(newDueDate);
+      const stepsById = new Map(goal.steps.map((step) => [step.id, step]));
+      const updatedSteps = orderedStepIds
+        .map((stepId, index) => {
+          const step = stepsById.get(stepId);
+          return step
+            ? {
+                ...step,
+                order: index + 1,
+              }
+            : null;
+        })
+        .filter((step): step is GoalStep => step !== null);
 
-      if (!targetDueDate || Number.isNaN(targetDueDate.getTime())) {
-        throw new Error('Invalid due date');
-      }
+      await updateGoal(goalId, { steps: updatedSteps });
+    } catch (err) {
+      console.error('Error reordering goal steps:', err);
+      throw err;
+    }
+  };
 
-      if (
-        currentDueDate &&
-        targetDueDate.getTime() <= currentDueDate.getTime()
-      ) {
-        throw new Error('New due date must be after current due date');
-      }
+  const addStepCheckIn = async (
+    goalId: string,
+    stepId: string,
+    checkIn: StepCheckIn,
+  ): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === goalId);
+      if (!goal) throw new Error('Goal not found');
 
-      const baseSteps = goal.steps || [];
-      const extraCount = Math.max(0, Math.floor(additionalMilestones));
-
-      let allSteps = baseSteps;
-      if (extraCount > 0) {
-        const extensionStart =
-          currentDueDate && currentDueDate < targetDueDate
-            ? currentDueDate
-            : new Date();
-        const totalMs = Math.max(
-          0,
-          targetDueDate.getTime() - extensionStart.getTime()
-        );
-        const segmentMs = extraCount > 0 ? totalMs / extraCount : 0;
-
-        const generated = Array.from({ length: extraCount }).map((_, idx) => {
-          const startDate =
-            segmentMs > 0
-              ? new Date(extensionStart.getTime() + idx * segmentMs)
-              : extensionStart;
-          const endDate =
-            segmentMs > 0
-              ? idx === extraCount - 1
-                ? targetDueDate
-                : new Date(extensionStart.getTime() + (idx + 1) * segmentMs)
-              : targetDueDate;
-
-          const uniqueId =
-            typeof crypto !== 'undefined' &&
-            typeof crypto.randomUUID === 'function'
-              ? crypto.randomUUID()
-              : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-          return {
-            id: uniqueId,
-            title: `Extended Milestone ${baseSteps.length + idx + 1}`,
-            description: 'Added during due date extension',
-            startDate,
-            endDate,
-            completed: false,
-            skipped: false,
-          };
-        });
-
-        allSteps = [...baseSteps, ...generated];
-      }
-
-      const activeSteps = allSteps.filter((s) => !s.skipped);
-      const completedSteps = activeSteps.filter((s) => s.completed).length;
-      const recalculatedProgress =
-        activeSteps.length > 0
-          ? Math.round((completedSteps / activeSteps.length) * 100)
-          : goal.progress ?? 0;
+      const updatedSteps = goal.steps.map((step) => {
+        if (step.id !== stepId) return step;
+        const newCheckIns = [...(step.checkIns || []), checkIn];
+        return {
+          ...step,
+          checkIns: newCheckIns,
+          actualValue:
+            typeof checkIn.value === 'number'
+              ? checkIn.value
+              : step.actualValue,
+        };
+      });
+      const progress = calculateWeightedProgress(updatedSteps);
 
       await updateGoal(goalId, {
-        dueDate: targetDueDate,
-        steps: allSteps,
-        progress: recalculatedProgress,
-        status: deriveStatusFromProgress(recalculatedProgress),
+        steps: updatedSteps,
+        progress,
+        status: deriveStatusFromProgress(progress),
       });
     } catch (err) {
-      console.error('Error extending goal due date:', err);
+      console.error('Error adding step check-in:', err);
       throw err;
     }
   };
@@ -269,7 +282,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
   };
 
   const addGoal = async (
-    goalData: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>
+    goalData: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>,
   ): Promise<string> => {
     try {
       const isTimestampLike = (v: unknown): v is { toDate: () => Date } => {
@@ -305,15 +318,44 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         createdAt: Timestamp.fromDate(now),
         updatedAt: Timestamp.fromDate(now),
         dueDate: Timestamp.fromDate(toDateSafe(goalData.dueDate) || now),
-        steps: (goalData.steps || []).map((step) => ({
-          ...step,
-          startDate: step.startDate
-            ? Timestamp.fromDate(toDateSafe(step.startDate)!)
-            : undefined,
-          endDate: step.endDate
-            ? Timestamp.fromDate(toDateSafe(step.endDate)!)
-            : undefined,
-        })),
+        steps: (goalData.steps || []).map((step) => {
+          const normalized: Record<string, unknown> = {
+            ...step,
+            startDate: step.startDate
+              ? Timestamp.fromDate(toDateSafe(step.startDate)!)
+              : undefined,
+            endDate: step.endDate
+              ? Timestamp.fromDate(toDateSafe(step.endDate)!)
+              : undefined,
+          };
+
+          if (step.recurrence?.recurrenceEndDate) {
+            normalized.recurrence = {
+              ...step.recurrence,
+              recurrenceEndDate: Timestamp.fromDate(
+                toDateSafe(step.recurrence.recurrenceEndDate)!,
+              ),
+            };
+          }
+
+          if (step.checkIns) {
+            normalized.checkIns = step.checkIns.map((checkIn) => ({
+              ...checkIn,
+              date: Timestamp.fromDate(toDateSafe(checkIn.date)!),
+            }));
+          }
+
+          if (step.completionRecord) {
+            normalized.completionRecord = {
+              ...step.completionRecord,
+              completedAt: Timestamp.fromDate(
+                toDateSafe(step.completionRecord.completedAt)!,
+              ),
+            };
+          }
+
+          return normalized;
+        }),
       });
 
       const docRef = await addDoc(collection(db, 'goals'), goalWithTimestamps);
@@ -326,13 +368,32 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
 
   const updateGoal = async (
     id: string,
-    updates: Partial<Goal>
+    updates: Partial<Goal>,
   ): Promise<void> => {
     try {
       const goalRef = doc(db, 'goals', id);
       const updateData = {
         ...updates,
         updatedAt: Timestamp.fromDate(new Date()),
+      };
+
+      const removeUndefined = (value: unknown): unknown => {
+        if (value === undefined) return undefined;
+        if (value === null) return null;
+        if (Array.isArray(value)) return value.map(removeUndefined);
+        if (typeof value === 'object' && value !== null) {
+          const result: Record<string, unknown> = {};
+          Object.entries(value as Record<string, unknown>).forEach(
+            ([key, val]) => {
+              const cleaned = removeUndefined(val);
+              if (cleaned !== undefined) {
+                result[key] = cleaned;
+              }
+            },
+          );
+          return result;
+        }
+        return value;
       };
 
       // Handle date fields
@@ -359,10 +420,36 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
             step.endDate instanceof Date
               ? Timestamp.fromDate(step.endDate)
               : step.endDate,
+          recurrence: step.recurrence
+            ? {
+                ...step.recurrence,
+                recurrenceEndDate:
+                  step.recurrence.recurrenceEndDate instanceof Date
+                    ? Timestamp.fromDate(step.recurrence.recurrenceEndDate)
+                    : step.recurrence.recurrenceEndDate,
+              }
+            : undefined,
+          checkIns: step.checkIns?.map((checkIn) => ({
+            ...checkIn,
+            date:
+              checkIn.date instanceof Date
+                ? Timestamp.fromDate(checkIn.date)
+                : checkIn.date,
+          })),
+          completionRecord: step.completionRecord
+            ? {
+                ...step.completionRecord,
+                completedAt:
+                  step.completionRecord.completedAt instanceof Date
+                    ? Timestamp.fromDate(step.completionRecord.completedAt)
+                    : step.completionRecord.completedAt,
+              }
+            : undefined,
         }));
       }
 
-      await updateDoc(goalRef, updateData);
+      const sanitizedUpdateData = removeUndefined(updateData);
+      await updateDoc(goalRef, sanitizedUpdateData as Record<string, unknown>);
     } catch (err) {
       console.error('Error updating goal:', err);
       throw err;
@@ -380,20 +467,12 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
 
   const updateGoalProgress = async (
     id: string,
-    progress: number
+    progress: number,
   ): Promise<void> => {
     try {
       const goalRef = doc(db, 'goals', id);
-      const completedSteps =
-        goals.find((g) => g.id === id)?.steps.filter((s) => s.completed)
-          .length || 0;
-      const totalSteps = goals.find((g) => g.id === id)?.steps.length || 1;
-      const calculatedProgress = Math.round(
-        (completedSteps / totalSteps) * 100
-      );
-
       await updateDoc(goalRef, {
-        progress: Math.max(progress, calculatedProgress),
+        progress,
         updatedAt: Timestamp.fromDate(new Date()),
       });
     } catch (err) {
@@ -405,38 +484,113 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
   const updateStepStatus = async (
     goalId: string,
     stepId: string,
-    completed: boolean
+    status: GoalStepStatus,
+    completionData?: {
+      finalValue?: number;
+      finalNote?: string;
+    },
+  ): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === goalId);
+      if (!goal) throw new Error('Goal not found');
+
+      const updatedSteps = goal.steps.map((step) => {
+        if (step.id !== stepId) return step;
+        const nextStep: GoalStep = {
+          ...step,
+          status,
+          completionRecord:
+            status === GoalStepStatus.COMPLETED
+              ? {
+                  ...(step.completionRecord ?? {}),
+                  completedAt:
+                    step.completionRecord?.completedAt instanceof Date
+                      ? step.completionRecord.completedAt
+                      : (step.completionRecord?.completedAt ??
+                        Timestamp.fromDate(new Date())),
+                  finalValue:
+                    completionData?.finalValue ??
+                    step.completionRecord?.finalValue,
+                  finalNote:
+                    completionData?.finalNote ??
+                    step.completionRecord?.finalNote,
+                  totalCheckIns: step.checkIns?.length ?? 0,
+                  durationDays: (() => {
+                    const startDate = toDateSafe(step.startDate);
+                    if (!startDate) return step.completionRecord?.durationDays;
+                    return Math.max(
+                      0,
+                      Math.ceil(
+                        (Date.now() - startDate.getTime()) /
+                          (24 * 60 * 60 * 1000),
+                      ),
+                    );
+                  })(),
+                }
+              : step.completionRecord,
+        };
+        return nextStep;
+      });
+
+      const progress = calculateWeightedProgress(updatedSteps);
+
+      await updateGoal(goalId, {
+        steps: updatedSteps,
+        progress,
+        status: deriveStatusFromProgress(progress),
+        completedAt: progress === 100 ? Timestamp.fromDate(new Date()) : null,
+      });
+    } catch (err) {
+      console.error('Error updating step status:', err);
+      throw err;
+    }
+  };
+
+  const updateGoalStep = async (
+    goalId: string,
+    stepId: string,
+    updates: Partial<GoalStep>,
   ): Promise<void> => {
     try {
       const goal = goals.find((g) => g.id === goalId);
       if (!goal) throw new Error('Goal not found');
 
       const updatedSteps = goal.steps.map((step) =>
-        step.id === stepId
-          ? {
-              ...step,
-              completed,
-              skipped: false,
-            }
-          : step
+        step.id !== stepId ? step : { ...step, ...updates },
       );
-
-      const activeSteps = updatedSteps.filter((s) => !s.skipped);
-      const completedSteps = activeSteps.filter((s) => s.completed).length;
-      const totalSteps = activeSteps.length;
-      const newProgress =
-        totalSteps > 0
-          ? Math.round((completedSteps / totalSteps) * 100)
-          : goal.progress ?? 0;
+      const progress = calculateWeightedProgress(updatedSteps);
 
       await updateGoal(goalId, {
         steps: updatedSteps,
-        progress: newProgress,
-        status: deriveStatusFromProgress(newProgress),
-        completedAt: newProgress === 100 ? new Date() : null,
+        progress,
+        status: deriveStatusFromProgress(progress),
+        completedAt: progress === 100 ? Timestamp.fromDate(new Date()) : null,
       });
     } catch (err) {
-      console.error('Error updating step status:', err);
+      console.error('Error updating goal step:', err);
+      throw err;
+    }
+  };
+
+  const deleteGoalStep = async (
+    goalId: string,
+    stepId: string,
+  ): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === goalId);
+      if (!goal) throw new Error('Goal not found');
+
+      const updatedSteps = goal.steps.filter((step) => step.id !== stepId);
+      const progress = calculateWeightedProgress(updatedSteps);
+
+      await updateGoal(goalId, {
+        steps: updatedSteps,
+        progress,
+        status: deriveStatusFromProgress(progress),
+        completedAt: progress === 100 ? Timestamp.fromDate(new Date()) : null,
+      });
+    } catch (err) {
+      console.error('Error deleting goal step:', err);
       throw err;
     }
   };
@@ -467,8 +621,11 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     deleteGoal,
     updateGoalProgress,
     updateStepStatus,
-    setStepSkipped,
-    extendGoalDueDate,
+    updateGoalStep,
+    deleteGoalStep,
+    addGoalStep,
+    reorderGoalSteps,
+    addStepCheckIn,
     getGoalsByType,
     getGoalsByStatus,
     getOverdueGoals,

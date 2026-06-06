@@ -28,6 +28,17 @@ import AddMoney from './TotalCashSnapshot/AddMoney';
 import DeductMoney from './TotalCashSnapshot/DeductMoney';
 import LoanDialog from './TotalCashSnapshot/LoanRecord';
 import TransactionHistory from './TotalCashSnapshot/TransactionHistory';
+import TransferFunds from './TotalCashSnapshot/TransferFunds';
+
+export const getSourceKey = (
+  source: TransactionSource,
+  bankName?: string | null,
+  customPaymentHeadName?: string | null
+): string => {
+  if (source === 'bank' && bankName) return `bank:${bankName}`;
+  if (source === 'custom' && customPaymentHeadName) return `custom:${customPaymentHeadName}`;
+  return source;
+};
 
 export default function TotalCashSnapshotComponent({
   userId,
@@ -77,6 +88,7 @@ export default function TotalCashSnapshotComponent({
             bank: normalizedBank,
             custom: normalizedCustom,
           },
+          heldBy: data.heldBy || {},
         });
       } else {
         const initial: TotalCashSnapshot = {
@@ -89,6 +101,7 @@ export default function TotalCashSnapshotComponent({
             other: 0,
             custom: {}, // 👈 always object now
           },
+          heldBy: {},
           totalAmount: 0,
           freezeAmount: 0,
           updatedAt: new Date(),
@@ -110,7 +123,8 @@ export default function TotalCashSnapshotComponent({
     bankName?: string,
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
-    note?: string
+    note?: string,
+    holderName?: string
   ) => {
     setSaving(true);
 
@@ -122,6 +136,7 @@ export default function TotalCashSnapshotComponent({
       category: 'manual',
       note: note || (isFreezed ? 'Freezed addition' : 'Manual addition'),
       createdAt: serverTimestamp() as Timestamp,
+      holderName: holderName || null,
     };
 
     if (bankId && !isFreezed) txn.bankId = bankId;
@@ -142,6 +157,8 @@ export default function TotalCashSnapshotComponent({
       custom: snapshot?.sources.custom ?? {},
     };
 
+    const updatedHeldBy = snapshot?.heldBy ? { ...snapshot.heldBy } : {};
+
     // ✅ Only update sources if NOT freezed
     if (!isFreezed) {
       if (source === 'bank' && bankName) {
@@ -153,11 +170,27 @@ export default function TotalCashSnapshotComponent({
       } else if (source !== 'bank' && source !== 'custom') {
         updatedSources[source] = (updatedSources[source] ?? 0) + amount;
       }
+
+      if (holderName && holderName !== 'Unassigned' && holderName !== 'Self') {
+        const key = getSourceKey(source, bankName, customPaymentHeadName);
+        const holders = [...(updatedHeldBy[key] || [])];
+        const idx = holders.findIndex((h) => h.holderName === holderName);
+        if (idx > -1) {
+          holders[idx] = {
+            ...holders[idx],
+            amount: holders[idx].amount + amount,
+          };
+        } else {
+          holders.push({ holderName, amount });
+        }
+        updatedHeldBy[key] = holders;
+      }
     }
 
     const updatedSnapshot: TotalCashSnapshot = {
       ...snapshot!,
       sources: updatedSources,
+      heldBy: updatedHeldBy,
       freezeAmount: isFreezed
         ? (snapshot?.freezeAmount || 0) + amount
         : snapshot?.freezeAmount || 0,
@@ -178,7 +211,8 @@ export default function TotalCashSnapshotComponent({
     fromFreeze: boolean = false,
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
-    note?: string
+    note?: string,
+    holderName?: string
   ) => {
     setSaving(true);
 
@@ -200,6 +234,8 @@ export default function TotalCashSnapshotComponent({
       custom: data.sources.custom ?? {},
     };
 
+    const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
+
     let newFreeze = data.freezeAmount ?? 0;
     let newTotal = data.totalAmount ?? 0;
 
@@ -214,29 +250,58 @@ export default function TotalCashSnapshotComponent({
       newTotal -= amount;
     } else {
       // ✅ Deduct from normal sources
+      const key = getSourceKey(source, bankName, customPaymentHeadName);
+      let current = 0;
       if (source === 'bank' && bankName) {
-        const current = updatedSources.bank[bankName] ?? 0;
-        if (amount > current) {
-          alert(`Not enough balance in Bank: ${bankName}`);
-          setSaving(false);
-          return;
+        current = updatedSources.bank[bankName] ?? 0;
+      } else if (source === 'custom' && customPaymentHeadName) {
+        current = updatedSources.custom[customPaymentHeadName] ?? 0;
+      } else if (source !== 'bank' && source !== 'custom') {
+        current = (updatedSources[source] as number) ?? 0;
+      }
+
+      if (amount > current) {
+        alert(`Not enough balance in ${source}${bankName ? ` (${bankName})` : ''}${customPaymentHeadName ? ` (${customPaymentHeadName})` : ''}`);
+        setSaving(false);
+        return;
+      }
+
+      // Check holder specific balance
+      const holders = updatedHeldBy[key] || [];
+      if (holders.length > 0) {
+        if (holderName && holderName !== 'Unassigned' && holderName !== 'Self') {
+          const holderIdx = holders.findIndex((h) => h.holderName === holderName);
+          const holderAmt = holderIdx > -1 ? holders[holderIdx].amount : 0;
+          if (amount > holderAmt) {
+            alert(`Not enough balance for holder: ${holderName} (Available: ${holderAmt})`);
+            setSaving(false);
+            return;
+          }
+          // Deduct from holder
+          const updatedHolders = [...holders];
+          updatedHolders[holderIdx] = {
+            ...updatedHolders[holderIdx],
+            amount: holderAmt - amount,
+          };
+          updatedHeldBy[key] = updatedHolders;
+        } else {
+          // Deducting from Unassigned / Self
+          const sumHolders = holders.reduce((sum, h) => sum + h.amount, 0);
+          const unassignedAmt = current - sumHolders;
+          if (amount > unassignedAmt) {
+            alert(`Not enough unassigned balance (Available: ${unassignedAmt})`);
+            setSaving(false);
+            return;
+          }
         }
+      }
+
+      // Deduct from source head
+      if (source === 'bank' && bankName) {
         updatedSources.bank[bankName] = current - amount;
       } else if (source === 'custom' && customPaymentHeadName) {
-        const current = updatedSources.custom[customPaymentHeadName] ?? 0;
-        if (amount > current) {
-          alert(`Not enough balance in ${customPaymentHeadName}`);
-          setSaving(false);
-          return;
-        }
         updatedSources.custom[customPaymentHeadName] = current - amount;
       } else if (source !== 'bank' && source !== 'custom') {
-        const current = (updatedSources[source] as number) ?? 0;
-        if (amount > current) {
-          alert(`Not enough balance in ${source}`);
-          setSaving(false);
-          return;
-        }
         updatedSources[source] = current - amount;
       }
       newTotal -= amount;
@@ -245,6 +310,7 @@ export default function TotalCashSnapshotComponent({
     const updatedSnapshot: TotalCashSnapshot = {
       ...data,
       sources: updatedSources,
+      heldBy: updatedHeldBy,
       freezeAmount: newFreeze,
       totalAmount: newTotal,
       updatedAt: new Date(),
@@ -265,6 +331,7 @@ export default function TotalCashSnapshotComponent({
       BankName: bankName || null,
       customPaymentHeadId: customPaymentHeadId || null,
       customPaymentHeadName: customPaymentHeadName || null,
+      holderName: holderName || null,
       createdAt: serverTimestamp(),
     });
 
@@ -279,7 +346,8 @@ export default function TotalCashSnapshotComponent({
     bankName?: string,
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
-    note?: string
+    note?: string,
+    fromHolderName?: string
   ) => {
     setSaving(true);
 
@@ -318,6 +386,35 @@ export default function TotalCashSnapshotComponent({
       custom: data.sources.custom ?? {},
     };
 
+    const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
+    const key = getSourceKey(fromSource, bankName, customPaymentHeadName);
+    const holders = updatedHeldBy[key] || [];
+    if (holders.length > 0) {
+      if (fromHolderName && fromHolderName !== 'Unassigned' && fromHolderName !== 'Self') {
+        const holderIdx = holders.findIndex((h) => h.holderName === fromHolderName);
+        const holderAmt = holderIdx > -1 ? holders[holderIdx].amount : 0;
+        if (amount > holderAmt) {
+          alert(`Not enough balance for holder: ${fromHolderName} (Available: ${holderAmt})`);
+          setSaving(false);
+          return;
+        }
+        const updatedHolders = [...holders];
+        updatedHolders[holderIdx] = {
+          ...updatedHolders[holderIdx],
+          amount: holderAmt - amount,
+        };
+        updatedHeldBy[key] = updatedHolders;
+      } else {
+        const sumHolders = holders.reduce((sum, h) => sum + h.amount, 0);
+        const unassignedAmt = sourceBalance - sumHolders;
+        if (amount > unassignedAmt) {
+          alert(`Not enough unassigned balance (Available: ${unassignedAmt})`);
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
     if (fromSource === 'bank' && bankName) {
       updatedSources.bank[bankName] =
         (updatedSources.bank[bankName] ?? 0) - amount;
@@ -331,6 +428,7 @@ export default function TotalCashSnapshotComponent({
     const updatedSnapshot: TotalCashSnapshot = {
       ...data,
       sources: updatedSources,
+      heldBy: updatedHeldBy,
       freezeAmount: (data.freezeAmount || 0) + amount,
       updatedAt: new Date(),
     };
@@ -347,11 +445,163 @@ export default function TotalCashSnapshotComponent({
       BankName: bankName || null,
       customPaymentHeadId: customPaymentHeadId || null,
       customPaymentHeadName: customPaymentHeadName || null,
+      fromHolderName: fromHolderName || null,
       createdAt: serverTimestamp(),
     });
 
     setSnapshot(updatedSnapshot);
     setSaving(false);
+  };
+
+  const handleTransferHolders = async (
+    amount: number,
+    fromSource: TransactionSource,
+    fromBankName?: string,
+    fromCustomName?: string,
+    fromHolder?: string,
+    toSource?: TransactionSource,
+    toBankName?: string,
+    toCustomName?: string,
+    toHolder?: string,
+    note?: string
+  ) => {
+    setSaving(true);
+    try {
+      const docRef = doc(db, 'totalCashSnapshots', userId);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) {
+        setSaving(false);
+        return;
+      }
+      const data = docSnap.data() as TotalCashSnapshot;
+
+      const updatedSources: TotalCashSnapshot['sources'] = {
+        in_hand: data.sources.in_hand ?? 0,
+        bank: data.sources.bank ?? {},
+        easypaisa: data.sources.easypaisa ?? 0,
+        jazzcash: data.sources.jazzcash ?? 0,
+        other: data.sources.other ?? 0,
+        custom: data.sources.custom ?? {},
+      };
+      const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
+
+      const fromKey = getSourceKey(fromSource, fromBankName, fromCustomName);
+      const targetSource = toSource || fromSource;
+      const targetBankName = toBankName || fromBankName;
+      const targetCustomName = toCustomName || fromCustomName;
+      const toKey = getSourceKey(targetSource, targetBankName, targetCustomName);
+
+      // Check balance of source
+      let fromSourceBalance = 0;
+      if (fromSource === 'bank' && fromBankName) {
+        fromSourceBalance = updatedSources.bank[fromBankName] ?? 0;
+      } else if (fromSource === 'custom' && fromCustomName) {
+        fromSourceBalance = updatedSources.custom[fromCustomName] ?? 0;
+      } else {
+        fromSourceBalance = (updatedSources[fromSource] as number) ?? 0;
+      }
+
+      if (amount > fromSourceBalance) {
+        alert(`Not enough balance in source`);
+        setSaving(false);
+        return;
+      }
+
+      // Check holder specific balance
+      const fromHolders = updatedHeldBy[fromKey] || [];
+      if (fromHolders.length > 0) {
+        if (fromHolder && fromHolder !== 'Unassigned' && fromHolder !== 'Self') {
+          const idx = fromHolders.findIndex(h => h.holderName === fromHolder);
+          const holderAmt = idx > -1 ? fromHolders[idx].amount : 0;
+          if (amount > holderAmt) {
+            alert(`Not enough balance for holder: ${fromHolder}`);
+            setSaving(false);
+            return;
+          }
+          // Deduct from holder
+          const newHolders = [...fromHolders];
+          newHolders[idx] = { ...newHolders[idx], amount: holderAmt - amount };
+          updatedHeldBy[fromKey] = newHolders;
+        } else {
+          // Deduct from unassigned
+          const sumHolders = fromHolders.reduce((sum, h) => sum + h.amount, 0);
+          const unassignedAmt = fromSourceBalance - sumHolders;
+          if (amount > unassignedAmt) {
+            alert(`Not enough unassigned balance (Available: ${unassignedAmt})`);
+            setSaving(false);
+            return;
+          }
+        }
+      }
+
+      // Perform deduction from source head
+      if (fromSource === 'bank' && fromBankName) {
+        updatedSources.bank[fromBankName] -= amount;
+      } else if (fromSource === 'custom' && fromCustomName) {
+        updatedSources.custom[fromCustomName] -= amount;
+      } else {
+        (updatedSources[fromSource] as number) -= amount;
+      }
+
+      // Perform addition to target source head
+      if (targetSource === 'bank' && targetBankName) {
+        updatedSources.bank[targetBankName] = (updatedSources.bank[targetBankName] ?? 0) + amount;
+      } else if (targetSource === 'custom' && targetCustomName) {
+        updatedSources.custom[targetCustomName] = (updatedSources.custom[targetCustomName] ?? 0) + amount;
+      } else {
+        (updatedSources[targetSource] as number) = ((updatedSources[targetSource] as number) ?? 0) + amount;
+      }
+
+      // Add to target holder
+      if (toHolder && toHolder !== 'Unassigned' && toHolder !== 'Self') {
+        const toHolders = [...(updatedHeldBy[toKey] || [])];
+        const idx = toHolders.findIndex(h => h.holderName === toHolder);
+        if (idx > -1) {
+          toHolders[idx] = { ...toHolders[idx], amount: toHolders[idx].amount + amount };
+        } else {
+          toHolders.push({ holderName: toHolder, amount });
+        }
+        updatedHeldBy[toKey] = toHolders;
+      }
+
+      // If source heads changed, update total amount accordingly (in case of transfer between different source heads, total balance remains same)
+      let newTotalAmount = 0;
+      Object.entries(updatedSources).forEach(([name, val]) => {
+        if (name === 'bank' || name === 'custom') {
+          Object.values(val as Record<string, number>).forEach(v => { newTotalAmount += v; });
+        } else {
+          newTotalAmount += val as number;
+        }
+      });
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...data,
+        sources: updatedSources,
+        heldBy: updatedHeldBy,
+        totalAmount: newTotalAmount,
+        updatedAt: new Date(),
+      };
+
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+      setSnapshot(updatedSnapshot);
+
+      // Save transfer transaction
+      await addDoc(collection(db, 'cashTransactions'), {
+        userId,
+        amount,
+        type: 'transfer',
+        source: fromSource,
+        category: 'transfer',
+        note: note || `Transferred ${amount} from ${fromHolder || 'Self'} (${fromSource}) to ${toHolder || 'Self'} (${targetSource})`,
+        fromHolderName: fromHolder || null,
+        toHolderName: toHolder || null,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const freezeDisplay = snapshot?.freezeAmount || 0;
@@ -396,15 +646,17 @@ export default function TotalCashSnapshotComponent({
       />
 
       <Box mt={2} display="flex" gap={1} flexWrap="wrap">
-        <AddMoney onSave={handleAddMoney} saving={saving} />
+        <AddMoney onSave={handleAddMoney} saving={saving} snapshot={snapshot} />
         <DeductMoney
           snapshot={snapshot}
           onDeduct={handleDeductMoney}
           saving={saving}
         />
-        <FreezeTransfer onFreeze={handleFreezeTransfer} saving={saving} />
-        <LoanDialog onAddMoney={handleAddMoney} />
+        <FreezeTransfer onFreeze={handleFreezeTransfer} saving={saving} snapshot={snapshot} />
+        <LoanDialog onAddMoney={handleAddMoney} snapshot={snapshot} />
+        <TransferFunds onTransfer={handleTransferHolders} saving={saving} snapshot={snapshot} />
       </Box>
+
 
       <Box mt={3} display="flex" justifyContent="center">
         <Button

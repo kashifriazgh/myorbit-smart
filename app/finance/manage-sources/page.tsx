@@ -32,6 +32,8 @@ import PaymentsIcon from '@mui/icons-material/Payments';
 import WalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import WarningIcon from '@mui/icons-material/Warning';
 import AddIcon from '@mui/icons-material/Add';
+import PersonIcon from '@mui/icons-material/Person';
+import CloseIcon from '@mui/icons-material/Close';
 import Link from 'next/link';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -55,6 +57,17 @@ export default function ManageSourcesPage() {
   const [newSourceType, setNewSourceType] = useState<'bank' | 'custom'>('bank');
   const [newSourceName, setNewSourceName] = useState('');
   const [addingSource, setAddingSource] = useState(false);
+
+  // New holder state
+  const [addHolderState, setAddHolderState] = useState<{ type: 'bank' | 'custom' | 'fixed'; name: string } | null>(null);
+  const [newHolderName, setNewHolderName] = useState('');
+  const [addingHolder, setAddingHolder] = useState(false);
+
+  const getSourceKey = (type: 'bank' | 'custom' | 'fixed', name: string): string => {
+    if (type === 'bank') return `bank:${name}`;
+    if (type === 'custom') return `custom:${name}`;
+    return name;
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -162,6 +175,85 @@ export default function ManageSourcesPage() {
     }
   };
 
+  const handleAddHolder = async () => {
+    if (!newHolderName.trim() || !addHolderState || !user || !snapshot) return;
+    setAddingHolder(true);
+
+    try {
+      const name = newHolderName.trim();
+      const sourceKey = getSourceKey(addHolderState.type, addHolderState.name);
+      
+      const updatedHeldBy = snapshot.heldBy ? { ...snapshot.heldBy } : {};
+      const holders = [...(updatedHeldBy[sourceKey] || [])];
+      
+      // Check if holder already exists
+      if (holders.some(h => h.holderName.toLowerCase() === name.toLowerCase())) {
+        alert('Holder with this name already exists in this source.');
+        setAddingHolder(false);
+        return;
+      }
+      
+      holders.push({ holderName: name, amount: 0 });
+      updatedHeldBy[sourceKey] = holders;
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        heldBy: updatedHeldBy,
+        updatedAt: new Date(),
+      };
+
+      const docRef = doc(db, 'totalCashSnapshots', user.uid);
+      await setDoc(docRef, { 
+        ...updatedSnapshot, 
+        updatedAt: serverTimestamp() 
+      });
+
+      setSnapshot(updatedSnapshot);
+      setAddHolderState(null);
+      setNewHolderName('');
+    } catch (err) {
+      console.error('Error adding holder:', err);
+    } finally {
+      setAddingHolder(false);
+    }
+  };
+
+  const handleDeleteHolder = async (sourceKey: string, holderName: string) => {
+    if (!snapshot || !user) return;
+    
+    const holders = snapshot.heldBy?.[sourceKey] || [];
+    const holder = holders.find(h => h.holderName === holderName);
+    if (!holder) return;
+
+    if (holder.amount > 0) {
+      alert(`Cannot delete holder with non-zero balance. Please transfer or deduct the balance first.`);
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete holder "${holderName}"?`)) return;
+
+    try {
+      const updatedHeldBy = { ...snapshot.heldBy };
+      updatedHeldBy[sourceKey] = holders.filter(h => h.holderName !== holderName);
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        heldBy: updatedHeldBy,
+        updatedAt: new Date(),
+      };
+
+      const docRef = doc(db, 'totalCashSnapshots', user.uid);
+      await setDoc(docRef, { 
+        ...updatedSnapshot, 
+        updatedAt: serverTimestamp() 
+      });
+
+      setSnapshot(updatedSnapshot);
+    } catch (err) {
+      console.error('Error deleting holder:', err);
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
@@ -223,27 +315,87 @@ export default function ManageSourcesPage() {
                 <Typography variant="body2" color="text.secondary">No bank accounts added</Typography>
               </Box>
             ) : (
-              Object.entries(snapshot.sources.bank).map(([name, amt], idx, arr) => (
-                <Box key={name}>
-                  <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Box>
-                      <Typography variant="body1" fontWeight="700">{name}</Typography>
-                      <Typography variant="caption" color="primary" fontWeight="800">
-                        {formatCurrency(amt, 'PKR')}
-                      </Typography>
+              Object.entries(snapshot.sources.bank).map(([name, amt], idx, arr) => {
+                const sourceKey = `bank:${name}`;
+                const holders = snapshot.heldBy?.[sourceKey] || [];
+                return (
+                  <Box key={name}>
+                    <Box sx={{ p: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box>
+                          <Typography variant="body1" fontWeight="700">{name}</Typography>
+                          <Typography variant="caption" color="primary" fontWeight="800">
+                            {formatCurrency(amt, 'PKR')}
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Button
+                            size="small"
+                            startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                            onClick={() => setAddHolderState({ type: 'bank', name })}
+                            sx={{ borderRadius: 1.5, textTransform: 'none', fontSize: '0.75rem', py: 0.5, fontWeight: 700 }}
+                          >
+                            Add Holder
+                          </Button>
+                          <IconButton 
+                            color="error" 
+                            size="small" 
+                            onClick={() => setDeletingId({ type: 'bank', name })}
+                            sx={{ bgcolor: 'rgba(239, 68, 68, 0.1)', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.2)' } }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      </Box>
+                      
+                      {/* Holders List */}
+                      {holders.length > 0 && (
+                        <Box sx={{ mt: 1.5, pl: 1.5, borderLeft: `2px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}` }}>
+                          <Typography variant="caption" color="text.secondary" fontWeight="800" sx={{ display: 'block', mb: 0.8, letterSpacing: '0.5px' }}>
+                            HOLDERS:
+                          </Typography>
+                          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ gap: 1 }}>
+                            {holders.map((h) => (
+                              <Box 
+                                key={h.holderName} 
+                                sx={{ 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  px: 1.2, 
+                                  py: 0.5, 
+                                  borderRadius: 1.5, 
+                                  bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc',
+                                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`
+                                }}
+                              >
+                                <Typography variant="caption" fontWeight="600" sx={{ mr: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  👤 {h.holderName}
+                                </Typography>
+                                <Typography variant="caption" color="primary" fontWeight="700" sx={{ mr: 0.5 }}>
+                                  {formatCurrency(h.amount, 'PKR')}
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleDeleteHolder(sourceKey, h.holderName)}
+                                  sx={{ 
+                                    p: 0.2, 
+                                    ml: 0.5, 
+                                    color: 'text.secondary', 
+                                    '&:hover': { color: 'error.main', bgcolor: 'rgba(239,68,68,0.08)' } 
+                                  }}
+                                >
+                                  <CloseIcon sx={{ fontSize: 12 }} />
+                                </IconButton>
+                              </Box>
+                            ))}
+                          </Stack>
+                        </Box>
+                      )}
                     </Box>
-                    <IconButton 
-                      color="error" 
-                      size="small" 
-                      onClick={() => setDeletingId({ type: 'bank', name })}
-                      sx={{ bgcolor: 'rgba(239, 68, 68, 0.1)', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.2)' } }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+                    {idx < arr.length - 1 && <Divider sx={{ opacity: 0.5 }} />}
                   </Box>
-                  {idx < arr.length - 1 && <Divider sx={{ opacity: 0.5 }} />}
-                </Box>
-              ))
+                );
+              })
             )}
           </Card>
         </Box>
@@ -263,27 +415,88 @@ export default function ManageSourcesPage() {
                 <Typography variant="body2" color="text.secondary">No custom payment heads added</Typography>
               </Box>
             ) : (
-              Object.entries(snapshot.sources.custom).map(([name, amt], idx, arr) => (
-                <Box key={name}>
-                  <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Box>
-                      <Typography variant="body1" fontWeight="700">{name}</Typography>
-                      <Typography variant="caption" color="secondary" fontWeight="800">
-                        {formatCurrency(amt, 'PKR')}
-                      </Typography>
+              Object.entries(snapshot.sources.custom).map(([name, amt], idx, arr) => {
+                const sourceKey = `custom:${name}`;
+                const holders = snapshot.heldBy?.[sourceKey] || [];
+                return (
+                  <Box key={name}>
+                    <Box sx={{ p: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box>
+                          <Typography variant="body1" fontWeight="700">{name}</Typography>
+                          <Typography variant="caption" color="secondary" fontWeight="800">
+                            {formatCurrency(amt, 'PKR')}
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Button
+                            size="small"
+                            color="secondary"
+                            startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                            onClick={() => setAddHolderState({ type: 'custom', name })}
+                            sx={{ borderRadius: 1.5, textTransform: 'none', fontSize: '0.75rem', py: 0.5, fontWeight: 700 }}
+                          >
+                            Add Holder
+                          </Button>
+                          <IconButton 
+                            color="error" 
+                            size="small" 
+                            onClick={() => setDeletingId({ type: 'custom', name })}
+                            sx={{ bgcolor: 'rgba(239, 68, 68, 0.1)', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.2)' } }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      </Box>
+                      
+                      {/* Holders List */}
+                      {holders.length > 0 && (
+                        <Box sx={{ mt: 1.5, pl: 1.5, borderLeft: `2px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}` }}>
+                          <Typography variant="caption" color="text.secondary" fontWeight="800" sx={{ display: 'block', mb: 0.8, letterSpacing: '0.5px' }}>
+                            HOLDERS:
+                          </Typography>
+                          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ gap: 1 }}>
+                            {holders.map((h) => (
+                              <Box 
+                                key={h.holderName} 
+                                sx={{ 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  px: 1.2, 
+                                  py: 0.5, 
+                                  borderRadius: 1.5, 
+                                  bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc',
+                                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`
+                                }}
+                              >
+                                <Typography variant="caption" fontWeight="600" sx={{ mr: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  👤 {h.holderName}
+                                </Typography>
+                                <Typography variant="caption" color="secondary" fontWeight="700" sx={{ mr: 0.5 }}>
+                                  {formatCurrency(h.amount, 'PKR')}
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleDeleteHolder(sourceKey, h.holderName)}
+                                  sx={{ 
+                                    p: 0.2, 
+                                    ml: 0.5, 
+                                    color: 'text.secondary', 
+                                    '&:hover': { color: 'error.main', bgcolor: 'rgba(239,68,68,0.08)' } 
+                                  }}
+                                >
+                                  <CloseIcon sx={{ fontSize: 12 }} />
+                                </IconButton>
+                              </Box>
+                            ))}
+                          </Stack>
+                        </Box>
+                      )}
                     </Box>
-                    <IconButton 
-                      color="error" 
-                      size="small" 
-                      onClick={() => setDeletingId({ type: 'custom', name })}
-                      sx={{ bgcolor: 'rgba(239, 68, 68, 0.1)', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.2)' } }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+                    {idx < arr.length - 1 && <Divider sx={{ opacity: 0.5 }} />}
                   </Box>
-                  {idx < arr.length - 1 && <Divider sx={{ opacity: 0.5 }} />}
-                </Box>
-              ))
+                );
+              })
             )}
           </Card>
         </Box>
@@ -300,26 +513,85 @@ export default function ManageSourcesPage() {
           }}>
             {['in_hand', 'easypaisa', 'jazzcash', 'other'].map((name, idx, arr) => {
               const amt = snapshot.sources[name] as number;
+              const sourceKey = name;
+              const holders = snapshot.heldBy?.[sourceKey] || [];
               return (
                 <Box key={name}>
-                  <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Box>
-                      <Typography variant="body1" fontWeight="700" sx={{ textTransform: 'capitalize' }}>
-                        {name.replace('_', ' ')}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" fontWeight="800">
-                        {formatCurrency(amt, 'PKR')}
-                      </Typography>
+                  <Box sx={{ p: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Box>
+                        <Typography variant="body1" fontWeight="700" sx={{ textTransform: 'capitalize' }}>
+                          {name.replace('_', ' ')}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" fontWeight="800">
+                          {formatCurrency(amt, 'PKR')}
+                        </Typography>
+                      </Box>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Button
+                          size="small"
+                          color="inherit"
+                          startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                          onClick={() => setAddHolderState({ type: 'fixed', name })}
+                          sx={{ borderRadius: 1.5, textTransform: 'none', fontSize: '0.75rem', py: 0.5, fontWeight: 700 }}
+                        >
+                          Add Holder
+                        </Button>
+                        {amt > 0 && (
+                          <IconButton 
+                            color="warning" 
+                            size="small" 
+                            onClick={() => setDeletingId({ type: 'fixed', name })}
+                            sx={{ bgcolor: 'rgba(245, 158, 11, 0.1)', '&:hover': { bgcolor: 'rgba(245, 158, 11, 0.2)' } }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </Stack>
                     </Box>
-                    {amt > 0 && (
-                      <IconButton 
-                        color="warning" 
-                        size="small" 
-                        onClick={() => setDeletingId({ type: 'fixed', name })}
-                        sx={{ bgcolor: 'rgba(245, 158, 11, 0.1)', '&:hover': { bgcolor: 'rgba(245, 158, 11, 0.2)' } }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                    
+                    {/* Holders List */}
+                    {holders.length > 0 && (
+                      <Box sx={{ mt: 1.5, pl: 1.5, borderLeft: `2px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}` }}>
+                        <Typography variant="caption" color="text.secondary" fontWeight="800" sx={{ display: 'block', mb: 0.8, letterSpacing: '0.5px' }}>
+                          HOLDERS:
+                        </Typography>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ gap: 1 }}>
+                          {holders.map((h) => (
+                            <Box 
+                              key={h.holderName} 
+                              sx={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                px: 1.2, 
+                                py: 0.5, 
+                                borderRadius: 1.5, 
+                                bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc',
+                                border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`
+                              }}
+                            >
+                              <Typography variant="caption" fontWeight="600" sx={{ mr: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                👤 {h.holderName}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" fontWeight="700" sx={{ mr: 0.5 }}>
+                                {formatCurrency(h.amount, 'PKR')}
+                              </Typography>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleDeleteHolder(sourceKey, h.holderName)}
+                                sx={{ 
+                                  p: 0.2, 
+                                  ml: 0.5, 
+                                  color: 'text.secondary', 
+                                  '&:hover': { color: 'error.main', bgcolor: 'rgba(239,68,68,0.08)' } 
+                                }}
+                              >
+                                <CloseIcon sx={{ fontSize: 12 }} />
+                              </IconButton>
+                            </Box>
+                          ))}
+                        </Stack>
+                      </Box>
                     )}
                   </Box>
                   {idx < arr.length - 1 && <Divider sx={{ opacity: 0.5 }} />}
@@ -436,6 +708,60 @@ export default function ManageSourcesPage() {
             startIcon={addingSource ? <CircularProgress size={18} color="inherit" /> : null}
           >
             {addingSource ? 'Creating...' : 'Create Source'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add New Holder Dialog */}
+      <Dialog
+        open={!!addHolderState}
+        onClose={() => !addingHolder && setAddHolderState(null)}
+        PaperProps={{
+          sx: { borderRadius: 4, p: 1, maxWidth: 450 }
+        }}
+      >
+        <Box sx={{ p: 2, pb: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Avatar sx={{ bgcolor: 'primary.main', color: 'white' }}>
+            <PersonIcon />
+          </Avatar>
+          <Box>
+            <Typography variant="h6" fontWeight="900">Add New Holder</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Assign a holder to {addHolderState?.name}
+            </Typography>
+          </Box>
+        </Box>
+
+        <DialogContent sx={{ mt: 2 }}>
+          <Stack spacing={3}>
+            <TextField
+              fullWidth
+              label="Holder Name"
+              placeholder="e.g., Ali, Mother, Wife, Self"
+              value={newHolderName}
+              onChange={(e) => setNewHolderName(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newHolderName.trim() && !addingHolder) {
+                  handleAddHolder();
+                }
+              }}
+            />
+          </Stack>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 3, pt: 1, gap: 1 }}>
+          <Button onClick={() => setAddHolderState(null)} disabled={addingHolder}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleAddHolder} 
+            variant="contained" 
+            disabled={addingHolder || !newHolderName.trim()}
+            sx={{ borderRadius: 2, fontWeight: 800, px: 4 }}
+            startIcon={addingHolder ? <CircularProgress size={18} color="inherit" /> : null}
+          >
+            {addingHolder ? 'Adding...' : 'Add Holder'}
           </Button>
         </DialogActions>
       </Dialog>

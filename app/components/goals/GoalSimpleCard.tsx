@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Card, Tooltip } from '@mui/material';
-import { Goal, GoalStep } from '../../lib/interface';
+import { Goal, GoalStep, GoalStepStatus } from '../../lib/interface';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { motion } from 'framer-motion';
 import {
@@ -135,7 +135,7 @@ function getUnit(goal: Goal): string | undefined {
 }
 
 function calculateTargets(goal: Goal) {
-  const steps: GoalStep[] = (goal.steps || []).filter((s) => !s.skipped);
+  const steps: GoalStep[] = goal.steps || [];
   const totalTarget  = sum(steps.map((s) => s.targetValue));
   const totalActual  = sum(steps.map((s) => s.actualValue));
 
@@ -315,13 +315,9 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
   const title    = goal.title || 'Untitled Goal';
   const deadline = formatDeadline(goal.deadline || goal.targetDate);
 
-  // Milestone steps (non-skipped)
-  const milestoneSteps = (goal.steps || []).filter((s) => !s.skipped);
+  const milestoneSteps = goal.steps || [];
   const doneCount      = milestoneSteps.filter(
-    (s) =>
-      typeof s.actualValue === 'number' &&
-      typeof s.targetValue === 'number' &&
-      s.actualValue >= s.targetValue,
+    (s) => s.status === GoalStepStatus.COMPLETED,
   ).length;
 
   // Colours

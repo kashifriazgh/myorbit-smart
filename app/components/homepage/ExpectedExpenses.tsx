@@ -38,7 +38,6 @@ import {
 } from '@/app/lib/context/ExpendituresContext';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
-import { TotalCashSnapshot } from '@/app/lib/interface';
 
 function ExpectedExpenses() {
   const { user } = useAuth();
@@ -56,10 +55,11 @@ function ExpectedExpenses() {
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
   const [rescheduleItem, setRescheduleItem] = useState<Expenditure | null>(
-    null
+    null,
   );
-  const [newDueDate, setNewDueDate] = useState<Date | null>(null);
+  const [newDueDate, setNewDueDate] = useState<Date | null>(new Date());
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
 
   // Fund deduction state
@@ -72,7 +72,7 @@ function ExpectedExpenses() {
   const [newBankName, setNewBankName] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [availableFunds, setAvailableFunds] = useState(0);
-  const [insufficientFunds, setInsufficientFunds] = useState(false);
+  const [insufficientFunds] = useState(false);
 
   const SOURCE_OPTIONS: TransactionSource[] = [
     'bank',
@@ -81,6 +81,11 @@ function ExpectedExpenses() {
     'jazzcash',
     'other',
   ];
+
+  // Reset selected holder when source/bank changes
+  useEffect(() => {
+    setSelectedHolder('Unassigned');
+  }, [deductionSource, selectedBank]);
 
   // Filter expenditures for upcoming expenses
   const items = expenditures
@@ -108,7 +113,15 @@ function ExpectedExpenses() {
   const markExpensePaid = async (exp: Expenditure, deductFromFund: boolean) => {
     try {
       setMarkingId(exp.id!);
-      await markAsPaid(exp, deductFromFund, deductionSource, selectedBank);
+      const holderToSave =
+        selectedHolder === 'Unassigned' ? undefined : selectedHolder;
+      await markAsPaid(
+        exp,
+        deductFromFund,
+        deductionSource,
+        selectedBank,
+        holderToSave,
+      );
       if (activeStep >= items.length - 1) {
         setActiveStep(Math.max(items.length - 2, 0));
       }
@@ -144,7 +157,7 @@ function ExpectedExpenses() {
   // Available funds refresh
   const refreshAvailableFunds = async (
     source: TransactionSource,
-    bankId?: string
+    bankId?: string,
   ) => {
     try {
       const docRef = doc(db, 'totalCashSnapshots', user?.uid || '');
@@ -152,7 +165,7 @@ function ExpectedExpenses() {
       let available = 0;
 
       if (snap.exists()) {
-        const data = snap.data() as TotalCashSnapshot;
+        const data = snap.data();
 
         if (source === 'bank') {
           const bankName = banks.find((b) => b.id === bankId)?.name;
@@ -170,13 +183,9 @@ function ExpectedExpenses() {
       }
 
       setAvailableFunds(available);
-      setInsufficientFunds(
-        !!selectedExpenditure && available < selectedExpenditure.amount
-      );
     } catch (e) {
       console.error('Error fetching available funds:', e);
       setAvailableFunds(0);
-      setInsufficientFunds(true);
     }
   };
 

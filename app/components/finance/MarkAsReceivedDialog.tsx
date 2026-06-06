@@ -15,6 +15,7 @@ import {
   Stack,
   TextField,
   CircularProgress,
+  Box,
 } from '@mui/material';
 import {
   addDoc,
@@ -43,7 +44,8 @@ interface MarkAsReceivedDialogProps {
     updateMainFund: boolean,
     fundSource?: TransactionSource,
     bankId?: string,
-    customPaymentHeadId?: string
+    customPaymentHeadId?: string,
+    holderName?: string
   ) => Promise<void>;
   onAddBank?: (bankName: string) => Promise<Bank>;
   loading?: boolean;
@@ -57,6 +59,16 @@ const SOURCE_OPTIONS: TransactionSource[] = [
   'other',
   'custom',
 ];
+
+const getSourceKey = (
+  source: string,
+  bankName?: string | null,
+  customPaymentHeadName?: string | null
+): string => {
+  if (source === 'bank' && bankName) return `bank:${bankName}`;
+  if (source === 'custom' && customPaymentHeadName) return `custom:${customPaymentHeadName}`;
+  return source;
+};
 
 export default function MarkAsReceivedDialog({
   open,
@@ -85,6 +97,10 @@ export default function MarkAsReceivedDialog({
   const [customPaymentHeads, setCustomPaymentHeads] = useState<
     CustomPaymentHead[]
   >([]);
+
+  // Holder state
+  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
+  const [newHolderName, setNewHolderName] = useState('');
 
   const updateAvailableFunds = useCallback(
     (
@@ -190,6 +206,8 @@ export default function MarkAsReceivedDialog({
       setNewBankName('');
       setSelectedCustomPaymentHead('');
       setNewCustomPaymentHeadName('');
+      setSelectedHolder('Unassigned');
+      setNewHolderName('');
       setBankError(null);
       fetchAvailableFunds();
     }
@@ -213,12 +231,20 @@ export default function MarkAsReceivedDialog({
     updateAvailableFunds,
   ]);
 
+  // Reset holder state when source parameters change
+  useEffect(() => {
+    setSelectedHolder('Unassigned');
+    setNewHolderName('');
+  }, [incomeSourceForMainFund, selectedBank, selectedCustomPaymentHead]);
+
   const handleConfirmYes = async () => {
+    const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
     await onConfirm(
       true,
       incomeSourceForMainFund,
       selectedBank,
-      selectedCustomPaymentHead
+      selectedCustomPaymentHead,
+      holderToSave
     );
   };
 
@@ -271,6 +297,11 @@ export default function MarkAsReceivedDialog({
       setAddingCustomPaymentHead(false);
     }
   };
+
+  const bankName = banks.find((b) => b.id === selectedBank)?.name;
+  const customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+  const sourceKey = getSourceKey(incomeSourceForMainFund, bankName, customPaymentHeadName);
+  const existingHolders = snapshot?.heldBy?.[sourceKey] || [];
 
   if (!income) return null;
 
@@ -381,6 +412,44 @@ export default function MarkAsReceivedDialog({
           </Stack>
         )}
 
+        {/* Holder Selection (optional) */}
+        {incomeSourceForMainFund && (
+          <Box sx={{ border: `1px solid rgba(0,0,0,0.05)`, borderRadius: 2, p: 2, mt: 2 }}>
+            <Typography variant="caption" fontWeight="800" color="primary" sx={{ mb: 1.5, display: 'block' }}>
+              HOLDER ASSIGNMENT (OPTIONAL)
+            </Typography>
+            <Stack spacing={2}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Select Holder</InputLabel>
+                <Select
+                  value={selectedHolder}
+                  onChange={(e) => setSelectedHolder(e.target.value)}
+                  label="Select Holder"
+                >
+                  <MenuItem value="Unassigned">Unassigned / Self</MenuItem>
+                  {existingHolders.map((h) => (
+                    <MenuItem key={h.holderName} value={h.holderName}>
+                      {h.holderName}
+                    </MenuItem>
+                  ))}
+                  <MenuItem value="new"><em>-- Create New Holder --</em></MenuItem>
+                </Select>
+              </FormControl>
+
+              {selectedHolder === 'new' && (
+                <TextField
+                  fullWidth
+                  label="New Holder Name"
+                  value={newHolderName}
+                  onChange={(e) => setNewHolderName(e.target.value)}
+                  placeholder="e.g. Ali, Mother, etc."
+                  size="small"
+                />
+              )}
+            </Stack>
+          </Box>
+        )}
+
         {bankError && (
           <Typography mt={1} color="error" fontSize={13}>
             {bankError}
@@ -390,7 +459,7 @@ export default function MarkAsReceivedDialog({
         {fetchingBalance ? (
           <CircularProgress size={16} sx={{ mt: 1 }} />
         ) : (
-          <Typography mt={1} fontSize={14}>
+          <Typography mt={2} fontSize={14}>
             Available in <strong>{incomeSourceForMainFund}</strong>
             {incomeSourceForMainFund === 'bank' &&
               selectedBank &&
@@ -424,7 +493,8 @@ export default function MarkAsReceivedDialog({
           disabled={
             loading ||
             (incomeSourceForMainFund === 'bank' && !selectedBank) ||
-            (incomeSourceForMainFund === 'custom' && !selectedCustomPaymentHead)
+            (incomeSourceForMainFund === 'custom' && !selectedCustomPaymentHead) ||
+            (selectedHolder === 'new' && !newHolderName.trim())
           }
         >
           {loading ? <CircularProgress size={18} /> : 'Yes'}

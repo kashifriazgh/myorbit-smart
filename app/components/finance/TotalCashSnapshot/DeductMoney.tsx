@@ -36,6 +36,7 @@ import BalanceIcon from '@mui/icons-material/AccountBalanceWallet';
 import LayersIcon from '@mui/icons-material/Layers';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';
+import { getSourceKey } from '../TotalCashSnapshot';
 
 interface Props {
   snapshot: TotalCashSnapshot;
@@ -47,7 +48,8 @@ interface Props {
     fromFreeze?: boolean,
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
-    note?: string
+    note?: string,
+    holderName?: string
   ) => Promise<void>;
   saving: boolean;
 }
@@ -60,6 +62,8 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
   const [selectedBank, setSelectedBank] = useState('');
   const [fromFreeze, setFromFreeze] = useState(false);
   const [note, setNote] = useState('');
+
+  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
 
   const [banks, setBanks] = useState<Bank[]>([]);
   const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
@@ -98,6 +102,11 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
     };
     fetchCustomPaymentHeads();
   }, [user]);
+
+  // Reset selected holder when source/bank/custom changes
+  useEffect(() => {
+    setSelectedHolder('Unassigned');
+  }, [source, selectedBank, selectedCustomPaymentHead]);
 
   const handleAddBank = async () => {
     if (!user || !newBankName.trim()) return;
@@ -165,6 +174,8 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
       if (!customPaymentHeadId || !customPaymentHeadName) return;
     }
 
+    const holderToSave = selectedHolder === 'Unassigned' ? undefined : selectedHolder;
+
     await onDeduct(
       Number(amount),
       source,
@@ -173,7 +184,8 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
       fromFreeze,
       customPaymentHeadId,
       customPaymentHeadName,
-      note
+      note,
+      holderToSave
     );
 
     setShowModal(false);
@@ -182,6 +194,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
     setSelectedBank('');
     setSelectedCustomPaymentHead('');
     setFromFreeze(false);
+    setSelectedHolder('Unassigned');
     setNote('');
   };
 
@@ -201,6 +214,24 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
       : 0; // key by custom payment head name in snapshot
   } else if (source !== 'bank' && source !== 'custom') {
     balance = (snapshot.sources[source] as number) ?? 0;
+  }
+
+  const bankName = banks.find((b) => b.id === selectedBank)?.name;
+  const customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+  const sourceKey = getSourceKey(source, bankName, customPaymentHeadName);
+  const existingHolders = snapshot.heldBy?.[sourceKey] || [];
+  const hasHolders = existingHolders.length > 0;
+
+  // Compute active balance for validation & display
+  let activeBalance = balance;
+  if (!fromFreeze && hasHolders) {
+    const holdersSum = existingHolders.reduce((s, h) => s + h.amount, 0);
+    const unassignedAmt = balance - holdersSum;
+    if (selectedHolder === 'Unassigned') {
+      activeBalance = unassignedAmt;
+    } else {
+      activeBalance = existingHolders.find((h) => h.holderName === selectedHolder)?.amount ?? 0;
+    }
   }
 
   const { theme } = useCustomTheme();
@@ -290,8 +321,8 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
                 startAdornment: <MoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
               }}
               placeholder="0.00"
-              error={amount !== '' && Number(amount) > balance}
-              helperText={amount !== '' && Number(amount) > balance ? "Insufficient funds" : ""}
+              error={amount !== '' && Number(amount) > activeBalance}
+              helperText={amount !== '' && Number(amount) > activeBalance ? "Insufficient funds" : ""}
             />
 
             <FormControl fullWidth>
@@ -433,6 +464,27 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
                     )}
                   </Stack>
                 )}
+
+                {/* Holder Selection dropdown if holders exist */}
+                {hasHolders && (
+                  <FormControl fullWidth>
+                    <InputLabel>Select Holder</InputLabel>
+                    <Select
+                      value={selectedHolder}
+                      onChange={(e) => setSelectedHolder(e.target.value)}
+                      label="Select Holder"
+                    >
+                      <MenuItem value="Unassigned">
+                        Unassigned / Self ({formatCurrency(balance - existingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})
+                      </MenuItem>
+                      {existingHolders.map((h) => (
+                        <MenuItem key={h.holderName} value={h.holderName}>
+                          {h.holderName} ({formatCurrency(h.amount, 'PKR')})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
               </>
             )}
 
@@ -450,10 +502,10 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
               <BalanceIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
               <Box>
                 <Typography variant="caption" color="text.secondary" fontWeight="700">
-                  CURRENT BALANCE
+                  {selectedHolder === 'Unassigned' ? 'UNASSIGNED BALANCE' : `${selectedHolder.toUpperCase()}'S BALANCE`}
                 </Typography>
-                <Typography variant="body2" fontWeight="900" color={balance < (amount || 0) ? 'error.main' : 'text.primary'}>
-                  {formatCurrency(balance, 'PKR')}
+                <Typography variant="body2" fontWeight="900" color={activeBalance < (amount || 0) ? 'error.main' : 'text.primary'}>
+                  {formatCurrency(activeBalance, 'PKR')}
                 </Typography>
               </Box>
             </Box>
@@ -482,7 +534,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
             onClick={handleSaveClick}
             disabled={
               saving ||
-              (amount !== '' && Number(amount) > balance) ||
+              (amount !== '' && Number(amount) > activeBalance) ||
               (!fromFreeze && source === 'bank' && !selectedBank) ||
               (!fromFreeze && source === 'custom' && !selectedCustomPaymentHead) ||
               !amount || amount <= 0

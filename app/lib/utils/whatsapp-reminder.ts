@@ -28,17 +28,17 @@ interface ReminderConfig {
  */
 export async function createWhatsAppReminder(
   item: RemindableItem,
-  config: ReminderConfig
+  config: ReminderConfig,
 ): Promise<string | null> {
-  
   if (!item.reminderDate) {
     console.log('No reminder date set, skipping reminder');
     return null;
   }
 
-  const reminderTimestamp = item.reminderDate instanceof Date 
-    ? item.reminderDate.getTime() 
-    : new Date(item.reminderDate).getTime();
+  const reminderTimestamp =
+    item.reminderDate instanceof Date
+      ? item.reminderDate.getTime()
+      : new Date(item.reminderDate).getTime();
 
   // Check if reminder is in the future
   if (reminderTimestamp <= Date.now()) {
@@ -50,30 +50,38 @@ export async function createWhatsAppReminder(
   const unixMinute = Math.floor(reminderTimestamp / 60000);
 
   // Build message based on item type and priority
-  const message = config.customMessage || buildDefaultMessage(item, config.itemType);
+  const message =
+    config.customMessage || buildDefaultMessage(item, config.itemType);
 
   // Map itemType to template name
   const messageTemplateMap = {
     todo: 'task_due',
     schedule: 'schedule_upcoming',
     goal: 'goal_checkin',
-    habit: 'habit_daily'
+    habit: 'habit_daily',
   } as const;
 
   const messageTemplate = messageTemplateMap[config.itemType] || 'task_due';
-  const firestoreProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'forms-389a6';
-  
+  const firestoreProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+
+  if (!firestoreProjectId) {
+    throw new Error(
+      'Missing NEXT_PUBLIC_FIREBASE_PROJECT_ID. Firestore project ID must be provided for reminders.',
+    );
+  }
+
   // Dynamic Webhook callback capture
-  const appUrl = typeof window !== 'undefined' 
-    ? window.location.origin 
-    : process.env.NEXT_PUBLIC_APP_URL || '';
+  const appUrl =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_APP_URL || '';
 
   // Get shared database dynamically
   const database = await getSharedDatabase();
 
   // Create reminder in RTDB
   const reminderRef = push(rtdbRef(database, `reminders/${unixMinute}`));
-  
+
   await set(reminderRef, {
     // Identity
     clientId: config.clientId,
@@ -97,15 +105,17 @@ export async function createWhatsAppReminder(
       priority: item.priority || null,
       dueDate: item.dueDate || null,
       scheduleTime: item.scheduleTime || null,
-      linkedGoalId: item.linkedGoalId || null
+      linkedGoalId: item.linkedGoalId || null,
     },
 
     // Security & Routing callback
     appUrl: appUrl,
-    createdAt: Date.now()
+    createdAt: Date.now(),
   });
 
-  console.log(`✅ Enhanced reminder (${config.method || 'whatsapp'}) created for ${config.itemType}: ${item.title}`);
+  console.log(
+    `✅ Enhanced reminder (${config.method || 'whatsapp'}) created for ${config.itemType}: ${item.title}`,
+  );
   return reminderRef.key;
 }
 
@@ -115,9 +125,8 @@ export async function createWhatsAppReminder(
 export async function updateWhatsAppReminder(
   oldReminderDate: Date | undefined,
   newItem: RemindableItem,
-  config: ReminderConfig
+  config: ReminderConfig,
 ): Promise<string | null> {
-  
   // Delete old reminder if it exists
   if (oldReminderDate && newItem.id) {
     await deleteWhatsAppReminder(oldReminderDate, newItem.id, config.itemType);
@@ -133,12 +142,12 @@ export async function updateWhatsAppReminder(
 export async function deleteWhatsAppReminder(
   reminderDate: Date,
   itemId: string,
-  itemType: string
+  itemType: string,
 ): Promise<void> {
-  
-  const reminderTimestamp = reminderDate instanceof Date 
-    ? reminderDate.getTime() 
-    : new Date(reminderDate).getTime();
+  const reminderTimestamp =
+    reminderDate instanceof Date
+      ? reminderDate.getTime()
+      : new Date(reminderDate).getTime();
 
   const unixMinute = Math.floor(reminderTimestamp / 60000);
 
@@ -151,7 +160,10 @@ export async function deleteWhatsAppReminder(
 
   if (snapshot.exists()) {
     const reminders = snapshot.val();
-    for (const [key, reminder] of Object.entries(reminders) as [string, { itemId?: string }][]) {
+    for (const [key, reminder] of Object.entries(reminders) as [
+      string,
+      { itemId?: string },
+    ][]) {
       if (reminder.itemId === itemId) {
         await remove(rtdbRef(database, `reminders/${unixMinute}/${key}`));
         console.log(`🗑️ Deleted reminder for ${itemType}: ${itemId}`);
@@ -170,7 +182,9 @@ export async function deleteTodoReminder(todoId: string): Promise<void> {
     if (todoDoc.exists()) {
       const data = todoDoc.data();
       if (data.reminderDate) {
-        const rDate = data.reminderDate.toDate ? data.reminderDate.toDate() : new Date(data.reminderDate);
+        const rDate = data.reminderDate.toDate
+          ? data.reminderDate.toDate()
+          : new Date(data.reminderDate);
         await deleteWhatsAppReminder(rDate, todoId, 'todo');
       }
     }
@@ -182,14 +196,18 @@ export async function deleteTodoReminder(todoId: string): Promise<void> {
 /**
  * Safely delete a schedule reminder by fetching its current reminderDate from Firestore first
  */
-export async function deleteScheduleReminder(scheduleId: string): Promise<void> {
+export async function deleteScheduleReminder(
+  scheduleId: string,
+): Promise<void> {
   try {
     const scheduleRef = doc(db, 'schedules', scheduleId);
     const scheduleDoc = await getDoc(scheduleRef);
     if (scheduleDoc.exists()) {
       const data = scheduleDoc.data();
       if (data.reminderDate) {
-        const rDate = data.reminderDate.toDate ? data.reminderDate.toDate() : new Date(data.reminderDate);
+        const rDate = data.reminderDate.toDate
+          ? data.reminderDate.toDate()
+          : new Date(data.reminderDate);
         await deleteWhatsAppReminder(rDate, scheduleId, 'schedule');
       }
     }
@@ -205,7 +223,7 @@ export async function rescheduleTodoReminder(
   todoId: string,
   newDueDate: Date,
   userId: string,
-  userPhone?: string
+  userPhone?: string,
 ): Promise<void> {
   try {
     const todoRef = doc(db, 'todos', todoId);
@@ -229,9 +247,13 @@ export async function rescheduleTodoReminder(
       }
     }
 
-    const oldReminderDate = data.reminderDate.toDate ? data.reminderDate.toDate() : new Date(data.reminderDate);
-    const oldDueDate = data.dueDate 
-      ? (data.dueDate.toDate ? data.dueDate.toDate() : new Date(data.dueDate))
+    const oldReminderDate = data.reminderDate.toDate
+      ? data.reminderDate.toDate()
+      : new Date(data.reminderDate);
+    const oldDueDate = data.dueDate
+      ? data.dueDate.toDate
+        ? data.dueDate.toDate()
+        : new Date(data.dueDate)
       : null;
 
     let newReminderDate: Date;
@@ -240,7 +262,7 @@ export async function rescheduleTodoReminder(
       // Calculate original offset and apply it to the new due date
       const offsetMs = oldDueDate.getTime() - oldReminderDate.getTime();
       newReminderDate = new Date(newDueDate.getTime() - offsetMs);
-      
+
       // If the computed reminder is in the past, default to new due date or 15m before
       if (newReminderDate.getTime() <= Date.now()) {
         newReminderDate = new Date(newDueDate.getTime() - 15 * 60000); // 15 mins before due date
@@ -265,18 +287,20 @@ export async function rescheduleTodoReminder(
         title: data.title,
         reminderDate: newReminderDate,
         priority: data.priority,
-        dueDate: newDueDate.toISOString()
+        dueDate: newDueDate.toISOString(),
       },
-      config
+      config,
     );
 
     // Update Firestore document with new reminder date
     await updateDoc(todoRef, {
       reminderDate: Timestamp.fromDate(newReminderDate),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     });
 
-    console.log(`✅ Rescheduled WhatsApp reminder for task ${todoId} to ${newReminderDate}`);
+    console.log(
+      `✅ Rescheduled WhatsApp reminder for task ${todoId} to ${newReminderDate}`,
+    );
   } catch (err) {
     console.error('Failed to reschedule todo reminder:', err);
   }
@@ -290,7 +314,7 @@ export async function rescheduleScheduleReminder(
   newDateStr: string, // 'YYYY-MM-DD'
   newStartTimeStr: string, // 'HH:mm'
   userId: string,
-  userPhone?: string
+  userPhone?: string,
 ): Promise<void> {
   try {
     const scheduleRef = doc(db, 'schedules', scheduleId);
@@ -314,11 +338,15 @@ export async function rescheduleScheduleReminder(
       }
     }
 
-    const oldReminderDate = data.reminderDate.toDate ? data.reminderDate.toDate() : new Date(data.reminderDate);
+    const oldReminderDate = data.reminderDate.toDate
+      ? data.reminderDate.toDate()
+      : new Date(data.reminderDate);
 
     // Calculate new start date-time
-    const newStartDateTime = new Date(`${newDateStr}T${newStartTimeStr || '00:00'}`);
-    
+    const newStartDateTime = new Date(
+      `${newDateStr}T${newStartTimeStr || '00:00'}`,
+    );
+
     // Calculate the old schedule's start date-time if we have it
     let oldStartDateTime = newStartDateTime;
     if (data.date && data.startTime) {
@@ -348,28 +376,32 @@ export async function rescheduleScheduleReminder(
         title: data.title,
         reminderDate: newReminderDate,
         priority: data.priority,
-        scheduleTime: newStartTimeStr
+        scheduleTime: newStartTimeStr,
       },
-      config
+      config,
     );
 
     // Update Firestore document with new reminder date
     await updateDoc(scheduleRef, {
       reminderDate: Timestamp.fromDate(newReminderDate),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     });
 
-    console.log(`✅ Rescheduled WhatsApp reminder for schedule ${scheduleId} to ${newReminderDate}`);
+    console.log(
+      `✅ Rescheduled WhatsApp reminder for schedule ${scheduleId} to ${newReminderDate}`,
+    );
   } catch (err) {
     console.error('Failed to reschedule schedule reminder:', err);
   }
 }
 
-
 /**
  * Build default message based on item type and priority emoji
  */
-function buildDefaultMessage(item: RemindableItem, itemType: 'todo' | 'schedule' | 'goal' | 'habit'): string {
+function buildDefaultMessage(
+  item: RemindableItem,
+  itemType: 'todo' | 'schedule' | 'goal' | 'habit',
+): string {
   const title = item.title;
   const priority = item.priority;
   const scheduleTime = item.scheduleTime;
@@ -380,13 +412,13 @@ function buildDefaultMessage(item: RemindableItem, itemType: 'todo' | 'schedule'
       const isUrgent = priority === 'urgent' || priority === 'medium';
       const priorityEmoji = isCritical ? '🔴' : isUrgent ? '🟠' : '⚪';
       return `${priorityEmoji} Task Reminder!\n\n"${title}"\n\n${isCritical ? '⚠️ CRITICAL PRIORITY\n\n' : ''}Have you completed this?\n\nReply "yes" or "done" to mark complete.`;
-    
+
     case 'schedule':
       return `📅 Schedule Alert!\n\n"${title}"\n${scheduleTime ? `⏰ Starts at ${scheduleTime}\n` : ''}\n\nReply "done" when completed.`;
-    
+
     case 'goal':
       return `🎯 Goal Check-in!\n\n"${title}"\n\nTime to work on your goal!\n\nReply "progress" to update.`;
-    
+
     default:
       return `⏰ Reminder: "${title}"\n\nReply "done" when complete.`;
   }
@@ -395,12 +427,15 @@ function buildDefaultMessage(item: RemindableItem, itemType: 'todo' | 'schedule'
 /**
  * Helper to get user's WhatsApp config from their profile
  */
-export function getUserWhatsAppConfig(userId: string, phone: string): ReminderConfig {
+export function getUserWhatsAppConfig(
+  userId: string,
+  phone: string,
+): ReminderConfig {
   const envClientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${userId}`;
   return {
     userId,
     phone,
     clientId: envClientId,
-    itemType: 'todo' // Will be overridden when called
+    itemType: 'todo', // Will be overridden when called
   };
 }

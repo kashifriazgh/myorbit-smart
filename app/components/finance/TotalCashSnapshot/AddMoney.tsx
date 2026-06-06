@@ -17,7 +17,7 @@ import {
   Box,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
-import { TransactionSource, Bank, CustomPaymentHead } from '@/app/lib/interface';
+import { TransactionSource, Bank, CustomPaymentHead, TotalCashSnapshot } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
   collection,
@@ -38,6 +38,7 @@ import {
   AddCard as AddCardIcon
 } from '@mui/icons-material';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { getSourceKey } from '../TotalCashSnapshot';
 
 const SOURCE_OPTIONS: TransactionSource[] = [
   'bank',
@@ -53,23 +54,28 @@ interface Props {
     amount: number,
     source: TransactionSource,
     isFreezed: boolean,
-
     bankId?: string,
     bankName?: string,
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
-    note?: string
+    note?: string,
+    holderName?: string
   ) => Promise<void>;
   saving: boolean;
+  snapshot?: TotalCashSnapshot | null;
 }
 
-export default function AddMoney({ onSave, saving }: Props) {
+export default function AddMoney({ onSave, saving, snapshot }: Props) {
   const { user } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [newAmount, setNewAmount] = useState<number | ''>('');
   const [newMode, setNewMode] = useState<TransactionSource>('in_hand');
   const [isFreezed, setIsFreezed] = useState(false);
   const [note, setNote] = useState('');
+
+  // Holder state
+  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
+  const [newHolderName, setNewHolderName] = useState('');
 
   // Bank-specific state
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -170,6 +176,8 @@ export default function AddMoney({ onSave, saving }: Props) {
       if (!customPaymentHeadId || !customPaymentHeadName) return; // require valid selection
     }
 
+    const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
+
     await onSave(
       Number(newAmount),
       sourceToSave,
@@ -178,7 +186,8 @@ export default function AddMoney({ onSave, saving }: Props) {
       bankName,
       customPaymentHeadId,
       customPaymentHeadName,
-      note
+      note,
+      holderToSave
     );
 
     // reset state
@@ -188,11 +197,18 @@ export default function AddMoney({ onSave, saving }: Props) {
     setIsFreezed(false);
     setSelectedBank('');
     setSelectedCustomPaymentHead('');
+    setSelectedHolder('Unassigned');
+    setNewHolderName('');
     setNote('');
   };
 
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
+
+  const bankName = banks.find((b) => b.id === selectedBank)?.name;
+  const customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+  const sourceKey = getSourceKey(newMode, bankName, customPaymentHeadName);
+  const existingHolders = snapshot?.heldBy?.[sourceKey] || [];
 
   return (
     <>
@@ -276,7 +292,10 @@ export default function AddMoney({ onSave, saving }: Props) {
               <InputLabel>Source Type</InputLabel>
               <Select
                 value={newMode}
-                onChange={(e) => setNewMode(e.target.value as TransactionSource)}
+                onChange={(e) => {
+                  setNewMode(e.target.value as TransactionSource);
+                  setSelectedHolder('Unassigned');
+                }}
                 label="Source Type"
                 startAdornment={<PaymentsIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
               >
@@ -295,7 +314,10 @@ export default function AddMoney({ onSave, saving }: Props) {
                   <InputLabel>Select Bank</InputLabel>
                   <Select
                     value={selectedBank}
-                    onChange={(e) => setSelectedBank(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedBank(e.target.value);
+                      setSelectedHolder('Unassigned');
+                    }}
                     label="Select Bank"
                     startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
                   >
@@ -348,7 +370,10 @@ export default function AddMoney({ onSave, saving }: Props) {
                   <InputLabel>Select Payment Head</InputLabel>
                   <Select
                     value={selectedCustomPaymentHead}
-                    onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedCustomPaymentHead(e.target.value);
+                      setSelectedHolder('Unassigned');
+                    }}
                     label="Select Payment Head"
                     startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
                   >
@@ -395,6 +420,44 @@ export default function AddMoney({ onSave, saving }: Props) {
               </Stack>
             )}
 
+            {/* Holder Selection (optional) if not freezing */}
+            {!isFreezed && (
+              <Box sx={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`, borderRadius: 2, p: 2 }}>
+                <Typography variant="caption" fontWeight="800" color="primary" sx={{ mb: 1.5, display: 'block' }}>
+                  HOLDER ASSIGNMENT (OPTIONAL)
+                </Typography>
+                <Stack spacing={2}>
+                  <FormControl fullWidth>
+                    <InputLabel>Select Holder</InputLabel>
+                    <Select
+                      value={selectedHolder}
+                      onChange={(e) => setSelectedHolder(e.target.value)}
+                      label="Select Holder"
+                    >
+                      <MenuItem value="Unassigned">Unassigned / Self</MenuItem>
+                      {existingHolders.map((h) => (
+                        <MenuItem key={h.holderName} value={h.holderName}>
+                          {h.holderName}
+                        </MenuItem>
+                      ))}
+                      <MenuItem value="new"><em>-- Create New Holder --</em></MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  {selectedHolder === 'new' && (
+                    <TextField
+                      fullWidth
+                      label="New Holder Name"
+                      value={newHolderName}
+                      onChange={(e) => setNewHolderName(e.target.value)}
+                      placeholder="e.g. Ali, Mother, etc."
+                      size="small"
+                    />
+                  )}
+                </Stack>
+              </Box>
+            )}
+
             <Box
               sx={{
                 p: 1.5,
@@ -419,6 +482,7 @@ export default function AddMoney({ onSave, saving }: Props) {
                     setNewMode('in_hand');
                     setSelectedBank('');
                     setSelectedCustomPaymentHead('');
+                    setSelectedHolder('Unassigned');
                   }
                 }}
               />
@@ -449,6 +513,7 @@ export default function AddMoney({ onSave, saving }: Props) {
               saving ||
               (!isFreezed && newMode === 'bank' && !selectedBank) ||
               (!isFreezed && newMode === 'custom' && !selectedCustomPaymentHead) ||
+              (selectedHolder === 'new' && !newHolderName.trim()) ||
               !newAmount || newAmount <= 0
             }
             sx={{

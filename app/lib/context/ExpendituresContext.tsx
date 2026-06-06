@@ -29,7 +29,8 @@ interface ExpendituresContextType {
     expenditure: Expenditure,
     updateMainFund: boolean,
     fundSource?: TransactionSource,
-    bankId?: string
+    bankId?: string,
+    holderName?: string
   ) => Promise<void>;
   rescheduleExpenditure: (
     expenditureId: string,
@@ -168,11 +169,22 @@ export const ExpendituresProvider = ({
     };
   }, [userId]);
 
+  const getSourceKey = (
+    source: string,
+    bankName?: string | null,
+    customPaymentHeadName?: string | null
+  ): string => {
+    if (source === 'bank' && bankName) return `bank:${bankName}`;
+    if (source === 'custom' && customPaymentHeadName) return `custom:${customPaymentHeadName}`;
+    return source;
+  };
+
   const markAsPaid = async (
     expenditure: Expenditure,
     updateMainFund: boolean,
     fundSource: TransactionSource = 'in_hand',
-    bankId?: string
+    bankId?: string,
+    holderName?: string
   ) => {
     if (!expenditure.id) return;
 
@@ -211,6 +223,7 @@ export const ExpendituresProvider = ({
           note: `Expense paid: ${expenditure.title}`,
           bankId: bankId || null,
           BankName: bankName || null,
+          holderName: holderName || null,
           createdAt: serverTimestamp(),
         });
 
@@ -220,6 +233,7 @@ export const ExpendituresProvider = ({
         if (docSnap.exists()) {
           const data = docSnap.data() as TotalCashSnapshot;
           const updatedSources = { ...data.sources };
+          const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
 
           if (fundSource === 'bank' && bankName) {
             updatedSources.bank = updatedSources.bank || {};
@@ -240,9 +254,24 @@ export const ExpendituresProvider = ({
             }
           }
 
+          // Deduct from holder
+          if (holderName && holderName !== 'Unassigned' && holderName !== 'Self') {
+            const key = getSourceKey(fundSource, bankName);
+            const holders = [...(updatedHeldBy[key] || [])];
+            const idx = holders.findIndex((h) => h.holderName === holderName);
+            if (idx > -1) {
+              holders[idx] = {
+                ...holders[idx],
+                amount: Math.max(0, holders[idx].amount - expenditure.amount),
+              };
+              updatedHeldBy[key] = holders;
+            }
+          }
+
           await setDoc(docRef, {
             ...data,
             sources: updatedSources,
+            heldBy: updatedHeldBy,
             totalAmount: (data.totalAmount || 0) - expenditure.amount,
             updatedAt: serverTimestamp(),
           });

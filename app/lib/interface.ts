@@ -135,6 +135,8 @@ export interface Todo {
     changes: string[];
     by: string;
   }[];
+  // Linking to goals
+  linkedGoalId?: string;
 }
 
 export interface JournalEntry {
@@ -255,6 +257,11 @@ export interface BudgetSettings {
 
 // Import the shared type if it's defined elsewhere
 
+export interface HolderAmount {
+  holderName: string;
+  amount: number;
+}
+
 export interface TotalCashSnapshot {
   id?: string;
   userId: string;
@@ -268,6 +275,8 @@ export interface TotalCashSnapshot {
     bank: { [bankName: string]: number }; // 👈 nested object for banks
     custom: { [customName: string]: number }; // 👈 nested object for custom payment heads
   };
+
+  heldBy?: { [sourceKey: string]: HolderAmount[] }; // 👈 holder balances map
 
   totalAmount: number;
   freezeAmount: number;
@@ -299,7 +308,9 @@ export type TransactionType =
   | 'deduct'
   | 'freeze_transfer'
   | 'borrow'
-  | 'lend';
+  | 'lend'
+  | 'transfer'; // 👈 added transfer type
+
 export type TransactionSource =
   | 'in_hand'
   | 'bank'
@@ -307,6 +318,7 @@ export type TransactionSource =
   | 'jazzcash'
   | 'other'
   | 'custom';
+
 export type TransactionCategory =
   | 'income'
   | 'expenditure'
@@ -328,6 +340,9 @@ export interface CashTransaction {
   BankName?: string;
   customPaymentHeadId?: string;
   customPaymentHeadName?: string;
+  holderName?: string | null; // 👈 holder details for tracking
+  fromHolderName?: string | null; // 👈 for transfers between holders
+  toHolderName?: string | null; // 👈 for transfers between holders
   createdAt: Date | Timestamp;
 }
 export interface LoanRecord {
@@ -643,20 +658,20 @@ export interface InitialOnBoarding {
   profession?: OnBoardingField<string>;
   professionType?: OnBoardingField<'job' | 'business'>;
   ageGroup?: OnBoardingField<string>;
-  currency?: OnBoardingField<string>; 
+  currency?: OnBoardingField<string>;
   country?: OnBoardingField<string>;
   city?: OnBoardingField<string>;
-  goals?: OnBoardingField<string[]>; 
+  goals?: OnBoardingField<string[]>;
   skills?: OnBoardingField<string[]>;
   hobby?: OnBoardingField<string>;
   education?: OnBoardingField<string>;
   currentLevel?: OnBoardingField<'entry' | 'intermediate' | 'pro'>;
-  topPriorities?: OnBoardingField<string[]>; 
+  topPriorities?: OnBoardingField<string[]>;
   shoppingHabits?: OnBoardingField<'weekly' | 'monthly' | 'as-needed'>;
   incomeType?: OnBoardingField<'monthly' | 'weekly' | 'irregular'>;
-  startOfMonth?: OnBoardingField<number>; 
+  startOfMonth?: OnBoardingField<number>;
   startOfWeek?: OnBoardingField<number>;
-  
+
   // AI Behavior
   aiTone?: OnBoardingField<'Formal' | 'Friendly' | 'Strict Coach'>;
   autoImprove?: OnBoardingField<boolean>;
@@ -799,16 +814,55 @@ export interface ShoppingListItem {
 
 // Goals Feature — Simplified Version
 
+export enum GoalStepStatus {
+  NOT_STARTED = 'not_started',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  SKIPPED = 'skipped',
+  BLOCKED = 'blocked',
+  DEFERRED = 'deferred',
+}
+
+export interface StepCheckIn {
+  id: string;
+  date: Date | Timestamp;
+  value?: number;
+  note?: string;
+  mood?: 'great' | 'okay' | 'tough';
+  evidenceUrls?: string[];
+}
+
+export interface StepCompletionRecord {
+  completedAt: Date | Timestamp;
+  finalValue?: number;
+  finalNote?: string;
+  totalCheckIns?: number;
+  durationDays?: number;
+}
+
 export interface GoalStep {
   id: string;
   title: string;
   description?: string;
+  order: number;
+  status: GoalStepStatus;
   targetValue?: number;
-  completed: boolean;
-  skipped?: boolean;
   actualValue?: number;
+  unit?: string;
   startDate?: Date | Timestamp;
   endDate: Date | Timestamp;
+  weight?: number;
+  effortEstimate?: number;
+  dependsOn?: string[];
+  recurrence?: {
+    type: 'daily' | 'weekly' | 'monthly' | 'none';
+    interval?: number;
+    recurrenceEndDate?: Date | Timestamp;
+  };
+  checkIns?: StepCheckIn[];
+  linkedTodoIds?: string[];
+  completionRecord?: StepCompletionRecord;
+  closed?: boolean;
 }
 
 export type GoalType =
@@ -864,7 +918,7 @@ export interface Goal {
 
   notes?: string;
   tags?: string[];
-  
+
   // Legacy / AI fields
   deadline?: string;
   targetDate?: string;
@@ -872,10 +926,21 @@ export interface Goal {
   authorName?: string;
 }
 
-export type ProjectType = "general" | "learning" | "freelance" | "health" | "personal";
-export type ProjectStatus = "active" | "planning" | "completed" | "on-hold";
+export type ProjectType =
+  | 'general'
+  | 'learning'
+  | 'freelance'
+  | 'health'
+  | 'personal';
+export type ProjectStatus = 'active' | 'planning' | 'completed' | 'on-hold';
 
-export type PointType = 'string' | 'todo' | 'schedule' | 'goal' | 'keyvalue' | 'streak';
+export type PointType =
+  | 'string'
+  | 'todo'
+  | 'schedule'
+  | 'goal'
+  | 'keyvalue'
+  | 'streak';
 
 export interface Point {
   id: string;

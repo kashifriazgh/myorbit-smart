@@ -1,6 +1,16 @@
-import { initializeApp, getApps, FirebaseApp, FirebaseOptions } from 'firebase/app';
+import {
+  initializeApp,
+  getApps,
+  FirebaseApp,
+  FirebaseOptions,
+} from 'firebase/app';
 import { getDatabase, ref, set, Database } from 'firebase/database';
-import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
+import {
+  getMessaging,
+  getToken,
+  onMessage,
+  Messaging,
+} from 'firebase/messaging';
 
 let sharedApp: FirebaseApp | null = null;
 let sharedDb: Database | null = null;
@@ -15,16 +25,18 @@ let foregroundHandlerSetup = false;
  */
 export async function getSharedFirebaseConfig(): Promise<SharedFirebaseConfig> {
   if (sharedConfig) return sharedConfig;
-  
+
   sharedConfig = {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDZFNapAjmnS0TZIM1lK8wNA4PDgedVnRo",
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "forms-389a6.firebaseapp.com",
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "forms-389a6",
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "forms-389a6.firebasestorage.app",
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "721032079467",
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:721032079467:web:b525c93448811b8bf4292e",
-    databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app",
-    vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || "BH-Py3hgXNTO92ksco5vUvezLLth_VbVhS_eSUt4PzUtfJrHTbB4PMfnm6QS15N-oDCSukq_sSKcrTVNklQfacs"
+    apiKey: 'AIzaSyDZFNapAjmnS0TZIM1l8wNA4PDgedVnRo',
+    authDomain: 'forms-389a6.firebaseapp.com',
+    projectId: 'forms-389a6',
+    storageBucket: 'forms-389a6.firebasestorage.app',
+    messagingSenderId: '721032079467',
+    appId: '1:721032079467:web:b525c93448811b8bf4292e',
+    databaseURL:
+      'https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app',
+    vapidKey:
+      'BH-Py3hgXNTO92ksco5vUvezLLth_VbVhS_eSUt4PzUtfJrHTbB4PMfnm6QS15N-oDCSukq_sSKcrTVNklQfacs',
   };
   return sharedConfig;
 }
@@ -38,8 +50,8 @@ export async function getSharedApp(): Promise<FirebaseApp> {
   const config = await getSharedFirebaseConfig();
   const appName = 'rtdb-fcm-app';
   const apps = getApps();
-  const existingApp = apps.find(a => a.name === appName);
-  
+  const existingApp = apps.find((a) => a.name === appName);
+
   sharedApp = existingApp || initializeApp(config, appName);
   return sharedApp;
 }
@@ -49,7 +61,7 @@ export async function getSharedApp(): Promise<FirebaseApp> {
  */
 export async function getSharedDatabase(): Promise<Database> {
   if (sharedDb) return sharedDb;
-  
+
   const app = await getSharedApp();
   sharedDb = getDatabase(app);
   return sharedDb;
@@ -60,13 +72,16 @@ export async function getSharedDatabase(): Promise<Database> {
  */
 export async function getSharedMessaging(): Promise<Messaging | null> {
   if (sharedMessaging) return sharedMessaging;
-  
+
   try {
     const app = await getSharedApp();
     sharedMessaging = getMessaging(app);
     return sharedMessaging;
   } catch (err) {
-    console.warn('Firebase Messaging is not supported in this browser context:', err);
+    console.warn(
+      'Firebase Messaging is not supported in this browser context:',
+      err,
+    );
     return null;
   }
 }
@@ -74,7 +89,10 @@ export async function getSharedMessaging(): Promise<Messaging | null> {
 /**
  * Requests browser permission for push notifications and registers the FCM token to RTDB.
  */
-export async function requestNotificationPermissionAndGetToken(clientId: string, userId: string): Promise<string | null> {
+export async function requestNotificationPermissionAndGetToken(
+  clientId: string,
+  userId: string,
+): Promise<string | null> {
   try {
     if (typeof window === 'undefined') return null;
 
@@ -90,7 +108,9 @@ export async function requestNotificationPermissionAndGetToken(clientId: string,
     const config = await getSharedFirebaseConfig();
 
     if (!messaging) {
-      throw new Error('Firebase Messaging is not supported or could not be initialized in this browser.');
+      throw new Error(
+        'Firebase Messaging is not supported or could not be initialized in this browser.',
+      );
     }
 
     const vapidKey = config.vapidKey;
@@ -100,35 +120,48 @@ export async function requestNotificationPermissionAndGetToken(clientId: string,
     let registration: ServiceWorkerRegistration | undefined;
     try {
       console.log('FCM: Registering service worker manually...');
-      registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js?v=' + Date.now(), {
-        scope: '/'
-      });
-      console.log('FCM: Service worker registered manually successfully:', registration);
+      registration = await navigator.serviceWorker.register(
+        '/firebase-messaging-sw.js?v=' + Date.now(),
+        {
+          scope: '/',
+        },
+      );
+      console.log(
+        'FCM: Service worker registered manually successfully:',
+        registration,
+      );
     } catch (swErr) {
       console.error('FCM: Manual service worker registration failed:', swErr);
-      throw new Error(`Service Worker registration failed: ${(swErr as Error).message}`);
+      throw new Error(
+        `Service Worker registration failed: ${(swErr as Error).message}`,
+      );
     }
 
-    const token = await getToken(messaging, { 
+    const token = await getToken(messaging, {
       vapidKey,
-      serviceWorkerRegistration: registration
+      serviceWorkerRegistration: registration,
     });
 
     if (token) {
       console.log('FCM: Token retrieved successfully:', token);
-      
+
       // Save FCM token to RTDB under fcm-tokens/${clientId}/${userId}
       const tokenRef = ref(database, `fcm-tokens/${clientId}/${userId}`);
       await set(tokenRef, {
         token: token,
         updatedAt: Date.now(),
-        device: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
+        device:
+          typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
       });
-      
-      console.log(`FCM: Saved token to RTDB under fcm-tokens/${clientId}/${userId}`);
+
+      console.log(
+        `FCM: Saved token to RTDB under fcm-tokens/${clientId}/${userId}`,
+      );
       return token;
     } else {
-      throw new Error('No registration token available. Request permission to generate one.');
+      throw new Error(
+        'No registration token available. Request permission to generate one.',
+      );
     }
   } catch (err) {
     console.error('FCM: Failed to get push token:', err);
@@ -174,7 +207,10 @@ export async function setupForegroundNotifications(): Promise<void> {
         console.log('FCM: Foreground notification shown via SW.');
       } catch (swErr) {
         // Fallback: use Notification API directly
-        console.warn('FCM: SW showNotification failed, falling back to Notification API:', swErr);
+        console.warn(
+          'FCM: SW showNotification failed, falling back to Notification API:',
+          swErr,
+        );
         if (Notification.permission === 'granted') {
           new Notification(title, options);
         }
@@ -184,6 +220,9 @@ export async function setupForegroundNotifications(): Promise<void> {
     foregroundHandlerSetup = true;
     console.log('FCM: Foreground notification handler registered.');
   } catch (err) {
-    console.error('FCM: Failed to set up foreground notification handler:', err);
+    console.error(
+      'FCM: Failed to set up foreground notification handler:',
+      err,
+    );
   }
 }

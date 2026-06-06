@@ -31,7 +31,6 @@ import { QuickNote } from '@/app/lib/interface';
 // import StreakDraftModal from '../streaks/StreakDraftModal';
 // import TimeTableDraftModal from '../time-table/TimeTableDraftModal';
 // import IdeaDraftModal from '../ideas/IdeaDraftModal';
-// import GoalDraftModal from '../goals/GoalDraftModal';
 
 import {
   detectMentionType,

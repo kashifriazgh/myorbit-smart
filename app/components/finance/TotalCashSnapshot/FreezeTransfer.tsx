@@ -17,7 +17,7 @@ import {
   Fade,
 } from '@mui/material';
 import { useState, useEffect } from 'react';
-import { TransactionSource, Bank, CustomPaymentHead } from '@/app/lib/interface';
+import { TransactionSource, Bank, CustomPaymentHead, TotalCashSnapshot } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
   collection,
@@ -35,6 +35,8 @@ import WalletIcon from '@mui/icons-material/Wallet';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import MoneyIcon from '@mui/icons-material/AttachMoney';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { getSourceKey } from '../TotalCashSnapshot';
+import { formatCurrency } from '@/app/lib/utilts';
 
 const SOURCE_OPTIONS: TransactionSource[] = [
   'bank',
@@ -53,17 +55,21 @@ interface Props {
     bankName?: string,
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
-    note?: string
+    note?: string,
+    fromHolderName?: string
   ) => Promise<void>;
   saving: boolean;
+  snapshot: TotalCashSnapshot;
 }
 
-export default function FreezeTransfer({ onFreeze, saving }: Props) {
+export default function FreezeTransfer({ onFreeze, saving, snapshot }: Props) {
   const { user } = useAuth();
   const [showFreezeModal, setShowFreezeModal] = useState(false);
   const [freezeAmount, setFreezeAmount] = useState<number | ''>('');
   const [freezeFrom, setFreezeFrom] = useState<TransactionSource>('in_hand');
   const [note, setNote] = useState('');
+
+  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
 
   // bank-specific state
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -102,6 +108,11 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
     };
     fetchCustomPaymentHeads();
   }, [user]);
+
+  // Reset selected holder when source/bank/custom changes
+  useEffect(() => {
+    setSelectedHolder('Unassigned');
+  }, [freezeFrom, selectedBank, selectedCustomPaymentHead]);
 
   const handleAddBank = async () => {
     if (!user || !newBankName.trim()) return;
@@ -152,6 +163,8 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
         ? customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
         : undefined;
 
+    const holderToSave = selectedHolder === 'Unassigned' ? undefined : selectedHolder;
+
     await onFreeze(
       Number(freezeAmount),
       freezeFrom,
@@ -159,7 +172,8 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
       bank?.name,
       customPaymentHead?.id,
       customPaymentHead?.name,
-      note
+      note,
+      holderToSave
     );
 
     setShowFreezeModal(false);
@@ -167,8 +181,42 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
     setFreezeFrom('in_hand');
     setSelectedBank('');
     setSelectedCustomPaymentHead('');
+    setSelectedHolder('Unassigned');
     setNote('');
   };
+
+  // Balance calculation
+  let balance = 0;
+  if (freezeFrom === 'bank' && selectedBank) {
+    const selectedBankName = banks.find((b) => b.id === selectedBank)?.name;
+    balance = selectedBankName
+      ? snapshot.sources.bank?.[selectedBankName] ?? 0
+      : 0;
+  } else if (freezeFrom === 'custom' && selectedCustomPaymentHead) {
+    const selectedCustomPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+    balance = selectedCustomPaymentHeadName
+      ? snapshot.sources.custom?.[selectedCustomPaymentHeadName] ?? 0
+      : 0;
+  } else if (freezeFrom !== 'bank' && freezeFrom !== 'custom') {
+    balance = (snapshot.sources[freezeFrom] as number) ?? 0;
+  }
+
+  const bankName = banks.find((b) => b.id === selectedBank)?.name;
+  const customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+  const sourceKey = getSourceKey(freezeFrom, bankName, customPaymentHeadName);
+  const existingHolders = snapshot.heldBy?.[sourceKey] || [];
+  const hasHolders = existingHolders.length > 0;
+
+  let activeBalance = balance;
+  if (hasHolders) {
+    const holdersSum = existingHolders.reduce((s, h) => s + h.amount, 0);
+    const unassignedAmt = balance - holdersSum;
+    if (selectedHolder === 'Unassigned') {
+      activeBalance = unassignedAmt;
+    } else {
+      activeBalance = existingHolders.find((h) => h.holderName === selectedHolder)?.amount ?? 0;
+    }
+  }
 
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
@@ -258,6 +306,8 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
                 startAdornment: <MoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
               }}
               placeholder="0.00"
+              error={freezeAmount !== '' && Number(freezeAmount) > activeBalance}
+              helperText={freezeAmount !== '' && Number(freezeAmount) > activeBalance ? `Insufficient funds (Available: ${activeBalance})` : ""}
             />
 
             <FormControl fullWidth>
@@ -392,6 +442,27 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
               </Stack>
             )}
 
+            {/* Holder select dropdown if holders exist */}
+            {hasHolders && (
+              <FormControl fullWidth>
+                <InputLabel>Select Holder</InputLabel>
+                <Select
+                  value={selectedHolder}
+                  onChange={(e) => setSelectedHolder(e.target.value)}
+                  label="Select Holder"
+                >
+                  <MenuItem value="Unassigned">
+                    Unassigned / Self ({formatCurrency(balance - existingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})
+                  </MenuItem>
+                  {existingHolders.map((h) => (
+                    <MenuItem key={h.holderName} value={h.holderName}>
+                      {h.holderName} ({formatCurrency(h.amount, 'PKR')})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
             <TextField
               fullWidth
               label="Note / Reference"
@@ -417,7 +488,8 @@ export default function FreezeTransfer({ onFreeze, saving }: Props) {
               saving ||
               (freezeFrom === 'bank' && !selectedBank) ||
               (freezeFrom === 'custom' && !selectedCustomPaymentHead) ||
-              !freezeAmount || freezeAmount <= 0
+              !freezeAmount || freezeAmount <= 0 ||
+              Number(freezeAmount) > activeBalance
             }
             sx={{ 
               borderRadius: 2, 

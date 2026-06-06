@@ -56,6 +56,7 @@ import WarningIcon from '@mui/icons-material/WarningAmber';
 import Link from 'next/link';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';
+import { getSourceKey } from '../TotalCashSnapshot';
 
 const SOURCE_OPTIONS: TransactionSource[] = [
   'bank',
@@ -75,12 +76,14 @@ interface Props {
     bankName?: string,
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
-    note?: string
+    note?: string,
+    holderName?: string
   ) => Promise<void>;
   onSuccess?: () => void;
+  snapshot: TotalCashSnapshot;
 }
 
-export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
+export default function LoanDialog({ onAddMoney, onSuccess, snapshot }: Props) {
   const { user } = useAuth();
   const { theme: customTheme } = useCustomTheme();
   const isDark = customTheme?.mode === 'dark';
@@ -100,6 +103,10 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
   const [customPaymentHeads, setCustomPaymentHeads] = useState<
     CustomPaymentHead[]
   >([]);
+
+  // Holder state
+  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
+  const [newHolderName, setNewHolderName] = useState('');
 
   // error, loading
   const [error, setError] = useState('');
@@ -140,11 +147,16 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
     fetchCustom();
   }, [user]);
 
-  // reset error when inputs change
+  // reset error and holder when inputs change
   useEffect(() => {
     setError('');
     setInsufficientFunds(false);
   }, [amount, source, selectedBank, selectedCustomPaymentHead, loanType]);
+
+  useEffect(() => {
+    setSelectedHolder('Unassigned');
+    setNewHolderName('');
+  }, [source, selectedBank, selectedCustomPaymentHead]);
 
   const handleQuickAdd = async () => {
     if (!onAddMoney || !amount || amount <= 0) return;
@@ -153,6 +165,8 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
       const bank = source === 'bank' ? banks.find(b => b.id === selectedBank) : undefined;
       const customHead = source === 'custom' ? customPaymentHeads.find(c => c.id === selectedCustomPaymentHead) : undefined;
       
+      const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
+
       await onAddMoney(
         Number(amount),
         source,
@@ -161,7 +175,8 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
         bank?.name,
         customHead?.id,
         customHead?.name,
-        `Quick top-up for loan to ${counterparty}`
+        `Quick top-up for loan to ${counterparty}`,
+        holderToSave
       );
       setInsufficientFunds(false);
       setError('');
@@ -216,7 +231,7 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
       // fetch snapshot
       const snapshotRef = doc(db, 'totalCashSnapshots', user.uid);
       const snapshotSnap = await getDoc(snapshotRef);
-      const snapshot: TotalCashSnapshot = snapshotSnap.exists()
+      const dbSnapshot: TotalCashSnapshot = snapshotSnap.exists()
         ? (snapshotSnap.data() as TotalCashSnapshot)
         : {
             userId: user.uid,
@@ -228,6 +243,7 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
               other: 0,
               custom: {},
             },
+            heldBy: {},
             totalAmount: 0,
             freezeAmount: 0,
             createdAt: new Date(),
@@ -235,27 +251,49 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
           };
 
       // normalize bank/custom objects
-      if (typeof snapshot.sources.bank === 'number')
-        snapshot.sources.bank = { Default: snapshot.sources.bank };
-      if (typeof snapshot.sources.custom === 'number')
-        snapshot.sources.custom = { Default: snapshot.sources.custom };
-      if (!snapshot.sources.custom) snapshot.sources.custom = {};
+      if (typeof dbSnapshot.sources.bank === 'number')
+        dbSnapshot.sources.bank = { Default: dbSnapshot.sources.bank };
+      if (typeof dbSnapshot.sources.custom === 'number')
+        dbSnapshot.sources.custom = { Default: dbSnapshot.sources.custom };
+      if (!dbSnapshot.sources.custom) dbSnapshot.sources.custom = {};
+      if (!dbSnapshot.heldBy) dbSnapshot.heldBy = {};
 
-      // check available balance
+      const key = getSourceKey(source, bank?.name, customName);
+      const existingHolders = dbSnapshot.heldBy[key] || [];
+
+      // check available balance if lending
       if (loanType === 'lend') {
         const available =
           source === 'bank' && bank?.name
-            ? (snapshot.sources.bank?.[bank.name] ?? 0)
+            ? (dbSnapshot.sources.bank?.[bank.name] ?? 0)
             : source === 'custom' && customName
-              ? (snapshot.sources.custom?.[customName] ?? 0)
-              : ((snapshot.sources[source] as number) ?? 0);
-        if (amount > available) {
-          setInsufficientFunds(true);
-          throw new Error(
-            `Insufficient balance in ${source}${
-              bank?.name ? ` (${bank.name})` : ''
-            }`,
-          );
+              ? (dbSnapshot.sources.custom?.[customName] ?? 0)
+              : ((dbSnapshot.sources[source] as number) ?? 0);
+
+        if (existingHolders.length > 0) {
+          const holdersSum = existingHolders.reduce((s, h) => s + h.amount, 0);
+          const unassignedAmt = available - holdersSum;
+          if (selectedHolder === 'Unassigned') {
+            if (amount > unassignedAmt) {
+              setInsufficientFunds(true);
+              throw new Error(`Insufficient unassigned balance in ${source.replace('_', ' ')}`);
+            }
+          } else {
+            const holderAmt = existingHolders.find(h => h.holderName === selectedHolder)?.amount || 0;
+            if (amount > holderAmt) {
+              setInsufficientFunds(true);
+              throw new Error(`Insufficient balance for holder: ${selectedHolder}`);
+            }
+          }
+        } else {
+          if (amount > available) {
+            setInsufficientFunds(true);
+            throw new Error(
+              `Insufficient balance in ${source}${
+                bank?.name ? ` (${bank.name})` : ''
+              }`,
+            );
+          }
         }
       }
 
@@ -264,6 +302,9 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
         ...record,
         createdAt: serverTimestamp(),
       });
+
+      const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
+
       // create transaction
       await addDoc(collection(db, 'cashTransactions'), {
         userId: user.uid,
@@ -274,6 +315,7 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
         note: note.trim() || `Loan ${loanType} - ${counterparty}`,
         referenceId: loanRef.id,
         createdAt: serverTimestamp(),
+        holderName: holderToSave || null,
         ...(bank?.id ? { bankId: bank.id } : {}),
         ...(bank?.name ? { bankName: bank.name } : {}),
         ...(source === 'custom' && selectedCustomPaymentHead
@@ -288,7 +330,9 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
       });
 
       // update snapshot
-      const updatedSources = { ...snapshot.sources };
+      const updatedSources = { ...dbSnapshot.sources };
+      const updatedHeldBy = { ...dbSnapshot.heldBy };
+
       if (loanType === 'lend') {
         if (source === 'bank' && bank?.name) {
           updatedSources.bank[bank.name] -= amount;
@@ -303,10 +347,21 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
         } else {
           (updatedSources[source] as number) -= amount;
         }
-        snapshot.totalAmount -= amount;
+        dbSnapshot.totalAmount -= amount;
+
+        // Deduct from holder
+        if (holderToSave && holderToSave !== 'Unassigned' && holderToSave !== 'Self') {
+          const holders = [...(updatedHeldBy[key] || [])];
+          const idx = holders.findIndex((h) => h.holderName === holderToSave);
+          if (idx > -1) {
+            holders[idx] = { ...holders[idx], amount: Math.max(0, holders[idx].amount - amount) };
+            updatedHeldBy[key] = holders;
+          }
+        }
       } else {
+        // borrowing
         if (source === 'bank' && bank?.name) {
-          updatedSources.bank[bank.name] += amount;
+          updatedSources.bank[bank.name] = (updatedSources.bank[bank.name] ?? 0) + amount;
         } else if (source === 'custom' && selectedCustomPaymentHead) {
           const customName =
             customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
@@ -318,11 +373,25 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
         } else {
           (updatedSources[source] as number) += amount;
         }
-        snapshot.totalAmount += amount;
+        dbSnapshot.totalAmount += amount;
+
+        // Add to holder
+        if (holderToSave && holderToSave !== 'Unassigned' && holderToSave !== 'Self') {
+          const holders = [...(updatedHeldBy[key] || [])];
+          const idx = holders.findIndex((h) => h.holderName === holderToSave);
+          if (idx > -1) {
+            holders[idx] = { ...holders[idx], amount: holders[idx].amount + amount };
+          } else {
+            holders.push({ holderName: holderToSave, amount });
+          }
+          updatedHeldBy[key] = holders;
+        }
       }
+
       await updateDoc(snapshotRef, {
         sources: updatedSources,
-        totalAmount: snapshot.totalAmount,
+        heldBy: updatedHeldBy,
+        totalAmount: dbSnapshot.totalAmount,
         updatedAt: serverTimestamp(),
       });
 
@@ -334,6 +403,8 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
       setSelectedBank('');
       setLoanType('borrow');
       setNote('');
+      setSelectedHolder('Unassigned');
+      setNewHolderName('');
       setShowModal(false);
       if (onSuccess) onSuccess();
     } catch (err) {
@@ -354,6 +425,24 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
     }
     return source.replace('_', ' ');
   };
+
+  // Balance calculation for rendering
+  let available = 0;
+  if (source === 'bank' && selectedBank) {
+    const bName = banks.find((b) => b.id === selectedBank)?.name;
+    available = bName ? snapshot.sources.bank?.[bName] ?? 0 : 0;
+  } else if (source === 'custom' && selectedCustomPaymentHead) {
+    const cName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+    available = cName ? snapshot.sources.custom?.[cName] ?? 0 : 0;
+  } else if (source !== 'bank' && source !== 'custom') {
+    available = (snapshot.sources[source] as number) ?? 0;
+  }
+
+  const bankName = banks.find((b) => b.id === selectedBank)?.name;
+  const customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+  const sourceKey = getSourceKey(source, bankName, customPaymentHeadName);
+  const existingHolders = snapshot.heldBy?.[sourceKey] || [];
+  const hasHolders = existingHolders.length > 0;
 
   return (
     <>
@@ -471,7 +560,10 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
               <InputLabel>Loan Type</InputLabel>
               <Select
                 value={loanType}
-                onChange={(e) => setLoanType(e.target.value as 'borrow' | 'lend')}
+                onChange={(e) => {
+                  setLoanType(e.target.value as 'borrow' | 'lend');
+                  setSelectedHolder('Unassigned');
+                }}
                 label="Loan Type"
                 startAdornment={<SwapIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
               >
@@ -512,6 +604,7 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
                   setSource(val);
                   setSelectedBank('');
                   setSelectedCustomPaymentHead('');
+                  setSelectedHolder('Unassigned');
                 }}
                 label="Cash Source"
                 startAdornment={<PaymentsIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
@@ -529,7 +622,10 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
                 <InputLabel>Select Bank</InputLabel>
                 <Select
                   value={selectedBank}
-                  onChange={(e) => setSelectedBank(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedBank(e.target.value);
+                    setSelectedHolder('Unassigned');
+                  }}
                   label="Select Bank"
                   startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
                 >
@@ -547,7 +643,10 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
                 <InputLabel>Select Payment Head</InputLabel>
                 <Select
                   value={selectedCustomPaymentHead}
-                  onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedCustomPaymentHead(e.target.value);
+                    setSelectedHolder('Unassigned');
+                  }}
                   label="Select Payment Head"
                   startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
                 >
@@ -558,6 +657,49 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
                   ))}
                 </Select>
               </FormControl>
+            )}
+
+            {/* Holder Selection (optional for borrow, required if hasHolders for lend) */}
+            {(loanType === 'borrow' || (loanType === 'lend' && hasHolders)) && (
+              <Box sx={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`, borderRadius: 2, p: 2 }}>
+                <Typography variant="caption" fontWeight="800" color="primary" sx={{ mb: 1.5, display: 'block' }}>
+                  {loanType === 'borrow' ? 'ASSIGN TO HOLDER (OPTIONAL)' : 'SELECT LENDING HOLDER'}
+                </Typography>
+                <Stack spacing={2}>
+                  <FormControl fullWidth>
+                    <InputLabel>Select Holder</InputLabel>
+                    <Select
+                      value={selectedHolder}
+                      onChange={(e) => setSelectedHolder(e.target.value)}
+                      label="Select Holder"
+                    >
+                      <MenuItem value="Unassigned">
+                        Unassigned / Self 
+                        {loanType === 'lend' && ` (${formatCurrency(available - existingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})`}
+                      </MenuItem>
+                      {existingHolders.map((h) => (
+                        <MenuItem key={h.holderName} value={h.holderName}>
+                          {h.holderName} {loanType === 'lend' && `(${formatCurrency(h.amount, 'PKR')})`}
+                        </MenuItem>
+                      ))}
+                      {loanType === 'borrow' && (
+                        <MenuItem value="new"><em>-- Create New Holder --</em></MenuItem>
+                      )}
+                    </Select>
+                  </FormControl>
+
+                  {loanType === 'borrow' && selectedHolder === 'new' && (
+                    <TextField
+                      fullWidth
+                      label="New Holder Name"
+                      value={newHolderName}
+                      onChange={(e) => setNewHolderName(e.target.value)}
+                      placeholder="e.g. Ali, Mother, etc."
+                      size="small"
+                    />
+                  )}
+                </Stack>
+              </Box>
             )}
 
             <TextField
@@ -628,6 +770,7 @@ export default function LoanDialog({ onAddMoney, onSuccess }: Props) {
               quickAddLoading ||
               (source === 'bank' && !selectedBank) ||
               (source === 'custom' && !selectedCustomPaymentHead) ||
+              (selectedHolder === 'new' && !newHolderName.trim()) ||
               !amount || !counterparty.trim() || !dueDate
             }
             sx={{
