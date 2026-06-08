@@ -268,7 +268,7 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
 
   // ── submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!formData.title.trim() || !formData.dueDate) return;
+    if (!formData.title.trim()) return;
     setLoading(true);
     try {
       const nowTs = new Date();
@@ -277,7 +277,7 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
         description:        formData.description || undefined,
         type:               formData.type,
         priority:           formData.priority,
-        dueDate:            Timestamp.fromDate(new Date(formData.dueDate)),
+        dueDate:            formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : undefined,
         overallTargetValue: typeof formData.overallTargetValue === 'number' ? formData.overallTargetValue : undefined,
         overallTargetUnit:  formData.overallTargetUnit || undefined,
         pinned:             formData.pinned,
@@ -307,7 +307,7 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
     }
   };
 
-  const canSubmit = formData.title.trim() && formData.dueDate;
+  const canSubmit = !!formData.title.trim();
 
   // ── sx helpers ──────────────────────────────────────────────────────────────
 
@@ -478,7 +478,7 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
             {/* ── Due date ── */}
             <Box>
               <Typography className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">
-                📅 Target Date <span className="text-red-500">*</span>
+                📅 Target Date
               </Typography>
               <DatePicker
                 value={formData.dueDate}

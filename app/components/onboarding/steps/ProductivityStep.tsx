@@ -17,7 +17,7 @@ const WORK_STYLES = ['Deep Work', 'Multi Tasking', 'Single Task at Time', 'Flexi
 const SOCIAL_PREFERENCES = ['Daily', 'Weekly', 'Rare'];
 const PEAK_HOUR_OPTIONS = ['Morning', 'After Noon', 'Evening', 'Night'];
 
-import { OnboardingData, OnboardingFieldValue } from '../InitialOnboarding';
+import { OnboardingData, OnboardingFieldValue } from '@/app/lib/interface';
 
 interface Props {
   value: OnboardingData;

@@ -29,7 +29,7 @@ const BUSINESS_OPTIONS = [
   'Manufacturer', 'Freelancer', 'Other'
 ];
 
-import { OnboardingData, OnboardingFieldValue } from '../InitialOnboarding';
+import { OnboardingData, OnboardingFieldValue } from '@/app/lib/interface';
 
 interface Props {
   value: OnboardingData;

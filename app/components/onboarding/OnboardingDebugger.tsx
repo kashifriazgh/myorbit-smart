@@ -24,7 +24,8 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useAuth } from '@/app/lib/context/userContext';
 import { db } from '@/app/lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-import InitialOnboarding, { OnboardingData } from './InitialOnboarding';
+import InitialOnboarding from './InitialOnboarding';
+import { OnboardingData } from '@/app/lib/interface';
 
 const GROUPS = [
   { id: 0, title: 'Name (Step 1)', fields: ['firstName', 'lastName'] },

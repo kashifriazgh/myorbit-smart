@@ -14,6 +14,8 @@ import {
   FormGroup,
   FormControlLabel,
   CircularProgress,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -48,6 +50,7 @@ export default function AIEnhanceModal({
   const [loading, setLoading] = useState(false);
   const { theme } = useCustomTheme();
   const [aiSource, setAiSource] = useState<'enhance' | 'suggest' | null>(null);
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'groq'>('gemini');
 
   useEffect(() => {
     if (!open) {
@@ -64,6 +67,11 @@ export default function AIEnhanceModal({
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
   };
+
+  const getApiEndpoint = () =>
+    aiProvider === 'groq'
+      ? '/api/ideas/improve-with-groq'
+      : '/api/ideas/improve-idea';
 
   const handleEnhance = async () => {
     if (selectedOptions.length === 0) return;
@@ -86,7 +94,7 @@ Return only the improved version. No explanation needed.
 
     setLoading(true);
     try {
-      const response = await fetch('/api/ideas/improve-idea', {
+      const response = await fetch(getApiEndpoint(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -121,7 +129,7 @@ Keep it detailed but clear.
 
     setLoading(true);
     try {
-      const response = await fetch('/api/ideas/improve-idea', {
+      const response = await fetch(getApiEndpoint(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -169,6 +177,31 @@ Keep it detailed but clear.
           <Tab label="Enhance" />
           {enableSuggestion && <Tab label="Suggestions" />}
         </Tabs>
+
+        {/* AI Provider Selector */}
+        <Box mt={2} display="flex" alignItems="center" gap={1}>
+          <Typography variant="caption" color="text.secondary">
+            AI Provider:
+          </Typography>
+          <ToggleButtonGroup
+            value={aiProvider}
+            exclusive
+            onChange={(_e, val) => {
+              if (val) {
+                setAiProvider(val);
+                setAiResult('');
+              }
+            }}
+            size="small"
+          >
+            <ToggleButton value="gemini" aria-label="Gemini">
+              ✨ Gemini
+            </ToggleButton>
+            <ToggleButton value="groq" aria-label="Groq">
+              ⚡ Groq
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
 
         <Box mt={2}>
           {tab === 0 && (

@@ -7,7 +7,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
-import { Goal, GoalStep, GoalStepStatus, StepCheckIn } from '../interface';
+import { Goal, GoalStep, GoalStepStatus, StepCheckIn, GoalTracker, TrackerCheckIn } from '../interface';
 import {
   collection,
   addDoc,
@@ -57,6 +57,9 @@ interface GoalsContextType {
   getGoalsByType: (type: Goal['type']) => Goal[];
   getGoalsByStatus: (status: Goal['status']) => Goal[];
   getOverdueGoals: () => Goal[];
+  saveGoalTracker: (goalId: string, tracker: GoalTracker) => Promise<void>;
+  addTrackerCheckIn: (goalId: string, checkIn: TrackerCheckIn) => Promise<void>;
+  removeGoalTracker: (goalId: string) => Promise<void>;
 }
 
 const GoalsContext = createContext<GoalsContextType | undefined>(undefined);
@@ -67,6 +70,65 @@ export const useGoals = () => {
     throw new Error('useGoals must be used within a GoalsProvider');
   }
   return context;
+};
+
+export const calculateGoalProgress = (goal: Goal): number => {
+  if (goal.progressMode === 'current_value') {
+    const start = goal.startValue ?? 0;
+    const target = goal.overallTargetValue ?? 0;
+    if (start === target) return 0;
+
+    let latestValue = start;
+
+    if (goal.trackerEnabled && goal.tracker) {
+      const completedCheckIns = [...goal.tracker.checkIns]
+        .filter((c) => c.completed && typeof c.value === 'number')
+        .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
+      if (completedCheckIns.length > 0) {
+        latestValue = completedCheckIns[completedCheckIns.length - 1].value!;
+      }
+    } else {
+      const completedSteps = [...(goal.steps || [])]
+        .filter((s) => s.status === GoalStepStatus.COMPLETED)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      if (completedSteps.length > 0) {
+        const latestStep = completedSteps[completedSteps.length - 1];
+        latestValue = latestStep.actualValue ?? latestStep.targetValue ?? start;
+      }
+    }
+
+    let pct = 0;
+    if (goal.direction === 'down') {
+      pct = Math.round(((start - latestValue) / (start - target)) * 100);
+    } else {
+      pct = Math.round(((latestValue - start) / (target - start)) * 100);
+    }
+    return Math.max(0, Math.min(100, pct));
+  } else {
+    // Cumulative or default mode
+    if (goal.trackerEnabled && goal.tracker) {
+      const hasUnit = !!goal.tracker.unit;
+      const doneCheckIns = goal.tracker.checkIns.filter((c) => c.completed);
+      const actualTotal = hasUnit
+        ? doneCheckIns.reduce((s, c) => s + (c.value ?? 0), 0)
+        : doneCheckIns.length;
+      const denominator = hasUnit ? goal.tracker.totalTarget : goal.tracker.totalCheckIns;
+      return denominator > 0 ? Math.min(100, Math.round((actualTotal / denominator) * 100)) : 0;
+    } else {
+      // Milestones cumulative: weighted progress
+      const steps = goal.steps || [];
+      const completedWeight = steps.reduce((acc, step) => {
+        return (
+          acc + (step.status === GoalStepStatus.COMPLETED ? (step.weight ?? 1) : 0)
+        );
+      }, 0);
+      const totalWeight = steps.reduce(
+        (acc, step) => acc + (step.weight ?? 1),
+        0,
+      );
+      return totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
+    }
+  }
 };
 
 export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
@@ -143,22 +205,6 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     return null;
   };
 
-  const calculateWeightedProgress = (steps: GoalStep[]) => {
-    const completedWeight = steps.reduce((acc, step) => {
-      return (
-        acc +
-        (step.status === GoalStepStatus.COMPLETED ? (step.weight ?? 1) : 0)
-      );
-    }, 0);
-    const totalWeight = steps.reduce(
-      (acc, step) => acc + (step.weight ?? 1),
-      0,
-    );
-    return totalWeight > 0
-      ? Math.round((completedWeight / totalWeight) * 100)
-      : 0;
-  };
-
   const addGoalStep = async (
     goalId: string,
     stepData: Partial<GoalStep>,
@@ -200,7 +246,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
       };
 
       const updatedSteps = [...(goal.steps || []), newStep];
-      const progress = calculateWeightedProgress(updatedSteps);
+      const progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
 
       await updateGoal(goalId, {
         steps: updatedSteps,
@@ -262,7 +308,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
               : step.actualValue,
         };
       });
-      const progress = calculateWeightedProgress(updatedSteps);
+      const progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
 
       await updateGoal(goalId, {
         steps: updatedSteps,
@@ -532,7 +578,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         return nextStep;
       });
 
-      const progress = calculateWeightedProgress(updatedSteps);
+      const progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
 
       await updateGoal(goalId, {
         steps: updatedSteps,
@@ -558,7 +604,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
       const updatedSteps = goal.steps.map((step) =>
         step.id !== stepId ? step : { ...step, ...updates },
       );
-      const progress = calculateWeightedProgress(updatedSteps);
+      const progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
 
       await updateGoal(goalId, {
         steps: updatedSteps,
@@ -581,7 +627,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
       if (!goal) throw new Error('Goal not found');
 
       const updatedSteps = goal.steps.filter((step) => step.id !== stepId);
-      const progress = calculateWeightedProgress(updatedSteps);
+      const progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
 
       await updateGoal(goalId, {
         steps: updatedSteps,
@@ -612,6 +658,47 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     });
   };
 
+  const saveGoalTracker = async (goalId: string, tracker: GoalTracker): Promise<void> => {
+    try {
+      await updateGoal(goalId, { trackerEnabled: true, tracker });
+    } catch (err) {
+      console.error('Error saving tracker:', err);
+      throw err;
+    }
+  };
+
+  const addTrackerCheckIn = async (goalId: string, updated: TrackerCheckIn): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === goalId);
+      if (!goal?.tracker) throw new Error('No tracker found');
+      const checkIns = goal.tracker.checkIns.map((c) =>
+        c.id === updated.id ? updated : c
+      );
+      const updatedGoal: Goal = {
+        ...goal,
+        tracker: { ...goal.tracker, checkIns },
+      };
+      const progress = calculateGoalProgress(updatedGoal);
+      await updateGoal(goalId, {
+        tracker: { ...goal.tracker, checkIns },
+        progress,
+        status: deriveStatusFromProgress(progress),
+      });
+    } catch (err) {
+      console.error('Error adding tracker check-in:', err);
+      throw err;
+    }
+  };
+
+  const removeGoalTracker = async (goalId: string): Promise<void> => {
+    try {
+      await updateGoal(goalId, { trackerEnabled: false, tracker: null });
+    } catch (err) {
+      console.error('Error removing tracker:', err);
+      throw err;
+    }
+  };
+
   const value: GoalsContextType = {
     goals,
     loading,
@@ -629,6 +716,9 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     getGoalsByType,
     getGoalsByStatus,
     getOverdueGoals,
+    saveGoalTracker,
+    addTrackerCheckIn,
+    removeGoalTracker,
   };
 
   return (

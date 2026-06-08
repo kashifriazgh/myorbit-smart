@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Dialog, 
-  DialogContent, 
-  Box, 
-  Button, 
-  Typography, 
-  Stack, 
-  IconButton, 
-  useTheme, 
+import {
+  Dialog,
+  DialogContent,
+  Box,
+  Button,
+  Typography,
+  Stack,
+  IconButton,
+  useTheme,
   useMediaQuery,
   CircularProgress,
   LinearProgress
@@ -34,63 +34,7 @@ import NotificationStep from './steps/NotificationStep';
 import AIBehaviorStep from './steps/AIBehaviorStep';
 import PlanningStep from './steps/PlanningStep';
 
-type OnBoardingField<T> = {
-  filled: boolean;
-  value: T;
-};
-
-export type OnboardingFieldValue = 
-  | string 
-  | number 
-  | boolean 
-  | string[] 
-  | number[]
-  | [number, number] 
-  | 'job' 
-  | 'business' 
-  | 'male' 
-  | 'female' 
-  | 'other' 
-  | 'Formal' 
-  | 'Friendly' 
-  | 'Strict Coach' 
-  | 'Allow' 
-  | 'Limited' 
-  | 'Off' 
-  | 'Strict' 
-  | 'Flexible'
-  | undefined;
-
-export type OnboardingData = {
-  firstName?: string;
-  lastName?: string;
-  country?: OnBoardingField<string>;
-  city?: OnBoardingField<string>;
-  professionType?: OnBoardingField<'job' | 'business'>;
-  profession?: OnBoardingField<string>;
-  skills?: OnBoardingField<string[]>;
-  hobby?: OnBoardingField<string>;
-  ageGroup?: OnBoardingField<string>;
-  gender?: OnBoardingField<'male' | 'female' | 'other'>;
-  education?: OnBoardingField<string>;
-  workStyle?: OnBoardingField<string>;
-  peakHours?: OnBoardingField<string[]>;
-  socialPreference?: OnBoardingField<string>;
-  preferredSocialTime?: OnBoardingField<string>;
-  socialHourRange?: OnBoardingField<[number, number]>;
-  reminderBefore?: OnBoardingField<number>;
-  maxNotifications?: OnBoardingField<number>;
-  quitHours?: OnBoardingField<[number, number]>;
-  aiTone?: OnBoardingField<'Formal' | 'Friendly' | 'Strict Coach'>;
-  autoImprove?: OnBoardingField<boolean>;
-  autoSuggest?: OnBoardingField<boolean>;
-  smartRescheduling?: OnBoardingField<boolean>;
-  weekStart?: OnBoardingField<number>;
-  monthStart?: OnBoardingField<number>;
-  activityTracking?: OnBoardingField<'Allow' | 'Limited' | 'Off'>;
-  deadlineType?: OnBoardingField<'Strict' | 'Flexible'>;
-  onBoardingFirstInteraction?: boolean;
-};
+import { OnboardingData } from '@/app/lib/interface';
 
 const GROUPS = [
   { id: 0, title: 'Name', component: NameStep },
@@ -125,8 +69,8 @@ const slideVariants = {
   })
 };
 
-export default function InitialOnboarding({ 
-  open: externalOpen, 
+export default function InitialOnboarding({
+  open: externalOpen,
   onClose: externalOnClose,
   startStep
 }: InitialOnboardingProps) {
@@ -162,10 +106,10 @@ export default function InitialOnboarding({
       const localData = localStorage.getItem(dataKey);
       const localCompleted = localStorage.getItem(completedKey);
       const localIdx = localStorage.getItem(idxKey);
-      
+
       let initialData: OnboardingData = localData ? JSON.parse(localData) : {};
       const initialCompleted: number[] = localCompleted ? JSON.parse(localCompleted) : [];
-      
+
       if (localIdx && startStep === undefined) setCurrentGroupIdx(parseInt(localIdx));
       setCompletedGroups(initialCompleted);
 
@@ -175,17 +119,17 @@ export default function InitialOnboarding({
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
           const userData = userSnap.data();
-          initialData = { 
-            ...initialData, 
-            firstName: userData.firstName || initialData.firstName, 
-            lastName: userData.lastName || initialData.lastName 
+          initialData = {
+            ...initialData,
+            firstName: userData.firstName || initialData.firstName,
+            lastName: userData.lastName || initialData.lastName
           };
         }
 
         const obRef = doc(db, 'initialOnboarding', user.uid);
         const obSnap = await getDoc(obRef);
         let fireData: OnboardingData | null = null;
-        
+
         if (obSnap.exists()) {
           fireData = obSnap.data() as OnboardingData;
           initialData = { ...initialData, ...fireData };
@@ -196,17 +140,17 @@ export default function InitialOnboarding({
           // Priority 1: Check localStorage first (explicitly check for 'true' vs 'false')
           const localInt = localStorage.getItem('onboarding_first_interaction');
           let hasInteracted = localInt === 'true';
-          
+
           // Priority 2: If not in local storage (null), check firebase data
           if (localInt === null) {
             hasInteracted = !!initialData.onBoardingFirstInteraction;
           }
-          
-          console.log('Onboarding Check:', { 
-            localInt, 
-            hasInteracted, 
+
+          console.log('Onboarding Check:', {
+            localInt,
+            hasInteracted,
             firstName: initialData.firstName,
-            onBoardingFirstInteraction: initialData.onBoardingFirstInteraction 
+            onBoardingFirstInteraction: initialData.onBoardingFirstInteraction
           });
 
           if (!initialData.firstName || !initialData.lastName) {
@@ -233,7 +177,7 @@ export default function InitialOnboarding({
             }
           }
         }
-        
+
         setOnboardingData(initialData);
       } catch (err) {
         console.error('Failed to fetch onboarding data', err);
@@ -262,13 +206,13 @@ export default function InitialOnboarding({
     try {
       const ref = doc(db, 'initialOnboarding', user.uid);
       await setDoc(ref, { ...data, userId: user.uid }, { merge: true });
-      
+
       // Also update 'users' collection if name changed
       if (data.firstName || data.lastName) {
         const userRef = doc(db, 'users', user.uid);
-        await setDoc(userRef, { 
-          firstName: data.firstName, 
-          lastName: data.lastName 
+        await setDoc(userRef, {
+          firstName: data.firstName,
+          lastName: data.lastName
         }, { merge: true });
       }
     } catch (err) {
@@ -290,7 +234,7 @@ export default function InitialOnboarding({
   const handleNext = async () => {
     setDirection(1);
     setTransitioning(true);
-    
+
     const updatedData = { ...onboardingData };
 
     // Set first interaction when name step is completed
@@ -364,8 +308,8 @@ export default function InitialOnboarding({
   const isValid = isStepValid();
 
   return (
-    <Dialog 
-      open={open} 
+    <Dialog
+      open={open}
       fullScreen={fullScreen}
       maxWidth="sm"
       fullWidth
@@ -384,14 +328,14 @@ export default function InitialOnboarding({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ 
-              position: 'absolute', 
-              top: 0, left: 0, right: 0, bottom: 0, 
-              zIndex: 10, 
-              backgroundColor: 'rgba(255,255,255,0.7)', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center' 
+            style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              zIndex: 10,
+              backgroundColor: 'rgba(255,255,255,0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
             <CircularProgress />
@@ -423,9 +367,9 @@ export default function InitialOnboarding({
             >
               <Box sx={{ flex: 1 }}>
                 <Box sx={{ mb: 4 }}>
-                  <CurrentStepComponent 
-                    value={onboardingData} 
-                    onChange={handleStepChange} 
+                  <CurrentStepComponent
+                    value={onboardingData}
+                    onChange={handleStepChange}
                   />
                 </Box>
               </Box>
@@ -433,7 +377,7 @@ export default function InitialOnboarding({
               <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center" sx={{ mt: 'auto' }}>
                 <Box>
                   {currentGroupIdx > 0 && (
-                    <Button 
+                    <Button
                       onClick={handleBack}
                       startIcon={<ArrowBackIcon />}
                     >
@@ -441,24 +385,24 @@ export default function InitialOnboarding({
                     </Button>
                   )}
                 </Box>
-                
+
                 <Stack direction="row" spacing={1}>
-                  <Button 
-                    variant="outlined" 
+                  <Button
+                    variant="outlined"
                     onClick={handleSkip}
                     startIcon={<SkipNextIcon />}
                     sx={{ borderRadius: 3, textTransform: 'none' }}
                   >
                     Skip to Next
                   </Button>
-                  <Button 
-                    variant="contained" 
+                  <Button
+                    variant="contained"
                     onClick={handleNext}
                     disabled={!isValid || transitioning}
                     endIcon={transitioning ? <CircularProgress size={20} color="inherit" /> : <ArrowForwardIcon />}
-                    sx={{ 
-                      borderRadius: 3, 
-                      px: 4, 
+                    sx={{
+                      borderRadius: 3,
+                      px: 4,
                       py: 1,
                       boxShadow: theme.shadows[4]
                     }}
@@ -489,14 +433,14 @@ export default function InitialOnboarding({
                   Thanks {onboardingData.firstName}!
                 </Typography>
                 <Typography variant="body1" color="text.secondary" paragraph>
-                  {currentGroupIdx === 0 
+                  {currentGroupIdx === 0
                     ? "Would you like to give us some more info about you so that we can work with you better?"
                     : "That's great! Would you like to share some more details for an even better experience?"}
                 </Typography>
-                
+
                 <Stack spacing={2} sx={{ mt: 4 }}>
-                  <Button 
-                    variant="contained" 
+                  <Button
+                    variant="contained"
                     size="large"
                     onClick={() => handleCTAAction(true)}
                     disabled={transitioning}
@@ -504,8 +448,8 @@ export default function InitialOnboarding({
                   >
                     Yes, let&apos;s continue
                   </Button>
-                  <Button 
-                    variant="text" 
+                  <Button
+                    variant="text"
                     color="inherit"
                     onClick={() => handleCTAAction(false)}
                     disabled={transitioning}
@@ -519,13 +463,13 @@ export default function InitialOnboarding({
           )}
         </AnimatePresence>
       </DialogContent>
-      
+
       {/* Progress Bar */}
       {!showCTA && (
         <Box sx={{ width: '100%', position: 'absolute', bottom: 0 }}>
-          <LinearProgress 
-            variant="determinate" 
-            value={((currentGroupIdx + 1) / GROUPS.length) * 100} 
+          <LinearProgress
+            variant="determinate"
+            value={((currentGroupIdx + 1) / GROUPS.length) * 100}
             sx={{ height: 6 }}
           />
         </Box>

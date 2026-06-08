@@ -893,7 +893,7 @@ export interface Goal {
   description?: string;
   unit?: string;
 
-  dueDate: Timestamp | Date;
+  dueDate?: Timestamp | Date;
   progress: number; // 0–100
 
   priority: GoalPriority;
@@ -924,6 +924,47 @@ export interface Goal {
   targetDate?: string;
 
   authorName?: string;
+
+  // Tracker
+  trackerEnabled?: boolean;
+  tracker?: GoalTracker | null;
+
+  // AI Phrasing & Suggestions
+  aiNudge?: string;
+  aiActivityVerb?: string;
+  aiVerb?: string;
+  aiSuggestedUnit?: string;
+
+  progressMode?: 'cumulative' | 'current_value';
+  direction?: 'up' | 'down' | null;
+  startValue?: number | null;
+  trackingMethod?: 'tracker' | 'milestones';
+  goalFurnished?: boolean;
+  clarifyingAnswer?: string;
+}
+
+export interface TrackerCheckIn {
+  id: string;
+  period: string;           // 'D1', 'W1', 'M1', 'BW1'
+  scheduledDate: string;    // YYYY-MM-DD
+  value?: number;           // quantity logged (null = completion-only)
+  note?: string;
+  completed: boolean;
+  completedAt?: string;     // YYYY-MM-DD
+}
+
+export type TrackerFrequency = 'daily' | 'every2days' | 'weekly' | 'biweekly' | 'monthly';
+
+export interface GoalTracker {
+  frequency: TrackerFrequency;
+  targetPerCheckIn: number;
+  unit: string;             // 'km', 'pages', 'hours', '' for completion-only
+  totalTarget: number;      // 0 = completion-only
+  totalCheckIns: number;
+  startDate: string;        // YYYY-MM-DD
+  dueDate: string;          // YYYY-MM-DD
+  checkIns: TrackerCheckIn[];
+  whatsappReminder: boolean;
 }
 
 export type ProjectType =
@@ -978,3 +1019,58 @@ export interface Project {
   createdAt: Timestamp | Date;
   completedAt?: Timestamp | Date | null;
 }
+
+
+export type OnboardingFieldValue = 
+  | string 
+  | number 
+  | boolean 
+  | string[] 
+  | number[]
+  | [number, number] 
+  | 'job' 
+  | 'business' 
+  | 'male' 
+  | 'female' 
+  | 'other' 
+  | 'Formal' 
+  | 'Friendly' 
+  | 'Strict Coach' 
+  | 'Allow' 
+  | 'Limited' 
+  | 'Off' 
+  | 'Strict' 
+  | 'Flexible'
+  | undefined;
+
+export interface OnboardingData {
+  firstName?: string;
+  lastName?: string;
+  country?: OnBoardingField<string>;
+  city?: OnBoardingField<string>;
+  professionType?: OnBoardingField<'job' | 'business'>;
+  profession?: OnBoardingField<string>;
+  skills?: OnBoardingField<string[]>;
+  hobby?: OnBoardingField<string>;
+  ageGroup?: OnBoardingField<string>;
+  gender?: OnBoardingField<'male' | 'female' | 'other'>;
+  education?: OnBoardingField<string>;
+  workStyle?: OnBoardingField<string>;
+  peakHours?: OnBoardingField<string[]>;
+  socialPreference?: OnBoardingField<string>;
+  preferredSocialTime?: OnBoardingField<string>;
+  socialHourRange?: OnBoardingField<[number, number]>;
+  reminderBefore?: OnBoardingField<number>;
+  maxNotifications?: OnBoardingField<number>;
+  quitHours?: OnBoardingField<[number, number]>;
+  aiTone?: OnBoardingField<'Formal' | 'Friendly' | 'Strict Coach'>;
+  autoImprove?: OnBoardingField<boolean>;
+  autoSuggest?: OnBoardingField<boolean>;
+  smartRescheduling?: OnBoardingField<boolean>;
+  weekStart?: OnBoardingField<number>;
+  monthStart?: OnBoardingField<number>;
+  activityTracking?: OnBoardingField<'Allow' | 'Limited' | 'Off'>;
+  deadlineType?: OnBoardingField<'Strict' | 'Flexible'>;
+  onBoardingFirstInteraction?: boolean;
+}
+

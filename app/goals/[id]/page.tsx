@@ -31,16 +31,19 @@ import {
   RadioButtonUnchecked,
 } from '@mui/icons-material';
 
-import { useGoals } from '../../lib/context/GoalsContext';
+import { useGoals, calculateGoalProgress } from '../../lib/context/GoalsContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { useAuth } from '../../lib/context/userContext';
 import { useTodoContext } from '../../lib/context/todoContext';
 import { useSchedules } from '../../lib/context/SchedulesContext';
-import { GoalType, GoalStep, GoalStepStatus } from '../../lib/interface';
+import { GoalType, GoalStep, GoalStepStatus, Goal } from '../../lib/interface';
 import GoalModal from '../../components/goals/GoalModal';
-
 import MilestoneList from '../../components/goals/MilestoneList';
 import MilestoneDetailSheet from '../../components/goals/MilestoneDetailSheet';
+import AISuggestMilestonesModal from '../../components/goals/AISuggestMilestonesModal';
+import CreateTrackerModal from '../../components/goals/CreateTrackerModal';
+import GoalFurnishingDialog from '../../components/goals/GoalFurnishingDialog';
+import TrackerView from '../../components/goals/TrackerView';
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -796,7 +799,7 @@ const GoalDetailInner: React.FC = () => {
   const { user } = useAuth();
   const { todos, addTodo, updateTodo } = useTodoContext();
   const { allSchedules, addSchedule } = useSchedules();
-  const { goals, deleteGoal, addGoalStep } = useGoals();
+  const { goals, deleteGoal, addGoalStep, updateGoal, saveGoalTracker, removeGoalTracker, addTrackerCheckIn, loading: goalsLoading } = useGoals();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
@@ -817,6 +820,9 @@ const GoalDetailInner: React.FC = () => {
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [firstView, setFirstView] = useState(false);
+  const [aiSuggestOpen, setAiSuggestOpen] = useState(false);
+  const [trackerModalOpen, setTrackerModalOpen] = useState(false);
+  const [furnishingDialogOpen, setFurnishingDialogOpen] = useState(false);
 
   // States for adding linked Task
   const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
@@ -895,11 +901,21 @@ const GoalDetailInner: React.FC = () => {
     return Math.ceil((dueDateDate.getTime() - Date.now()) / DAY_IN_MS);
   }, [dueDateDate]);
 
+  // Trigger furnishing dialog when goal is not furnished/dismissed
+  useEffect(() => {
+    if (goal && goal.id) {
+      const dismissed = localStorage.getItem(`goal_furnish_dismissed_${goal.id}`) === 'true';
+      if (goal.goalFurnished !== true && !dismissed && !goalsLoading) {
+        setFurnishingDialogOpen(true);
+      }
+    }
+  }, [goal, goalsLoading]);
+
   useEffect(() => {
     if (!goal && goals.length > 0) router.push('/goals');
   }, [goal, goals, router]);
 
-  const steps: GoalStep[] = goal?.steps || [];
+  const steps: GoalStep[] = useMemo(() => goal?.steps || [], [goal?.steps]);
   const selectedStep = useMemo(
     () =>
       selectedStepId
@@ -1028,6 +1044,79 @@ const GoalDetailInner: React.FC = () => {
       console.error('Failed to create linked schedule:', e);
     } finally {
       setAddingEvent(false);
+    }
+  };
+
+  const deriveStatusFromProgress = (progress: number): Goal['status'] => {
+    if (progress >= 100) return 'Completed';
+    if (progress > 0) return 'In Progress';
+    return 'Not Started';
+  };
+
+  const handleConfirmFurnishing = async (furnishedData: {
+    progressMode: 'cumulative' | 'current_value';
+    direction: 'up' | 'down' | null;
+    startValue: number | null;
+    trackingMethod: 'tracker' | 'milestones';
+    overallTargetValue?: number;
+    overallTargetUnit?: string;
+    clarifyingAnswer?: string;
+    dueDate?: Date;
+    aiVerb?: string;
+    aiActivityVerb?: string;
+    aiSuggestedUnit?: string;
+    title?: string;
+  }) => {
+    try {
+      const updates: Partial<Goal> = {
+        progressMode: furnishedData.progressMode,
+        direction: furnishedData.direction,
+        startValue: furnishedData.startValue,
+        trackingMethod: furnishedData.trackingMethod,
+        goalFurnished: true,
+      };
+
+      if (furnishedData.title !== undefined) {
+        updates.title = furnishedData.title;
+      }
+      if (furnishedData.overallTargetValue !== undefined) {
+        updates.overallTargetValue = furnishedData.overallTargetValue;
+      }
+      if (furnishedData.overallTargetUnit !== undefined) {
+        updates.overallTargetUnit = furnishedData.overallTargetUnit;
+      }
+      if (furnishedData.dueDate !== undefined) {
+        updates.dueDate = furnishedData.dueDate;
+      }
+      if (furnishedData.clarifyingAnswer !== undefined) {
+        updates.clarifyingAnswer = furnishedData.clarifyingAnswer;
+      }
+      if (furnishedData.aiVerb !== undefined) {
+        updates.aiVerb = furnishedData.aiVerb;
+      }
+      if (furnishedData.aiActivityVerb !== undefined) {
+        updates.aiActivityVerb = furnishedData.aiActivityVerb;
+      }
+      if (furnishedData.aiSuggestedUnit !== undefined) {
+        updates.aiSuggestedUnit = furnishedData.aiSuggestedUnit;
+      }
+
+      const tempGoal = {
+        ...goal,
+        ...updates,
+      } as Goal;
+      const newProgress = calculateGoalProgress(tempGoal);
+      updates.progress = newProgress;
+      updates.status = deriveStatusFromProgress(newProgress);
+
+      await updateGoal(goal!.id!, updates);
+      setFurnishingDialogOpen(false);
+
+      if (furnishedData.trackingMethod === 'tracker' && !goal!.trackerEnabled) {
+        setTrackerModalOpen(true);
+      }
+    } catch (e) {
+      console.error('Failed to confirm furnishing:', e);
     }
   };
 
@@ -1240,35 +1329,76 @@ const GoalDetailInner: React.FC = () => {
         <SectionTitle
           isDark={isDark}
           action={
-            <Button
-              size="small"
-              onClick={openAddMilestoneDialog}
-              disabled={savingMilestone}
-              sx={{
-                textTransform: 'none',
-                fontSize: 12,
-                fontWeight: 700,
-                color: typeColor,
-              }}
-            >
-              {savingMilestone ? 'Saving…' : 'Add milestone'}
-            </Button>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              {!goal.trackerEnabled && steps.length === 0 && (
+                <Button
+                  size="small"
+                  onClick={() => setTrackerModalOpen(true)}
+                  sx={{
+                    textTransform: 'none',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: typeColor,
+                  }}
+                >
+                  Create Tracker
+                </Button>
+              )}
+              {!goal.trackerEnabled && (
+                <Button
+                  size="small"
+                  onClick={openAddMilestoneDialog}
+                  disabled={savingMilestone}
+                  sx={{
+                    textTransform: 'none',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: typeColor,
+                  }}
+                >
+                  {savingMilestone ? 'Saving…' : 'Add milestone'}
+                </Button>
+              )}
+            </Stack>
           }
         >
-          Steps &amp; milestones ({doneCnt}/{totalCnt})
+          {goal.trackerEnabled ? 'Tracker Setup' : `Steps & milestones (${doneCnt}/${totalCnt})`}
         </SectionTitle>
-        <MilestoneList
-          goalId={goal.id!}
-          steps={steps}
-          onStepsChange={() => {
-            /* Firestore snapshot updates automatically */
-          }}
-          onSelectStep={(step) => {
-            setSelectedStepId(step.id);
-            setSheetOpen(true);
-          }}
-          onAddStep={openAddMilestoneDialog}
-        />
+        {goal.trackerEnabled && goal.tracker ? (
+          <TrackerView
+            goalId={goal.id!}
+            goalTitle={goal.title}
+            tracker={goal.tracker}
+            activityVerb={goal.aiActivityVerb}
+            verb={goal.aiVerb}
+            progressMode={goal.progressMode}
+            direction={goal.direction}
+            startValue={goal.startValue}
+            typeColor={typeColor}
+            isDark={isDark}
+            onCheckIn={async (updatedCheckIn) => {
+              await addTrackerCheckIn(goal.id!, updatedCheckIn);
+            }}
+            onRemove={async () => {
+              if (confirm('Are you sure you want to remove the tracker? All check-in history will be deleted.')) {
+                await removeGoalTracker(goal.id!);
+              }
+            }}
+          />
+        ) : (
+          <MilestoneList
+            goalId={goal.id!}
+            steps={steps}
+            onStepsChange={() => {
+              /* Firestore snapshot updates automatically */
+            }}
+            onSelectStep={(step) => {
+              setSelectedStepId(step.id);
+              setSheetOpen(true);
+            }}
+            onAddStep={openAddMilestoneDialog}
+          />
+        )}
 
         {/* Details grid */}
         <Box sx={{ mt: 1.5, mb: 2.5 }}>
@@ -2061,6 +2191,54 @@ const GoalDetailInner: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ── AI Suggest Milestones Modal ── */}
+      <AISuggestMilestonesModal
+        open={aiSuggestOpen}
+        onClose={() => setAiSuggestOpen(false)}
+        goal={goal}
+        typeColor={typeColor}
+        isDark={isDark}
+        onAcceptMilestone={async ({ title, description, endDate }) => {
+          await addGoalStep(goal.id!, { title, description: description || undefined, weight: 1, endDate });
+        }}
+      />
+
+      {/* ── Create Tracker Modal ── */}
+      <CreateTrackerModal
+        open={trackerModalOpen}
+        onClose={() => setTrackerModalOpen(false)}
+        goal={{
+          title: goal.title,
+          dueDate: dueDateDate ? dueDateDate.toISOString().split('T')[0] : undefined,
+          overallTargetValue: goal.overallTargetValue,
+          overallTargetUnit: goal.overallTargetUnit || goal.aiSuggestedUnit,
+        }}
+        activityVerb={goal.aiActivityVerb}
+        verb={goal.aiVerb}
+        suggestedUnit={goal.aiSuggestedUnit}
+        typeColor={typeColor}
+        isDark={isDark}
+        onConfirm={(tracker) => saveGoalTracker(goal.id!, tracker)}
+      />
+
+      <GoalFurnishingDialog
+        open={furnishingDialogOpen}
+        onClose={() => {
+          setFurnishingDialogOpen(false);
+          if (goal?.id) {
+            localStorage.setItem(`goal_furnish_dismissed_${goal.id}`, 'true');
+          }
+        }}
+        goal={goal}
+        userName={
+          user?.firstName || 
+          (user?.email ? user.email.split('@')[0] : 'Kashif')
+        }
+        typeColor={typeColor}
+        isDark={isDark}
+        onConfirm={handleConfirmFurnishing}
+      />
     </Box>
   );
 };

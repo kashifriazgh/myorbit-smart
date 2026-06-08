@@ -62,8 +62,22 @@ export default function LoanRecordsPage() {
   const [activeLoans, setActiveLoans] = useState<LoanRecord[]>([]);
   const [settledLoans, setSettledLoans] = useState<LoanRecord[]>([]);
   const [totals, setTotals] = useState({ toPay: 0, toReceive: 0 });
-  const [snapshot, setSnapshot] = useState<TotalCashSnapshot | null>(null);
-  console.info(setSnapshot);
+  const [snapshot, setSnapshot] = useState<TotalCashSnapshot>({
+    userId: user?.uid || '',
+    sources: {
+      in_hand: 0,
+      bank: {},
+      easypaisa: 0,
+      jazzcash: 0,
+      other: 0,
+      custom: {},
+    },
+    heldBy: {},
+    totalAmount: 0,
+    freezeAmount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
   // Dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [progressDialogOpen, setProgressDialogOpen] = useState(false);
@@ -112,6 +126,57 @@ export default function LoanRecordsPage() {
     }
   }, [user, authLoading, fetchLoans]);
 
+  useEffect(() => {
+    const fetchSnapshot = async () => {
+      if (!user) return;
+      const docRef = doc(db, 'totalCashSnapshots', user.uid);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data() as TotalCashSnapshot;
+        setSnapshot({
+          ...data,
+          sources: {
+            in_hand: data.sources.in_hand ?? 0,
+            bank:
+              typeof data.sources.bank === 'number'
+                ? { Default: data.sources.bank }
+                : data.sources.bank || {},
+            easypaisa: data.sources.easypaisa ?? 0,
+            jazzcash: data.sources.jazzcash ?? 0,
+            other: data.sources.other ?? 0,
+            custom:
+              typeof data.sources.custom === 'number'
+                ? { Default: data.sources.custom }
+                : data.sources.custom || {},
+          },
+          heldBy: data.heldBy || {},
+        });
+      } else {
+        const initialSnapshot: TotalCashSnapshot = {
+          userId: user.uid,
+          sources: {
+            in_hand: 0,
+            bank: {},
+            easypaisa: 0,
+            jazzcash: 0,
+            other: 0,
+            custom: {},
+          },
+          heldBy: {},
+          totalAmount: 0,
+          freezeAmount: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        await setDoc(docRef, initialSnapshot);
+        setSnapshot(initialSnapshot);
+      }
+    };
+
+    fetchSnapshot();
+  }, [user]);
+
   const handleAddMoney = async (
     amount: number,
     source: TransactionSource,
@@ -144,9 +209,25 @@ export default function LoanRecordsPage() {
 
     const docRef = doc(db, 'totalCashSnapshots', user.uid);
     const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) return;
+    const data: TotalCashSnapshot = docSnap.exists()
+      ? (docSnap.data() as TotalCashSnapshot)
+      : {
+          userId: user.uid,
+          sources: {
+            in_hand: 0,
+            bank: {},
+            easypaisa: 0,
+            jazzcash: 0,
+            other: 0,
+            custom: {},
+          },
+          heldBy: {},
+          totalAmount: 0,
+          freezeAmount: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
 
-    const data = docSnap.data() as TotalCashSnapshot;
     const updatedSources: TotalCashSnapshot['sources'] = {
       in_hand: data.sources.in_hand ?? 0,
       bank: data.sources.bank ?? {},

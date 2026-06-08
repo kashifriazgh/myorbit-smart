@@ -14,6 +14,8 @@ import {
   Chip,
   Stack,
   CircularProgress,
+  Collapse,
+  InputAdornment,
 } from '@mui/material';
 import { useState } from 'react';
 import JournalModal from '../components/journal/journalModal';
@@ -25,18 +27,24 @@ import EditIcon from '@mui/icons-material/Edit';
 import BookIcon from '@mui/icons-material/Book';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import SearchIcon from '@mui/icons-material/Search';
+import TuneIcon from '@mui/icons-material/Tune';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 
 export default function JournalsPage() {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const { theme: customTheme } = useCustomTheme();
   const { insights, loading } = useJournalContext();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
 
   const isDark = customTheme?.mode === 'dark';
+  const hasActiveFilters = startDate || endDate;
 
   if (!customTheme) return null;
 
@@ -252,52 +260,33 @@ export default function JournalsPage() {
         </div>
       </Fade>
 
-      {/* Search Section */}
+      {/* Search & Filter Section */}
       <Fade in={true} timeout={1400}>
-        <Box
-          mb={6}
-          p={isMobile ? 2 : 4}
-          sx={{
-            background: isDark 
-              ? 'rgba(30, 41, 59, 0.7)' 
-              : 'rgba(255, 255, 255, 0.8)',
-            backdropFilter: 'blur(12px)',
-            borderRadius: '2rem',
-            boxShadow: isDark 
-              ? '0 10px 30px rgba(0,0,0,0.3)' 
-              : '0 10px 30px rgba(100,116,139,0.1)',
-            border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
-          }}
-        >
-          <Typography
-            variant="h6"
-            fontWeight="bold"
-            mb={3}
-            color="primary"
-            display="flex"
-            alignItems="center"
-            gap={1.5}
+        <Box mb={6}>
+          {/* ── Distinguished Search Bar ── */}
+          <Box
+            sx={{
+              position: 'relative',
+              mb: 2,
+              borderRadius: '1.5rem',
+              background: isDark
+                ? 'linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(139,92,246,0.1) 100%)'
+                : 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.05) 100%)',
+              border: `2px solid ${isDark ? 'rgba(99,102,241,0.35)' : 'rgba(99,102,241,0.25)'}`,
+              boxShadow: isDark
+                ? '0 0 0 0 rgba(99,102,241,0), 0 4px 24px rgba(0,0,0,0.3)'
+                : '0 0 0 0 rgba(99,102,241,0), 0 4px 24px rgba(99,102,241,0.08)',
+              transition: 'box-shadow 0.25s ease, border-color 0.25s ease',
+              '&:focus-within': {
+                borderColor: isDark
+                  ? 'rgba(99,102,241,0.8)'
+                  : 'rgba(99,102,241,0.6)',
+                boxShadow: isDark
+                  ? '0 0 0 4px rgba(99,102,241,0.2), 0 8px 32px rgba(0,0,0,0.35)'
+                  : '0 0 0 4px rgba(99,102,241,0.12), 0 8px 32px rgba(99,102,241,0.15)',
+              },
+            }}
           >
-            <Box 
-              component="span" 
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                width: 36, 
-                height: 36, 
-                borderRadius: '10px',
-                bgcolor: 'primary.main',
-                color: 'white',
-                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)'
-              }}
-            >
-              🔍
-            </Box>
-            Filter Your Thoughts
-          </Typography>
-          
-          <Stack spacing={3}>
             <TextField
               fullWidth
               placeholder="Search by keywords, emotions, or #hashtags..."
@@ -305,95 +294,254 @@ export default function JournalsPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               variant="outlined"
               InputProps={{
-                sx: { 
-                  borderRadius: '1.25rem',
-                  backgroundColor: isDark ? 'rgba(15, 23, 42, 0.5)' : 'rgba(248, 250, 252, 0.8)',
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon
+                      sx={{
+                        color: searchQuery
+                          ? 'primary.main'
+                          : isDark
+                            ? 'rgba(148,163,184,0.7)'
+                            : 'rgba(100,116,139,0.7)',
+                        fontSize: 22,
+                        transition: 'color 0.2s ease',
+                      }}
+                    />
+                  </InputAdornment>
+                ),
+                sx: {
+                  borderRadius: '1.5rem',
+                  backgroundColor: 'transparent',
+                  color: isDark ? '#f1f5f9' : '#0f172a',
                   fontSize: '1rem',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(248, 250, 252, 1)',
-                  },
+                  fontWeight: 500,
+                  px: 1,
                   '& fieldset': { border: 'none' },
-                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
+                  '& input': {
+                    py: 1.6,
+                    '&::placeholder': {
+                      color: isDark
+                        ? 'rgba(148,163,184,0.6)'
+                        : 'rgba(100,116,139,0.6)',
+                      fontWeight: 400,
+                    },
+                  },
                 },
               }}
             />
-            
-            <Stack direction={isMobile ? 'column' : 'row'} spacing={3} alignItems="center">
-              <Box flex={1} width="100%">
-                <Typography variant="caption" fontWeight="600" color="text.secondary" sx={{ ml: 1, mb: 0.5, display: 'block' }}>
-                  From
-                </Typography>
-                <TextField
-                  fullWidth
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  size="small"
-                  InputProps={{
-                    sx: { 
-                      borderRadius: '1rem',
-                      backgroundColor: isDark ? 'rgba(15, 23, 42, 0.3)' : 'rgba(248, 250, 252, 0.5)',
-                    },
+          </Box>
+
+          {/* ── Filter Toggle Row ── */}
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="space-between"
+            mb={1}
+          >
+            <Button
+              size="small"
+              startIcon={<TuneIcon sx={{ fontSize: 18 }} />}
+              endIcon={
+                filtersOpen ? (
+                  <KeyboardArrowUpIcon />
+                ) : (
+                  <KeyboardArrowDownIcon />
+                )
+              }
+              onClick={() => setFiltersOpen((v) => !v)}
+              sx={{
+                borderRadius: '1rem',
+                px: 2,
+                py: 0.75,
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                color: hasActiveFilters ? 'primary.main' : 'text.secondary',
+                bgcolor: hasActiveFilters
+                  ? isDark
+                    ? 'rgba(99,102,241,0.15)'
+                    : 'rgba(99,102,241,0.08)'
+                  : 'transparent',
+                border: `1px solid ${
+                  hasActiveFilters
+                    ? isDark
+                      ? 'rgba(99,102,241,0.4)'
+                      : 'rgba(99,102,241,0.3)'
+                    : isDark
+                      ? 'rgba(255,255,255,0.08)'
+                      : 'rgba(0,0,0,0.08)'
+                }`,
+                '&:hover': {
+                  bgcolor: isDark
+                    ? 'rgba(99,102,241,0.12)'
+                    : 'rgba(99,102,241,0.06)',
+                },
+                transition: 'all 0.2s ease',
+              }}
+            >
+              Date Filter
+              {hasActiveFilters && (
+                <Box
+                  component="span"
+                  sx={{
+                    ml: 1,
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    bgcolor: 'primary.main',
+                    display: 'inline-block',
+                    boxShadow: '0 0 6px rgba(99,102,241,0.6)',
                   }}
                 />
-              </Box>
-              
-              <Box flex={1} width="100%">
-                <Typography variant="caption" fontWeight="600" color="text.secondary" sx={{ ml: 1, mb: 0.5, display: 'block' }}>
-                  Until
-                </Typography>
-                <TextField
-                  fullWidth
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  size="small"
-                  InputProps={{
-                    sx: { 
+              )}
+            </Button>
+
+            {(searchQuery || hasActiveFilters) && (
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => {
+                  setSearchQuery('');
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                sx={{
+                  borderRadius: '1rem',
+                  px: 2,
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  color: 'text.secondary',
+                  '&:hover': {
+                    color: 'error.main',
+                    bgcolor: 'rgba(239,68,68,0.08)',
+                  },
+                }}
+              >
+                Clear All
+              </Button>
+            )}
+          </Box>
+
+          {/* ── Collapsible Date Filters ── */}
+          <Collapse in={filtersOpen} timeout={280}>
+            <Box
+              sx={{
+                mt: 1.5,
+                p: isMobile ? 2 : 3,
+                borderRadius: '1.25rem',
+                background: isDark
+                  ? 'rgba(30, 41, 59, 0.6)'
+                  : 'rgba(255, 255, 255, 0.8)',
+                backdropFilter: 'blur(12px)',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                boxShadow: isDark
+                  ? '0 8px 24px rgba(0,0,0,0.25)'
+                  : '0 8px 24px rgba(100,116,139,0.08)',
+              }}
+            >
+              <Stack
+                direction={isMobile ? 'column' : 'row'}
+                spacing={3}
+                alignItems="flex-end"
+              >
+                <Box flex={1} width="100%">
+                  <Typography
+                    variant="caption"
+                    fontWeight="600"
+                    color="text.secondary"
+                    sx={{ ml: 0.5, mb: 0.5, display: 'block' }}
+                  >
+                    From
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    size="small"
+                    InputProps={{
+                      sx: {
+                        borderRadius: '1rem',
+                        backgroundColor: isDark
+                          ? 'rgba(15, 23, 42, 0.3)'
+                          : 'rgba(248, 250, 252, 0.5)',
+                      },
+                    }}
+                  />
+                </Box>
+
+                <Box flex={1} width="100%">
+                  <Typography
+                    variant="caption"
+                    fontWeight="600"
+                    color="text.secondary"
+                    sx={{ ml: 0.5, mb: 0.5, display: 'block' }}
+                  >
+                    Until
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    size="small"
+                    InputProps={{
+                      sx: {
+                        borderRadius: '1rem',
+                        backgroundColor: isDark
+                          ? 'rgba(15, 23, 42, 0.3)'
+                          : 'rgba(248, 250, 252, 0.5)',
+                      },
+                    }}
+                  />
+                </Box>
+
+                <Box width={isMobile ? '100%' : 'auto'}>
+                  <Button
+                    variant="text"
+                    onClick={() => {
+                      setStartDate('');
+                      setEndDate('');
+                    }}
+                    sx={{
                       borderRadius: '1rem',
-                      backgroundColor: isDark ? 'rgba(15, 23, 42, 0.3)' : 'rgba(248, 250, 252, 0.5)',
-                    },
-                  }}
-                />
-              </Box>
-              
-              <Box pt={isMobile ? 1 : 2.5} width={isMobile ? '100%' : 'auto'}>
-                <Button
-                  variant="text"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setStartDate('');
-                    setEndDate('');
-                  }}
-                  sx={{ 
-                    borderRadius: '1rem', 
-                    px: 3,
-                    color: 'text.secondary',
-                    fontWeight: 600,
-                    '&:hover': { color: 'error.main', bgcolor: 'rgba(239, 68, 68, 0.1)' }
-                  }}
-                  fullWidth={isMobile}
-                >
-                  Clear Filters
-                </Button>
-              </Box>
-            </Stack>
-          </Stack>
+                      px: 3,
+                      color: 'text.secondary',
+                      fontWeight: 600,
+                      fontSize: '0.82rem',
+                      '&:hover': {
+                        color: 'error.main',
+                        bgcolor: 'rgba(239, 68, 68, 0.08)',
+                      },
+                    }}
+                    fullWidth={isMobile}
+                  >
+                    Clear Dates
+                  </Button>
+                </Box>
+              </Stack>
+            </Box>
+          </Collapse>
         </Box>
       </Fade>
 
       {/* Journal Entries */}
       <Box mb={10}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+        <Box
+          display="flex"
+          justifyContent="space-between"
+          alignItems="center"
+          mb={4}
+        >
           <Typography variant="h5" fontWeight="bold" color="primary">
-            {searchQuery || startDate || endDate ? 'Search Results' : 'Recent Entries'}
+            {searchQuery || startDate || endDate
+              ? 'Search Results'
+              : 'Recent Entries'}
           </Typography>
           {(searchQuery || startDate || endDate) && (
-            <Chip 
-              label="Filtered" 
-              color="primary" 
-              size="small" 
+            <Chip
+              label="Filtered"
+              color="primary"
+              size="small"
               onDelete={() => {
                 setSearchQuery('');
                 setStartDate('');
@@ -402,11 +550,16 @@ export default function JournalsPage() {
             />
           )}
         </Box>
-        <JournalList 
-          searchQuery={searchQuery} 
-          startDate={startDate} 
-          endDate={endDate} 
-        />
+        {/* minHeight prevents the section from collapsing when results change,
+            which causes the cards-falling-from-top layout shift. overflow: hidden
+            clips any stray animation that still escapes from child components. */}
+        <Box sx={{ minHeight: 300, overflow: 'hidden' }}>
+          <JournalList
+            searchQuery={searchQuery}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        </Box>
       </Box>
 
       <JournalModal open={open} onClose={() => setOpen(false)} />

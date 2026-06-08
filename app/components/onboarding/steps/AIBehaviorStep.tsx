@@ -13,7 +13,7 @@ import {
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { motion } from 'framer-motion';
 
-import { OnboardingData, OnboardingFieldValue } from '../InitialOnboarding';
+import { OnboardingData, OnboardingFieldValue } from '@/app/lib/interface';
 
 interface Props {
   value: OnboardingData;

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Box, Typography, Button, Chip } from '@mui/material';
-import { InfoOutlined } from '@mui/icons-material';
+import { Box, Typography, Button, Chip, Divider } from '@mui/material';
+import { InfoOutlined, TrackChanges } from '@mui/icons-material';
 import { GoalStep, GoalStepStatus } from '../../lib/interface';
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
@@ -45,10 +45,32 @@ const STATUS_META: Record<
 
 function formatDate(value: unknown): string {
   if (!value) return 'No due date';
-  const date =
-    value instanceof Date ? value : new Date(value as string | number);
+
+  let date: Date;
+
+  if (value instanceof Date) {
+    date = value;
+  } else if (
+    typeof value === 'object' &&
+    value !== null &&
+    'toDate' in value &&
+    typeof (value as { toDate: unknown }).toDate === 'function'
+  ) {
+    // Firestore Timestamp
+    date = (value as { toDate: () => Date }).toDate();
+  } else if (
+    typeof value === 'object' &&
+    value !== null &&
+    'seconds' in value
+  ) {
+    // Plain Firestore-like { seconds, nanoseconds }
+    date = new Date((value as { seconds: number }).seconds * 1000);
+  } else {
+    date = new Date(value as string | number);
+  }
+
   if (Number.isNaN(date.getTime())) return 'No due date';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 interface MilestoneListProps {
@@ -57,6 +79,8 @@ interface MilestoneListProps {
   onSelectStep: (step: GoalStep) => void;
   onStepsChange?: () => void;
   onAddStep?: () => void;
+  onCreateTracker?: () => void;
+  smartNudge?: string | null; // null = loading, undefined = not requested
 }
 
 export default function MilestoneList({
@@ -65,6 +89,8 @@ export default function MilestoneList({
   onSelectStep,
   onStepsChange,
   onAddStep,
+  onCreateTracker,
+  smartNudge,
 }: MilestoneListProps) {
   const { updateStepStatus } = useGoals();
   const { theme } = useCustomTheme();
@@ -90,34 +116,83 @@ export default function MilestoneList({
   return (
     <Box>
       {!hasSteps && (
-        <Box
-          sx={{
-            borderRadius: '18px',
-            background: isDark ? '#0f172a' : '#f8fafc',
-            border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-            p: 3,
-            textAlign: 'center',
-            mb: 2,
-          }}
-        >
-          <Typography
-            sx={{ fontSize: 13, color: isDark ? '#cbd5e1' : '#64748b', mb: 1 }}
-          >
-            No milestones yet. Add your first step to get started.
-          </Typography>
+        <Box sx={{
+          borderRadius: '18px',
+          background: isDark ? '#0f172a' : '#f8fafc',
+          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+          p: 3, textAlign: 'center', mb: 2,
+        }}>
+          {/* Contextual AI nudge or generic fallback */}
+          {smartNudge === null ? (
+            // Loading shimmer
+            <Box sx={{
+              height: 16, borderRadius: '6px', mb: 1.5,
+              background: isDark
+                ? 'linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%)'
+                : 'linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%)',
+              backgroundSize: '200% 100%',
+              animation: 'shimmer 1.4s infinite',
+              '@keyframes shimmer': { '0%': { backgroundPosition: '200% 0' }, '100%': { backgroundPosition: '-200% 0' } },
+              width: '80%', mx: 'auto',
+            }} />
+          ) : smartNudge ? (
+            <Typography sx={{ fontSize: 13, color: isDark ? '#94a3b8' : '#475569', mb: 1.5, lineHeight: 1.6, fontStyle: 'italic' }}>
+              ✨ {smartNudge}
+            </Typography>
+          ) : (
+            <Typography sx={{ fontSize: 13, color: isDark ? '#cbd5e1' : '#64748b', mb: 1.5 }}>
+              No milestones yet. Add your first step to get started.
+            </Typography>
+          )}
           {onAddStep && (
             <Button
-              size="small"
+              size="medium"
               onClick={onAddStep}
+              variant="contained"
               sx={{
                 textTransform: 'none',
                 fontWeight: 700,
-                borderRadius: '10px',
+                borderRadius: '12px',
+                py: 1.2,
+                px: 3,
+                width: { xs: '100%', sm: 'auto' },
               }}
-              variant="contained"
             >
-              Add milestone
+              Add Milestone
             </Button>
+          )}
+          {onCreateTracker && (
+            <>
+              <Divider sx={{ my: 2.5 }}>
+                <Typography sx={{ fontSize: 11, color: isDark ? '#475569' : '#94a3b8', fontWeight: 600 }}>OR</Typography>
+              </Divider>
+              <Typography sx={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', mb: 2, lineHeight: 1.55 }}>
+                For repeating goals (e.g. <em>Run 5 km daily</em> or <em>Read 400 pages by Aug</em>), use a tracker instead.
+              </Typography>
+              <Button
+                size="medium"
+                variant="outlined"
+                startIcon={<TrackChanges sx={{ fontSize: 15 }} />}
+                onClick={onCreateTracker}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  borderRadius: '12px',
+                  py: 1.2,
+                  px: 3,
+                  width: { xs: '100%', sm: 'auto' },
+                  borderColor: isDark ? '#475569' : '#cbd5e1',
+                  color: isDark ? '#cbd5e1' : '#475569',
+                  '&:hover': {
+                    borderColor: '#6366f1',
+                    color: '#6366f1',
+                    background: '#6366f108',
+                  },
+                }}
+              >
+                Set up a Tracker
+              </Button>
+            </>
           )}
         </Box>
       )}
@@ -142,6 +217,9 @@ export default function MilestoneList({
               borderRadius: '16px',
               background: isDark ? '#0f172a' : '#f8fafc',
               border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+              opacity: isCompleted || isClosed ? 0.45 : 1,
+              filter: isCompleted || isClosed ? 'grayscale(40%)' : 'none',
+              transition: 'opacity 0.2s, filter 0.2s',
             }}
           >
             <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>

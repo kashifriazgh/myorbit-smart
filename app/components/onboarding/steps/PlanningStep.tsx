@@ -12,7 +12,7 @@ import { motion } from 'framer-motion';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-import { OnboardingData, OnboardingFieldValue } from '../InitialOnboarding';
+import { OnboardingData, OnboardingFieldValue } from '@/app/lib/interface';
 
 interface Props {
   value: OnboardingData;

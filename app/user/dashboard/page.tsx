@@ -11,6 +11,7 @@ import {
   IconButton,
   Button,
   Tooltip,
+  Grid,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -162,57 +163,107 @@ export default function ManageDashboard() {
       </Card>
 
       {/* Dashboard Links */}
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: { xs: 'column', sm: 'row' },
-          gap: 3,
-        }}
-      >
-        <Link href="/user/manage" passHref>
-          <Card
-            sx={{
-              p: 3,
-              flex: 1,
-              cursor: 'pointer',
-              transition: '0.2s',
-              backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-              '&:hover': {
-                boxShadow: 6,
-                backgroundColor:
-                  theme?.mode === 'dark' ? '#475569' : 'grey.100',
-              },
-            }}
-          >
-            <Typography variant="h6">Manage Users {firstName}</Typography>
-            <Typography variant="body2">
-              Invite, edit, or remove users
-            </Typography>
-          </Card>
-        </Link>
+      <Grid container spacing={3}>
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <Link href="/user/manage" passHref style={{ textDecoration: 'none' }}>
+            <Card
+              sx={{
+                p: 3,
+                height: '100%',
+                cursor: 'pointer',
+                transition: '0.2s',
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '&:hover': {
+                  boxShadow: 6,
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#475569' : 'grey.100',
+                },
+              }}
+            >
+              <Typography variant="h6" fontWeight="700">Manage Users</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Invite, edit, or remove users
+              </Typography>
+            </Card>
+          </Link>
+        </Grid>
 
-        <Link href="/user/theme" passHref>
-          <Card
-            sx={{
-              p: 3,
-              flex: 1,
-              cursor: 'pointer',
-              transition: '0.2s',
-              backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-              '&:hover': {
-                boxShadow: 6,
-                backgroundColor:
-                  theme?.mode === 'dark' ? '#475569' : 'grey.100',
-              },
-            }}
-          >
-            <Typography variant="h6">Theme Settings </Typography>
-            <Typography variant="body2">Customize app appearance</Typography>
-          </Card>
-        </Link>
-      </Box>
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <Link href="/user/theme" passHref style={{ textDecoration: 'none' }}>
+            <Card
+              sx={{
+                p: 3,
+                height: '100%',
+                cursor: 'pointer',
+                transition: '0.2s',
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '&:hover': {
+                  boxShadow: 6,
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#475569' : 'grey.100',
+                },
+              }}
+            >
+              <Typography variant="h6" fontWeight="700">Theme Settings</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Customize app appearance
+              </Typography>
+            </Card>
+          </Link>
+        </Grid>
+
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <Link href="/user/profile" passHref style={{ textDecoration: 'none' }}>
+            <Card
+              sx={{
+                p: 3,
+                height: '100%',
+                cursor: 'pointer',
+                transition: '0.2s',
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '&:hover': {
+                  boxShadow: 6,
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#475569' : 'grey.100',
+                },
+              }}
+            >
+              <Typography variant="h6" fontWeight="700">Profile Settings</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Edit your location, habits, and productivity preferences
+              </Typography>
+            </Card>
+          </Link>
+        </Grid>
+
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <Link href="/user/user-context" passHref style={{ textDecoration: 'none' }}>
+            <Card
+              sx={{
+                p: 3,
+                height: '100%',
+                cursor: 'pointer',
+                transition: '0.2s',
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '&:hover': {
+                  boxShadow: 6,
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#475569' : 'grey.100',
+                },
+              }}
+            >
+              <Typography variant="h6" fontWeight="700">AI Context Hub</Typography>
+              <Typography variant="body2" color="text.secondary">
+                View the active metadata sent to personalize AI suggestions
+              </Typography>
+            </Card>
+          </Link>
+        </Grid>
+      </Grid>
     </Box>
   );
 }

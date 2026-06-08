@@ -23,7 +23,7 @@ const EDUCATION_LEVELS = [
   'High School', '12th Classes', 'Intermediate', 'Bachelor\'s', 'Master\'s', 'PhD', 'Self-Taught', 'Other'
 ];
 
-import { OnboardingData, OnboardingFieldValue } from '../InitialOnboarding';
+import { OnboardingData, OnboardingFieldValue } from '@/app/lib/interface';
 
 interface Props {
   value: OnboardingData;
