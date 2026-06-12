@@ -41,6 +41,7 @@ import { Todo } from '@/app/lib/interface';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import ToDoModal from '@/app/components/to-do/todoModal';
+import { incrementTodoRescheduleCount } from '@/app/lib/utilts';
 
 const PRIORITY_ORDER = { critical: 0, urgent: 1, routine: 2 };
 
@@ -178,11 +179,21 @@ const ImportantTasks = () => {
     if (!rescheduleTask?.id || !newDueDate) return;
     setReschedulingLoading(true);
     try {
+      const oldDate = rescheduleTask.dueDate
+        ? (rescheduleTask.dueDate instanceof Timestamp ? rescheduleTask.dueDate.toDate() : new Date(rescheduleTask.dueDate))
+        : null;
+      const isDateChanged = oldDate ? !moment(oldDate).isSame(newDueDate, 'day') : true;
+
       await updateDoc(doc(db, 'todos', rescheduleTask.id), {
         dueDate: Timestamp.fromDate(newDueDate),
         isFlexible: false, // Turn off flexible if date is set
         updatedAt: new Date(),
       });
+
+      if (isDateChanged) {
+        await incrementTodoRescheduleCount(rescheduleTask.id);
+      }
+
       setRescheduleOpen(false);
       setRescheduleTask(null);
     } catch (err) {

@@ -90,7 +90,7 @@ export default function GoalFurnishingDialog({
   }, [userName]);
 
   // ── States ──────────────────────────────────────────────────────────────────
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5 | 6 | 7>(1);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 6 | 7>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,7 +116,6 @@ export default function GoalFurnishingDialog({
   const [aiTargetLabelSuggestion, setAiTargetLabelSuggestion] = useState('');
 
   // AI Progress mode details from target refinement step
-  const [aiProgressMode, setAiProgressMode] = useState<'cumulative' | 'current_value'>('cumulative');
   const [aiStartValueLabel, setAiStartValueLabel] = useState('');
 
   // Step 7 Outcomes
@@ -223,7 +222,6 @@ export default function GoalFurnishingDialog({
           setAiTargetLabelSuggestion(data.label || 'Target Value');
 
           // Progress mode config
-          setAiProgressMode(data.progressMode || 'cumulative');
           setAiStartValueLabel(data.startValueLabel || '');
 
           if (data.targetValueSuggestion) {
@@ -232,10 +230,6 @@ export default function GoalFurnishingDialog({
           if (data.progressMode) {
             setSelectedProgressMode(data.progressMode);
           }
-        } else if (currentStep === 5) {
-          // Concept selection - no API load needed
-          setLoading(false);
-          return;
         } else if (currentStep === 6) {
           // Starting Value - auto-skip if cumulative
           if (selectedProgressMode === 'cumulative') {
@@ -273,14 +267,16 @@ export default function GoalFurnishingDialog({
   }, [currentStep, open]);
 
   const handleNext = () => {
-    if (currentStep === 5) {
+    if (currentStep === 4) {
       if (selectedProgressMode === 'cumulative') {
-        setCurrentStep(7); // Skip step 6
+        setCurrentStep(7);
       } else {
         setCurrentStep(6);
       }
+    } else if (currentStep === 6) {
+      setCurrentStep(7);
     } else if (currentStep < 7) {
-      setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7);
+      setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4 | 6 | 7);
     } else {
       handleSave();
     }
@@ -289,12 +285,14 @@ export default function GoalFurnishingDialog({
   const handleBack = () => {
     if (currentStep === 7) {
       if (selectedProgressMode === 'cumulative') {
-        setCurrentStep(5); // Skip step 6
+        setCurrentStep(4);
       } else {
         setCurrentStep(6);
       }
+    } else if (currentStep === 6) {
+      setCurrentStep(4);
     } else if (currentStep > 1) {
-      setCurrentStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7);
+      setCurrentStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 6 | 7);
     }
   };
 
@@ -338,7 +336,7 @@ export default function GoalFurnishingDialog({
   // Step Indicators
   const StepIndicator = () => (
     <Box display="flex" gap={0.75}>
-      {[1, 2, 3, 4, 5, 6, 7].map((s) => {
+      {[1, 2, 3, 4, 6, 7].map((s) => {
         // Skip step 6 dot if cumulative progress mode is active
         if (s === 6 && selectedProgressMode === 'cumulative') return null;
         return (
@@ -664,61 +662,6 @@ export default function GoalFurnishingDialog({
                 </Box>
               )}
 
-              {/* STEP 5: Progress Mode (Concept) */}
-              {currentStep === 5 && (
-                <Box>
-                  <Typography sx={{ fontSize: 17, color: textPrimary, mb: 2, fontWeight: 800 }}>
-                    Tracking Method Concept 📈
-                  </Typography>
-                  <Stack gap={1.5}>
-                    <Box
-                      onClick={() => {
-                        setSelectedProgressMode('cumulative');
-                      }}
-                      sx={{
-                        cursor: 'pointer', p: 1.75, borderRadius: '14px', border: `1.5px solid ${selectedProgressMode === 'cumulative' ? typeColor : borderColor}`,
-                        background: selectedProgressMode === 'cumulative' ? `${typeColor}0a` : 'transparent',
-                        transition: 'all 0.2s', '&:hover': { borderColor: typeColor }
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 13.5, fontWeight: 750, color: textPrimary, mb: '2px' }}>
-                        Adding up logs over time 📈
-                      </Typography>
-                      <Typography sx={{ fontSize: 11.5, color: textMuted, lineHeight: 1.4 }}>
-                        For repeating activities that accumulate, like pages read, kilometers run, or money deposited.
-                      </Typography>
-                      {aiProgressMode === 'cumulative' && (
-                        <Typography sx={{ fontSize: 10, color: typeColor, fontWeight: 800, mt: 1, textTransform: 'uppercase' }}>
-                          ★ AI Recommended
-                        </Typography>
-                      )}
-                    </Box>
-
-                    <Box
-                      onClick={() => {
-                        setSelectedProgressMode('current_value');
-                      }}
-                      sx={{
-                        cursor: 'pointer', p: 1.75, borderRadius: '14px', border: `1.5px solid ${selectedProgressMode === 'current_value' ? typeColor : borderColor}`,
-                        background: selectedProgressMode === 'current_value' ? `${typeColor}0a` : 'transparent',
-                        transition: 'all 0.2s', '&:hover': { borderColor: typeColor }
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 13.5, fontWeight: 750, color: textPrimary, mb: '2px' }}>
-                        Tracking a single current level 🎯
-                      </Typography>
-                      <Typography sx={{ fontSize: 11.5, color: textMuted, lineHeight: 1.4 }}>
-                        For snapshot levels, like current weight, account balance, or completion rate.
-                      </Typography>
-                      {aiProgressMode === 'current_value' && (
-                        <Typography sx={{ fontSize: 10, color: typeColor, fontWeight: 800, mt: 1, textTransform: 'uppercase' }}>
-                          ★ AI Recommended
-                        </Typography>
-                      )}
-                    </Box>
-                  </Stack>
-                </Box>
-              )}
 
               {/* STEP 6: Starting Value */}
               {currentStep === 6 && (

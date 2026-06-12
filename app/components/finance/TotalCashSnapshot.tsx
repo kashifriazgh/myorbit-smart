@@ -89,6 +89,7 @@ export default function TotalCashSnapshotComponent({
             custom: normalizedCustom,
           },
           heldBy: data.heldBy || {},
+          sourceOwnership: data.sourceOwnership || {},
         });
       } else {
         const initial: TotalCashSnapshot = {
@@ -102,6 +103,7 @@ export default function TotalCashSnapshotComponent({
             custom: {}, // 👈 always object now
           },
           heldBy: {},
+          sourceOwnership: {},
           totalAmount: 0,
           freezeAmount: 0,
           updatedAt: new Date(),
@@ -643,6 +645,8 @@ export default function TotalCashSnapshotComponent({
         snapshot={snapshot}
         currency={currency}
         isDark={isDark}
+        userId={userId}
+        onUpdateSnapshot={(updated) => setSnapshot(updated)}
       />
 
       <Box mt={2} display="flex" gap={1} flexWrap="wrap">

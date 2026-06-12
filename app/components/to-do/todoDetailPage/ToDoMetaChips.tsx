@@ -13,6 +13,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
 import { deleteTodoReminder, rescheduleTodoReminder } from '@/app/lib/utils/whatsapp-reminder';
+import { incrementTodoRescheduleCount } from '@/app/lib/utilts';
 
 interface TodoMetaChipsProps {
   todo: Todo;
@@ -34,11 +35,20 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
     if (!todo.id || !newDueDate) return;
     setReschedulingLoading(true);
     try {
+      const oldDate = todo.dueDate
+        ? (todo.dueDate instanceof Timestamp ? todo.dueDate.toDate() : new Date(todo.dueDate))
+        : null;
+      const isDateChanged = oldDate ? !moment(oldDate).isSame(newDueDate, 'day') : true;
+
       await updateDoc(doc(db, 'todos', todo.id), {
         dueDate: Timestamp.fromDate(newDueDate),
         isFlexible: false, // Turn off flexible if date is set
         updatedAt: new Date(),
       });
+
+      if (isDateChanged) {
+        await incrementTodoRescheduleCount(todo.id);
+      }
       
       if (user) {
         await rescheduleTodoReminder(todo.id, newDueDate, user.uid);

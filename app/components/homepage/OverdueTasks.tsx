@@ -41,6 +41,7 @@ import Link from 'next/link';
 import { deleteTodoReminder, rescheduleTodoReminder } from '@/app/lib/utils/whatsapp-reminder';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { incrementTodoRescheduleCount } from '@/app/lib/utilts';
 
 export default function OverdueTasks() {
   const { user } = useAuth();
@@ -143,10 +144,19 @@ export default function OverdueTasks() {
     if (!rescheduleTask || !rescheduleTask.id || !newDueDate) return;
     setReschedulingLoading(true);
     try {
+      const oldDate = rescheduleTask.dueDate
+        ? (rescheduleTask.dueDate instanceof Timestamp ? rescheduleTask.dueDate.toDate() : new Date(rescheduleTask.dueDate))
+        : null;
+      const isDateChanged = oldDate ? !moment(oldDate).isSame(newDueDate, 'day') : true;
+
       await updateDoc(doc(db, 'todos', rescheduleTask.id), {
         dueDate: Timestamp.fromDate(newDueDate),
         updatedAt: new Date(),
       });
+
+      if (isDateChanged) {
+        await incrementTodoRescheduleCount(rescheduleTask.id);
+      }
 
       // Reschedule WhatsApp reminder if active
       if (user) {

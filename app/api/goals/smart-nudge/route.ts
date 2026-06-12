@@ -22,8 +22,10 @@ export async function POST(req: NextRequest) {
     if (action === 'refine-title') {
       if (!title) return NextResponse.json({ error: 'Title required' }, { status: 400 });
       systemPrompt = `You are a helpful AI assistant. Analyze the user's goal title.
-If the title is too short, has spelling mistakes, or is poorly phrased, suggest a better, clearer title. Otherwise, return the original title.
-Keep the title concise (max 10 words).
+If the title is too short, has spelling mistakes, or is poorly phrased, suggest a better, clearer, action-oriented title. Otherwise, return the original title.
+The suggested title is for an individual user's personal goal tracker. It must be direct, personal, and action-oriented (e.g., "Gain weight healthily" or "Reach a healthy target weight").
+Do NOT include geographic locations (like city or country names), profession, demographics, or third-person broad advice/strategies.
+Keep the title concise (maximum 6 words).
 Provide your response strictly in the following JSON format without any markdown or code blocks:
 {
   "isGood": false,
@@ -157,7 +159,7 @@ Response format:
       }
     }
 
-    if (contextPrompt) {
+    if (contextPrompt && action !== 'refine-title') {
       systemPrompt = `${systemPrompt}\n\n${contextPrompt}`;
     }
 

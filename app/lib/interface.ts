@@ -137,6 +137,7 @@ export interface Todo {
   }[];
   // Linking to goals
   linkedGoalId?: string;
+  rescheduleCounts?: number;
 }
 
 export interface JournalEntry {
@@ -277,6 +278,13 @@ export interface TotalCashSnapshot {
   };
 
   heldBy?: { [sourceKey: string]: HolderAmount[] }; // 👈 holder balances map
+  sourceOwnership?: {
+    [sourceKey: string]: {
+      hasOwnThisMoney: boolean;
+      ownerName?: string;
+      ownserName?: string;
+    };
+  };
 
   totalAmount: number;
   freezeAmount: number;

@@ -1,4 +1,18 @@
-import { Box, Typography, Button, Collapse, Stack } from '@mui/material';
+import {
+  Box,
+  Typography,
+  Button,
+  Collapse,
+  Stack,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControlLabel,
+  Switch,
+} from '@mui/material';
 import { useState } from 'react';
 import { TotalCashSnapshot } from '@/app/lib/interface';
 import { formatCurrency } from '@/app/lib/utilts';
@@ -6,19 +20,99 @@ import Link from 'next/link';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import PaymentsIcon from '@mui/icons-material/Payments';
+import EditIcon from '@mui/icons-material/Edit';
+import { db } from '@/app/lib/firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 interface Props {
   snapshot: TotalCashSnapshot;
   currency: 'PKR' | 'USD';
   isDark: boolean;
+  userId?: string;
+  onUpdateSnapshot?: (updated: TotalCashSnapshot) => void;
 }
 
 export default function AccountBreakdown({
   snapshot,
   currency,
   isDark,
+  userId,
+  onUpdateSnapshot,
 }: Props) {
   const [showBreakdown, setShowBreakdown] = useState(false);
+
+  const [editOwnership, setEditOwnership] = useState<{
+    key: string;
+    displayName: string;
+  } | null>(null);
+  const [hasOwnThisMoney, setHasOwnThisMoney] = useState(true);
+  const [ownerName, setOwnerName] = useState('');
+  const [savingOwnership, setSavingOwnership] = useState(false);
+
+  const handleOpenEditOwnership = (key: string, displayName: string) => {
+    const current = snapshot.sourceOwnership?.[key] || { hasOwnThisMoney: true, ownerName: '' };
+    setHasOwnThisMoney(current.hasOwnThisMoney !== false);
+    setOwnerName(current.ownerName || current.ownserName || '');
+    setEditOwnership({ key, displayName });
+  };
+
+  const handleSaveOwnership = async () => {
+    if (!editOwnership || !userId || !onUpdateSnapshot) return;
+    setSavingOwnership(true);
+    try {
+      const docRef = doc(db, 'totalCashSnapshots', userId);
+      const val = hasOwnThisMoney ? '' : ownerName.trim();
+      const updatedOwnership = {
+        ...(snapshot.sourceOwnership || {}),
+        [editOwnership.key]: {
+          hasOwnThisMoney,
+          ownerName: val,
+          ownserName: val,
+        },
+      };
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        sourceOwnership: updatedOwnership,
+        updatedAt: new Date(),
+      };
+
+      await setDoc(docRef, {
+        ...updatedSnapshot,
+        updatedAt: serverTimestamp(),
+      });
+
+      onUpdateSnapshot(updatedSnapshot);
+      setEditOwnership(null);
+    } catch (err) {
+      console.error('Error saving source ownership:', err);
+      alert('Failed to save source ownership config.');
+    } finally {
+      setSavingOwnership(false);
+    }
+  };
+
+  const renderOwnership = (sourceKey: string) => {
+    const ownership = snapshot.sourceOwnership?.[sourceKey];
+    if (!ownership || ownership.hasOwnThisMoney !== false) return null;
+
+    return (
+      <Typography
+        fontSize="0.74rem"
+        color="warning.main"
+        sx={{
+          mt: 0.2,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          fontWeight: 600,
+          fontStyle: 'italic',
+        }}
+      >
+        👤 Owner: {ownership.ownerName || ownership.ownserName || 'Unknown'}
+      </Typography>
+    );
+  };
 
   const renderHolders = (sourceKey: string, totalAmount: number) => {
     const holders = snapshot.heldBy?.[sourceKey] || [];
@@ -101,10 +195,22 @@ export default function AccountBreakdown({
                             <Typography fontSize="0.82rem" fontWeight={600}>
                               {bankName}
                             </Typography>
-                            <Typography fontSize="0.82rem" fontWeight="900" color="primary">
-                              {formatCurrency(bankAmt, currency)}
-                            </Typography>
+                            <Box display="flex" alignItems="center" gap={0.5}>
+                              <Typography fontSize="0.82rem" fontWeight="900" color="primary">
+                                {formatCurrency(bankAmt, currency)}
+                              </Typography>
+                              {userId && onUpdateSnapshot && (
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleOpenEditOwnership(bankKey, bankName)}
+                                  sx={{ p: 0.2, color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
+                                >
+                                  <EditIcon sx={{ fontSize: 13 }} />
+                                </IconButton>
+                              )}
+                            </Box>
                           </Box>
+                          {renderOwnership(bankKey)}
                           {renderHolders(bankKey, bankAmt)}
                         </Box>
                       );
@@ -145,10 +251,22 @@ export default function AccountBreakdown({
                             <Typography fontSize="0.82rem" fontWeight={600}>
                               {customName}
                             </Typography>
-                            <Typography fontSize="0.82rem" fontWeight="900" color="secondary">
-                              {formatCurrency(customAmt, currency)}
-                            </Typography>
+                            <Box display="flex" alignItems="center" gap={0.5}>
+                              <Typography fontSize="0.82rem" fontWeight="900" color="secondary">
+                                {formatCurrency(customAmt, currency)}
+                              </Typography>
+                              {userId && onUpdateSnapshot && (
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleOpenEditOwnership(customKey, customName)}
+                                  sx={{ p: 0.2, color: 'text.secondary', '&:hover': { color: 'secondary.main' } }}
+                                >
+                                  <EditIcon sx={{ fontSize: 13 }} />
+                                </IconButton>
+                              )}
+                            </Box>
                           </Box>
+                          {renderOwnership(customKey)}
                           {renderHolders(customKey, customAmt)}
                         </Box>
                       );
@@ -182,10 +300,22 @@ export default function AccountBreakdown({
                   >
                     {name.replace('_', ' ')}
                   </Typography>
-                  <Typography fontSize="0.82rem" fontWeight="900">
-                    {formatCurrency(val, currency)}
-                  </Typography>
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    <Typography fontSize="0.82rem" fontWeight="900">
+                      {formatCurrency(val, currency)}
+                    </Typography>
+                    {userId && onUpdateSnapshot && (
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenEditOwnership(name, name.replace('_', ' '))}
+                        sx={{ p: 0.2, color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
+                      >
+                        <EditIcon sx={{ fontSize: 13 }} />
+                      </IconButton>
+                    )}
+                  </Box>
                 </Box>
+                {renderOwnership(name)}
                 {renderHolders(name, val)}
               </Box>
             );
@@ -209,6 +339,70 @@ export default function AccountBreakdown({
           </Box>
         </Box>
       </Collapse>
+
+      <Dialog
+        open={!!editOwnership}
+        onClose={() => !savingOwnership && setEditOwnership(null)}
+        PaperProps={{
+          sx: { borderRadius: 4, p: 1, maxWidth: 450, width: '100%' }
+        }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" fontWeight="900">
+            Ownership - {editOwnership?.displayName}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Configure who owns the funds in this source location
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 1 }}>
+          <Stack spacing={3}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={hasOwnThisMoney}
+                  onChange={(e) => setHasOwnThisMoney(e.target.checked)}
+                  color="primary"
+                />
+              }
+              label={
+                <Typography fontSize="0.9rem" fontWeight={600}>
+                  I own this money
+                </Typography>
+              }
+            />
+
+            {!hasOwnThisMoney && (
+              <TextField
+                fullWidth
+                label="Real Owner's Name"
+                placeholder="e.g., Mother, Wife, John Doe"
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && ownerName.trim() && !savingOwnership) {
+                    handleSaveOwnership();
+                  }
+                }}
+              />
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 1, gap: 1 }}>
+          <Button onClick={() => setEditOwnership(null)} disabled={savingOwnership}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveOwnership}
+            variant="contained"
+            disabled={savingOwnership || (!hasOwnThisMoney && !ownerName.trim())}
+            sx={{ borderRadius: 2, fontWeight: 800, px: 4 }}
+          >
+            {savingOwnership ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }
