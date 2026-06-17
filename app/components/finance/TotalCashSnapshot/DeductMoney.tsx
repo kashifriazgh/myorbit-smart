@@ -52,9 +52,11 @@ interface Props {
     holderName?: string
   ) => Promise<void>;
   saving: boolean;
+  externalOpen?: boolean;
+  onExternalClose?: () => void;
 }
 
-export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
+export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, onExternalClose }: Props) {
   const { user } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [amount, setAmount] = useState<number | ''>('');
@@ -62,6 +64,11 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
   const [selectedBank, setSelectedBank] = useState('');
   const [fromFreeze, setFromFreeze] = useState(false);
   const [note, setNote] = useState('');
+
+  // Sync with external open state from FAB
+  useEffect(() => {
+    if (externalOpen !== undefined) setShowModal(externalOpen);
+  }, [externalOpen]);
 
   const [selectedHolder, setSelectedHolder] = useState('Unassigned');
 
@@ -189,6 +196,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
     );
 
     setShowModal(false);
+    onExternalClose?.();
     setAmount('');
     setSource('in_hand');
     setSelectedBank('');
@@ -237,32 +245,17 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
+  const handleClose = () => {
+    if (saving) return;
+    setShowModal(false);
+    onExternalClose?.();
+  };
+
   return (
     <>
-      <Button
-        variant="outlined"
-        color="error"
-        onClick={() => setShowModal(true)}
-        sx={{ 
-          borderRadius: 2,
-          fontWeight: 700,
-          textTransform: 'none',
-          borderColor: isDark ? 'rgba(239, 68, 68, 0.5)' : '#ef4444',
-          color: isDark ? '#fca5a5' : '#b91c1c',
-          bgcolor: isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.05)',
-          '&:hover': {
-            bgcolor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            borderColor: '#ef4444'
-          }
-        }}
-        startIcon={<DeductIcon sx={{ fontSize: 18 }} />}
-      >
-        Deduct Money
-      </Button>
-
       <Dialog 
         open={showModal} 
-        onClose={() => !saving && setShowModal(false)}
+        onClose={handleClose}
         fullWidth
         maxWidth="xs"
         TransitionComponent={Fade}
@@ -294,7 +287,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
             </Box>
           </Stack>
           <IconButton 
-            onClick={() => setShowModal(false)}
+            onClick={handleClose}
             sx={{ 
               position: 'absolute', 
               right: 12, 
@@ -525,7 +518,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving }: Props) {
         </DialogContent>
 
         <DialogActions sx={{ px: 3, py: 3, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-          <Button onClick={() => setShowModal(false)} sx={{ fontWeight: 700, color: 'text.secondary' }}>
+          <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary' }}>
             Cancel
           </Button>
           <Button

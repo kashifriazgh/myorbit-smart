@@ -50,6 +50,8 @@ interface Props {
     note?: string,
   ) => Promise<void>;
   saving: boolean;
+  externalOpen?: boolean;
+  onExternalClose?: () => void;
 }
 
 const SOURCE_OPTIONS: TransactionSource[] = [
@@ -61,12 +63,17 @@ const SOURCE_OPTIONS: TransactionSource[] = [
   'custom',
 ];
 
-export default function TransferFunds({ snapshot, onTransfer, saving }: Props) {
+export default function TransferFunds({ snapshot, onTransfer, saving, externalOpen, onExternalClose }: Props) {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
   const [open, setOpen] = useState(false);
+
+  // Sync with external open state from FAB
+  useEffect(() => {
+    if (externalOpen !== undefined) setOpen(externalOpen);
+  }, [externalOpen]);
   const [amount, setAmount] = useState<number | ''>('');
 
   // From state
@@ -172,6 +179,7 @@ export default function TransferFunds({ snapshot, onTransfer, saving }: Props) {
 
     // Reset
     setOpen(false);
+    onExternalClose?.();
     setAmount('');
     setFromSource('in_hand');
     setFromBankId('');
@@ -185,36 +193,17 @@ export default function TransferFunds({ snapshot, onTransfer, saving }: Props) {
     setNote('');
   };
 
+  const handleClose = () => {
+    if (saving) return;
+    setOpen(false);
+    onExternalClose?.();
+  };
+
   return (
     <>
-      <Button
-        variant="outlined"
-        color="primary"
-        onClick={() => setOpen(true)}
-        sx={{
-          borderRadius: 2,
-          fontWeight: 700,
-          textTransform: 'none',
-          borderColor: isDark ? 'rgba(59, 130, 246, 0.5)' : '#3b82f6',
-          color: isDark ? '#93c5fd' : '#1d4ed8',
-          bgcolor: isDark
-            ? 'rgba(59, 130, 246, 0.05)'
-            : 'rgba(59, 130, 246, 0.05)',
-          '&:hover': {
-            bgcolor: isDark
-              ? 'rgba(59, 130, 246, 0.1)'
-              : 'rgba(59, 130, 246, 0.1)',
-            borderColor: '#3b82f6',
-          },
-        }}
-        startIcon={<SwapIcon sx={{ fontSize: 18 }} />}
-      >
-        Transfer Funds
-      </Button>
-
       <Dialog
         open={open}
-        onClose={() => !saving && setOpen(false)}
+        onClose={handleClose}
         fullWidth
         maxWidth="xs"
         TransitionComponent={Fade}
@@ -255,7 +244,7 @@ export default function TransferFunds({ snapshot, onTransfer, saving }: Props) {
             </Box>
           </Stack>
           <IconButton
-            onClick={() => setOpen(false)}
+            onClick={handleClose}
             sx={{
               position: 'absolute',
               right: 12,
@@ -541,7 +530,7 @@ export default function TransferFunds({ snapshot, onTransfer, saving }: Props) {
           }}
         >
           <Button
-            onClick={() => setOpen(false)}
+            onClick={handleClose}
             sx={{ fontWeight: 700, color: 'text.secondary' }}
           >
             Cancel

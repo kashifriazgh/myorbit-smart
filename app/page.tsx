@@ -5,6 +5,7 @@ import { useCustomTheme } from './lib/context/themeContext';
 import { CircularProgress, Box } from '@mui/material';
 import Switch from '@mui/material/Switch';
 import GuestUserBanner from './components/global/GuestUserBanner';
+import GuideBanner from './components/homepage/GuideBanner';
 import HomepageHeader from './components/homepage/HomepageHeader';
 import SkeletonLoader from './components/global/SkeletonLoader';
 import Goals from './components/homepage/Goals';
@@ -83,6 +84,7 @@ export default function Homepage() {
     >
       <OnBoardingInitializer />
       <GuestUserBanner />
+      <GuideBanner />
 
       <div className="flex justify-end items-center mb-4 w-full">
         <label className="flex items-center gap-2 cursor-pointer select-none text-base font-medium">

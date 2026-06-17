@@ -95,31 +95,45 @@ export default function AccountBreakdown({
   const renderOwnership = (sourceKey: string) => {
     const ownership = snapshot.sourceOwnership?.[sourceKey];
     if (!ownership || ownership.hasOwnThisMoney !== false) return null;
+    const ownerName = ownership.ownerName || ownership.ownserName || 'Unknown';
 
     return (
-      <Typography
-        fontSize="0.74rem"
-        color="warning.main"
+      <Box
+        mt={0.5}
+        display="inline-flex"
+        alignItems="center"
         sx={{
-          mt: 0.2,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.5,
-          fontWeight: 600,
-          fontStyle: 'italic',
+          px: 0.9,
+          py: 0.2,
+          borderRadius: 99,
+          bgcolor: isDark ? 'rgba(251,191,36,0.12)' : '#fef9c3',
+          border: `1px solid ${isDark ? 'rgba(251,191,36,0.3)' : '#fde68a'}`,
+          width: 'fit-content',
         }}
       >
-        👤 Owner: {ownership.ownerName || ownership.ownserName || 'Unknown'}
-      </Typography>
+        <Typography
+          component="span"
+          fontSize="0.65rem"
+          fontWeight={700}
+          sx={{ color: isDark ? '#fde68a' : '#78350f' }}
+        >
+          {ownerName}
+        </Typography>
+      </Box>
     );
   };
 
   const renderHolders = (sourceKey: string, totalAmount: number) => {
-    const holders = snapshot.heldBy?.[sourceKey] || [];
-    if (holders.length === 0) return null;
+    const allHolders = snapshot.heldBy?.[sourceKey] || [];
+    // Only show holders that have a positive (non-zero) amount
+    const holders = allHolders.filter((h) => h.amount > 0);
+    if (holders.length === 0 && totalAmount < 1) return null;
 
-    const holdersSum = holders.reduce((s, h) => s + h.amount, 0);
+    const holdersSum = allHolders.reduce((s, h) => s + h.amount, 0);
     const unassigned = totalAmount - holdersSum;
+
+    // If there are no named holders, the whole amount is self-owned — no need to show Self row
+    if (holders.length === 0) return null;
 
     return (
       <Stack spacing={0.5} sx={{ pl: 2, mt: 0.8, borderLeft: `2.5px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}` }}>
@@ -133,10 +147,11 @@ export default function AccountBreakdown({
             </Typography>
           </Box>
         ))}
-        {unassigned >= 1 && (
+        {/* Only show Self row when there are named holders and some remainder exists */}
+        {holders.length > 0 && unassigned >= 1 && (
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography fontSize="0.74rem" color="text.secondary" sx={{ fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              👤 Self / Unassigned
+              👤 Self
             </Typography>
             <Typography fontSize="0.74rem" fontWeight="600" color="text.secondary">
               {formatCurrency(unassigned, currency)}

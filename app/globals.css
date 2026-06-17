@@ -126,3 +126,21 @@ body {
     background: #475569 !important;
   }
 }
+
+/* RTL / Urdu Font Adjustments */
+[dir="rtl"] {
+  font-family: var(--font-noto-urdu), system-ui, -apple-system, sans-serif;
+}
+
+[dir="rtl"] p,
+[dir="rtl"] span,
+[dir="rtl"] h1,
+[dir="rtl"] h2,
+[dir="rtl"] h3,
+[dir="rtl"] h4,
+[dir="rtl"] h5,
+[dir="rtl"] h6,
+[dir="rtl"] button {
+  font-family: var(--font-noto-urdu), system-ui, -apple-system, sans-serif !important;
+  line-height: 1.8 !important;
+}

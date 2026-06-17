@@ -81,13 +81,20 @@ interface Props {
   ) => Promise<void>;
   onSuccess?: () => void;
   snapshot: TotalCashSnapshot;
+  externalOpen?: boolean;
+  onExternalClose?: () => void;
 }
 
-export default function LoanDialog({ onAddMoney, onSuccess, snapshot }: Props) {
+export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOpen, onExternalClose }: Props) {
   const { user } = useAuth();
   const { theme: customTheme } = useCustomTheme();
   const isDark = customTheme?.mode === 'dark';
   const [showModal, setShowModal] = useState(false);
+
+  // Sync with external open state from FAB
+  useEffect(() => {
+    if (externalOpen !== undefined) setShowModal(externalOpen);
+  }, [externalOpen]);
 
   // loan form state
   const [amount, setAmount] = useState<number | ''>('');
@@ -406,6 +413,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot }: Props) {
       setSelectedHolder('Unassigned');
       setNewHolderName('');
       setShowModal(false);
+      onExternalClose?.();
       if (onSuccess) onSuccess();
     } catch (err) {
       setError(err.message || 'Something went wrong');
@@ -444,31 +452,17 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot }: Props) {
   const existingHolders = snapshot.heldBy?.[sourceKey] || [];
   const hasHolders = existingHolders.length > 0;
 
+  const handleClose = () => {
+    if (localSaving) return;
+    setShowModal(false);
+    onExternalClose?.();
+  };
+
   return (
     <>
-      <Button
-        variant="outlined"
-        sx={{
-          borderRadius: 2,
-          fontWeight: 700,
-          textTransform: 'none',
-          borderColor: isDark ? 'rgba(14, 165, 233, 0.5)' : '#0ea5e9',
-          color: isDark ? '#7dd3fc' : '#0369a1',
-          bgcolor: isDark ? 'rgba(14, 165, 233, 0.05)' : 'rgba(14, 165, 233, 0.05)',
-          '&:hover': {
-            bgcolor: isDark ? 'rgba(14, 165, 233, 0.1)' : 'rgba(14, 165, 233, 0.1)',
-            borderColor: '#0ea5e9'
-          }
-        }}
-        onClick={() => setShowModal(true)}
-        startIcon={<SwapIcon sx={{ fontSize: 18 }} />}
-      >
-        Outstanding Loan
-      </Button>
-
       <Dialog
         open={showModal}
-        onClose={() => !localSaving && setShowModal(false)}
+        onClose={handleClose}
         fullWidth
         maxWidth="xs"
         TransitionComponent={Fade}
@@ -500,7 +494,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot }: Props) {
             </Box>
           </Stack>
           <IconButton
-            onClick={() => setShowModal(false)}
+            onClick={handleClose}
             sx={{
               position: 'absolute',
               right: 12,
@@ -758,7 +752,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot }: Props) {
         </DialogContent>
 
         <DialogActions sx={{ px: 3, py: 3, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-          <Button onClick={() => setShowModal(false)} sx={{ fontWeight: 700, color: 'text.secondary' }}>
+          <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary' }}>
             Cancel
           </Button>
           <Button

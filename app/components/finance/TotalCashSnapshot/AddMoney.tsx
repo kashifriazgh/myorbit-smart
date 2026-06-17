@@ -63,11 +63,18 @@ interface Props {
   ) => Promise<void>;
   saving: boolean;
   snapshot?: TotalCashSnapshot | null;
+  externalOpen?: boolean;
+  onExternalClose?: () => void;
 }
 
-export default function AddMoney({ onSave, saving, snapshot }: Props) {
+export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExternalClose }: Props) {
   const { user } = useAuth();
   const [showModal, setShowModal] = useState(false);
+
+  // Sync with external open state from FAB
+  useEffect(() => {
+    if (externalOpen !== undefined) setShowModal(externalOpen);
+  }, [externalOpen]);
   const [newAmount, setNewAmount] = useState<number | ''>('');
   const [newMode, setNewMode] = useState<TransactionSource>('in_hand');
   const [isFreezed, setIsFreezed] = useState(false);
@@ -192,6 +199,7 @@ export default function AddMoney({ onSave, saving, snapshot }: Props) {
 
     // reset state
     setShowModal(false);
+    onExternalClose?.();
     setNewAmount('');
     setNewMode('in_hand');
     setIsFreezed(false);
@@ -210,25 +218,34 @@ export default function AddMoney({ onSave, saving, snapshot }: Props) {
   const sourceKey = getSourceKey(newMode, bankName, customPaymentHeadName);
   const existingHolders = snapshot?.heldBy?.[sourceKey] || [];
 
+  const handleClose = () => {
+    if (saving) return;
+    setShowModal(false);
+    onExternalClose?.();
+  };
+
   return (
     <>
-      <Button
-        variant="contained"
-        onClick={() => setShowModal(true)}
-        startIcon={<AddIcon />}
-        sx={{
-          borderRadius: 2,
-          fontWeight: 700,
-          textTransform: 'none',
-          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-        }}
-      >
-        Add Money
-      </Button>
+      {/* Trigger button hidden when FAB controls the dialog */}
+      {!externalOpen && externalOpen === undefined && (
+        <Button
+          variant="contained"
+          onClick={() => setShowModal(true)}
+          startIcon={<AddIcon />}
+          sx={{
+            borderRadius: 2,
+            fontWeight: 700,
+            textTransform: 'none',
+            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+          }}
+        >
+          Add Money
+        </Button>
+      )}
 
       <Dialog
         open={showModal}
-        onClose={() => !saving && setShowModal(false)}
+        onClose={handleClose}
         fullWidth
         maxWidth="xs"
         TransitionComponent={Fade}
@@ -260,7 +277,7 @@ export default function AddMoney({ onSave, saving, snapshot }: Props) {
             </Box>
           </Stack>
           <IconButton
-            onClick={() => setShowModal(false)}
+            onClick={handleClose}
             sx={{
               position: 'absolute',
               right: 12,
@@ -503,7 +520,7 @@ export default function AddMoney({ onSave, saving, snapshot }: Props) {
         </DialogContent>
 
         <DialogActions sx={{ px: 3, py: 3, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-          <Button onClick={() => setShowModal(false)} sx={{ fontWeight: 700, color: 'text.secondary' }}>
+          <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary' }}>
             Cancel
           </Button>
           <Button

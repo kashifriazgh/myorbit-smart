@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, Roboto } from 'next/font/google';
+import { Inter, Roboto, Noto_Nastaliq_Urdu } from 'next/font/google';
 import './globals.css';
 
 import ClientThemeProvider from './components/global/ClientThemeProvider';
@@ -20,6 +20,12 @@ const roboto = Roboto({
   subsets: ['latin'],
   weight: ['400', '500', '700'],
   variable: '--font-roboto',
+});
+
+const notoUrdu = Noto_Nastaliq_Urdu({
+  subsets: ['arabic'],
+  weight: ['400', '700'],
+  variable: '--font-noto-urdu',
 });
 
 export const metadata: Metadata = {
@@ -43,7 +49,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={`
-          ${inter.variable} ${roboto.variable}
+          ${inter.variable} ${roboto.variable} ${notoUrdu.variable}
           antialiased
 
           /* Layout */

@@ -18,6 +18,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  useMediaQuery,
+  useTheme as useMuiTheme,
 } from '@mui/material';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
@@ -292,7 +294,7 @@ export default function NoteInput({
   const [noteContent, setNoteContent] = useState(initialContent);
   const [savingNote, setSavingNote] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
-  const [noteFocused, setNoteFocused] = useState(false);
+  const [noteFocused, setNoteFocused] = useState(!!noteId);
   const [isImportant, setIsImportant] = useState(initialIsImportant);
   const [isFav, setIsFav] = useState(initialIsFav);
 
@@ -306,6 +308,8 @@ export default function NoteInput({
   const { user } = useAuth();
   const isCompact = variant === 'compact';
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const muiTheme = useMuiTheme();
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
 
   // Sync props if editing asynchronously loaded note
   useEffect(() => {
@@ -555,7 +559,16 @@ export default function NoteInput({
               <TextField
                 inputRef={inputRef}
                 multiline
-                rows={noteFocused ? (isCompact ? 4 : 6) : isCompact ? 2 : 4}
+                rows={
+                  isMobile && noteId
+                    ? undefined                         // mobile edit: use CSS height instead
+                    : noteId
+                      ? (isCompact ? 10 : 14)          // desktop edit — always tall
+                      : noteFocused
+                        ? (isCompact ? 4 : 6)           // new note focused
+                        : (isCompact ? 2 : 4)           // new note idle
+                }
+                minRows={isMobile && noteId ? 20 : undefined}
                 fullWidth
                 placeholder="Start typing your note (supports Markdown: **bold**, *italic*, - list)..."
                 value={noteContent}
@@ -573,6 +586,13 @@ export default function NoteInput({
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
                     color: theme?.mode === 'dark' ? '#cbd5e1' : '#0f172a',
                     '& fieldset': { border: 'none' },
+                    // On mobile edit mode: stretch to fill remaining viewport height
+                    ...(isMobile && noteId ? {
+                      '& textarea': {
+                        minHeight: 'calc(100dvh - 360px)',
+                        resize: 'none',
+                      },
+                    } : {}),
                   },
                 }}
               />
@@ -580,8 +600,14 @@ export default function NoteInput({
               <Box 
                 sx={{ 
                   p: 2, 
-                  minHeight: noteFocused ? (isCompact ? 104 : 156) : isCompact ? 54 : 104,
-                  maxHeight: '400px',
+                  minHeight: isMobile && noteId
+                    ? 'calc(100dvh - 360px)'           // mobile edit — fill viewport
+                    : noteId
+                      ? (isCompact ? 260 : 364)        // desktop edit — always tall
+                      : noteFocused
+                        ? (isCompact ? 104 : 156)      // new note focused
+                        : (isCompact ? 54 : 104),      // new note idle
+                  maxHeight: isMobile && noteId ? 'none' : '400px',
                   overflowY: 'auto',
                   backgroundColor: theme?.mode === 'dark' ? '#0f172a' : '#fafafa',
                 }}

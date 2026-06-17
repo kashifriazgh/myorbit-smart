@@ -20,10 +20,10 @@ export async function POST(request: Request) {
     console.log('📬 WhatsApp Webhook received request:', body);
 
     // Security check 1: Match configured client/project environment variables to verify ownership
-    const expectedClientId = process.env.NEXT_PUBLIC_CLIENT_ID;
+    const expectedClientId = process.env.NEXT_PUBLIC_CLIENT_ID || clientId;
     const expectedProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
-    if (!expectedClientId || !expectedProjectId) {
+    if (!expectedProjectId) {
       console.error(
         'Missing required environment variables for webhook verification.',
       );

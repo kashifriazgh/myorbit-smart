@@ -34,7 +34,7 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 
 const sharedRtdbConfig = {
-  apiKey: 'AIzaSyDZFNapAjmnS0TZIM1l8wNA4PDgedVnRo',
+  apiKey: 'AIzaSyDZFNapAjmnS0TZIM1lK8wNA4PDgedVnRo',
   authDomain: 'forms-389a6.firebaseapp.com',
   databaseURL:
     'https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app',
