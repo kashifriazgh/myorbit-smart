@@ -10,7 +10,6 @@ import {
   Stepper,
   Step,
   StepLabel,
-  StepContent,
   Chip,
   Card,
   CardContent,
@@ -110,6 +109,7 @@ const Schedules: React.FC = () => {
   const [editingSchedule, setEditingSchedule] = useState<SchedulesProps | null>(
     null,
   );
+  const [isSaving, setIsSaving] = useState(false);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
@@ -291,6 +291,7 @@ const Schedules: React.FC = () => {
   };
 
   const handleSaveSchedule = async (scheduleData: SchedulesProps) => {
+    setIsSaving(true);
     try {
       if (!scheduleData.title || !scheduleData.startTime) {
         throw new Error('Title and start time are required');
@@ -311,10 +312,13 @@ const Schedules: React.FC = () => {
       console.error('Error saving schedule:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to save schedule';
       setSnackbar({ open: true, message: errorMessage, severity: 'error' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleDeleteSchedule = async (scheduleId: string) => {
+    setIsSaving(true);
     try {
       await deleteSchedule(scheduleId);
       setSnackbar({ open: true, message: 'Schedule deleted successfully', severity: 'success' });
@@ -323,6 +327,8 @@ const Schedules: React.FC = () => {
     } catch (error) {
       console.error('Error deleting schedule:', error);
       setSnackbar({ open: true, message: 'Failed to delete schedule', severity: 'error' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -448,6 +454,25 @@ const Schedules: React.FC = () => {
 
         {/* Schedules List */}
         <Box sx={{ maxHeight: '420px', overflowY: 'auto', pr: 1 }}>
+          {isSaving && (
+            <Box mb={2} p={1.5} sx={{
+              borderRadius: 2,
+              border: '1px dashed #fbbf24',
+              backgroundColor: theme?.mode === 'dark' ? 'rgba(251, 191, 36, 0.05)' : 'rgba(251, 191, 36, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 2
+            }}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#fbbf24', borderRadius: '50%' }} />
+                <Typography variant="caption" sx={{ fontWeight: 600, color: theme?.mode === 'dark' ? '#fbbf24' : '#b45309' }}>
+                  Saving schedule...
+                </Typography>
+              </Box>
+            </Box>
+          )}
+
           {loading ? (
             <Box>
               {[...Array(4)].map((_, index) => (
@@ -513,28 +538,57 @@ const Schedules: React.FC = () => {
                             sx={{ '& .MuiStepLabel-labelContainer': { paddingLeft: '8px' } }}
                           >
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%' }}>
-                              <Typography variant="caption" sx={{ color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', fontWeight: 500 }}>
-                                {getTimeRange(schedule.startTime, schedule.endTime, schedule.isFlexible)}
-                              </Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 600, color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a' }}>
-                                {schedule.title}
-                              </Typography>
-                              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                <Typography variant="body2" sx={{ fontWeight: 600, color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a' }}>
+                                  {schedule.title}
+                                </Typography>
+                                <IconButton 
+                                  size="small" 
+                                  onClick={() => handleEditSchedule(schedule.id!)}
+                                  sx={{ 
+                                    padding: '2px', 
+                                    color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                                    '&:hover': {
+                                      color: '#fbbf24'
+                                    }
+                                  }}
+                                >
+                                  <EditIcon sx={{ fontSize: '0.9rem' }} />
+                                </IconButton>
+                              </Box>
+                              
+                              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mt={0.25}>
+                                <Typography variant="caption" sx={{ color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                                  <TimeIcon sx={{ fontSize: '0.8rem' }} />
+                                  {getTimeRange(schedule.startTime, schedule.endTime, schedule.isFlexible)}
+                                </Typography>
+
                                 {schedule.isFlexible && (
-                                  <Chip 
-                                    label="Flexible" 
-                                    size="small" 
-                                    variant="outlined"
-                                    icon={<Box sx={{ ml: 0.5 }}>✨</Box>}
-                                    sx={{ 
-                                      height: 20, 
-                                      fontSize: '0.65rem', 
-                                      fontWeight: 900,
-                                      borderColor: '#8b5cf6',
-                                      color: '#8b5cf6',
-                                      borderWidth: '1.5px'
-                                    }} 
-                                  />
+                                  <>
+                                    <Chip 
+                                      label="Flexible" 
+                                      size="small" 
+                                      variant="outlined"
+                                      icon={<Box sx={{ ml: 0.5 }}>✨</Box>}
+                                      sx={{ 
+                                        height: 20, 
+                                        fontSize: '0.65rem', 
+                                        fontWeight: 900,
+                                        borderColor: '#8b5cf6',
+                                        color: '#8b5cf6',
+                                        borderWidth: '1.5px'
+                                      }} 
+                                    />
+                                    <Button 
+                                      size="small" 
+                                      variant="text" 
+                                      startIcon={<CalendarIcon sx={{ fontSize: 12 }} />}
+                                      onClick={() => handleEditSchedule(schedule.id!)}
+                                      sx={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'none', height: 20, py: 0, px: 0.5 }}
+                                    >
+                                      Add Specific Date
+                                    </Button>
+                                  </>
                                 )}
                                 {schedule.objective && (
                                   <Chip label={schedule.objective} size="small" sx={{ height: 20, fontSize: '0.7rem', backgroundColor: getPriorityColor(schedule.priority || 'low'), color: 'white' }} />
@@ -545,24 +599,6 @@ const Schedules: React.FC = () => {
                               </Box>
                             </Box>
                           </StepLabel>
-                          <StepContent>
-                            <Box display="flex" justifyContent="flex-end" alignItems="center" mt={1} gap={1}>
-                              {schedule.isFlexible && (
-                                <Button 
-                                  size="small" 
-                                  variant="text" 
-                                  startIcon={<CalendarIcon sx={{ fontSize: 14 }} />}
-                                  onClick={() => handleEditSchedule(schedule.id!)}
-                                  sx={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'none' }}
-                                >
-                                  Add Specific Date
-                                </Button>
-                              )}
-                              <IconButton size="small" onClick={() => handleEditSchedule(schedule.id!)}>
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Box>
-                          </StepContent>
                         </Step>
                       ))}
                     </Stepper>
@@ -607,6 +643,7 @@ const Schedules: React.FC = () => {
         onSave={handleSaveSchedule}
         onDelete={handleDeleteSchedule}
         onDateChange={setSelectedDate}
+        existingSchedules={schedules}
       />
 
       <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={handleCloseSnackbar} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>

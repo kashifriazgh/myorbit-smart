@@ -10,7 +10,8 @@ import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import HistoryIcon from '@mui/icons-material/History';
-import { useEffect, useRef, useState } from 'react';
+import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { db } from '@/app/lib/firebase';
 import {
   addDoc,
@@ -20,12 +21,17 @@ import {
   setDoc,
   serverTimestamp,
   Timestamp,
+  query,
+  where,
+  onSnapshot,
 } from 'firebase/firestore';
 import {
   TotalCashSnapshot,
   TransactionSource,
   Bank,
   CashTransaction,
+  LoanRecord,
+  Liability,
 } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';
@@ -35,6 +41,7 @@ import DeductMoney from './TotalCashSnapshot/DeductMoney';
 import LoanDialog from './TotalCashSnapshot/LoanRecord';
 import TransactionHistory from './TotalCashSnapshot/TransactionHistory';
 import TransferFunds from './TotalCashSnapshot/TransferFunds';
+import LiabilityDialog from './TotalCashSnapshot/LiabilityDialog';
 
 export const getSourceKey = (
   source: TransactionSource,
@@ -98,8 +105,84 @@ export default function TotalCashSnapshotComponent({
   const [openDeduct, setOpenDeduct] = useState(false);
   const [openTransfer, setOpenTransfer] = useState(false);
   const [openLoan, setOpenLoan] = useState(false);
+  const [openLiability, setOpenLiability] = useState(false);
+
+  const [loans, setLoans] = useState<LoanRecord[]>([]);
+  const [liabilities, setLiabilities] = useState<Liability[]>([]);
 
   const fabRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    const q = query(collection(db, 'loans'), where('userId', '==', userId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: LoanRecord[] = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<LoanRecord, 'id'>),
+      }));
+      setLoans(list);
+    });
+    return unsubscribe;
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const q = query(collection(db, 'liabilities'), where('userId', '==', userId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: Liability[] = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<Liability, 'id'>),
+      }));
+      setLiabilities(list);
+    });
+    return unsubscribe;
+  }, [userId]);
+
+  const totalsData = useMemo(() => {
+    let borrowLoansSum = 0;
+    let borrowLoansCount = 0;
+    let lendLoansSum = 0;
+    let lendLoansCount = 0;
+
+    loans.forEach((l) => {
+      if (!l.isSettled) {
+        const remaining = (l.amount ?? 0) - (l.paidAmount ?? 0);
+        if (l.type === 'borrow') {
+          borrowLoansSum += remaining;
+          borrowLoansCount++;
+        } else if (l.type === 'lend') {
+          lendLoansSum += remaining;
+          lendLoansCount++;
+        }
+      }
+    });
+
+    let borrowLiabilitiesSum = 0;
+    let borrowLiabilitiesCount = 0;
+    let lendLiabilitiesSum = 0;
+    let lendLiabilitiesCount = 0;
+
+    liabilities.forEach((l) => {
+      if (l.status !== 'settled') {
+        if (l.type === 'borrowed') {
+          borrowLiabilitiesSum += l.amount;
+          borrowLiabilitiesCount++;
+        } else if (l.type === 'lend') {
+          lendLiabilitiesSum += l.amount;
+          lendLiabilitiesCount++;
+        }
+      }
+    });
+
+    return {
+      toPay: borrowLoansSum + borrowLiabilitiesSum,
+      toPayLoansCount: borrowLoansCount,
+      toPayLiabilitiesCount: borrowLiabilitiesCount,
+      toReceive: lendLoansSum + lendLiabilitiesSum,
+      toReceiveLoansCount: lendLoansCount,
+      toReceiveLiabilitiesCount: lendLiabilitiesCount,
+    };
+  }, [loans, liabilities]);
 
   const currency = 'PKR';
 
@@ -567,6 +650,12 @@ export default function TotalCashSnapshotComponent({
       onClick: () => { setFabOpen(false); setOpenLoan(true); },
     },
     {
+      icon: <AssignmentOutlinedIcon />,
+      label: 'Add Liability',
+      color: '#ec4899',
+      onClick: () => { setFabOpen(false); setOpenLiability(true); },
+    },
+    {
       icon: <HistoryIcon />,
       label: 'History',
       color: '#f59e0b',
@@ -758,6 +847,77 @@ export default function TotalCashSnapshotComponent({
         </Box>
       </Box>
 
+      {/* Debt Summary Cards */}
+      <Box display="flex" gap={2} mb={2} flexWrap="wrap">
+        {/* To Pay Back Card */}
+        <Box
+          flex={1}
+          minWidth={140}
+          borderRadius={3}
+          p={2}
+          sx={{
+            background: isDark
+              ? 'linear-gradient(135deg, rgba(244,63,94,0.12) 0%, rgba(225,29,72,0.06) 100%)'
+              : 'linear-gradient(135deg, #fff5f5 0%, #fff1f2 100%)',
+            border: `1px solid ${isDark ? 'rgba(244,63,94,0.2)' : '#fecdd3'}`,
+          }}
+        >
+          <Typography
+            variant="caption"
+            fontWeight={800}
+            sx={{
+              textTransform: 'uppercase',
+              letterSpacing: '0.8px',
+              color: isDark ? '#fb7185' : '#e11d48',
+              display: 'block',
+              mb: 0.5,
+            }}
+          >
+            To Pay Back
+          </Typography>
+          <Typography variant="h6" fontWeight="900" color={isDark ? '#fecdd3' : '#9f1239'}>
+            {formatCurrency(totalsData.toPay, currency)}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.3, display: 'block', fontWeight: 600 }}>
+            {`(${totalsData.toPayLoansCount} loan${totalsData.toPayLoansCount !== 1 ? 's' : ''} + ${totalsData.toPayLiabilitiesCount} liabilit${totalsData.toPayLiabilitiesCount !== 1 ? 'ies' : 'y'})`}
+          </Typography>
+        </Box>
+
+        {/* To Receive Card */}
+        <Box
+          flex={1}
+          minWidth={140}
+          borderRadius={3}
+          p={2}
+          sx={{
+            background: isDark
+              ? 'linear-gradient(135deg, rgba(13,148,136,0.12) 0%, rgba(15,118,110,0.06) 100%)'
+              : 'linear-gradient(135deg, #f0fdfa 0%, #f2fbf9 100%)',
+            border: `1px solid ${isDark ? 'rgba(13,148,136,0.2)' : '#99f6e4'}`,
+          }}
+        >
+          <Typography
+            variant="caption"
+            fontWeight={800}
+            sx={{
+              textTransform: 'uppercase',
+              letterSpacing: '0.8px',
+              color: isDark ? '#2dd4bf' : '#0d9488',
+              display: 'block',
+              mb: 0.5,
+            }}
+          >
+            To Receive Back
+          </Typography>
+          <Typography variant="h6" fontWeight="900" color={isDark ? '#99f6e4' : '#115e59'}>
+            {formatCurrency(totalsData.toReceive, currency)}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.3, display: 'block', fontWeight: 600 }}>
+            {`(${totalsData.toReceiveLoansCount} loan${totalsData.toReceiveLoansCount !== 1 ? 's' : ''} + ${totalsData.toReceiveLiabilitiesCount} liabilit${totalsData.toReceiveLiabilitiesCount !== 1 ? 'ies' : 'y'})`}
+          </Typography>
+        </Box>
+      </Box>
+
       <AccountBreakdown
         snapshot={snapshot}
         currency={currency}
@@ -793,6 +953,11 @@ export default function TotalCashSnapshotComponent({
         snapshot={snapshot}
         externalOpen={openLoan}
         onExternalClose={() => setOpenLoan(false)}
+      />
+
+      <LiabilityDialog
+        open={openLiability}
+        onClose={() => setOpenLiability(false)}
       />
 
 

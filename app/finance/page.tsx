@@ -18,6 +18,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 
 import TotalCashSnapshotComponent from '../components/finance/TotalCashSnapshot';
 import { useAuth } from '../lib/context/userContext';
@@ -85,6 +86,20 @@ export default function Finance() {
       darkBg: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)',
       lightBubble: '#a5d6a7',
       darkBubble: '#111827',
+      lightText: '#0f172a',
+      darkText: '#f1f5f9',
+      lightSubText: '#334155',
+      darkSubText: '#94a3b8',
+    },
+    {
+      title: 'Liabilities',
+      href: '/finance/liabilities',
+      description: 'Track peer-to-peer debts',
+      icon: <AssignmentOutlinedIcon sx={{ fontSize: 28 }} />,
+      lightBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
+      darkBg: 'linear-gradient(135deg, #3730a3 0%, #1e1b4b 100%)',
+      lightBubble: '#ffe0b2',
+      darkBubble: '#1e1b4b',
       lightText: '#0f172a',
       darkText: '#f1f5f9',
       lightSubText: '#334155',

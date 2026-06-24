@@ -245,6 +245,7 @@ export interface FirestoreUser {
   role: 'master' | 'editor' | 'viewer' | 'guest';
   createdAt: Timestamp; // or use `Timestamp` from Firestore
   isGuest?: boolean; // Optional flag to identify guest users
+  guideVisited?: boolean; // Track if the user has visited the interactive guide
 }
 
 // Finance
@@ -365,6 +366,20 @@ export interface LoanRecord {
   isSettled: boolean;
   createdAt: Date | Timestamp;
   updatedAt?: Date | Timestamp;
+}
+export interface Liability {
+  id?: string;
+  type: 'lend' | 'borrowed';
+  amount: number;
+  personName: string;
+  description?: string;
+  source?: string;
+  date: Date | Timestamp;
+  dueDate?: Date | Timestamp;
+  status: 'active' | 'settled' | 'overdue';
+  settledOn?: Date | Timestamp;
+  createdAt: Date | Timestamp;
+  userId: string;
 }
 export interface IncomeSource {
   id?: string;

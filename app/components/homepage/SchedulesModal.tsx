@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,7 @@ interface SchedulesModalProps {
   onSave: (schedule: SchedulesProps) => void;
   onDelete?: (scheduleId: string) => void;
   onDateChange?: (date: string) => void;
+  existingSchedules?: SchedulesProps[];
 }
 
 const SchedulesModal: React.FC<SchedulesModalProps> = ({
@@ -56,11 +57,41 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
   onSave,
   onDelete,
   onDateChange,
+  existingSchedules = [],
 }) => {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
+
+  const [userHasEditedTimes, setUserHasEditedTimes] = useState(false);
+
+  // Helper to suggest next start time
+  const suggestNextStartTime = useCallback((existing: SchedulesProps[]) => {
+    const timedSchedules = existing.filter(s => !s.isFlexible && s.startTime);
+    if (timedSchedules.length === 0) {
+      const now = new Date();
+      const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
+      nextHour.setMinutes(0);
+      const start = `${String(nextHour.getHours()).padStart(2, '0')}:00`;
+      const end = `${String((nextHour.getHours() + 1) % 24).padStart(2, '0')}:00`;
+      return { startTime: start, endTime: end };
+    }
+
+    const sorted = [...timedSchedules].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const last = sorted[sorted.length - 1];
+    const start = last.endTime || last.startTime;
+    
+    const duration = last.duration || 30;
+    const [h, m] = start.split(':').map(Number);
+    const endDate = new Date();
+    endDate.setHours(h, m + duration);
+    const end = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+    
+    return { startTime: start, endTime: end };
+  }, []);
+
+
 
   //   const hours = now.getHours().toString().padStart(2, '0');
   //   const minutes = now.getMinutes().toString().padStart(2, '0');
@@ -84,6 +115,26 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
     colorCode: '#E3F2FD',
     isFlexible: false,
   });
+
+  const timeConflict = useMemo(() => {
+    if (formData.isFlexible || !formData.startTime) return false;
+    const start = formData.startTime;
+    
+    let end = formData.endTime;
+    if (!end) {
+      const [h, m] = start.split(':').map(Number);
+      const date = new Date();
+      date.setHours(h, m + 30);
+      end = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+
+    return existingSchedules.some((s) => {
+      if (s.isFlexible || s.id === schedule?.id) return false;
+      const sStart = s.startTime;
+      const sEnd = s.endTime || s.startTime;
+      return start < sEnd && sStart < end;
+    });
+  }, [formData.startTime, formData.endTime, formData.isFlexible, existingSchedules, schedule]);
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [customReminderDate, setCustomReminderDate] = useState<Date | null>(
@@ -212,6 +263,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
   // Initialize form data when modal opens
   useEffect(() => {
     if (open) {
+      setUserHasEditedTimes(false);
       if (schedule) {
         setFormData({
           title: schedule.title,
@@ -219,6 +271,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           endTime: schedule.endTime,
           objective: schedule.objective,
           duration: schedule.duration,
+          status: schedule.status || 'pending',
           priority: schedule.priority,
           reminder: schedule.reminder,
           repeat: schedule.repeat,
@@ -254,12 +307,13 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           setReminderMethod('whatsapp');
         }
       } else {
+        const suggestion = suggestNextStartTime(existingSchedules);
         setFormData({
           title: '',
-          startTime: '',
-          endTime: '',
+          startTime: suggestion.startTime,
+          endTime: suggestion.endTime,
           objective: '',
-          duration: 0,
+          duration: 30,
           status: 'pending',
           priority: 'medium',
           reminder: {
@@ -275,7 +329,19 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
         setReminderMethod('whatsapp');
       }
     }
-  }, [open, schedule]);
+  }, [open, schedule, existingSchedules, suggestNextStartTime]);
+
+  // Re-suggest start/end times if date (existingSchedules) changes and user hasn't edited times
+  useEffect(() => {
+    if (open && !schedule && !userHasEditedTimes) {
+      const suggestion = suggestNextStartTime(existingSchedules);
+      setFormData((prev) => ({
+        ...prev,
+        startTime: suggestion.startTime,
+        endTime: suggestion.endTime,
+      }));
+    }
+  }, [existingSchedules, open, schedule, userHasEditedTimes, suggestNextStartTime]);
 
   const handleInputChange = (
     field: keyof SchedulesProps,
@@ -476,6 +542,29 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
             />
           </Box>
 
+          {/* Status Checkbox (Edit Mode Only) */}
+          {schedule && (
+            <Box sx={{ mt: -2, mb: -1, ml: 1 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={formData.status === 'completed'}
+                    onChange={(e) => handleInputChange('status', e.target.checked ? 'completed' : 'pending')}
+                    sx={{
+                      color: '#8b5cf6',
+                      '&.Mui-checked': { color: '#8b5cf6' },
+                    }}
+                  />
+                }
+                label={
+                  <Typography className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                    I have done it
+                  </Typography>
+                }
+              />
+            </Box>
+          )}
+
           {/* Date / Deadline Section */}
           <Box className={`p-6 rounded-[24px] border transition-all ${
             theme?.mode === 'dark'
@@ -591,6 +680,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     value={formData.startTime}
                     onChange={(e) => {
                       handleInputChange('startTime', e.target.value);
+                      setUserHasEditedTimes(true);
                       if (formData.endTime)
                         handleDurationChange(e.target.value, formData.endTime);
                     }}
@@ -621,7 +711,10 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     {dynamicQuickTimes.slice(0, 3).map((time) => (
                       <Button
                         key={time}
-                        onClick={() => handleInputChange('startTime', time)}
+                        onClick={() => {
+                          handleInputChange('startTime', time);
+                          setUserHasEditedTimes(true);
+                        }}
                         className="min-w-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-100 dark:border-slate-700 hover:bg-violet-500 hover:text-white transition-all"
                       >
                         {time}
@@ -642,6 +735,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     value={formData.endTime}
                     onChange={(e) => {
                       handleInputChange('endTime', e.target.value);
+                      setUserHasEditedTimes(true);
                       if (formData.startTime)
                         handleDurationChange(
                           formData.startTime,
@@ -676,7 +770,10 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                       <Button
                         key={mins}
                         disabled={!formData.startTime}
-                        onClick={() => applyDuration(mins)}
+                        onClick={() => {
+                          applyDuration(mins);
+                          setUserHasEditedTimes(true);
+                        }}
                         className="min-w-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-100 dark:border-slate-700 hover:bg-indigo-500 hover:text-white transition-all"
                       >
                         +{mins}m
@@ -693,6 +790,14 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                   </Typography>
                 </Box>
               ) : null}
+
+              {timeConflict && (
+                <Box className="mt-3 pt-3 border-t border-slate-50 dark:border-slate-800 text-center">
+                  <Typography color="error" variant="caption" sx={{ fontWeight: 'bold' }}>
+                    ⚠️ Conflict: This overlaps with another schedule on this day.
+                  </Typography>
+                </Box>
+              )}
             </Box>
           </Box>
 
@@ -1078,7 +1183,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           onClick={handleSave}
           variant="contained"
           disabled={
-            !formData.title || (!formData.isFlexible && !formData.startTime)
+            !formData.title || (!formData.isFlexible && !formData.startTime) || timeConflict
           }
           className="rounded-xl font-extrabold px-8 py-2 normal-case bg-gradient-to-r from-violet-600 to-indigo-600 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50"
         >

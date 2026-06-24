@@ -136,6 +136,7 @@ interface UserContextType {
   isGuest: boolean;
   onboardingData: OnboardingData | null;
   updateOnboardingData: (data: Partial<OnboardingData>) => Promise<void>;
+  markGuideAsVisited: () => Promise<void>;
 
   // Journal AI Context
   journalContextData: JournalContextData | null;
@@ -193,6 +194,7 @@ const UserContext = createContext<UserContextType>({
   isGuest: false,
   onboardingData: null,
   updateOnboardingData: async () => {},
+  markGuideAsVisited: async () => {},
   journalContextData: null,
   journalContextStatus: 'idle',
   journalContextLocked: false,
@@ -333,6 +335,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               role: data.role || 'viewer',
               createdAt: data.createdAt,
               isGuest: false,
+              guideVisited: data.guideVisited || false,
             });
             setIsGuest(false);
             Cookies.set('uid', firebaseUser.uid, { expires: 7, path: '/' });
@@ -1539,6 +1542,31 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const markGuideAsVisited = useCallback(async () => {
+    try {
+      localStorage.setItem('myorbit_guide_visited', 'true');
+    } catch (e) {
+      console.error('Error writing to localStorage:', e);
+    }
+
+    if (user && !isGuest) {
+      try {
+        await setDoc(doc(db, 'users', user.uid), { guideVisited: true }, { merge: true });
+        setUser((prev) => {
+          if (!prev) return null;
+          return { ...prev, guideVisited: true };
+        });
+      } catch (err) {
+        console.error('Error updating guideVisited in Firestore:', err);
+      }
+    } else {
+      setUser((prev) => {
+        if (!prev) return null;
+        return { ...prev, guideVisited: true };
+      });
+    }
+  }, [user, isGuest]);
+
   return (
     <UserContext.Provider
       value={{
@@ -1582,6 +1610,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         scheduleContextLocked,
         generateScheduleContext,
         toggleScheduleContextLock,
+        markGuideAsVisited,
       }}
     >
       {children}

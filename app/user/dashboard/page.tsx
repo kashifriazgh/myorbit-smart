@@ -263,6 +263,31 @@ export default function ManageDashboard() {
             </Card>
           </Link>
         </Grid>
+
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <Link href="/guide" passHref style={{ textDecoration: 'none' }}>
+            <Card
+              sx={{
+                p: 3,
+                height: '100%',
+                cursor: 'pointer',
+                transition: '0.2s',
+                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+                '&:hover': {
+                  boxShadow: 6,
+                  backgroundColor:
+                    theme?.mode === 'dark' ? '#475569' : 'grey.100',
+                },
+              }}
+            >
+              <Typography variant="h6" fontWeight="700">User Guide</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Explore interactive documentation and tutorials for MyOrbit
+              </Typography>
+            </Card>
+          </Link>
+        </Grid>
       </Grid>
     </Box>
   );
