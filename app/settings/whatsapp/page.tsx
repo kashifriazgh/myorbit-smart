@@ -9,6 +9,7 @@ import InfoIcon from '@mui/icons-material/InfoOutlined';
 import QrCodeIcon from '@mui/icons-material/QrCode';
 import SendIcon from '@mui/icons-material/Send';
 import { useAuth } from '@/app/lib/context/userContext';
+import { isPremiumClient, getPremiumDetails } from '@/app/lib/members';
 
 const WHATSAPP_API = process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || 'https://myorbit-whatsapp-service-production.up.railway.app';
 
@@ -24,6 +25,8 @@ export default function WhatsAppSettingsPage() {
     const [isResetting, setIsResetting] = useState(false);
 
     const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID || (user ? `user_${user.uid}` : null);
+    const isPremium = isPremiumClient(CLIENT_ID);
+    const premiumDetails = getPremiumDetails(CLIENT_ID);
 
     // Initialize session when CLIENT_ID is ready
     useEffect(() => {
@@ -181,6 +184,26 @@ export default function WhatsAppSettingsPage() {
 
             {/* Content */}
             <div className="relative max-w-2xl mx-auto px-6 lg:px-12 mt-10 space-y-6">
+                {/* Premium Banner */}
+                {user && !authLoading && (
+                    isPremium ? (
+                        <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-[20px] p-4 flex items-center gap-3">
+                            <span className="text-xl">✨</span>
+                            <div className="text-sm">
+                                <p className="font-extrabold text-emerald-400">Premium Account Active</p>
+                                <p className="text-slate-400 text-xs mt-0.5">Your project ID <code className="text-emerald-400 font-mono text-[11px]">{CLIENT_ID}</code> is verified. WhatsApp reminders are active until {premiumDetails?.membershipTill}.</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-red-950/20 border border-red-500/30 rounded-[20px] p-4 flex items-center gap-3">
+                            <span className="text-xl">⚠️</span>
+                            <div className="text-sm">
+                                <p className="font-extrabold text-red-450 text-red-400">Premium Membership Required</p>
+                                <p className="text-slate-400 text-xs mt-0.5">Your project ID <code className="text-red-450 text-red-400 font-mono text-[11px]">{CLIENT_ID || 'undefined'}</code> is not registered on a premium plan. Reminders are disabled. Please contact support to upgrade.</p>
+                            </div>
+                        </div>
+                    )
+                )}
                 {/* Authentication Loading or Initial Setup Loading */}
                 {(authLoading || isResetting || (isLoading && !error && !sessionInitialized)) ? (
                     <div className="bg-slate-900/60 border border-slate-800 rounded-[28px] p-8 text-center flex flex-col items-center gap-4">

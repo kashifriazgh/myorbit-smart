@@ -37,6 +37,7 @@ import {
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { SchedulesProps } from '../../lib/interface';
+import { isPremiumClient } from '../../lib/members';
 
 interface SchedulesModalProps {
   open: boolean;
@@ -63,6 +64,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
   const { theme } = useCustomTheme();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
+  const isPremium = isPremiumClient(process.env.NEXT_PUBLIC_CLIENT_ID);
 
   const [userHasEditedTimes, setUserHasEditedTimes] = useState(false);
 
@@ -839,17 +841,19 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
             <Box className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Box className="min-w-0">
                 <Typography className="text-[11px] font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-[0.2em]">
-                  🔔 Reminder
+                  🔔 Reminder {!isPremium && <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider bg-red-500/10 px-2 py-0.5 rounded-full ml-2">Locked</span>}
                 </Typography>
                 <Typography className="mt-1 text-[12px] text-slate-600 dark:text-slate-300 truncate">
-                  Set a quick session alert.
+                  {isPremium ? 'Set a quick session alert.' : 'Premium feature only.'}
                 </Typography>
               </Box>
               <FormControlLabel
                 control={
                   <Switch
-                    checked={reminderActive}
+                    checked={isPremium && reminderActive}
+                    disabled={!isPremium}
                     onChange={(e) => {
+                      if (!isPremium) return;
                       const isChecked = e.target.checked;
                       setReminderActive(isChecked);
                       if (isChecked && !customReminderDate) {
@@ -880,6 +884,12 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                 sx={{ mr: 0 }}
               />
             </Box>
+
+            {!isPremium && (
+              <Box className="mt-3 text-xs font-semibold text-red-500 dark:text-red-400">
+                ⚠️ WhatsApp/Push reminders are only available for premium members.
+              </Box>
+            )}
 
             <Collapse in={reminderActive} timeout="auto">
               <Box className="mt-4 space-y-4">

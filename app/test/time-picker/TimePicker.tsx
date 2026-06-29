@@ -19,10 +19,11 @@ export default function TimePicker({ value, onChange, className = "", isDark = f
     const minuteRef = useRef<HTMLDivElement>(null);
     const ampmRef = useRef<HTMLDivElement>(null);
 
-    // Track the active scroll states
     const [selectedHour, setSelectedHour] = useState("12");
     const [selectedMinute, setSelectedMinute] = useState("00");
     const [selectedAmPm, setSelectedAmPm] = useState("AM");
+    const [hourInput, setHourInput] = useState<string | null>(null);
+    const [minuteInput, setMinuteInput] = useState<string | null>(null);
 
     // Extract time components from Date value
     const getTimeFromDate = (date: Date) => {
@@ -115,6 +116,44 @@ export default function TimePicker({ value, onChange, className = "", isDark = f
         onChange(currentDate);
     };
 
+    const incrementHour = () => {
+        let h = parseInt(selectedHour, 10);
+        h = h === 12 ? 1 : h + 1;
+        const formatted = String(h).padStart(2, "0");
+        setSelectedHour(formatted);
+        triggerChange(formatted, selectedMinute, selectedAmPm);
+    };
+
+    const decrementHour = () => {
+        let h = parseInt(selectedHour, 10);
+        h = h === 1 ? 12 : h - 1;
+        const formatted = String(h).padStart(2, "0");
+        setSelectedHour(formatted);
+        triggerChange(formatted, selectedMinute, selectedAmPm);
+    };
+
+    const incrementMinute = () => {
+        let m = parseInt(selectedMinute, 10);
+        m = m === 59 ? 0 : m + 1;
+        const formatted = String(m).padStart(2, "0");
+        setSelectedMinute(formatted);
+        triggerChange(selectedHour, formatted, selectedAmPm);
+    };
+
+    const decrementMinute = () => {
+        let m = parseInt(selectedMinute, 10);
+        m = m === 0 ? 59 : m - 1;
+        const formatted = String(m).padStart(2, "0");
+        setSelectedMinute(formatted);
+        triggerChange(selectedHour, formatted, selectedAmPm);
+    };
+
+    const toggleAmPm = () => {
+        const nextAP = selectedAmPm === "AM" ? "PM" : "AM";
+        setSelectedAmPm(nextAP);
+        triggerChange(selectedHour, selectedMinute, nextAP);
+    };
+
     return (
         <div className={`relative h-[180px] flex items-center justify-center overflow-hidden px-6 select-none border transition-all ${
             isDark 
@@ -138,88 +177,211 @@ export default function TimePicker({ value, onChange, className = "", isDark = f
 
             {/* Wheels Columns Container */}
             <div className="flex items-center justify-center w-full h-full relative z-10 gap-2">
-                {/* Hours Column */}
-                <div
-                    ref={hourRef}
-                    onScroll={(e) => handleScroll(e, "hour")}
-                    className="w-16 h-[120px] overflow-y-scroll snap-y snap-mandatory scrollbar-none py-[40px] text-center"
-                    style={{ scrollBehavior: "smooth" }}
-                >
-                    {HOURS_LIST.map((hour) => {
-                        const isSelected = hour === selectedHour;
-                        return (
-                            <div
-                                key={hour}
-                                className={`h-[40px] flex items-center justify-center snap-center text-2xl font-bold transition-all duration-200 ${
-                                    isSelected
-                                        ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
-                                        : isDark
-                                            ? "text-slate-600 hover:text-slate-400"
-                                            : "text-slate-300 hover:text-slate-400"
-                                }`}
-                            >
-                                {hour}
-                            </div>
-                        );
-                    })}
+                {/* Hours Column Wrapper */}
+                <div className="relative w-16 h-full flex flex-col items-center justify-center">
+                    {/* Up Arrow (Decrement value) */}
+                    <button
+                        type="button"
+                        onClick={decrementHour}
+                        className="hidden md:flex absolute top-2 items-center justify-center w-8 h-6 text-slate-400 hover:text-teal-500 hover:scale-115 active:scale-95 transition-all font-black text-sm z-30 cursor-pointer select-none"
+                        style={{ border: "none", background: "none" }}
+                    >
+                        ▲
+                    </button>
+                    {/* Hours Column */}
+                    <div
+                        ref={hourRef}
+                        onScroll={(e) => handleScroll(e, "hour")}
+                        className="w-full h-[120px] overflow-y-scroll snap-y snap-mandatory scrollbar-none py-[40px] text-center"
+                        style={{ scrollBehavior: "smooth" }}
+                    >
+                        {HOURS_LIST.map((hour) => {
+                            const isSelected = hour === selectedHour;
+                            return (
+                                <div
+                                    key={hour}
+                                    className={`h-[40px] flex items-center justify-center snap-center text-2xl font-bold transition-all duration-200 ${
+                                        isSelected
+                                            ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
+                                            : isDark
+                                                ? "text-slate-600 hover:text-slate-400"
+                                                : "text-slate-300 hover:text-slate-400"
+                                    }`}
+                                >
+                                    {isSelected ? (
+                                        <input
+                                            type="text"
+                                            value={hourInput !== null ? hourInput : hour}
+                                            onChange={(e) => {
+                                                const val = e.target.value.replace(/\D/g, "").slice(0, 2);
+                                                const num = parseInt(val, 10);
+                                                if (val === "" || (!isNaN(num) && num >= 0 && num <= 12)) {
+                                                    setHourInput(val);
+                                                }
+                                            }}
+                                            onBlur={() => {
+                                                if (hourInput !== null && hourInput !== "") {
+                                                    let val = parseInt(hourInput, 10);
+                                                    if (isNaN(val) || val < 1 || val > 12) val = 12;
+                                                    const formatted = String(val).padStart(2, "0");
+                                                    setSelectedHour(formatted);
+                                                    triggerChange(formatted, selectedMinute, selectedAmPm);
+                                                }
+                                                setHourInput(null);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.currentTarget.blur();
+                                                }
+                                            }}
+                                            className="w-12 text-center bg-transparent border-none outline-none font-bold text-teal-600 dark:text-teal-400 cursor-text select-text"
+                                        />
+                                    ) : (
+                                        hour
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {/* Down Arrow (Increment value) */}
+                    <button
+                        type="button"
+                        onClick={incrementHour}
+                        className="hidden md:flex absolute bottom-2 items-center justify-center w-8 h-6 text-slate-400 hover:text-teal-500 hover:scale-115 active:scale-95 transition-all font-black text-sm z-30 cursor-pointer select-none"
+                        style={{ border: "none", background: "none" }}
+                    >
+                        ▼
+                    </button>
                 </div>
 
                 {/* Separator */}
-                <div className="text-xl font-black text-slate-300 dark:text-slate-700 select-none pb-1">:</div>
+                <div className="text-xl font-black text-slate-300 dark:text-slate-700 select-none pb-1 z-20">:</div>
 
-                {/* Minutes Column */}
-                <div
-                    ref={minuteRef}
-                    onScroll={(e) => handleScroll(e, "minute")}
-                    className="w-16 h-[120px] overflow-y-scroll snap-y snap-mandatory scrollbar-none py-[40px] text-center"
-                    style={{ scrollBehavior: "smooth" }}
-                >
-                    {MINUTES_LIST.map((minute) => {
-                        const isSelected = minute === selectedMinute;
-                        return (
-                            <div
-                                key={minute}
-                                className={`h-[40px] flex items-center justify-center snap-center text-2xl font-bold transition-all duration-200 ${
-                                    isSelected
-                                        ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
-                                        : isDark
-                                            ? "text-slate-600 hover:text-slate-400"
-                                            : "text-slate-300 hover:text-slate-400"
-                                }`}
-                            >
-                                {minute}
-                            </div>
-                        );
-                    })}
+                {/* Minutes Column Wrapper */}
+                <div className="relative w-16 h-full flex flex-col items-center justify-center">
+                    {/* Up Arrow (Decrement value) */}
+                    <button
+                        type="button"
+                        onClick={decrementMinute}
+                        className="hidden md:flex absolute top-2 items-center justify-center w-8 h-6 text-slate-400 hover:text-teal-500 hover:scale-115 active:scale-95 transition-all font-black text-sm z-30 cursor-pointer select-none"
+                        style={{ border: "none", background: "none" }}
+                    >
+                        ▲
+                    </button>
+                    {/* Minutes Column */}
+                    <div
+                        ref={minuteRef}
+                        onScroll={(e) => handleScroll(e, "minute")}
+                        className="w-full h-[120px] overflow-y-scroll snap-y snap-mandatory scrollbar-none py-[40px] text-center"
+                        style={{ scrollBehavior: "smooth" }}
+                    >
+                        {MINUTES_LIST.map((minute) => {
+                            const isSelected = minute === selectedMinute;
+                            return (
+                                <div
+                                    key={minute}
+                                    className={`h-[40px] flex items-center justify-center snap-center text-2xl font-bold transition-all duration-200 ${
+                                        isSelected
+                                            ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
+                                            : isDark
+                                                ? "text-slate-600 hover:text-slate-400"
+                                                : "text-slate-300 hover:text-slate-400"
+                                    }`}
+                                >
+                                    {isSelected ? (
+                                        <input
+                                            type="text"
+                                            value={minuteInput !== null ? minuteInput : minute}
+                                            onChange={(e) => {
+                                                const val = e.target.value.replace(/\D/g, "").slice(0, 2);
+                                                const num = parseInt(val, 10);
+                                                if (val === "" || (!isNaN(num) && num >= 0 && num <= 59)) {
+                                                    setMinuteInput(val);
+                                                }
+                                            }}
+                                            onBlur={() => {
+                                                if (minuteInput !== null && minuteInput !== "") {
+                                                    let val = parseInt(minuteInput, 10);
+                                                    if (isNaN(val) || val < 0 || val > 59) val = 0;
+                                                    const formatted = String(val).padStart(2, "0");
+                                                    setSelectedMinute(formatted);
+                                                    triggerChange(selectedHour, formatted, selectedAmPm);
+                                                }
+                                                setMinuteInput(null);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.currentTarget.blur();
+                                                }
+                                            }}
+                                            className="w-12 text-center bg-transparent border-none outline-none font-bold text-teal-600 dark:text-teal-400 cursor-text select-text"
+                                        />
+                                    ) : (
+                                        minute
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {/* Down Arrow (Increment value) */}
+                    <button
+                        type="button"
+                        onClick={incrementMinute}
+                        className="hidden md:flex absolute bottom-2 items-center justify-center w-8 h-6 text-slate-400 hover:text-teal-500 hover:scale-115 active:scale-95 transition-all font-black text-sm z-30 cursor-pointer select-none"
+                        style={{ border: "none", background: "none" }}
+                    >
+                        ▼
+                    </button>
                 </div>
 
                 {/* Space Separator */}
-                <div className="w-1" />
+                <div className="w-1 z-20" />
 
-                {/* AM/PM Column */}
-                <div
-                    ref={ampmRef}
-                    onScroll={(e) => handleScroll(e, "ampm")}
-                    className="w-16 h-[120px] overflow-y-scroll snap-y snap-mandatory scrollbar-none py-[40px] text-center"
-                    style={{ scrollBehavior: "smooth" }}
-                >
-                    {AMPMS_LIST.map((ampm) => {
-                        const isSelected = ampm === selectedAmPm;
-                        return (
-                            <div
-                                key={ampm}
-                                className={`h-[40px] flex items-center justify-center snap-center text-lg font-extrabold transition-all duration-200 ${
-                                    isSelected
-                                        ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
-                                        : isDark
-                                            ? "text-slate-600 hover:text-slate-400"
-                                            : "text-slate-300 hover:text-slate-400"
-                                }`}
-                            >
-                                {ampm}
-                            </div>
-                        );
-                    })}
+                {/* AM/PM Column Wrapper */}
+                <div className="relative w-16 h-full flex flex-col items-center justify-center">
+                    {/* Up Arrow (Toggle value) */}
+                    <button
+                        type="button"
+                        onClick={toggleAmPm}
+                        className="hidden md:flex absolute top-2 items-center justify-center w-8 h-6 text-slate-400 hover:text-teal-500 hover:scale-115 active:scale-95 transition-all font-black text-sm z-30 cursor-pointer select-none"
+                        style={{ border: "none", background: "none" }}
+                    >
+                        ▲
+                    </button>
+                    {/* AM/PM Column */}
+                    <div
+                        ref={ampmRef}
+                        onScroll={(e) => handleScroll(e, "ampm")}
+                        className="w-full h-[120px] overflow-y-scroll snap-y snap-mandatory scrollbar-none py-[40px] text-center"
+                        style={{ scrollBehavior: "smooth" }}
+                    >
+                        {AMPMS_LIST.map((ampm) => {
+                            const isSelected = ampm === selectedAmPm;
+                            return (
+                                <div
+                                    key={ampm}
+                                    className={`h-[40px] flex items-center justify-center snap-center text-lg font-extrabold transition-all duration-200 ${
+                                        isSelected
+                                            ? "text-teal-600 dark:text-teal-400 scale-110 font-black"
+                                            : isDark
+                                                ? "text-slate-600 hover:text-slate-400"
+                                                : "text-slate-300 hover:text-slate-400"
+                                    }`}
+                                >
+                                    {ampm}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {/* Down Arrow (Toggle value) */}
+                    <button
+                        type="button"
+                        onClick={toggleAmPm}
+                        className="hidden md:flex absolute bottom-2 items-center justify-center w-8 h-6 text-slate-400 hover:text-teal-500 hover:scale-115 active:scale-95 transition-all font-black text-sm z-30 cursor-pointer select-none"
+                        style={{ border: "none", background: "none" }}
+                    >
+                        ▼
+                    </button>
                 </div>
             </div>
 

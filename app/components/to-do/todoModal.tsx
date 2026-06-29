@@ -49,6 +49,7 @@ import {
   getUserWhatsAppConfig,
 } from '@/app/lib/utils/whatsapp-reminder';
 import { requestNotificationPermissionAndGetToken } from '@/app/lib/utils/fcm';
+import { isPremiumClient } from '@/app/lib/members';
 
 type Props = {
   open: boolean;
@@ -69,6 +70,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   const { user } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isPremium = isPremiumClient(process.env.NEXT_PUBLIC_CLIENT_ID);
 
   const [title, setTitle] = useState('');
   const [showDescription, setShowDescription] = useState(false);
@@ -537,23 +539,38 @@ export default function ToDoModal({ open, onClose }: Props) {
             `}
           >
             <Box
-              onClick={() => setHasReminder(!hasReminder)}
-              className="flex cursor-pointer select-none items-center justify-between gap-3"
+              onClick={() => {
+                if (!isPremium) return;
+                setHasReminder(!hasReminder);
+              }}
+              className={`flex select-none items-center justify-between gap-3 ${isPremium ? 'cursor-pointer' : 'cursor-not-allowed'}`}
             >
               <Box className="min-w-0">
                 <Typography className="text-[11px] font-extrabold text-teal-600 dark:text-teal-400 uppercase tracking-[0.2em]">
                   Task Reminder
                 </Typography>
                 <Typography className="mt-1 truncate text-xs font-bold text-slate-500 dark:text-slate-400">
-                  {reminderSummary}
+                  {isPremium ? reminderSummary : 'Premium Feature Only'}
                 </Typography>
               </Box>
-              {hasReminder ? (
-                <CheckIcon className="text-teal-500" fontSize="small" />
+              {isPremium ? (
+                hasReminder ? (
+                  <CheckIcon className="text-teal-500" fontSize="small" />
+                ) : (
+                  <UncheckedIcon className="text-slate-400" fontSize="small" />
+                )
               ) : (
-                <UncheckedIcon className="text-slate-400" fontSize="small" />
+                <Typography className="text-[10px] font-bold text-red-500 uppercase tracking-wider bg-red-500/10 px-2 py-0.5 rounded-full">
+                  Locked
+                </Typography>
               )}
             </Box>
+
+            {!isPremium && (
+              <Box className="mt-3 text-xs font-semibold text-red-500 dark:text-red-400">
+                ⚠️ WhatsApp/Push reminders are only available for premium members.
+              </Box>
+            )}
 
             <Collapse in={hasReminder}>
               <Box className="mt-5 space-y-5">
