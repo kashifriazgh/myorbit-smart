@@ -37,6 +37,7 @@ import { updateDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { useAuth } from '@/app/lib/context/userContext';
 import { Todo } from '@/app/lib/interface';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -55,18 +56,217 @@ const StyledBadge = styled(Badge)(({ theme }) => ({
   },
 }));
 
+// Checkmark component styled same as in todoDetailPage
+function Checkmark({
+  done,
+  onToggle,
+  size = 'md',
+  isDark,
+}: {
+  done: boolean;
+  onToggle: () => void;
+  size?: 'sm' | 'md';
+  isDark: boolean;
+}) {
+  const base = size === 'sm' ? 'w-5 h-5 rounded-md' : 'w-6 h-6 rounded-lg';
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      aria-label={done ? 'Mark as not done' : 'Mark as done'}
+      className={`
+        flex-shrink-0 ${base} border-2 transition-all duration-200 flex items-center justify-center
+        focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1
+        ${
+          done
+            ? 'bg-indigo-500 border-indigo-500 shadow-sm shadow-indigo-200'
+            : isDark
+            ? 'border-slate-600 bg-slate-800 hover:border-indigo-400 hover:bg-slate-700'
+            : 'border-slate-300 bg-white hover:border-indigo-400 hover:bg-indigo-50'
+        }
+      `}
+    >
+      {done && (
+        <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 12 10" fill="none">
+          <path
+            d="M1 5l3.5 3.5L11 1"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+interface QuickAddTaskRowProps {
+  selectedDate: string;
+  isDark: boolean;
+  onAdd: (title: string, dueDate: Date) => Promise<void>;
+}
+
+const QuickAddTaskRow = ({ selectedDate, isDark, onAdd }: QuickAddTaskRowProps) => {
+  const [active, setActive] = useState(false);
+  const [title, setTitle] = useState('');
+  const [dueDateStr, setDueDateStr] = useState(selectedDate || moment().format('YYYY-MM-DD'));
+
+  useEffect(() => {
+    if (selectedDate) {
+      setDueDateStr(selectedDate);
+    }
+  }, [selectedDate]);
+
+  const commit = async () => {
+    if (title.trim()) {
+      await onAdd(title.trim(), moment(dueDateStr).toDate());
+      setTitle('');
+    }
+    setActive(false);
+  };
+
+  if (!active) {
+    return (
+      <button
+        onClick={() => setActive(true)}
+        className={`
+          flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 w-full text-left
+          focus:outline-none focus:ring-2 focus:ring-sky-300 mb-2
+          ${
+            isDark
+              ? 'text-slate-500 hover:text-sky-400 hover:bg-slate-800/50'
+              : 'text-slate-400 hover:text-sky-500 hover:bg-sky-50'
+          }
+        `}
+      >
+        <span
+          className={`w-5 h-5 rounded-md border-2 border-dashed flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
+            isDark ? 'border-slate-700' : 'border-slate-300'
+          }`}
+        >
+          <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <path d="M6 1v10M1 6h10" />
+          </svg>
+        </span>
+        Quickly add a task...
+      </button>
+    );
+  }
+
+  return (
+    <Box
+      className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl border mb-2 transition-all ${
+        isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+      }`}
+    >
+      <Box className="flex items-center gap-2 flex-1">
+        <span className="w-5 h-5 rounded-md border-2 border-sky-400 flex-shrink-0" />
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              commit();
+            }
+            if (e.key === 'Escape') {
+              setActive(false);
+              setTitle('');
+            }
+          }}
+          placeholder="Task title…"
+          className={`
+            flex-1 text-sm bg-transparent border-none
+            focus:outline-none placeholder:text-slate-500
+            ${isDark ? 'text-slate-200' : 'text-slate-700'}
+          `}
+        />
+      </Box>
+      
+      <input
+        type="date"
+        value={dueDateStr}
+        onChange={(e) => setDueDateStr(e.target.value)}
+        className={`bg-transparent border-none text-xs outline-none cursor-pointer p-0.5 w-[115px] ${
+          isDark ? 'text-slate-400' : 'text-slate-500'
+        }`}
+        style={{ colorScheme: isDark ? 'dark' : 'light' }}
+      />
+      
+      <Button
+        size="small"
+        variant="text"
+        onClick={commit}
+        disabled={!title.trim()}
+        sx={{ minWidth: 'auto', p: 0.5, fontWeight: 'bold' }}
+      >
+        Add
+      </Button>
+    </Box>
+  );
+};
+
 const ImportantTasks = () => {
-  const { todos, loading, updateStepStatus } = useTodoContext();
+  const { todos, loading, updateStepStatus, addTodo } = useTodoContext();
+  const { user } = useAuth();
   const { theme } = useCustomTheme();
+  const [viewMode, setViewMode] = useState<'quick' | 'detail'>('quick');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleTask, setRescheduleTask] = useState<Todo | null>(null);
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
-  const [fadeOutId, setFadeOutId] = useState<string | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
   const [todoModalOpen, setTodoModalOpen] = useState(false);
+
+  // Calculate daily progress percentage based on active & completed tasks of the selected date
+  const progressPercent = useMemo(() => {
+    if (!selectedDate) return 0;
+    const selectedStart = moment(selectedDate).startOf('day');
+    const selectedEnd = moment(selectedDate).endOf('day');
+    const todayStr = moment().format('YYYY-MM-DD');
+
+    const tasksForDay = todos.filter((t) => {
+      // Flexible task on today
+      if (t.isFlexible && selectedDate === todayStr) return true;
+      // Fixed due date
+      if (!t.dueDate) return false;
+      const due = moment(t.dueDate);
+      return due.isBetween(selectedStart, selectedEnd, 'day', '[]');
+    });
+
+    const total = tasksForDay.length;
+    const completed = tasksForDay.filter((t) => t.status === 'completed').length;
+
+    return total > 0 ? Math.round((completed / total) * 100) : 0;
+  }, [todos, selectedDate]);
+
+  const handleQuickAddTask = async (title: string, dueDate: Date) => {
+    if (!user) return;
+    try {
+      const newTodo: Omit<Todo, 'id'> = {
+        title,
+        priority: 'routine',
+        status: 'in_progress',
+        dueDate: Timestamp.fromDate(dueDate),
+        isFlexible: false,
+        progressPercent: 0,
+        steps: [],
+        assignedUsers: [],
+        authorId: user.uid,
+        authorName: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.email || '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      await addTodo(newTodo);
+    } catch (err) {
+      console.error('Failed to add quick task:', err);
+    }
+  };
 
   // Generate 5 dates starting from today (same as Schedules)
   const generateDates = () => {
@@ -108,24 +308,25 @@ const ImportantTasks = () => {
     return counts;
   }, [todos]);
 
-  // Filter and sort todos for display based on selectedDate (today + next 4 days)
+  // Filter and sort todos — includes completed tasks so they stay visible
   const filteredTasks = useMemo(() => {
     if (!selectedDate) return [] as Todo[];
     const selectedStart = moment(selectedDate).startOf('day');
     const selectedEnd = moment(selectedDate).endOf('day');
-
     const todayStr = moment().format('YYYY-MM-DD');
 
     return todos
       .filter((t) => {
-        if (t.status === 'completed') return false;
+        // Show ALL tasks (active + completed) for the selected date
         if (t.isFlexible && selectedDate === todayStr) return true;
-        
         if (!t.dueDate) return false;
         const due = moment(t.dueDate);
         return due.isBetween(selectedStart, selectedEnd, 'day', '[]');
       })
       .sort((a, b) => {
+        // Completed tasks always sink to the bottom
+        if (a.status === 'completed' && b.status !== 'completed') return 1;
+        if (a.status !== 'completed' && b.status === 'completed') return -1;
         const dueA = moment(a.dueDate);
         const dueB = moment(b.dueDate);
         return (
@@ -135,21 +336,19 @@ const ImportantTasks = () => {
       });
   }, [todos, selectedDate]);
 
+  // Toggle completion — tasks stay visible, checkbox acts as toggle
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
+    const newStatus = task.status === 'completed' ? 'in_progress' : 'completed';
     setCompletingId(task.id);
     try {
       await updateDoc(doc(db, 'todos', task.id), {
-        status: 'completed',
+        status: newStatus,
         updatedAt: new Date(),
       });
-      setFadeOutId(task.id);
-      setTimeout(() => {
-        setFadeOutId(null);
-        setCompletingId(null);
-      }, 400);
     } catch (err) {
-      console.error('Failed to mark as completed:', err);
+      console.error('Failed to update task status:', err);
+    } finally {
       setCompletingId(null);
     }
   };
@@ -300,103 +499,276 @@ const ImportantTasks = () => {
       }}
     >
       <CardContent sx={{ p: 2 }}>
-        <Box className="flex justify-between items-center mb-3">
-          <Typography variant="subtitle1" fontWeight="bold">
+        {/* Title row */}
+        <Box mb={1.5}>
+          <Typography variant="subtitle1" fontWeight={700}>
             🚀 On Going Plans
           </Typography>
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<Add />}
-          onClick={() => setTodoModalOpen(true)}
-        >
-          New Task
-        </Button>
-      </Box>
-
-      {/* Date Picker (cloned from Schedules) - Always visible with professional light blue theme */}
-      <Box display="flex" justifyContent="center" mb={2}>
-        <Box display="flex" alignItems="center" gap={1}>
-          {dates.map((dateInfo) => {
-            const isSelected = selectedDate === dateInfo.fullDate;
-            const count = taskCounts[dateInfo.fullDate] || 0;
-            return (
-              <StyledBadge
-                key={dateInfo.fullDate}
-                badgeContent={count}
-                color="primary"
-                invisible={count === 0}
-              >
-                <Box
-                  onClick={() => setSelectedDate(dateInfo.fullDate)}
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 48,
-                    height: 64,
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s ease-in-out',
-                    backgroundColor: isSelected ? '#bae6fd' : '#e0f2fe', // selected: sky-200, default: sky-100
-                    border: `1px solid ${isSelected ? '#7dd3fc' : '#bae6fd'}`, // subtle border
-                    boxShadow: isSelected ? 'inset 0 0 0 1px #38bdf8' : 'none',
-                    '&:hover': {
-                      backgroundColor: isSelected ? '#7dd3fc' : '#bae6fd', // hover: sky-300/200
-                    },
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    sx={{ fontWeight: 700, color: '#0c4a6e' }}
-                  >
-                    {dateInfo.date}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{ fontSize: '0.7rem', color: '#0369a1' }}
-                  >
-                    {dateInfo.day}
-                  </Typography>
-                </Box>
-              </StyledBadge>
-            );
-          })}
         </Box>
-      </Box>
 
-      {filteredTasks.length === 0 ? (
-        <Box className="p-4 flex flex-col items-center justify-center min-h-64">
-          <Typography variant="h6" fontWeight="bold" className="mb-4 text-center">
-            📋 No Tasks Yet
-          </Typography>
-          <Typography
-            variant="body2"
-            color="textSecondary"
-            className="mb-6 text-center"
-          >
-            Create your first task to get started!
-          </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={<Add />}
-            onClick={() => setTodoModalOpen(true)}
+        {/* Controls row: tab switcher left, New Task button right */}
+        <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+          <Box
             sx={{
-              px: 4,
-              py: 1.5,
-              fontSize: '1.1rem',
+              display: 'flex',
+              gap: 0.5,
+              bgcolor: theme?.mode === 'dark' ? '#0f172a' : '#f1f5f9',
+              p: '4px',
+              borderRadius: '10px',
             }}
           >
-            Create New Task
-          </Button>
+            {(['quick', 'detail'] as const).map((mode) => (
+              <Button
+                key={mode}
+                size="small"
+                onClick={() => setViewMode(mode)}
+                disableRipple={false}
+                sx={{
+                  borderRadius: '7px',
+                  px: 2,
+                  py: 0.4,
+                  minWidth: 76,
+                  fontSize: '0.78rem',
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  color: viewMode === mode
+                    ? (theme?.mode === 'dark' ? '#fff' : '#0f172a')
+                    : '#64748b',
+                  bgcolor: viewMode === mode
+                    ? (theme?.mode === 'dark' ? '#1e293b' : '#fff')
+                    : 'transparent',
+                  boxShadow: viewMode === mode ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
+                  transition: 'all 0.2s',
+                  '&:hover': {
+                    bgcolor: viewMode === mode
+                      ? (theme?.mode === 'dark' ? '#1e293b' : '#fff')
+                      : (theme?.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                  },
+                }}
+              >
+                {mode === 'quick' ? '⚡ Quick' : '📋 Detail'}
+              </Button>
+            ))}
+          </Box>
+
+          {viewMode === 'detail' && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<Add />}
+              onClick={() => setTodoModalOpen(true)}
+              sx={{
+                borderRadius: '8px',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                py: 0.5,
+              }}
+            >
+              New Task
+            </Button>
+          )}
         </Box>
-      ) : (
-        <Stack spacing={2}>
-          {filteredTasks.slice(0, 5).map((task) => (
-            <Fade in={fadeOutId !== task.id} timeout={400} key={task.id}>
-              <Card className="rounded-xl shadow-sm hover:shadow-md transition">
+
+        {/* Date Picker - Always visible with professional light blue theme */}
+        <Box display="flex" justifyContent="center" mb={2}>
+          <Box display="flex" alignItems="center" gap={1}>
+            {dates.map((dateInfo) => {
+              const isSelected = selectedDate === dateInfo.fullDate;
+              const count = taskCounts[dateInfo.fullDate] || 0;
+              return (
+                <StyledBadge
+                  key={dateInfo.fullDate}
+                  badgeContent={count}
+                  color="primary"
+                  invisible={count === 0}
+                >
+                  <Box
+                    onClick={() => setSelectedDate(dateInfo.fullDate)}
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 48,
+                      height: 64,
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease-in-out',
+                      backgroundColor: isSelected ? '#bae6fd' : '#e0f2fe',
+                      border: `1px solid ${isSelected ? '#7dd3fc' : '#bae6fd'}`,
+                      boxShadow: isSelected ? 'inset 0 0 0 1px #38bdf8' : 'none',
+                      '&:hover': {
+                        backgroundColor: isSelected ? '#7dd3fc' : '#bae6fd',
+                      },
+                    }}
+                  >
+                    <Typography
+                      variant="body2"
+                      sx={{ fontWeight: 700, color: '#0c4a6e' }}
+                    >
+                      {dateInfo.date}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ fontSize: '0.7rem', color: '#0369a1' }}
+                    >
+                      {dateInfo.day}
+                    </Typography>
+                  </Box>
+                </StyledBadge>
+              );
+            })}
+          </Box>
+        </Box>
+
+        {/* Progress Bar (calculated like todo detail steps) */}
+        <Box mb={3} px={1}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
+            <Typography variant="caption" fontWeight={700} sx={{ color: theme?.mode === 'dark' ? '#94a3b8' : '#475569' }}>
+              Daily Progress
+            </Typography>
+            <Typography variant="caption" fontWeight={800} sx={{ color: '#4f46e5' }}>
+              {progressPercent}%
+            </Typography>
+          </Box>
+          <Box
+            sx={{
+              height: 8,
+              bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#f1f5f9',
+              borderRadius: 99,
+              overflow: 'hidden',
+              border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
+            }}
+          >
+            <Box
+              sx={{
+                height: '100%',
+                width: `${progressPercent}%`,
+                background: 'linear-gradient(to right, #38bdf8, #6366f1)',
+                borderRadius: 99,
+                transition: 'width 0.7s ease-out',
+              }}
+            />
+          </Box>
+        </Box>
+
+        {viewMode === 'quick' && (
+          <QuickAddTaskRow
+            selectedDate={selectedDate}
+            isDark={theme?.mode === 'dark'}
+            onAdd={handleQuickAddTask}
+          />
+        )}
+
+        {filteredTasks.length === 0 ? (
+          <Box className="p-4 flex flex-col items-center justify-center min-h-64">
+            <Typography variant="h6" fontWeight="bold" className="mb-4 text-center">
+              📋 No Tasks Yet
+            </Typography>
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              className="mb-6 text-center"
+            >
+              Create your first task to get started!
+            </Typography>
+            {viewMode === 'detail' ? (
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<Add />}
+                onClick={() => setTodoModalOpen(true)}
+                sx={{
+                  px: 4,
+                  py: 1.5,
+                  fontSize: '1.1rem',
+                }}
+              >
+                Create New Task
+              </Button>
+            ) : (
+              <Typography variant="caption" color="textSecondary">
+                Use the field above to add a task quickly.
+              </Typography>
+            )}
+          </Box>
+        ) : viewMode === 'quick' ? (
+          <Stack spacing={1}>
+            {filteredTasks.slice(0, 8).map((task) => {
+              const isDone = task.status === 'completed';
+              return (
+                <Box
+                  key={task.id}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: '10px',
+                    bgcolor: isDone
+                      ? (theme?.mode === 'dark' ? 'transparent' : '#fafafa')
+                      : (theme?.mode === 'dark' ? '#0f172a' : '#f8fafc'),
+                    border: `1px solid ${theme?.mode === 'dark' ? '#1e293b' : '#e2e8f0'}`,
+                    opacity: isDone ? 0.55 : 1,
+                    transition: 'opacity 0.25s ease',
+                    '&:hover': { opacity: 1, bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#f1f5f9' },
+                  }}
+                >
+                  <Checkmark
+                    done={isDone}
+                    onToggle={() => markCompleted(task)}
+                    isDark={theme?.mode === 'dark'}
+                    size="sm"
+                  />
+
+                  <Link href={`/to-do/${task.id}`} style={{ textDecoration: 'none', flex: 1, minWidth: 0 }}>
+                    <Typography
+                      variant="body2"
+                      noWrap
+                      sx={{
+                        fontWeight: isDone ? 400 : 600,
+                        color: isDone
+                          ? (theme?.mode === 'dark' ? '#475569' : '#94a3b8')
+                          : (theme?.mode === 'dark' ? '#f1f5f9' : '#1e293b'),
+                        textDecoration: isDone ? 'line-through' : 'none',
+                        cursor: 'pointer',
+                        transition: 'color 0.15s',
+                        '&:hover': { color: '#6366f1' },
+                      }}
+                    >
+                      {task.title}
+                    </Typography>
+                  </Link>
+
+                  {!isDone && (
+                    <Box display="flex" alignItems="center" gap={0.75} flexShrink={0}>
+                      {task.isFlexible ? (
+                        <Typography variant="caption" sx={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.67rem' }}>
+                          Flexible
+                        </Typography>
+                      ) : task.dueDate ? (
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.67rem' }}>
+                          {moment(task.dueDate).format('MMM D')}
+                        </Typography>
+                      ) : null}
+                      <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor:
+                        task.priority === 'critical' ? 'error.main'
+                        : task.priority === 'urgent' ? 'warning.main'
+                        : 'success.main',
+                      }} />
+                    </Box>
+                  )}
+                </Box>
+              );
+            })}
+          </Stack>
+        ) : (
+          <Stack spacing={2}>
+            {filteredTasks.slice(0, 5).map((task) => (
+              <Fade in key={task.id} timeout={300}>
+                <Card className="rounded-xl shadow-sm hover:shadow-md transition">
                 <CardContent>
                   <Box className="flex justify-between items-start gap-2">
                     <Box className="flex items-center gap-2">
@@ -658,124 +1030,124 @@ const ImportantTasks = () => {
               </Card>
             </Fade>
           ))}
-        </Stack>
-      )}
+          </Stack>
+        )}
 
-      <Box mt={2} display="flex" justifyContent="flex-end">
-        <Link href="/to-do" style={{ textDecoration: 'none' }}>
-          <Button variant="text">View more</Button>
-        </Link>
-      </Box>
+        <Box mt={2} display="flex" justifyContent="flex-end">
+          <Link href="/to-do" style={{ textDecoration: 'none' }}>
+            <Button variant="text">View more</Button>
+          </Link>
+        </Box>
 
-      {/* Reschedule Modal */}
-      <Modal 
-        open={rescheduleOpen} 
-        onClose={() => setRescheduleOpen(false)}
-        closeAfterTransition
-      >
-        <Fade in={rescheduleOpen}>
-          <Box
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[420px] shadow-2xl overflow-hidden border outline-none 
-                       bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"
-            sx={{ p: 0 }}
-          >
-            {/* Header with soft gradient */}
-            <Box className="p-6 bg-gradient-to-br from-sky-400 to-sky-600 text-white">
-              <Typography variant="h6" className="font-extrabold">
-                Reschedule Task
-              </Typography>
-              <Typography variant="body2" className="opacity-90">
-                Pick a new timeline for your task
-              </Typography>
-            </Box>
-
-            <Box className="p-6">
-              {/* Quick Select Options */}
-              <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
-                ✨ Quick Suggestions
-              </Typography>
-              <Box className="grid grid-cols-2 gap-3 mb-6">
-                {[
-                  { label: 'Tomorrow', sub: moment().add(1, 'day').format('ddd'), date: moment().add(1, 'day') },
-                  { 
-                    label: 'In 2 Days', 
-                    sub: moment().add(2, 'days').format('dddd'), 
-                    date: moment().add(2, 'days') 
-                  },
-                  { label: 'Next Week', sub: moment().add(1, 'week').format('MMM D'), date: moment().add(1, 'week') },
-                  { label: 'Next Monday', sub: moment().add(1, 'week').startOf('isoWeek').format('MMM D'), date: moment().add(1, 'week').startOf('isoWeek') }
-                ].map((option) => {
-                  const isSelected = newDueDate && moment(newDueDate).isSame(option.date, 'day');
-                  return (
-                    <Box
-                      key={option.label}
-                      onClick={() => setNewDueDate(option.date.toDate())}
-                      className={`p-3 rounded-2xl cursor-pointer text-center transition-all duration-200 border-2 
-                                ${isSelected 
-                                  ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-400' 
-                                  : 'bg-slate-50 dark:bg-slate-800/50 border-transparent hover:bg-slate-100 dark:hover:bg-slate-700'
-                                }`}
-                    >
-                      <Typography className={`text-sm font-bold ${isSelected ? 'text-sky-700 dark:text-sky-400' : 'text-slate-700 dark:text-slate-200'}`}>
-                        {option.label}
-                      </Typography>
-                      <Typography className={`text-[10px] ${isSelected ? 'text-sky-600/70 dark:text-sky-400/70' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {option.sub}
-                      </Typography>
-                    </Box>
-                  );
-                })}
+        {/* Reschedule Modal */}
+        <Modal 
+          open={rescheduleOpen} 
+          onClose={() => setRescheduleOpen(false)}
+          closeAfterTransition
+        >
+          <Fade in={rescheduleOpen}>
+            <Box
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[420px] shadow-2xl overflow-hidden border outline-none 
+                         bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"
+              sx={{ p: 0 }}
+            >
+              {/* Header with soft gradient */}
+              <Box className="p-6 bg-gradient-to-br from-sky-400 to-sky-600 text-white">
+                <Typography variant="h6" className="font-extrabold">
+                  Reschedule Task
+                </Typography>
+                <Typography variant="body2" className="opacity-90">
+                  Pick a new timeline for your task
+                </Typography>
               </Box>
 
-              <Divider className="my-6 border-slate-100 dark:border-slate-800">
-                <Chip label="OR" size="small" className="font-bold bg-transparent text-slate-400 text-[10px]" />
-              </Divider>
+              <Box className="p-6">
+                {/* Quick Select Options */}
+                <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
+                  ✨ Quick Suggestions
+                </Typography>
+                <Box className="grid grid-cols-2 gap-3 mb-6">
+                  {[
+                    { label: 'Tomorrow', sub: moment().add(1, 'day').format('ddd'), date: moment().add(1, 'day') },
+                    { 
+                      label: 'In 2 Days', 
+                      sub: moment().add(2, 'days').format('dddd'), 
+                      date: moment().add(2, 'days') 
+                    },
+                    { label: 'Next Week', sub: moment().add(1, 'week').format('MMM D'), date: moment().add(1, 'week') },
+                    { label: 'Next Monday', sub: moment().add(1, 'week').startOf('isoWeek').format('MMM D'), date: moment().add(1, 'week').startOf('isoWeek') }
+                  ].map((option) => {
+                    const isSelected = newDueDate && moment(newDueDate).isSame(option.date, 'day');
+                    return (
+                      <Box
+                        key={option.label}
+                        onClick={() => setNewDueDate(option.date.toDate())}
+                        className={`p-3 rounded-2xl cursor-pointer text-center transition-all duration-200 border-2 
+                                  ${isSelected 
+                                    ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-400' 
+                                    : 'bg-slate-50 dark:bg-slate-800/50 border-transparent hover:bg-slate-100 dark:hover:bg-slate-700'
+                                  }`}
+                      >
+                        <Typography className={`text-sm font-bold ${isSelected ? 'text-sky-700 dark:text-sky-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                          {option.label}
+                        </Typography>
+                        <Typography className={`text-[10px] ${isSelected ? 'text-sky-600/70 dark:text-sky-400/70' : 'text-slate-500 dark:text-slate-400'}`}>
+                          {option.sub}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
 
-              <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
-                📅 Custom Date
-              </Typography>
-              <Box className="relative">
-                <DatePicker
-                  selected={newDueDate}
-                  onChange={(date: Date | null) => setNewDueDate(date)}
-                  minDate={new Date()}
-                  dateFormat="MMMM d, yyyy"
-                  placeholderText="Select a date"
-                  className="w-full p-4 rounded-2xl border-2 border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 
-                             text-slate-900 dark:text-white font-semibold outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-400/10 transition-all"
-                />
+                <Divider className="my-6 border-slate-100 dark:border-slate-800">
+                  <Chip label="OR" size="small" className="font-bold bg-transparent text-slate-400 text-[10px]" />
+                </Divider>
+
+                <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
+                  📅 Custom Date
+                </Typography>
+                <Box className="relative">
+                  <DatePicker
+                    selected={newDueDate}
+                    onChange={(date: Date | null) => setNewDueDate(date)}
+                    minDate={new Date()}
+                    dateFormat="MMMM d, yyyy"
+                    placeholderText="Select a date"
+                    className="w-full p-4 rounded-2xl border-2 border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 
+                               text-slate-900 dark:text-white font-semibold outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-400/10 transition-all"
+                  />
+                </Box>
+
+                <Stack direction="row" spacing={2} mt={4}>
+                  <Button 
+                    fullWidth
+                    onClick={() => setRescheduleOpen(false)}
+                    className="rounded-2xl py-3 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 normal-case"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    fullWidth
+                    onClick={updateDueDate}
+                    variant="contained"
+                    disabled={!newDueDate || reschedulingLoading}
+                    className="rounded-2xl py-3 font-bold bg-gradient-to-r from-sky-500 to-sky-600 shadow-lg shadow-sky-500/30 normal-case
+                               hover:from-sky-600 hover:to-sky-700 disabled:from-slate-200 disabled:to-slate-200 dark:disabled:from-slate-800 dark:disabled:to-slate-800"
+                  >
+                    {reschedulingLoading ? (
+                      <CircularProgress size={24} color="inherit" />
+                    ) : (
+                      'Reschedule Now'
+                    )}
+                  </Button>
+                </Stack>
               </Box>
-
-              <Stack direction="row" spacing={2} mt={4}>
-                <Button 
-                  fullWidth
-                  onClick={() => setRescheduleOpen(false)}
-                  className="rounded-2xl py-3 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 normal-case"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  fullWidth
-                  onClick={updateDueDate}
-                  variant="contained"
-                  disabled={!newDueDate || reschedulingLoading}
-                  className="rounded-2xl py-3 font-bold bg-gradient-to-r from-sky-500 to-sky-600 shadow-lg shadow-sky-500/30 normal-case
-                             hover:from-sky-600 hover:to-sky-700 disabled:from-slate-200 disabled:to-slate-200 dark:disabled:from-slate-800 dark:disabled:to-slate-800"
-                >
-                  {reschedulingLoading ? (
-                    <CircularProgress size={24} color="inherit" />
-                  ) : (
-                    'Reschedule Now'
-                  )}
-                </Button>
-              </Stack>
             </Box>
-          </Box>
-        </Fade>
-      </Modal>
+          </Fade>
+        </Modal>
 
-      {/* Todo Modal */}
-      <ToDoModal open={todoModalOpen} onClose={() => setTodoModalOpen(false)} />
+        {/* Todo Modal */}
+        <ToDoModal open={todoModalOpen} onClose={() => setTodoModalOpen(false)} />
       </CardContent>
     </Card>
   );
