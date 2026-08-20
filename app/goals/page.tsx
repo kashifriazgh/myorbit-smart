@@ -71,7 +71,7 @@ const getDueDate = (rawDate: FirestoreLikeDate | undefined): Date | null => {
 
 const GoalsPageInner: React.FC = () => {
   const { goals, loading } = useGoals();
-  useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { theme } = useCustomTheme();
   const router = useRouter();
 
@@ -89,7 +89,12 @@ const GoalsPageInner: React.FC = () => {
     router.push(`/goals/${goalId}`);
   };
 
-  const filteredGoals = goals.filter((goal) => {
+  const userGoals = React.useMemo(() => {
+    if (!user?.uid) return [];
+    return goals.filter((g) => g.userId === user.uid);
+  }, [goals, user?.uid]);
+
+  const filteredGoals = userGoals.filter((goal) => {
     const matchesSearch =
       goal.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       goal.description?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -101,13 +106,13 @@ const GoalsPageInner: React.FC = () => {
     return matchesSearch && matchesType && matchesStatus && matchesPriority;
   });
 
-  const overdueCount = goals.filter((g) => {
+  const overdueCount = userGoals.filter((g) => {
     const due = getDueDate(g.dueDate);
     if (!due) return false;
     return moment(due).isBefore(moment()) && g.status !== 'Completed';
   }).length;
 
-  if (loading) return null;
+  if (loading || authLoading) return null;
 
   return (
     <Box
@@ -165,16 +170,16 @@ const GoalsPageInner: React.FC = () => {
               {/* STATS (COMPACT ONE LINE) */}
               <div className="flex justify-between text-sm">
                 <span>
-                  Total: <b>{goals.length}</b>
+                  Total: <b>{userGoals.length}</b>
                 </span>
                 <span>
                   Completed:{' '}
-                  <b>{goals.filter((g) => g.status === 'Completed').length}</b>
+                  <b>{userGoals.filter((g) => g.status === 'Completed').length}</b>
                 </span>
                 <span>
                   In Progress:{' '}
                   <b>
-                    {goals.filter((g) => g.status === 'In Progress').length}
+                    {userGoals.filter((g) => g.status === 'In Progress').length}
                   </b>
                 </span>
                 <span className="text-red-500">
@@ -275,16 +280,104 @@ const GoalsPageInner: React.FC = () => {
         </Card>
 
         {/* GOALS GRID */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredGoals.map((goal, index) => (
-            <GoalSimpleCard
-              key={goal.id}
-              goal={goal}
-              index={index}
-              onClick={() => handleViewGoal(goal.id!)}
-            />
-          ))}
-        </div>
+        {userGoals.length === 0 ? (
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              py: 8,
+              px: 3,
+              borderRadius: '1rem',
+              backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+              border: `1px dashed ${theme?.mode === 'dark' ? '#334155' : '#cbd5e1'}`,
+              textAlign: 'center',
+              mt: 4,
+            }}
+          >
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 800,
+                mb: 1,
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+              }}
+            >
+              No goals available
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                mb: 3,
+                maxWidth: '400px',
+              }}
+            >
+              Start tracking your progress by defining your first goal. Click the button below to get started!
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={() => setCreateModalOpen(true)}
+              sx={{
+                backgroundColor: '#3B82F6',
+                '&:hover': { backgroundColor: '#2563eb' },
+                textTransform: 'none',
+                fontWeight: 600,
+                borderRadius: '0.5rem',
+              }}
+            >
+              Create Goal
+            </Button>
+          </Box>
+        ) : filteredGoals.length === 0 ? (
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              py: 8,
+              px: 3,
+              borderRadius: '1rem',
+              backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+              border: `1px dashed ${theme?.mode === 'dark' ? '#334155' : '#cbd5e1'}`,
+              textAlign: 'center',
+              mt: 2,
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 800,
+                mb: 1,
+                color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+              }}
+            >
+              No matching goals found
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+              }}
+            >
+              Try adjusting your search terms or filters to find what you&apos;re looking for.
+            </Typography>
+          </Box>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredGoals.map((goal, index) => (
+              <GoalSimpleCard
+                key={goal.id}
+                goal={goal}
+                index={index}
+                onClick={() => handleViewGoal(goal.id!)}
+              />
+            ))}
+          </div>
+        )}
       </Box>
 
       {/* MODAL */}

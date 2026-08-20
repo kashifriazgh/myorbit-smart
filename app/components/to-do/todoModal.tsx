@@ -128,18 +128,18 @@ export default function ToDoModal({ open, onClose }: Props) {
     setReminderDate(current);
   };
 
-  const reminderSummary =
-    hasReminder && reminderDate
-      ? `${reminderMethod === 'whatsapp' ? 'WhatsApp' : 'Push'} at ${reminderDate.toLocaleString(
-        [],
-        {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        },
-      )}`
-      : 'Off';
+  // const reminderSummary =
+  //   hasReminder && reminderDate
+  //     ? `${reminderMethod === 'whatsapp' ? 'WhatsApp' : 'Push'} at ${reminderDate.toLocaleString(
+  //       [],
+  //       {
+  //         month: 'short',
+  //         day: 'numeric',
+  //         hour: 'numeric',
+  //         minute: '2-digit',
+  //       },
+  //     )}`
+  //     : 'Off';
 
 
 
@@ -540,19 +540,22 @@ export default function ToDoModal({ open, onClose }: Props) {
           >
             <Box
               onClick={() => {
-                if (!isPremium) return;
-                setHasReminder(!hasReminder);
+                // Temporarily disabled
+                // if (!isPremium) return;
+                // setHasReminder(!hasReminder);
               }}
-              className={`flex select-none items-center justify-between gap-3 ${isPremium ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+              className="flex select-none items-center justify-between gap-3 cursor-not-allowed"
             >
               <Box className="min-w-0">
                 <Typography className="text-[11px] font-extrabold text-teal-600 dark:text-teal-400 uppercase tracking-[0.2em]">
-                  Task Reminder
+                  Task Reminder (Temporarily Disabled)
                 </Typography>
                 <Typography className="mt-1 truncate text-xs font-bold text-slate-500 dark:text-slate-400">
-                  {isPremium ? reminderSummary : 'Premium Feature Only'}
+                  Reminders are temporarily disabled.
                 </Typography>
               </Box>
+              <UncheckedIcon className="text-slate-400" fontSize="small" />
+              {/*
               {isPremium ? (
                 hasReminder ? (
                   <CheckIcon className="text-teal-500" fontSize="small" />
@@ -564,6 +567,7 @@ export default function ToDoModal({ open, onClose }: Props) {
                   Locked
                 </Typography>
               )}
+              */}
             </Box>
 
             {!isPremium && (

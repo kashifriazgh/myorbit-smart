@@ -9,12 +9,11 @@ import HomeIcon from '@mui/icons-material/Home';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import PriceCheckIcon from '@mui/icons-material/PriceCheck';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
-import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import FlagIcon from '@mui/icons-material/Flag';
 import NoteIcon from '@mui/icons-material/Note';
-import AssignmentIcon from '@mui/icons-material/Assignment';
+import BookIcon from '@mui/icons-material/Book';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -65,7 +64,7 @@ export default function BottomNav() {
   }
   const navItems = [
     { label: 'To-Do', icon: <ChecklistIcon />, path: '/to-do' },
-    { label: 'Projects', icon: <AssignmentIcon />, path: '/projects' },
+    { label: 'Journals', icon: <BookIcon />, path: '/journals' },
     {
       label: 'Home',
       icon: (
@@ -149,18 +148,22 @@ export default function BottomNav() {
         transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <List sx={{ minWidth: 200 }}>
+          {/* Temporarily hidden journals because it's now in the main navigation bar
           <ListItemButton disabled={!user} component={Link} href="/journals" prefetch={false}>
             <FlagIcon sx={{ mr: 1 }} />
             <ListItemText primary="Journals" />
           </ListItemButton>
+          */}
           <ListItemButton disabled={!user} component={Link} href="/goals" prefetch={false}>
             <FlagIcon sx={{ mr: 1 }} />
             <ListItemText primary="Goals" />
           </ListItemButton>
+          {/* Temporarily hidden ideas link
           <ListItemButton disabled={!user} component={Link} href="/ideas" prefetch={false}>
             <LightbulbIcon sx={{ mr: 1 }} />
             <ListItemText primary="Ideas" />
           </ListItemButton>
+          */}
           <ListItemButton disabled={!user} component={Link} href="/time-table" prefetch={false}>
             <EventAvailableIcon sx={{ mr: 1 }} />
             <ListItemText primary="Time Table" />

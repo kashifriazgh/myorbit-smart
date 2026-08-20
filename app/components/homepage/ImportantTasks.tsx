@@ -214,6 +214,24 @@ const ImportantTasks = () => {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const [viewMode, setViewMode] = useState<'quick' | 'detail'>('quick');
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Load view mode from localStorage on mount
+  useEffect(() => {
+    const savedMode = localStorage.getItem('important_tasks_view_mode');
+    if (savedMode === 'quick' || savedMode === 'detail') {
+      setViewMode(savedMode);
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // Save view mode to localStorage when it changes
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('important_tasks_view_mode', viewMode);
+    }
+  }, [viewMode, isLoaded]);
+
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [rescheduleOpen, setRescheduleOpen] = useState(false);

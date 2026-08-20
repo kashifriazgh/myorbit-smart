@@ -200,6 +200,24 @@ const Schedules: React.FC = () => {
   const { theme } = useCustomTheme();
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [viewMode, setViewMode] = useState<'quick' | 'daily' | 'future'>('quick');
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Load view mode from localStorage on mount
+  useEffect(() => {
+    const savedMode = localStorage.getItem('schedules_view_mode');
+    if (savedMode === 'quick' || savedMode === 'daily' || savedMode === 'future') {
+      setViewMode(savedMode);
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // Save view mode to localStorage when it changes
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('schedules_view_mode', viewMode);
+    }
+  }, [viewMode, isLoaded]);
+
   const [schedules, setSchedules] = useState<SchedulesProps[]>([]);
   const [counts, setCounts] = useState<{ [date: string]: number }>({});
   const [loading, setLoading] = useState(true);

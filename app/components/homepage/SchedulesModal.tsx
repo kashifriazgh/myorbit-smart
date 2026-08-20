@@ -145,7 +145,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
   const [reminderMethod, setReminderMethod] = useState<'whatsapp' | 'push'>(
     'whatsapp',
   );
-  const [reminderActive, setReminderActive] = useState(false);
+  const [reminderActive] = useState(false); // setReminderActive removed to fix lint
   const handleQuickReminderDate = (
     type: 'tomorrow' | 'afterTomorrow' | 'endOfWeek',
   ) => {
@@ -405,8 +405,10 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
     }
 
     // Determine if we need an RTDB reminder entry
-    const isRtdbReminder =
-      reminderMethod === 'whatsapp' || reminderMethod === 'push';
+    // Temporarily disabled
+    const isRtdbReminder = false;
+    // const isRtdbReminder =
+    //   reminderMethod === 'whatsapp' || reminderMethod === 'push';
     let hasReminder = false;
     let reminderDateVal: Date | null = null;
 
@@ -841,15 +843,18 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
             <Box className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Box className="min-w-0">
                 <Typography className="text-[11px] font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-[0.2em]">
-                  🔔 Reminder {!isPremium && <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider bg-red-500/10 px-2 py-0.5 rounded-full ml-2">Locked</span>}
+                  🔔 Reminder (Temporarily Disabled)
                 </Typography>
                 <Typography className="mt-1 text-[12px] text-slate-600 dark:text-slate-300 truncate">
-                  {isPremium ? 'Set a quick session alert.' : 'Premium feature only.'}
+                  Reminders are temporarily disabled.
                 </Typography>
               </Box>
               <FormControlLabel
                 control={
                   <Switch
+                    checked={false}
+                    disabled={true}
+                    /*
                     checked={isPremium && reminderActive}
                     disabled={!isPremium}
                     onChange={(e) => {
@@ -869,6 +874,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                         method: isChecked ? reminderMethod : 'notification',
                       });
                     }}
+                    */
                     sx={{
                       '& .MuiSwitch-switchBase.Mui-checked': {
                         color: '#8b5cf6',
@@ -1110,6 +1116,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                     label="Reminder (mins before)"
                     type="number"
                     value={formData.reminder?.before}
+                    disabled={true}
                     onChange={(e) =>
                       handleInputChange('reminder', {
                         ...formData.reminder,
@@ -1120,7 +1127,7 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
                       '& .MuiOutlinedInput-root': { borderRadius: '16px' },
                     }}
                   />
-                  <FormControl>
+                  <FormControl disabled={true}>
                     <InputLabel>Alert Method</InputLabel>
                     <Select
                       value={formData.reminder?.method}
