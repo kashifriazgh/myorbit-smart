@@ -5,42 +5,44 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { getTodosCacheDebugInfo } from '@/app/lib/utils/todosCache';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { getSchedulesCacheDebugInfo } from '@/app/lib/utils/schedulesCache';
-import { useStreaks } from '@/app/lib/context/StreaksContext';
-import { getStreaksCacheDebugInfo } from '@/app/lib/utils/streaksCache';
 import { Box, Typography, IconButton, Tooltip, Stack, Chip, Divider } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 import StorageIcon from '@mui/icons-material/Storage';
 
-
 export default function TodoCacheDebugOverlay() {
   const { dataSource: todoSource, todos, refreshTodos } = useTodoContext();
   const { dataSource: schedSource, allSchedules, refreshSchedules } = useSchedules();
-  const { dataSource: streakSource, streaks, refreshStreaks } = useStreaks();
 
   const [todoInfo, setTodoInfo] = useState(getTodosCacheDebugInfo());
   const [schedInfo, setSchedInfo] = useState(getSchedulesCacheDebugInfo());
-  const [streakInfo, setStreakInfo] = useState(getStreaksCacheDebugInfo());
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(false);
   const [minimised, setMinimised] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const show = localStorage.getItem('showCacheViewer') === 'true';
+      setVisible(show);
+    }
+  }, []);
 
   const tick = useCallback(() => {
     setTodoInfo(getTodosCacheDebugInfo());
     setSchedInfo(getSchedulesCacheDebugInfo());
-    setStreakInfo(getStreaksCacheDebugInfo());
   }, []);
 
   useEffect(() => {
+    if (!visible) return;
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [tick]);
+  }, [tick, visible]);
 
   if (!visible) return null;
 
   // Determine global visual indicator color based on statuses
-  const isStale = todoSource === 'firebase' || schedSource === 'firebase' || streakSource === 'firebase';
-  const isLoading = todoSource === 'loading' || schedSource === 'loading' || streakSource === 'loading';
+  const isStale = todoSource === 'firebase' || schedSource === 'firebase';
+  const isLoading = todoSource === 'loading' || schedSource === 'loading';
   const statusColor = isStale ? '#f59e0b' : isLoading ? '#6366f1' : '#22c55e';
   const statusLabel = isStale ? '🔥 Firebase' : isLoading ? '⏳ Loading' : '📦 Cached';
 
@@ -91,13 +93,16 @@ export default function TodoCacheDebugOverlay() {
             </IconButton>
           </Tooltip>
           <Tooltip title="Force sync all caches from Firebase">
-            <IconButton size="small" onClick={() => { refreshTodos(); refreshSchedules(); refreshStreaks(); }}
+            <IconButton size="small" onClick={() => { refreshTodos(); refreshSchedules(); }}
               sx={{ color: '#64748b', '&:hover': { color: '#f59e0b' }, p: 0.3 }}>
               <RefreshIcon sx={{ fontSize: 14 }} />
             </IconButton>
           </Tooltip>
           <Tooltip title="Close dev overlay">
-            <IconButton size="small" onClick={() => setVisible(false)}
+            <IconButton size="small" onClick={() => {
+              setVisible(false);
+              localStorage.setItem('showCacheViewer', 'false');
+            }}
               sx={{ color: '#64748b', '&:hover': { color: '#ef4444' }, p: 0.3 }}>
               <CloseIcon sx={{ fontSize: 14 }} />
             </IconButton>
@@ -138,22 +143,6 @@ export default function TodoCacheDebugOverlay() {
                 <Row label="Cache age" value={schedInfo.ageSeconds != null ? `${schedInfo.ageSeconds}s` : '—'} />
               </Stack>
             </Box>
-
-            <Divider sx={{ borderColor: 'rgba(255,255,255,0.06)' }} />
-
-            {/* Streaks Section */}
-            <Box>
-              <Typography variant="caption" sx={{ color: '#ec4899', fontWeight: 900, fontSize: '0.62rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                🔥 STREAKS CACHE
-              </Typography>
-              <Stack spacing={0.4} sx={{ mt: 0.5 }}>
-                <Row label="Source" value={streakSource === 'firebase' ? 'Firebase ☁️' : streakSource === 'cache' ? 'Cache 📦' : 'Loading ⏳'} color={streakSource === 'cache' ? '#22c55e' : '#f59e0b'} />
-                <Row label="State items" value={String(streaks.length)} />
-                <Row label="Needs refresh" value={streakInfo.needsRefresh ? '⚠️ Stale' : '✅ Clean'} color={streakInfo.needsRefresh ? '#f59e0b' : '#22c55e'} />
-                <Row label="Cached items" value={streakInfo.hasCache ? String(streakInfo.count) : '—'} />
-                <Row label="Cache age" value={streakInfo.ageSeconds != null ? `${streakInfo.ageSeconds}s` : '—'} />
-              </Stack>
-            </Box>
           </Stack>
         </Box>
       )}
@@ -173,3 +162,4 @@ function Row({ label, value, color = '#94a3b8' }: { label: string; value: string
     </Box>
   );
 }
+

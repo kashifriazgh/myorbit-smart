@@ -3,7 +3,6 @@ import React, { Suspense, lazy } from 'react';
 import { useAuth } from './lib/context/userContext';
 import { useCustomTheme } from './lib/context/themeContext';
 import { CircularProgress, Box } from '@mui/material';
-import Switch from '@mui/material/Switch';
 import GuestUserBanner from './components/global/GuestUserBanner';
 import GuideBanner from './components/homepage/GuideBanner';
 import HomepageHeader from './components/homepage/HomepageHeader';
@@ -18,9 +17,6 @@ const ImportantTasks = lazy(
   () => import('./components/homepage/ImportantTasks'),
 );
 const OverdueTasks = lazy(() => import('./components/homepage/OverdueTasks'));
-const OnGoingStreaks = lazy(
-  () => import('./components/homepage/OnGoingStreaks'),
-);
 
 // Loading component with skeleton
 const ComponentLoader = ({
@@ -32,20 +28,6 @@ const ComponentLoader = ({
 export default function Homepage() {
   const { user, loading } = useAuth();
   const { theme } = useCustomTheme();
-
-  const [focusToday, setFocusToday] = React.useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('focusOnToday');
-      return stored === null ? true : stored === 'true';
-    }
-    return true;
-  });
-
-  React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('focusOnToday', String(focusToday));
-    }
-  }, [focusToday]);
 
   if (loading) {
     return (
@@ -86,25 +68,7 @@ export default function Homepage() {
       <GuestUserBanner />
       <GuideBanner />
 
-      <div className="flex justify-end items-center mb-4 w-full">
-        <label className="flex items-center gap-2 cursor-pointer select-none text-base font-medium">
-          <span
-            style={{
-              color: theme?.mode === 'dark' ? '#cbd5e1' : '#0f172a',
-            }}
-          >
-            Focus on Today
-          </span>
-          <Switch
-            checked={focusToday}
-            onChange={(e) => setFocusToday(e.target.checked)}
-            slotProps={{ input: { 'aria-label': 'Focus on Today' } }}
-            color="primary"
-          />
-        </label>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 mb-8">
+      <div className="grid grid-cols-1 gap-6 mb-8 mt-4">
         <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
           <HomepageHeader />
         </Suspense>
@@ -138,16 +102,12 @@ export default function Homepage() {
         <QuickLinks />
       </div>
 
-      {!focusToday && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
-            <Goals />
-          </Suspense>
-          <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
-            <OnGoingStreaks />
-          </Suspense>
-        </div>
-      )}
+      <div className="w-full mb-8">
+        <Suspense fallback={<SkeletonLoader variant="card" height={400} />}>
+          <Goals />
+        </Suspense>
+      </div>
     </div>
   );
 }
+

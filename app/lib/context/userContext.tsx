@@ -1,6 +1,6 @@
 'use client';
 
-import { onAuthStateChanged, getAuth } from 'firebase/auth';
+import { onAuthStateChanged, getAuth, signOut } from 'firebase/auth';
 import {
   doc,
   getDoc,
@@ -14,23 +14,16 @@ import {
 } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { app, db } from '../firebase';
-import { FirestoreUser, OnboardingData, Goal, TotalCashSnapshot, Expenditure, LoanRecord, StreakProps, SchedulesProps } from '../interface';
+import { FirestoreUser, OnboardingData, Goal, TotalCashSnapshot, LoanRecord, SchedulesProps } from '../interface';
 import { getOrCreateGuestUser } from '../guestUser';
 import Cookies from 'js-cookie';
 import { getTaskMetrics, TodoAggregateStats, generateTodoAnalysisSummary, getScheduleMetrics, ScheduleMetrics } from '../utilts';
 
 const auth = getAuth(app);
 
-// ─── Journal Context ──────────────────────────────────────────────────────────
+// ─── Context Status ──────────────────────────────────────────────────────────
 
 export type ContextStatus = 'idle' | 'fetching' | 'generating' | 'saved' | 'error';
-
-export interface JournalContextData {
-  summary: string;
-  journalCount: number;
-  generatedAt: string;
-  locked: boolean;
-}
 
 // ─── Todo Context ─────────────────────────────────────────────────────────────
 
@@ -105,16 +98,7 @@ export interface ConsolidatedContextData {
   locked: boolean;
 }
 
-// ─── Streak Context ──────────────────────────────────────────────────────────
-
-export interface StreakContextData {
-  summary: string;
-  totalCount: number;
-  averageStreak: number;
-  longestStreak: number;
-  generatedAt: string;
-  locked: boolean;
-}
+// ─── Streak Context Deleted ──────────────────────────────────────────────────
 
 // ─── Schedule Context ─────────────────────────────────────────────────────────
 
@@ -137,13 +121,6 @@ interface UserContextType {
   onboardingData: OnboardingData | null;
   updateOnboardingData: (data: Partial<OnboardingData>) => Promise<void>;
   markGuideAsVisited: () => Promise<void>;
-
-  // Journal AI Context
-  journalContextData: JournalContextData | null;
-  journalContextStatus: ContextStatus;
-  journalContextLocked: boolean;
-  generateJournalContext: () => Promise<void>;
-  toggleJournalContextLock: (locked: boolean) => Promise<void>;
 
   // Todo AI Context
   todoContextData: TodoContextData | null;
@@ -173,13 +150,6 @@ interface UserContextType {
   generateConsolidatedContext: () => Promise<void>;
   toggleConsolidatedContextLock: (locked: boolean) => Promise<void>;
 
-  // Streak AI Context
-  streakContextData: StreakContextData | null;
-  streakContextStatus: ContextStatus;
-  streakContextLocked: boolean;
-  generateStreakContext: () => Promise<void>;
-  toggleStreakContextLock: (locked: boolean) => Promise<void>;
-
   // Schedule AI Context
   scheduleContextData: ScheduleContextData | null;
   scheduleContextStatus: ContextStatus;
@@ -195,11 +165,6 @@ const UserContext = createContext<UserContextType>({
   onboardingData: null,
   updateOnboardingData: async () => {},
   markGuideAsVisited: async () => {},
-  journalContextData: null,
-  journalContextStatus: 'idle',
-  journalContextLocked: false,
-  generateJournalContext: async () => {},
-  toggleJournalContextLock: async () => {},
   todoContextData: null,
   todoContextStatus: 'idle',
   todoContextLocked: false,
@@ -220,11 +185,6 @@ const UserContext = createContext<UserContextType>({
   consolidatedContextLocked: false,
   generateConsolidatedContext: async () => {},
   toggleConsolidatedContextLock: async () => {},
-  streakContextData: null,
-  streakContextStatus: 'idle',
-  streakContextLocked: false,
-  generateStreakContext: async () => {},
-  toggleStreakContextLock: async () => {},
   scheduleContextData: null,
   scheduleContextStatus: 'idle',
   scheduleContextLocked: false,
@@ -234,12 +194,10 @@ const UserContext = createContext<UserContextType>({
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
-const LS_JOURNAL = 'reFetchJournalsLocked';
 const LS_TODO    = 'reFetchTodosLocked';
 const LS_GOAL    = 'reFetchGoalsLocked';
 const LS_FINANCE = 'reFetchFinanceLocked';
 const LS_CONSOLIDATED = 'reFetchConsolidatedLocked';
-const LS_STREAK = 'reFetchStreaksLocked';
 const LS_SCHEDULE = 'reFetchSchedulesLocked';
 
 function getLock(key: string): boolean {
@@ -273,11 +231,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [isGuest, setIsGuest] = useState(false);
   const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null);
 
-  // Journal context state
-  const [journalContextData, setJournalContextData] = useState<JournalContextData | null>(null);
-  const [journalContextStatus, setJournalContextStatus] = useState<ContextStatus>('idle');
-  const [journalContextLocked, setJournalContextLocked] = useState(false);
-
   // Todo context state
   const [todoContextData, setTodoContextData] = useState<TodoContextData | null>(null);
   const [todoContextStatus, setTodoContextStatus] = useState<ContextStatus>('idle');
@@ -297,11 +250,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [consolidatedContextData, setConsolidatedContextData] = useState<ConsolidatedContextData | null>(null);
   const [consolidatedContextStatus, setConsolidatedContextStatus] = useState<ContextStatus>('idle');
   const [consolidatedContextLocked, setConsolidatedContextLocked] = useState(false);
-
-  // Streak context state
-  const [streakContextData, setStreakContextData] = useState<StreakContextData | null>(null);
-  const [streakContextStatus, setStreakContextStatus] = useState<ContextStatus>('idle');
-  const [streakContextLocked, setStreakContextLocked] = useState(false);
 
   // Schedule context state
   const [scheduleContextData, setScheduleContextData] = useState<ScheduleContextData | null>(null);
@@ -327,6 +275,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
           if (snap.exists()) {
             const data = snap.data();
+            if (data.role !== 'master' && (data.status === 'pending' || data.status === 'rejected')) {
+              console.warn('⚠️ User account is pending or rejected. Signing out.');
+              await signOut(auth);
+              Cookies.remove('uid', { path: '/' });
+              Cookies.remove('role', { path: '/' });
+              setUser(getOrCreateGuestUser());
+              setIsGuest(true);
+              return;
+            }
+
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
@@ -382,8 +340,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // ── Load saved contexts from Firestore once per session ───────────────────
   useEffect(() => {
     if (!user || isGuest) {
-      setJournalContextData(null);
-      setJournalContextLocked(false);
       setTodoContextData(null);
       setTodoContextLocked(false);
       setGoalContextData(null);
@@ -392,8 +348,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setFinanceContextLocked(false);
       setConsolidatedContextData(null);
       setConsolidatedContextLocked(false);
-      setStreakContextData(null);
-      setStreakContextLocked(false);
       setScheduleContextData(null);
       setScheduleContextLocked(false);
       return;
@@ -405,16 +359,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data();
-
-          // Journal context
-          const jc = data?.journalContext as JournalContextData | undefined;
-          if (jc) {
-            setJournalContextData(jc);
-            setJournalContextLocked(jc.locked ?? false);
-            setLock(LS_JOURNAL, jc.locked ?? false);
-          } else {
-            setJournalContextLocked(getLock(LS_JOURNAL));
-          }
 
           // Todo context
           const tc = data?.todoContext as TodoContextData | undefined;
@@ -456,16 +400,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             setConsolidatedContextLocked(getLock(LS_CONSOLIDATED));
           }
 
-          // Streak context
-          const sc = data?.streakContext as StreakContextData | undefined;
-          if (sc) {
-            setStreakContextData(sc);
-            setStreakContextLocked(sc.locked ?? false);
-            setLock(LS_STREAK, sc.locked ?? false);
-          } else {
-            setStreakContextLocked(getLock(LS_STREAK));
-          }
-
           // Schedule context
           const schC = data?.scheduleContext as ScheduleContextData | undefined;
           if (schC) {
@@ -476,22 +410,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             setScheduleContextLocked(getLock(LS_SCHEDULE));
           }
         } else {
-          setJournalContextLocked(getLock(LS_JOURNAL));
           setTodoContextLocked(getLock(LS_TODO));
           setGoalContextLocked(getLock(LS_GOAL));
           setFinanceContextLocked(getLock(LS_FINANCE));
           setConsolidatedContextLocked(getLock(LS_CONSOLIDATED));
-          setStreakContextLocked(getLock(LS_STREAK));
           setScheduleContextLocked(getLock(LS_SCHEDULE));
         }
       } catch (err) {
         console.error('❌ Error loading contexts from Firestore:', err);
-        setJournalContextLocked(getLock(LS_JOURNAL));
         setTodoContextLocked(getLock(LS_TODO));
         setGoalContextLocked(getLock(LS_GOAL));
         setFinanceContextLocked(getLock(LS_FINANCE));
         setConsolidatedContextLocked(getLock(LS_CONSOLIDATED));
-        setStreakContextLocked(getLock(LS_STREAK));
         setScheduleContextLocked(getLock(LS_SCHEDULE));
       }
     };
@@ -503,13 +433,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // UserProvider wraps the entire app, so this fires on ANY page the user lands on.
   useEffect(() => {
     if (!contextLoaded || !user || isGuest) return;
-
-    if (!getLock(LS_JOURNAL)) {
-      console.log('🌍 Global auto-trigger: generating journal context...');
-      generateJournalContext();
-    } else {
-      console.log('🔒 Journal context auto-trigger skipped (locked).');
-    }
 
     if (!getLock(LS_TODO)) {
       console.log('🌍 Global auto-trigger: generating todo context...');
@@ -539,13 +462,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       console.log('🔒 Consolidated context auto-trigger skipped (locked).');
     }
 
-    if (!getLock(LS_STREAK)) {
-      console.log('🌍 Global auto-trigger: generating streak context...');
-      generateStreakContext();
-    } else {
-      console.log('🔒 Streak context auto-trigger skipped (locked).');
-    }
-
     if (!getLock(LS_SCHEDULE)) {
       console.log('🌍 Global auto-trigger: generating schedule context...');
       generateScheduleContext();
@@ -555,105 +471,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextLoaded]); // Runs exactly once after Firestore load completes
-
-  // ── Generate Journal Context ───────────────────────────────────────────────
-  const generateJournalContext = useCallback(async () => {
-    if (!user || isGuest) return;
-    if (getLock(LS_JOURNAL)) {
-      console.log('🔒 Journal context locked (localStorage). Skipping.');
-      return;
-    }
-
-    // Firestore double-check
-    try {
-      const snap = await getDoc(doc(db, 'context', user.uid));
-      if (snap.exists() && snap.data()?.journalContext?.locked) {
-        setLock(LS_JOURNAL, true);
-        setJournalContextLocked(true);
-        return;
-      }
-    } catch { /* continue */ }
-
-    setJournalContextStatus('fetching');
-    try {
-      const fifteenDaysAgo = new Date();
-      fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-
-      const snapshot = await getDocs(query(
-        collection(db, 'journals'),
-        where('userId', '==', user.uid)
-      ));
-
-      const fifteenDaysAgoMs = fifteenDaysAgo.getTime();
-
-      const journals = snapshot.docs
-        .map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            title: data.title || '',
-            content: data.content || '',
-            mood: data.mood || null,
-            productivityOfTheDay: data.productivityOfTheDay || '',
-            tags: data.tags || [],
-            date: data.date || toDateStr(data.createdAt),
-            createdAt: data.createdAt,
-          };
-        })
-        .filter((j) => {
-          const createdMs = getMs(j.createdAt);
-          return createdMs >= fifteenDaysAgoMs;
-        });
-
-      if (journals.length === 0) {
-        console.log('📔 No journals found in last 15 days.');
-        setJournalContextStatus('idle');
-        return;
-      }
-
-      setJournalContextStatus('generating');
-      const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || undefined;
-      const res = await fetch('/api/context/journal-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ journals, userName }),
-      });
-      if (!res.ok) throw new Error('AI summary API failed');
-      const result = await res.json();
-      if (result.error) throw new Error(result.error);
-
-      const contextData: JournalContextData = {
-        summary: result.summary,
-        journalCount: result.journalCount,
-        generatedAt: new Date().toISOString(),
-        locked: true,
-      };
-
-      await setDoc(doc(db, 'context', user.uid), { userId: user.uid, journalContext: contextData, updatedAt: new Date().toISOString() }, { merge: true });
-      setLock(LS_JOURNAL, true);
-      setJournalContextData(contextData);
-      setJournalContextLocked(true);
-      setJournalContextStatus('saved');
-      console.log('✅ Journal context generated and saved.');
-    } catch (err) {
-      console.error('❌ Error generating journal context:', err);
-      setJournalContextStatus('error');
-    }
-  }, [user, isGuest]);
-
-  // ── Toggle Journal Context Lock ────────────────────────────────────────────
-  const toggleJournalContextLock = useCallback(async (locked: boolean) => {
-    if (!user || isGuest) return;
-    setLock(LS_JOURNAL, locked);
-    setJournalContextLocked(locked);
-    try {
-      await setDoc(doc(db, 'context', user.uid),
-        { journalContext: { ...(journalContextData || {}), locked }, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-      if (journalContextData) setJournalContextData({ ...journalContextData, locked });
-    } catch (err) { console.error('❌ Error updating journal lock:', err); }
-  }, [user, isGuest, journalContextData]);
 
   // ── Generate Todo Context ──────────────────────────────────────────────────
   const generateTodoContext = useCallback(async () => {
@@ -1091,20 +908,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 2. Fetch expenditures (upcoming/unpaid)
-      const expSnap = await getDocs(query(
-        collection(db, 'expenditures'),
-        where('userId', '==', user.uid)
-      ));
-      const allExpenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() } as Expenditure));
-      const upcomingExpenses = allExpenses.filter(e => !e.isPaid);
-      const upcomingExpensesCount = upcomingExpenses.length;
-      const upcomingExpensesTotal = upcomingExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-
-      const expensesDetail = upcomingExpenses
-        .slice(0, 3)
-        .map(e => `"${e.title}" (PKR ${e.amount})`)
-        .join(', ');
+      // 2. Fetch expenditures (upcoming/unpaid) - Expenditures feature removed
+      const upcomingExpensesCount = 0;
+      const upcomingExpensesTotal = 0;
+      const expensesDetail = '';
 
       // 3. Fetch loans (outstanding/unsettled)
       const loansSnap = await getDocs(query(
@@ -1184,109 +991,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     } catch (err) { console.error('❌ Error updating finance lock:', err); }
   }, [user, isGuest, financeContextData]);
 
-  // ── Generate Streak Context ───────────────────────────────────────────────
-  const generateStreakContext = useCallback(async () => {
-    if (!user || isGuest) return;
-    if (getLock(LS_STREAK)) {
-      console.log('🔒 Streak context locked (localStorage). Skipping.');
-      return;
-    }
-
-    // Firestore double-check
-    try {
-      const snap = await getDoc(doc(db, 'context', user.uid));
-      if (snap.exists() && snap.data()?.streakContext?.locked) {
-        setLock(LS_STREAK, true);
-        setStreakContextLocked(true);
-        return;
-      }
-    } catch { /* continue */ }
-
-    setStreakContextStatus('fetching');
-    try {
-      const streaksSnap = await getDocs(query(
-        collection(db, 'streaks'),
-        where('userId', '==', user.uid)
-      ));
-
-      const streaks = streaksSnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ...data,
-        } as StreakProps;
-      });
-
-      const totalCount = streaks.length;
-      if (totalCount === 0) {
-        console.log('🔥 No streaks found.');
-        setStreakContextStatus('idle');
-        return;
-      }
-
-      // Calculate average and longest streak
-      const totalStreakSum = streaks.reduce((sum, s) => sum + (s.streaksCount || 0), 0);
-      const averageStreak = parseFloat((totalStreakSum / totalCount).toFixed(1));
-      const longestStreak = streaks.reduce((max, s) => Math.max(max, s.streaksCount || 0), 0);
-
-      const sampledStreaks = streaks.map(s => ({
-        title: s.title,
-        category: s.category || 'General',
-        habitType: s.habitType,
-        currentStreak: s.streaksCount || 0,
-        lastChecked: s.lastChecked ? toDateStr(s.lastChecked) : 'Never',
-      }));
-
-      setStreakContextStatus('generating');
-      const res = await fetch('/api/context/streak-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          streaks: sampledStreaks,
-          totalCount,
-          averageStreak,
-          longestStreak,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Streak summary API failed');
-      const result = await res.json();
-      if (result.error) throw new Error(result.error);
-
-      const contextData: StreakContextData = {
-        summary: result.summary,
-        totalCount,
-        averageStreak,
-        longestStreak,
-        generatedAt: new Date().toISOString(),
-        locked: true,
-      };
-
-      await setDoc(doc(db, 'context', user.uid), { userId: user.uid, streakContext: contextData, updatedAt: new Date().toISOString() }, { merge: true });
-      setLock(LS_STREAK, true);
-      setStreakContextData(contextData);
-      setStreakContextLocked(true);
-      setStreakContextStatus('saved');
-      console.log('✅ Streak context generated and saved.');
-    } catch (err) {
-      console.error('❌ Error generating streak context:', err);
-      setStreakContextStatus('error');
-    }
-  }, [user, isGuest]);
-
-  // ── Toggle Streak Context Lock ─────────────────────────────────────────────
-  const toggleStreakContextLock = useCallback(async (locked: boolean) => {
-    if (!user || isGuest) return;
-    setLock(LS_STREAK, locked);
-    setStreakContextLocked(locked);
-    try {
-      await setDoc(doc(db, 'context', user.uid),
-        { streakContext: { ...(streakContextData || {}), locked }, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-      if (streakContextData) setStreakContextData({ ...streakContextData, locked });
-    } catch (err) { console.error('❌ Error updating streak lock:', err); }
-  }, [user, isGuest, streakContextData]);
+  // ── Streak context logic removed ───────────────────────────────────────────
 
   // ── Generate Schedule Context ──────────────────────────────────────────────
   const generateScheduleContext = useCallback(async () => {
@@ -1460,11 +1165,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       // 2. Get current contexts from Firestore
       const snap = await getDoc(doc(db, 'context', user.uid));
       const contextDoc = snap.exists() ? snap.data() : null;
-      const journalContext = contextDoc?.journalContext || null;
       const todoContext = contextDoc?.todoContext || null;
       const goalContext = contextDoc?.goalContext || null;
       const financeContext = contextDoc?.financeContext || null;
-      const streakContext = contextDoc?.streakContext || null;
       const scheduleContext = contextDoc?.scheduleContext || null;
 
       setConsolidatedContextStatus('generating');
@@ -1473,11 +1176,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           onboardingData: obData,
-          journalContext,
           todoContext,
           goalContext,
           financeContext,
-          streakContext,
           scheduleContext,
         }),
       });
@@ -1576,11 +1277,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         isGuest,
         onboardingData,
         updateOnboardingData,
-        journalContextData,
-        journalContextStatus,
-        journalContextLocked,
-        generateJournalContext,
-        toggleJournalContextLock,
         todoContextData,
         todoContextStatus,
         todoContextLocked,
@@ -1601,11 +1297,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         consolidatedContextLocked,
         generateConsolidatedContext,
         toggleConsolidatedContextLock,
-        streakContextData,
-        streakContextStatus,
-        streakContextLocked,
-        generateStreakContext,
-        toggleStreakContextLock,
         scheduleContextData,
         scheduleContextStatus,
         scheduleContextLocked,

@@ -32,7 +32,6 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
-import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
@@ -40,11 +39,6 @@ export default function UserContextPage() {
   const {
     user,
     onboardingData,
-    journalContextData,
-    journalContextStatus,
-    journalContextLocked,
-    generateJournalContext,
-    toggleJournalContextLock,
     todoContextData,
     todoContextStatus,
     todoContextLocked,
@@ -65,11 +59,6 @@ export default function UserContextPage() {
     consolidatedContextLocked,
     generateConsolidatedContext,
     toggleConsolidatedContextLock,
-    streakContextData,
-    streakContextStatus,
-    streakContextLocked,
-    generateStreakContext,
-    toggleStreakContextLock,
     scheduleContextData,
     scheduleContextStatus,
     scheduleContextLocked,
@@ -124,21 +113,7 @@ export default function UserContextPage() {
     };
   }, [onboardingData, user]);
 
-  // Journal status helpers
-  const isLoading = journalContextStatus === 'fetching' || journalContextStatus === 'generating';
-  const statusLabel =
-    journalContextStatus === 'fetching'
-      ? 'Fetching journals…'
-      : journalContextStatus === 'generating'
-      ? 'Generating AI summary…'
-      : journalContextStatus === 'saved'
-      ? 'Saved successfully'
-      : journalContextStatus === 'error'
-      ? 'Error occurred'
-      : null;
-  const generatedAtFormatted = journalContextData?.generatedAt
-    ? new Date(journalContextData.generatedAt).toLocaleString()
-    : null;
+  // Journal context deleted
 
   // Todo status helpers
   const isTodoLoading = todoContextStatus === 'fetching' || todoContextStatus === 'generating';
@@ -204,21 +179,7 @@ export default function UserContextPage() {
     ? new Date(consolidatedContextData.generatedAt).toLocaleString()
     : null;
 
-  // Streak status helpers
-  const isStreakLoading = streakContextStatus === 'fetching' || streakContextStatus === 'generating';
-  const streakStatusLabel =
-    streakContextStatus === 'fetching'
-      ? 'Fetching habit streaks…'
-      : streakContextStatus === 'generating'
-      ? 'Analyzing streak consistency…'
-      : streakContextStatus === 'saved'
-      ? 'Saved successfully'
-      : streakContextStatus === 'error'
-      ? 'Error occurred'
-      : null;
-  const streakGeneratedAtFormatted = streakContextData?.generatedAt
-    ? new Date(streakContextData.generatedAt).toLocaleString()
-    : null;
+  // Streak context deleted
 
   // Schedule status helpers
   const isScheduleLoading = scheduleContextStatus === 'fetching' || scheduleContextStatus === 'generating';
@@ -481,228 +442,7 @@ export default function UserContextPage() {
                 </CardContent>
               </Card>
 
-              {/* ── AI JOURNAL CONTEXT CARD ── */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `2px solid ${isDark ? '#4f46e5' : '#6366f1'}`,
-                  boxShadow: isDark
-                    ? '0 0 20px rgba(99, 102, 241, 0.25)'
-                    : '0 4px 20px rgba(99, 102, 241, 0.12)',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Purple accent bar */}
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 3,
-                    background: 'linear-gradient(90deg, #6366f1, #a855f7, #ec4899)',
-                  }}
-                />
-                <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.5}>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <PsychologyIcon sx={{ color: '#6366f1', fontSize: 22 }} />
-                      <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#6366f1' }}>
-                        AI Journal Context
-                      </Typography>
-                      <Chip
-                        label="Last 15 Days"
-                        size="small"
-                        sx={{
-                          fontSize: 10,
-                          height: 20,
-                          bgcolor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)',
-                          color: '#6366f1',
-                          border: '1px solid #6366f1',
-                          fontWeight: 700,
-                        }}
-                      />
-                    </Stack>
-
-                    {/* Lock/Unlock toggle */}
-                    <Tooltip
-                      title={
-                        journalContextLocked
-                          ? 'Locked: auto-regeneration blocked. Click to unlock.'
-                          : 'Unlocked: will regenerate on next load. Click to lock.'
-                      }
-                    >
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleJournalContextLock(!journalContextLocked)}
-                        sx={{
-                          color: journalContextLocked ? '#f59e0b' : '#10b981',
-                          bgcolor: isDark
-                            ? journalContextLocked
-                              ? 'rgba(245,158,11,0.12)'
-                              : 'rgba(16,185,129,0.12)'
-                            : journalContextLocked
-                            ? 'rgba(245,158,11,0.08)'
-                            : 'rgba(16,185,129,0.08)',
-                          border: `1px solid ${journalContextLocked ? '#f59e0b' : '#10b981'}`,
-                          '&:hover': { opacity: 0.85 },
-                        }}
-                      >
-                        {journalContextLocked ? (
-                          <LockIcon sx={{ fontSize: 16 }} />
-                        ) : (
-                          <LockOpenIcon sx={{ fontSize: 16 }} />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-
-                  {/* Lock status badge */}
-                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
-                    <Chip
-                      icon={
-                        journalContextLocked ? (
-                          <LockIcon sx={{ fontSize: '14px !important' }} />
-                        ) : (
-                          <LockOpenIcon sx={{ fontSize: '14px !important' }} />
-                        )
-                      }
-                      label={journalContextLocked ? 'Locked — Re-fetch Blocked' : 'Unlocked — Will Refresh on Next Load'}
-                      size="small"
-                      sx={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: journalContextLocked ? '#f59e0b' : '#10b981',
-                        bgcolor: journalContextLocked
-                          ? isDark
-                            ? 'rgba(245,158,11,0.12)'
-                            : 'rgba(245,158,11,0.08)'
-                          : isDark
-                          ? 'rgba(16,185,129,0.12)'
-                          : 'rgba(16,185,129,0.08)',
-                        border: `1px solid ${journalContextLocked ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)'}`,
-                      }}
-                    />
-                  </Stack>
-
-                  {/* AI Summary content */}
-                  {isLoading ? (
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 2,
-                        py: 4,
-                      }}
-                    >
-                      <CircularProgress size={32} sx={{ color: '#6366f1' }} />
-                      <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                        {statusLabel}
-                      </Typography>
-                    </Box>
-                  ) : journalContextData?.summary ? (
-                    <Box>
-                      <Box
-                        sx={{
-                          p: 2.5,
-                          borderRadius: 3,
-                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                          mb: 2,
-                        }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            lineHeight: 1.8,
-                            color: isDark ? '#cbd5e1' : '#374151',
-                            fontStyle: 'italic',
-                          }}
-                        >
-                          &ldquo;{journalContextData.summary}&rdquo;
-                        </Typography>
-                      </Box>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                        <Stack direction="row" gap={1} flexWrap="wrap">
-                          <Chip
-                            icon={<BookIcon sx={{ fontSize: '14px !important' }} />}
-                            label={`${journalContextData.journalCount} journal${journalContextData.journalCount !== 1 ? 's' : ''} analyzed`}
-                            size="small"
-                            variant="outlined"
-                            sx={{ fontSize: 10, fontWeight: 700 }}
-                          />
-                          {generatedAtFormatted && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`Generated: ${generatedAtFormatted}`}
-                              size="small"
-                              variant="outlined"
-                              sx={{ fontSize: 10 }}
-                            />
-                          )}
-                        </Stack>
-                        <Button
-                          size="small"
-                          startIcon={<RefreshIcon />}
-                          onClick={async () => {
-                            await toggleJournalContextLock(false);
-                            await generateJournalContext();
-                          }}
-                          disabled={isLoading}
-                          sx={{
-                            textTransform: 'none',
-                            fontWeight: 700,
-                            fontSize: 12,
-                            borderRadius: 2,
-                            color: '#6366f1',
-                            border: '1px solid #6366f1',
-                            px: 1.5,
-                            '&:hover': { bgcolor: 'rgba(99,102,241,0.08)' },
-                          }}
-                        >
-                          Regenerate
-                        </Button>
-                      </Stack>
-                    </Box>
-                  ) : (
-                    <Box>
-                      {journalContextStatus === 'error' ? (
-                        <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                          <ErrorOutlineIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                          <Typography variant="body2" color="error">
-                            Failed to generate context. Please try again.
-                          </Typography>
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
-                          No journal context generated yet. Click below to analyze your last 15 days of journals and build a personalized AI context.
-                        </Typography>
-                      )}
-                      <Button
-                        variant="contained"
-                        startIcon={isLoading ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon />}
-                        onClick={generateJournalContext}
-                        disabled={isLoading}
-                        sx={{
-                          textTransform: 'none',
-                          fontWeight: 700,
-                          borderRadius: 3,
-                          background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                          boxShadow: '0 4px 12px rgba(99,102,241,0.35)',
-                          '&:hover': {
-                            background: 'linear-gradient(135deg, #4f46e5, #9333ea)',
-                          },
-                        }}
-                      >
-                        Generate Journal Context
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
+              {/* AI Journal Context Deleted */}
 
               {/* ── AI TODO CONTEXT CARD ── */}
               <Card
@@ -1452,160 +1192,7 @@ export default function UserContextPage() {
                 </CardContent>
               </Card>
 
-              {/* ── AI STREAK CONTEXT CARD ── */}
-              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.5}>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <WhatshotIcon sx={{ color: '#ff7043', fontSize: 22 }} />
-                      <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#ff7043' }}>
-                        AI Streak Context
-                      </Typography>
-                      {streakContextData?.totalCount != null && (
-                        <Chip
-                          label={`${streakContextData.totalCount} streaks`}
-                          size="small"
-                          sx={{
-                            fontSize: 10, height: 20, fontWeight: 700,
-                            bgcolor: isDark ? 'rgba(255,112,67,0.15)' : 'rgba(255,112,67,0.1)',
-                            color: '#ff7043', border: '1px solid #ff7043',
-                          }}
-                        />
-                      )}
-                    </Stack>
-
-                    {/* Lock/Unlock toggle */}
-                    <Tooltip title={streakContextLocked ? 'Locked: click to unlock' : 'Unlocked: click to lock'}>
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleStreakContextLock(!streakContextLocked)}
-                        sx={{
-                          color: streakContextLocked ? '#f59e0b' : '#10b981',
-                          bgcolor: isDark
-                            ? streakContextLocked ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)'
-                            : streakContextLocked ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)',
-                          border: `1px solid ${streakContextLocked ? '#f59e0b' : '#10b981'}`,
-                          '&:hover': { opacity: 0.85 },
-                        }}
-                      >
-                        {streakContextLocked ? <LockIcon sx={{ fontSize: 16 }} /> : <LockOpenIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-
-                  {/* Lock status badge */}
-                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
-                    <Chip
-                      icon={streakContextLocked ? <LockIcon sx={{ fontSize: '14px !important' }} /> : <LockOpenIcon sx={{ fontSize: '14px !important' }} />}
-                      label={streakContextLocked ? 'Locked — Re-fetch Blocked' : 'Unlocked — Will Refresh on Next Load'}
-                      size="small"
-                      sx={{
-                        fontSize: 10, fontWeight: 700,
-                        color: streakContextLocked ? '#f59e0b' : '#10b981',
-                        bgcolor: streakContextLocked
-                          ? isDark ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.08)'
-                          : isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)',
-                        border: `1px solid ${streakContextLocked ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)'}`,
-                      }}
-                    />
-                  </Stack>
-
-                  {/* Content */}
-                  {isStreakLoading ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                      <CircularProgress size={32} sx={{ color: '#ff7043' }} />
-                      <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                        {streakStatusLabel}
-                      </Typography>
-                    </Box>
-                  ) : streakContextData?.summary ? (
-                    <Box>
-                      <Box
-                        sx={{
-                          p: 2.5, borderRadius: 3,
-                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                          mb: 2,
-                        }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{ lineHeight: 1.8, color: isDark ? '#cbd5e1' : '#374151', fontStyle: 'italic' }}
-                        >
-                          &ldquo;{streakContextData.summary}&rdquo;
-                        </Typography>
-                      </Box>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                        <Stack direction="row" gap={1} flexWrap="wrap">
-                          <Chip
-                            label={`Avg Streak: ${streakContextData.averageStreak} days`}
-                            size="small" variant="outlined"
-                            sx={{ fontSize: 10, fontWeight: 700 }}
-                          />
-                          <Chip
-                            label={`Longest Streak: ${streakContextData.longestStreak} days`}
-                            size="small" variant="outlined"
-                            sx={{ fontSize: 10, fontWeight: 700 }}
-                          />
-                          {streakGeneratedAtFormatted && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`Generated: ${streakGeneratedAtFormatted}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10 }}
-                            />
-                          )}
-                        </Stack>
-                        <Button
-                          size="small"
-                          startIcon={<RefreshIcon />}
-                          onClick={async () => {
-                            await toggleStreakContextLock(false);
-                            await generateStreakContext();
-                          }}
-                          disabled={isStreakLoading}
-                          sx={{
-                            textTransform: 'none', fontWeight: 700, fontSize: 12, borderRadius: 2,
-                            color: '#ff7043', border: '1px solid #ff7043', px: 1.5,
-                            '&:hover': { bgcolor: 'rgba(255,112,67,0.08)' },
-                          }}
-                        >
-                          Regenerate
-                        </Button>
-                      </Stack>
-                    </Box>
-                  ) : (
-                    <Box>
-                      {streakContextStatus === 'error' ? (
-                        <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                          <ErrorOutlineIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                          <Typography variant="body2" color="error">
-                            Failed to generate streak context. Please try again.
-                          </Typography>
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
-                          No streak context generated yet. Click below to analyze your habit streaks.
-                        </Typography>
-                      )}
-                      <Button
-                        variant="contained"
-                        startIcon={isStreakLoading ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon />}
-                        onClick={generateStreakContext}
-                        disabled={isStreakLoading}
-                        sx={{
-                          textTransform: 'none', fontWeight: 700, borderRadius: 3,
-                          background: 'linear-gradient(135deg, #ff7043, #f4511e)',
-                          boxShadow: '0 4px 12px rgba(255,112,67,0.35)',
-                          '&:hover': { background: 'linear-gradient(135deg, #f4511e, #d84315)' },
-                        }}
-                      >
-                        Generate Streak Context
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
+              {/* AI Streak Context Deleted */}
 
               {/* ── AI SCHEDULE CONTEXT CARD ── */}
               <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
@@ -2013,15 +1600,6 @@ export default function UserContextPage() {
                    {JSON.stringify(
                      {
                        ...aiContextPayload,
-                       ...(journalContextData?.summary
-                         ? {
-                             journalContext: {
-                               summary: journalContextData.summary,
-                               journalCount: journalContextData.journalCount,
-                               generatedAt: journalContextData.generatedAt,
-                             },
-                           }
-                         : {}),
                        ...(todoContextData?.summary
                          ? {
                              taskContext: {
@@ -2063,17 +1641,6 @@ export default function UserContextPage() {
                              },
                            }
                          : {}),
-                       ...(streakContextData?.summary
-                         ? {
-                             streakContext: {
-                               summary: streakContextData.summary,
-                               totalCount: streakContextData.totalCount,
-                               averageStreak: streakContextData.averageStreak,
-                               longestStreak: streakContextData.longestStreak,
-                               generatedAt: streakContextData.generatedAt,
-                             },
-                           }
-                         : {}),
                        ...(scheduleContextData?.summary
                          ? {
                              scheduleContext: {
@@ -2100,79 +1667,7 @@ export default function UserContextPage() {
                  </pre>
               </Card>
 
-              {/* Journal Context Lock Controls */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                  p: 2.5,
-                }}
-              >
-                <Typography variant="subtitle2" fontWeight="800" gutterBottom>
-                  🔒 Journal Context Lock Controls
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Manage re-fetch lock on both localStorage and Firestore. When locked, the app won&apos;t re-fetch or re-generate the journal context automatically.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <Button
-                    fullWidth
-                    variant={journalContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockIcon />}
-                    onClick={() => toggleJournalContextLock(true)}
-                    disabled={journalContextLocked}
-                    size="small"
-                    sx={{
-                      textTransform: 'none',
-                      fontWeight: 700,
-                      borderRadius: 2.5,
-                      ...(journalContextLocked
-                        ? {}
-                        : { background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }),
-                    }}
-                  >
-                    Lock Re-fetch (Both)
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant={!journalContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockOpenIcon />}
-                    onClick={() => toggleJournalContextLock(false)}
-                    disabled={!journalContextLocked}
-                    size="small"
-                    color="success"
-                    sx={{
-                      textTransform: 'none',
-                      fontWeight: 700,
-                      borderRadius: 2.5,
-                    }}
-                  >
-                    Unlock Re-fetch (Both)
-                  </Button>
-                  <Divider />
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    startIcon={<RefreshIcon />}
-                    onClick={async () => {
-                      await toggleJournalContextLock(false);
-                      await generateJournalContext();
-                    }}
-                    disabled={isLoading}
-                    size="small"
-                    sx={{
-                      textTransform: 'none',
-                      fontWeight: 700,
-                      borderRadius: 2.5,
-                      color: '#6366f1',
-                      borderColor: '#6366f1',
-                    }}
-                  >
-                    {isLoading ? 'Generating…' : 'Force Regenerate Context'}
-                  </Button>
-                </Stack>
-              </Card>
+
 
               {/* Todo Context Lock Controls */}
               <Card
@@ -2357,66 +1852,7 @@ export default function UserContextPage() {
                 </Stack>
               </Card>
 
-              {/* Streak Context Lock Controls */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                  p: 2.5,
-                }}
-              >
-                <Typography variant="subtitle2" fontWeight="800" gutterBottom sx={{ color: '#ff7043' }}>
-                  🔥 Streak Context Lock Controls
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Manage re-fetch lock for streak context on both localStorage and Firestore.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <Button
-                    fullWidth
-                    variant={streakContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockIcon />}
-                    onClick={() => toggleStreakContextLock(true)}
-                    disabled={streakContextLocked}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      ...(streakContextLocked ? {} : { background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }),
-                    }}
-                  >
-                    Lock Re-fetch (Both)
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant={!streakContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockOpenIcon />}
-                    onClick={() => toggleStreakContextLock(false)}
-                    disabled={!streakContextLocked}
-                    size="small" color="success"
-                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5 }}
-                  >
-                    Unlock Re-fetch (Both)
-                  </Button>
-                  <Divider />
-                  <Button
-                    fullWidth variant="outlined"
-                    startIcon={<RefreshIcon />}
-                    onClick={async () => {
-                      await toggleStreakContextLock(false);
-                      await generateStreakContext();
-                    }}
-                    disabled={isStreakLoading}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      color: '#ff7043', borderColor: '#ff7043',
-                    }}
-                  >
-                    {isStreakLoading ? 'Generating…' : 'Force Regenerate Streak Context'}
-                  </Button>
-                </Stack>
-              </Card>
+
 
               {/* Schedule Context Lock Controls */}
               <Card

@@ -7,28 +7,12 @@ import { Card, CardContent, Box } from '@mui/material';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import {
   FlagOutlined,
-  NotesOutlined,
-  LightbulbOutlined,
-  ScheduleOutlined,
-  WhatshotOutlined,
-  ShoppingCartOutlined,
-  AccountBalanceWalletOutlined,
-  ReceiptLongOutlined,
   RequestQuoteOutlined,
-  MenuBookOutlined,
 } from '@mui/icons-material';
 
 const links = [
   { name: 'Goals',      icon: <FlagOutlined />,                   href: '/goals',                    lightBg: '#eff6ff', darkBg: '#1e3a5f', iconColor: '#2563eb' },
-  { name: 'Notes',      icon: <NotesOutlined />,                  href: '/notes',                    lightBg: '#f5f3ff', darkBg: '#3b1f6b', iconColor: '#7c3aed' },
-  { name: 'Ideas',      icon: <LightbulbOutlined />,              href: '/ideas',                    lightBg: '#fefce8', darkBg: '#3f2d00', iconColor: '#ca8a04' },
-  { name: 'Journals',   icon: <MenuBookOutlined />,               href: '/journals',                 lightBg: '#ecfdf5', darkBg: '#064e3b', iconColor: '#059669' },
   { name: 'Loan',       icon: <RequestQuoteOutlined />,           href: '/finance/loans',            lightBg: '#f0fdfa', darkBg: '#134e4a', iconColor: '#0d9488' },
-  { name: 'Time Table', icon: <ScheduleOutlined />,               href: '/time-table',               lightBg: '#eef2ff', darkBg: '#1e1b4b', iconColor: '#4338ca' },
-  { name: 'Streaks',    icon: <WhatshotOutlined />,               href: '/streaks',                  lightBg: '#fff7ed', darkBg: '#431407', iconColor: '#ea580c' },
-  { name: 'Shopping',   icon: <ShoppingCartOutlined />,           href: '/finance/things-to-buy',    lightBg: '#fdf2f8', darkBg: '#4a044e', iconColor: '#db2777' },
-  { name: 'Income',     icon: <AccountBalanceWalletOutlined />,   href: '/finance/income-sources',   lightBg: '#f0fdf4', darkBg: '#052e16', iconColor: '#16a34a' },
-  { name: 'Expenses',   icon: <ReceiptLongOutlined />,            href: '/finance/expenditures',     lightBg: '#fff1f2', darkBg: '#4c0519', iconColor: '#dc2626' },
 ];
 
 const QuickLinks = () => {

@@ -26,10 +26,9 @@ import {
   Person as PersonIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import {
   doc,
-  getDoc,
   setDoc,
   getDocs,
   collection,
@@ -40,6 +39,7 @@ import {
 import { auth, db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
+import Cookies from 'js-cookie';
 import { migrateGuestDataToUser } from '@/app/lib/guestDataMigration';
 
 export default function SignupPage() {
@@ -58,14 +58,10 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
 
-  const [isMasterBlocked, setIsMasterBlocked] = useState(false);
-  const [isInvitedUser, setIsInvitedUser] = useState(false);
-  const [invitedRole, setInvitedRole] = useState<'viewer' | 'editor' | null>(
-    null
-  );
-  const [invitedBy, setInvitedBy] = useState<string | null>(null);
+  const [masterExists, setMasterExists] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
 
-  // 🔍 Check if master already exists + if this email is invited
+  // 🔍 Check if master already exists
   useEffect(() => {
     const checkStatus = async () => {
       try {
@@ -74,47 +70,17 @@ export default function SignupPage() {
           where('role', '==', 'master')
         );
         const masterSnapshot = await getDocs(masterQuery);
-        const masterExists = !masterSnapshot.empty;
-
-        if (!email) {
-          setIsMasterBlocked(masterExists);
-          setChecking(false);
-          return;
-        }
-
-        const invitedRef = doc(db, 'invites', email);
-        const invitedDoc = await getDoc(invitedRef);
-
-        let isInvited = false;
-        let role: 'viewer' | 'editor' | null = null;
-        let inviter: string | null = null;
-
-        if (invitedDoc.exists()) {
-          const data = invitedDoc.data();
-          if (data.status === 'invited') {
-            isInvited = true;
-            role = data.role;
-            inviter = data.invitedBy || null;
-          }
-        }
-
-        setIsInvitedUser(isInvited);
-        setInvitedRole(role);
-        setInvitedBy(inviter);
-
-        // ❌ Block if master exists AND user is not invited
-        setIsMasterBlocked(masterExists && !isInvited);
+        setMasterExists(!masterSnapshot.empty);
       } catch (err) {
         console.error(err);
         setError('Failed to check user status.');
-        setIsMasterBlocked(true); // safest fallback
       } finally {
         setChecking(false);
       }
     };
 
     checkStatus();
-  }, [email]);
+  }, []);
 
   const handleSignup = async () => {
     if (!firstName || !lastName || !email || !password) {
@@ -133,8 +99,11 @@ export default function SignupPage() {
       const user = userCred.user;
 
       let role: 'master' | 'editor' | 'viewer' = 'master';
-      if (isInvitedUser && invitedRole) {
-        role = invitedRole;
+      let status: 'active' | 'pending' = 'active';
+
+      if (masterExists) {
+        role = 'editor';
+        status = 'pending';
       }
 
       const userData = {
@@ -143,18 +112,11 @@ export default function SignupPage() {
         firstName,
         lastName,
         role,
+        status,
         createdAt: Timestamp.now(),
-        ...(isInvitedUser && { invitedBy, status: 'active' }),
       };
 
       await setDoc(doc(db, 'users', user.uid), userData);
-
-      if (isInvitedUser) {
-        await setDoc(doc(db, 'invites', email), {
-          ...userData,
-          status: 'accepted',
-        });
-      }
 
       // Migrate guest data if user was a guest
       if (isGuest && currentUser) {
@@ -174,14 +136,24 @@ export default function SignupPage() {
           }
         } catch (migrationError) {
           console.error('❌ Failed to migrate guest data:', migrationError);
-          // Don't block signup if migration fails
         }
       }
 
-      router.push('/');
+      if (status === 'pending') {
+        // Sign out immediately so session is not created
+        await signOut(auth);
+        Cookies.remove('uid', { path: '/' });
+        Cookies.remove('role', { path: '/' });
+        setSignupSuccess(true);
+        setTimeout(() => {
+          router.push('/user/login');
+        }, 4000);
+      } else {
+        router.push('/');
+      }
     } catch (err) {
       console.error(err);
-      setError(err?.message || 'Signup failed.');
+      setError(err instanceof Error ? err.message : 'Signup failed.');
     } finally {
       setLoading(false);
     }
@@ -249,131 +221,135 @@ export default function SignupPage() {
             </Typography>
           </Box>
 
-          {isGuest && currentUser && (
-            <Alert severity="info" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
-              <AlertTitle sx={{ fontWeight: 800 }}>🔄 Migrate Your Data</AlertTitle>
-              You&apos;re currently using MyOrbit as a guest. Sign up now to save
-              your data permanently and access it from any device!
+          {signupSuccess ? (
+            <Alert severity="success" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
+              <AlertTitle sx={{ fontWeight: 800 }}>🎉 Signup Successful!</AlertTitle>
+              Your account has been created. It is currently **pending approval** by the master user.
+              You will be able to sign in once approved. Redirecting to login...
             </Alert>
-          )}
+          ) : (
+            <>
+              {isGuest && currentUser && (
+                <Alert severity="info" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
+                  <AlertTitle sx={{ fontWeight: 800 }}>🔄 Migrate Your Data</AlertTitle>
+                  You&apos;re currently using MyOrbit as a guest. Sign up now to save
+                  your data permanently and access it from any device!
+                </Alert>
+              )}
 
-          {isMasterBlocked && !isInvitedUser && (
-            <Alert severity="warning" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
-              A master user already exists. Signup is restricted to invited users only.
-            </Alert>
-          )}
+              {error && (
+                <Alert severity="error" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
+                  {error}
+                </Alert>
+              )}
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
-              {error}
-            </Alert>
-          )}
+              <form onSubmit={(e) => { e.preventDefault(); handleSignup(); }}>
+                <Box display="flex" gap={2}>
+                  <TextField
+                    fullWidth
+                    label="First Name"
+                    margin="normal"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    disabled={loading}
+                    InputProps={{
+                      startAdornment: <InputAdornment position="start"><PersonIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
+                      sx: { borderRadius: 3 }
+                    }}
+                  />
+                  <TextField
+                    fullWidth
+                    label="Last Name"
+                    margin="normal"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    disabled={loading}
+                    InputProps={{
+                      sx: { borderRadius: 3 }
+                    }}
+                  />
+                </Box>
 
-          <form onSubmit={(e) => { e.preventDefault(); handleSignup(); }}>
-            <Box display="flex" gap={2}>
-              <TextField
-                fullWidth
-                label="First Name"
-                margin="normal"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                disabled={loading}
-                InputProps={{
-                  startAdornment: <InputAdornment position="start"><PersonIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
-                  sx: { borderRadius: 3 }
-                }}
-              />
-              <TextField
-                fullWidth
-                label="Last Name"
-                margin="normal"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                disabled={loading}
-                InputProps={{
-                  sx: { borderRadius: 3 }
-                }}
-              />
-            </Box>
+                <TextField
+                  fullWidth
+                  label="Email Address"
+                  margin="normal"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                  InputProps={{
+                    startAdornment: <InputAdornment position="start"><EmailIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
+                    sx: { borderRadius: 3 }
+                  }}
+                />
 
-            <TextField
-              fullWidth
-              label="Email Address"
-              margin="normal"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              InputProps={{
-                startAdornment: <InputAdornment position="start"><EmailIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
-                sx: { borderRadius: 3 }
-              }}
-            />
+                <TextField
+                  fullWidth
+                  label="Password"
+                  type={showPassword ? 'text' : 'password'}
+                  margin="normal"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  InputProps={{
+                    startAdornment: <InputAdornment position="start"><LockIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" disabled={loading}>
+                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                    sx: { borderRadius: 3 }
+                  }}
+                />
 
-            <TextField
-              fullWidth
-              label="Password"
-              type={showPassword ? 'text' : 'password'}
-              margin="normal"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              InputProps={{
-                startAdornment: <InputAdornment position="start"><LockIcon sx={{ color: 'text.secondary' }} /></InputAdornment>,
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" disabled={loading}>
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-                sx: { borderRadius: 3 }
-              }}
-            />
+                <Button
+                  variant="contained"
+                  fullWidth
+                  type="submit"
+                  disabled={loading || !firstName || !lastName || !email || !password}
+                  sx={{ 
+                    mt: 4, 
+                    mb: 3, 
+                    py: 1.5, 
+                    borderRadius: 3,
+                    fontWeight: 800,
+                    fontSize: '1rem',
+                    textTransform: 'none',
+                    background: 'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)',
+                    boxShadow: '0 8px 16px rgba(236, 72, 153, 0.3)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #db2777 0%, #e11d48 100%)',
+                      boxShadow: '0 12px 20px rgba(236, 72, 153, 0.4)',
+                    },
+                    '&.Mui-disabled': {
+                      background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                    }
+                  }}
+                >
+                  {loading ? 'Creating Account...' : 'Sign Up'}
+                </Button>
+              </form>
 
-            <Button
-              variant="contained"
-              fullWidth
-              type="submit"
-              disabled={loading || !firstName || !lastName || !email || !password || (isMasterBlocked && !isInvitedUser)}
-              sx={{ 
-                mt: 4, 
-                mb: 3, 
-                py: 1.5, 
-                borderRadius: 3,
-                fontWeight: 800,
-                fontSize: '1rem',
-                textTransform: 'none',
-                background: 'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)',
-                boxShadow: '0 8px 16px rgba(236, 72, 153, 0.3)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #db2777 0%, #e11d48 100%)',
-                  boxShadow: '0 12px 20px rgba(236, 72, 153, 0.4)',
-                },
-                '&.Mui-disabled': {
-                  background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                }
-              }}
-            >
-              {loading ? 'Creating Account...' : 'Sign Up'}
-            </Button>
-          </form>
-
-          <Divider sx={{ my: 3 }}>
-            <Typography variant="body2" color="text.secondary" fontWeight="500">
-              OR
-            </Typography>
-          </Divider>
-
-          <Box textAlign="center">
-            <Typography variant="body2" color="text.secondary" fontWeight="500">
-              Already have an account?{' '}
-              <Link href="/user/login" style={{ textDecoration: 'none' }}>
-                <Typography component="span" sx={{ color: '#ec4899', fontWeight: 700, '&:hover': { textDecoration: 'underline' } }}>
-                  Sign in
+              <Divider sx={{ my: 3 }}>
+                <Typography variant="body2" color="text.secondary" fontWeight="500">
+                  OR
                 </Typography>
-              </Link>
-            </Typography>
-          </Box>
+              </Divider>
+
+              <Box textAlign="center">
+                <Typography variant="body2" color="text.secondary" fontWeight="500">
+                  Already have an account?{' '}
+                  <Link href="/user/login" style={{ textDecoration: 'none' }}>
+                    <Typography component="span" sx={{ color: '#ec4899', fontWeight: 700, '&:hover': { textDecoration: 'underline' } }}>
+                      Sign in
+                    </Typography>
+                  </Link>
+                </Typography>
+              </Box>
+            </>
+          )}
         </Paper>
       </Fade>
     </Box>

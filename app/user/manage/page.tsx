@@ -1,12 +1,12 @@
 'use client';
 
+import React, { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Box,
   Typography,
-  Button,
-  TextField,
-  Select,
-  MenuItem,
+  Tabs,
+  Tab,
   Snackbar,
   Alert,
   Table,
@@ -15,371 +15,502 @@ import {
   TableRow,
   TableCell,
   CircularProgress,
-  Collapse,
   IconButton,
   Paper,
   TableContainer,
+  Chip,
+  Avatar,
+  Stack,
+  Card,
+  CardContent,
+  Tooltip,
 } from '@mui/material';
-import { useEffect, useState, useCallback } from 'react';
+import {
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+  Delete as DeleteIcon,
+  SwapHoriz as SwapHorizIcon,
+  ArrowBack as ArrowBackIcon,
+  Person as PersonIcon,
+  Shield as ShieldIcon,
+} from '@mui/icons-material';
 import { auth, db } from '@/app/lib/firebase';
 import {
   collection,
   query,
-  where,
   getDocs,
-  Timestamp,
-  setDoc,
   doc,
   updateDoc,
   deleteDoc,
   getDoc,
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ExpandMore, ExpandLess } from '@mui/icons-material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
-import Link from 'next/link';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
-interface MasterUser {
+interface UserRecord {
   uid: string;
   email: string;
-  role?: string;
-}
-
-interface SubUser {
-  id: string;
-  email?: string;
-  invitedBy?: string;
-  role?: 'viewer' | 'editor';
-  status?: 'invited' | 'accepted';
-  invitedAt?: {
-    toDate: () => Date;
-  };
+  firstName: string;
+  lastName: string;
+  role: 'master' | 'editor' | 'viewer';
+  status?: 'active' | 'pending' | 'rejected';
+  createdAt?: { toDate: () => Date };
 }
 
 export default function ManageUsersPage() {
   const { theme } = useCustomTheme();
-  const [showAddUser, setShowAddUser] = useState(false);
+  const isDark = theme?.mode === 'dark';
+  const router = useRouter();
 
-  const [masterUser, setMasterUser] = useState<MasterUser | null>(null);
-  const [users, setUsers] = useState<SubUser[]>([]);
+  const [currentUser, setCurrentUser] = useState<UserRecord | null>(null);
+  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState(0);
 
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'viewer' | 'editor'>('viewer');
-  const [loading, setLoading] = useState(false);
   const [snack, setSnack] = useState<{
     open: boolean;
-    msg: string | string | React.ReactNode;
-    type: 'success' | 'error' | 'warning' | 'info';
+    msg: string;
+    type: 'success' | 'error' | 'info' | 'warning';
   }>({ open: false, msg: '', type: 'success' });
 
-  const [usersLimit, setUsersLimit] = useState(1);
-
-  // Fetch users limit from API
+  // 1. Fetch current user from auth & db
   useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const response = await fetch('/api/config');
-        const config = await response.json();
-        setUsersLimit(config.usersLimit);
-      } catch (error) {
-        console.error('Failed to fetch config:', error);
-        setUsersLimit(1); // fallback to default
-      }
-    };
-    fetchConfig();
-  }, []);
-
-  const fetchUsers = useCallback(async () => {
-    if (!masterUser) return;
-    const q = query(
-      collection(db, 'invites'),
-      where('invitedBy', '==', masterUser.uid)
-    );
-    const snapshot = await getDocs(q);
-    const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    setUsers(list);
-  }, [masterUser]);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setMasterUser(user);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data() as UserRecord;
+            if (data.role !== 'master') {
+              // Redirect non-master users to dashboard
+              router.push('/user/dashboard');
+              return;
+            }
+            setCurrentUser(data);
+          } else {
+            router.push('/user/login');
+          }
+        } catch (err) {
+          console.error(err);
+          router.push('/user/dashboard');
+        }
+      } else {
+        router.push('/user/login');
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [router]);
+
+  // 2. Fetch all registered users
+  const fetchUsers = useCallback(async () => {
+    if (!currentUser) return;
+    setLoading(true);
+    try {
+      const q = query(collection(db, 'users'));
+      const snapshot = await getDocs(q);
+      const list = snapshot.docs
+        .map((doc) => doc.data() as UserRecord)
+        // Exclude current master user
+        .filter((u) => u.uid !== currentUser.uid);
+      setUsers(list);
+    } catch (err) {
+      console.error(err);
+      setSnack({
+        open: true,
+        msg: 'Failed to fetch registered users.',
+        type: 'error',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser]);
 
   useEffect(() => {
-    if (masterUser) fetchUsers();
-  }, [masterUser, fetchUsers]);
-
-  const handleCreate = async () => {
-    // 🔍 Verify master user role
-    if (!masterUser) {
-      setSnack({
-        open: true,
-        msg: 'You must be logged in to create users.',
-        type: 'error',
-      });
-      return;
+    if (currentUser) {
+      fetchUsers();
     }
+  }, [currentUser, fetchUsers]);
 
-    // Check if current user has master role
-    const userDoc = await getDoc(doc(db, 'users', masterUser.uid));
-    const userData = userDoc.data();
-    if (!userData || userData.role !== 'master') {
-      setSnack({
-        open: true,
-        msg: 'Only master users can create sub-users.',
-        type: 'error',
-      });
-      return;
-    }
-
-    // 🔍 Check user limit
-    if (users.length >= usersLimit) {
-      setSnack({
-        open: true,
-        msg: `You have reached the maximum limit of ${usersLimit} sub-user(s).`,
-        type: 'error',
-      });
-      return;
-    }
-
-    if (!email) {
-      setSnack({ open: true, msg: 'Email is required.', type: 'error' });
-      return;
-    }
-
-    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if (!isValidEmail) {
-      setSnack({ open: true, msg: 'Invalid email address.', type: 'error' });
-      return;
-    }
-
-    // 🔍 Check if email already invited
-    const inviteSnap = await getDoc(doc(db, 'invites', email));
-    if (inviteSnap.exists()) {
-      setSnack({
-        open: true,
-        msg: 'This email is already invited.',
-        type: 'error',
-      });
-      return;
-    }
-
-    // 🔍 Check if email already registered
-    const userSnap = await getDocs(
-      query(collection(db, 'users'), where('email', '==', email))
-    );
-    if (!userSnap.empty) {
-      setSnack({
-        open: true,
-        msg: 'This email is already registered.',
-        type: 'error',
-      });
-      return;
-    }
-    setLoading(true); // 🔸 START LOADING
-
-    // Proceed to invite...
+  // 3. User Actions
+  const handleApprove = async (uid: string) => {
+    setActionLoading(uid);
     try {
-      await setDoc(doc(db, 'invites', email), {
-        email,
-        invitedBy: masterUser.uid,
-        role,
-        status: 'invited',
-        invitedAt: Timestamp.now(),
-      });
-
-      setEmail('');
-      setSnack({
-        open: true,
-        type: 'success',
-        msg: (
-          <>
-            User invited successfully! Ask them to visit{' '}
-            <Link href="/user/signup" style={{ color: 'lightblue' }}>
-              /user/signup
-            </Link>{' '}
-            and register using the same email.
-          </>
-        ),
-      });
-
+      await updateDoc(doc(db, 'users', uid), { status: 'active' });
+      setSnack({ open: true, msg: 'User approved successfully!', type: 'success' });
       fetchUsers();
     } catch (err) {
       console.error(err);
-      setSnack({ open: true, msg: 'Failed to invite user.', type: 'error' });
+      setSnack({ open: true, msg: 'Failed to approve user.', type: 'error' });
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  // handle create end here
-
-  const handleChangeRole = async (id: string, currentRole: string) => {
-    const newRole = currentRole === 'viewer' ? 'editor' : 'viewer';
+  const handleReject = async (uid: string) => {
+    setActionLoading(uid);
     try {
-      const ref = doc(db, 'invites', id);
-      await updateDoc(ref, { role: newRole });
-      setSnack({
-        open: true,
-        msg: `Role changed to ${newRole}.`,
-        type: 'info',
-      });
+      await updateDoc(doc(db, 'users', uid), { status: 'rejected' });
+      setSnack({ open: true, msg: 'User request rejected.', type: 'warning' });
       fetchUsers();
     } catch (err) {
       console.error(err);
-      setSnack({ open: true, msg: 'Failed to change role.', type: 'error' });
+      setSnack({ open: true, msg: 'Failed to reject user.', type: 'error' });
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  const handleDeleteUser = async (id: string) => {
+  const handleToggleRole = async (uid: string, currentRole: 'master' | 'editor' | 'viewer') => {
+    const newRole = currentRole === 'editor' ? 'viewer' : 'editor';
+    setActionLoading(`${uid}-role`);
     try {
-      await deleteDoc(doc(db, 'invites', id));
-      setSnack({ open: true, msg: 'User deleted.', type: 'success' });
+      await updateDoc(doc(db, 'users', uid), { role: newRole });
+      setSnack({ open: true, msg: `Role updated to ${newRole}.`, type: 'info' });
       fetchUsers();
     } catch (err) {
       console.error(err);
-      setSnack({ open: true, msg: 'Failed to delete user.', type: 'error' });
+      setSnack({ open: true, msg: 'Failed to update user role.', type: 'error' });
+    } finally {
+      setActionLoading(null);
     }
   };
+
+  const handleDelete = async (uid: string) => {
+    setActionLoading(uid);
+    try {
+      await deleteDoc(doc(db, 'users', uid));
+      setSnack({ open: true, msg: 'User registration canceled & removed.', type: 'success' });
+      fetchUsers();
+    } catch (err) {
+      console.error(err);
+      setSnack({ open: true, msg: 'Failed to cancel registration.', type: 'error' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Filter users based on tabs
+  const pendingUsers = users.filter((u) => u.status === 'pending');
+  const activeUsers = users.filter((u) => u.status === 'active');
+  const rejectedUsers = users.filter((u) => u.status === 'rejected');
+
+  const filteredUsers =
+    activeTab === 0
+      ? pendingUsers
+      : activeTab === 1
+      ? activeUsers
+      : rejectedUsers;
 
   return (
     <Box
-      maxWidth="1000px"
-      mx="auto"
-      mt={4}
-      className="p-4"
       sx={{
-        backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-        color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+        bgcolor: isDark ? '#0f172a' : '#f8fafc',
         minHeight: '100vh',
-        borderRadius: theme?.mode === 'dark' ? '8px' : '0px',
+        pb: 10,
+        color: isDark ? '#f1f5f9' : '#0f172a',
       }}
     >
-      <Typography variant="h5" mb={2}>
-        Manage Users
-      </Typography>
-
-      {masterUser && (
-        <Box mb={3} p={2} bgcolor="#f5f5f5" borderRadius={2} boxShadow={1}>
-          <Typography variant="h6">Master Account Info</Typography>
-          <Typography>
-            Email: <strong>{masterUser.email}</strong>
-          </Typography>
-          <Typography>
-            UID: <strong>{masterUser.uid}</strong>
-          </Typography>
-        </Box>
-      )}
-
-      <Box display="flex" alignItems="center" gap={2} mb={2}>
-        <Button
-          onClick={() => setShowAddUser((prev) => !prev)}
-          endIcon={showAddUser ? <ExpandLess /> : <ExpandMore />}
-          disabled={users.length >= usersLimit}
-        >
-          {showAddUser ? 'Hide Add User' : 'Add New Sub-User'}
-        </Button>
-        <Typography variant="body2" color="text.secondary">
-          ({users.length}/{usersLimit} users)
-        </Typography>
-        {users.length >= usersLimit && (
-          <Typography variant="body2" color="error">
-            Limit reached
-          </Typography>
-        )}
+      {/* Header Bar */}
+      <Box
+        sx={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          backdropFilter: 'blur(8px)',
+          bgcolor: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(248, 250, 252, 0.8)',
+          borderBottom: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+          px: { xs: 2, md: 4 },
+          py: 2,
+        }}
+      >
+        <Stack direction="row" justifyContent="space-between" alignItems="center" maxWidth={1000} mx="auto">
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <IconButton onClick={() => router.push('/user/dashboard')} sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+              <ArrowBackIcon />
+            </IconButton>
+            <Typography variant="h6" fontWeight="800">
+              User Approvals & Registrations
+            </Typography>
+          </Stack>
+        </Stack>
       </Box>
 
-      <Collapse in={showAddUser} timeout="auto" unmountOnExit>
-        <Box mt={2}>
-          <TextField
-            fullWidth
-            label="Sub-user Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            margin="normal"
-          />
-          <Select
-            fullWidth
-            value={role}
-            onChange={(e) => setRole(e.target.value as 'viewer' | 'editor')}
+      <Box maxWidth={1000} mx="auto" sx={{ px: { xs: 2, sm: 3 }, mt: 4 }}>
+        {/* Master User Info Card */}
+        {currentUser && (
+          <Card
+            sx={{
+              mb: 4,
+              borderRadius: 4,
+              bgcolor: isDark ? '#1e293b' : '#ffffff',
+              border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+              boxShadow: 'none',
+            }}
           >
-            <MenuItem value="viewer">Viewer</MenuItem>
-            <MenuItem value="editor">Editor</MenuItem>
-          </Select>
-          <Button
-            sx={{ mt: 2 }}
-            onClick={handleCreate}
-            variant="contained"
-            disabled={loading || users.length >= usersLimit}
-          >
-            {loading ? <CircularProgress size={20} /> : 'Add User'}
-          </Button>
-          {users.length >= usersLimit && (
-            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-              Cannot add more users. Limit of {usersLimit} reached.
-            </Typography>
-          )}
-        </Box>
-      </Collapse>
+            <CardContent sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Avatar
+                sx={{
+                  bgcolor: '#6366f1',
+                  width: 56,
+                  height: 56,
+                  boxShadow: '0 8px 16px rgba(99, 102, 241, 0.25)',
+                }}
+              >
+                <ShieldIcon fontSize="medium" />
+              </Avatar>
+              <Box>
+                <Typography variant="subtitle1" fontWeight="800">
+                  Master User Session
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Logged in as: <strong>{currentUser.email}</strong>
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        )}
 
-      <Box mt={4}>
-        <Typography variant="h6" mb={1}>
-          Current Sub-Users ({users.length})
-        </Typography>
-        {users.length > 0 ? (
-          <TableContainer component={Paper}>
-            <Table size="small">
-              <TableHead>
+        {/* Tab Controls */}
+        <Box sx={{ borderBottom: 1, borderColor: isDark ? '#334155' : '#e2e8f0', mb: 3 }}>
+          <Tabs
+            value={activeTab}
+            onChange={(_, val) => setActiveTab(val)}
+            textColor="primary"
+            indicatorColor="primary"
+            variant="fullWidth"
+          >
+            <Tab
+              label={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <span>Pending Requests</span>
+                  <Chip
+                    label={pendingUsers.length}
+                    size="small"
+                    color={pendingUsers.length > 0 ? 'warning' : 'default'}
+                    sx={{ height: 20, fontSize: '0.75rem', fontWeight: 'bold' }}
+                  />
+                </Stack>
+              }
+              sx={{ textTransform: 'none', fontWeight: 800 }}
+            />
+            <Tab
+              label={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <span>Approved Users</span>
+                  <Chip
+                    label={activeUsers.length}
+                    size="small"
+                    color={activeUsers.length > 0 ? 'success' : 'default'}
+                    sx={{ height: 20, fontSize: '0.75rem', fontWeight: 'bold' }}
+                  />
+                </Stack>
+              }
+              sx={{ textTransform: 'none', fontWeight: 800 }}
+            />
+            <Tab
+              label={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <span>Rejected / Cancelled</span>
+                  <Chip
+                    label={rejectedUsers.length}
+                    size="small"
+                    sx={{ height: 20, fontSize: '0.75rem', fontWeight: 'bold' }}
+                  />
+                </Stack>
+              }
+              sx={{ textTransform: 'none', fontWeight: 800 }}
+            />
+          </Tabs>
+        </Box>
+
+        {loading ? (
+          <Box display="flex" justifyContent="center" py={10}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <TableContainer
+            component={Paper}
+            sx={{
+              borderRadius: 4,
+              bgcolor: isDark ? '#1e293b' : '#ffffff',
+              border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+              boxShadow: 'none',
+              overflow: 'hidden',
+            }}
+          >
+            <Table>
+              <TableHead sx={{ bgcolor: isDark ? '#0f172a' : '#f1f5f9' }}>
                 <TableRow>
-                  <TableCell>Email</TableCell>
-                  <TableCell>Role</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Invited At</TableCell>
-                  <TableCell align="right">Actions</TableCell>
+                  <TableCell sx={{ fontWeight: 800 }}>User Details</TableCell>
+                  <TableCell sx={{ fontWeight: 800 }}>Role</TableCell>
+                  <TableCell sx={{ fontWeight: 800 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 800 }}>Registered At</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 800, pr: 3 }}>
+                    Actions
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell>{u.email}</TableCell>
-                    <TableCell>{u.role}</TableCell>
-                    <TableCell>{u.status}</TableCell>
-                    <TableCell>
-                      {u.invitedAt?.toDate
-                        ? u.invitedAt.toDate().toLocaleDateString()
-                        : '-'}
-                    </TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        onClick={() => handleChangeRole(u.id, u.role)}
-                      >
-                        <SwapHorizIcon />
-                      </IconButton>
-                      <IconButton onClick={() => handleDeleteUser(u.id)}>
-                        <DeleteIcon color="error" />
-                      </IconButton>
+                {filteredUsers.length > 0 ? (
+                  filteredUsers.map((u) => {
+                    const regDate = u.createdAt?.toDate
+                      ? u.createdAt.toDate().toLocaleDateString()
+                      : 'Unknown';
+
+                    return (
+                      <TableRow key={u.uid} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                        <TableCell>
+                          <Stack direction="row" alignItems="center" spacing={2}>
+                            <Avatar sx={{ bgcolor: isDark ? '#334155' : '#f1f5f9', color: isDark ? '#fff' : '#000' }}>
+                              <PersonIcon />
+                            </Avatar>
+                            <Box>
+                              <Typography variant="body2" fontWeight="700">
+                                {u.firstName} {u.lastName}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {u.email}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={u.role.toUpperCase()}
+                            size="small"
+                            color={u.role === 'editor' ? 'primary' : 'default'}
+                            variant="outlined"
+                            sx={{ fontWeight: 'bold' }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={u.status ? u.status.toUpperCase() : 'UNKNOWN'}
+                            size="small"
+                            color={
+                              u.status === 'active'
+                                ? 'success'
+                                : u.status === 'pending'
+                                ? 'warning'
+                                : 'error'
+                            }
+                            sx={{ fontWeight: 'bold', color: '#fff' }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">
+                            {regDate}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right" sx={{ pr: 3 }}>
+                          {actionLoading === u.uid ? (
+                            <CircularProgress size={24} />
+                          ) : (
+                            <Stack direction="row" spacing={1} justifyContent="flex-end">
+                              {/* Pending Status Controls */}
+                              {u.status === 'pending' && (
+                                <>
+                                  <Tooltip title="Approve Request">
+                                    <IconButton
+                                      color="success"
+                                      onClick={() => handleApprove(u.uid)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <CheckCircleIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Reject Request">
+                                    <IconButton
+                                      color="error"
+                                      onClick={() => handleReject(u.uid)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <CancelIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              )}
+
+                              {/* Approved Status Controls */}
+                              {u.status === 'active' && (
+                                <>
+                                  <Tooltip title="Change Role (Editor/Viewer)">
+                                    <IconButton
+                                      color="primary"
+                                      onClick={() => handleToggleRole(u.uid, u.role)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <SwapHorizIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Cancel Registration / Revoke Access">
+                                    <IconButton
+                                      color="error"
+                                      onClick={() => handleReject(u.uid)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <CancelIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              )}
+
+                              {/* Rejected/Cancelled Status Controls */}
+                              {u.status === 'rejected' && (
+                                <>
+                                  <Tooltip title="Re-Approve User">
+                                    <IconButton
+                                      color="success"
+                                      onClick={() => handleApprove(u.uid)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <CheckCircleIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Permanently Delete Record">
+                                    <IconButton
+                                      color="error"
+                                      onClick={() => handleDelete(u.uid)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <DeleteIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              )}
+                            </Stack>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No users found in this section.
+                      </Typography>
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </TableContainer>
-        ) : (
-          <Typography>No sub-users found.</Typography>
         )}
       </Box>
 
+      {/* Snackbar Alert Notifications */}
       <Snackbar
         open={snack.open}
-        autoHideDuration={5000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        autoHideDuration={4000}
+        onClose={() => setSnack((prev) => ({ ...prev, open: false }))}
       >
-        <Alert severity={snack.type} variant="filled">
+        <Alert
+          onClose={() => setSnack((prev) => ({ ...prev, open: false }))}
+          severity={snack.type}
+          sx={{ width: '100%', borderRadius: 3 }}
+        >
           {snack.msg}
         </Alert>
       </Snackbar>

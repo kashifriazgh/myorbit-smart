@@ -8,16 +8,7 @@ import BottomNavigationAction from '@mui/material/BottomNavigationAction';
 import HomeIcon from '@mui/icons-material/Home';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import PriceCheckIcon from '@mui/icons-material/PriceCheck';
-import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
-import TimelineIcon from '@mui/icons-material/Timeline';
-import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import FlagIcon from '@mui/icons-material/Flag';
-import NoteIcon from '@mui/icons-material/Note';
-import BookIcon from '@mui/icons-material/Book';
-import Popover from '@mui/material/Popover';
-import List from '@mui/material/List';
-import ListItemButton from '@mui/material/ListItemButton';
-import ListItemText from '@mui/material/ListItemText';
 import { Skeleton, Box } from '@mui/material';
 
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -29,7 +20,10 @@ export default function BottomNav() {
   const { user, loading } = useAuth();
 
   const [value, setValue] = React.useState(pathname);
-  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+
+  React.useEffect(() => {
+    setValue(pathname);
+  }, [pathname]);
 
   if (!theme || loading) {
     return (
@@ -46,7 +40,7 @@ export default function BottomNav() {
           p: 1,
         }}
       >
-        {[...Array(5)].map((_, idx) => (
+        {[...Array(4)].map((_, idx) => (
           <Box
             key={idx}
             sx={{
@@ -62,9 +56,8 @@ export default function BottomNav() {
       </Box>
     );
   }
+
   const navItems = [
-    { label: 'To-Do', icon: <ChecklistIcon />, path: '/to-do' },
-    { label: 'Journals', icon: <BookIcon />, path: '/journals' },
     {
       label: 'Home',
       icon: (
@@ -77,107 +70,52 @@ export default function BottomNav() {
       ),
       path: '/',
     },
+    { label: 'To-Do', icon: <ChecklistIcon />, path: '/to-do' },
+    { label: 'Goals', icon: <FlagIcon />, path: '/goals' },
     { label: 'Finance', icon: <PriceCheckIcon />, path: '/finance' },
   ];
+
   const handleChange = (_: React.SyntheticEvent, newValue: string) => {
-    if (newValue === 'more') return;
     setValue(newValue);
   };
 
-  const handleMoreClick = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMoreClose = () => {
-    setAnchorEl(null);
-  };
-
-  const open = Boolean(anchorEl);
-
   return (
-    <>
-      <BottomNavigation
-        value={value}
-        onChange={handleChange}
-        sx={{
-          width: '100%',
-          position: 'fixed',
-          bottom: 0,
-          zIndex: 10,
-          borderTop: '1px solid #ccc',
-          bgcolor: theme.mode === 'dark' ? '#334155' : undefined,
-          color: theme.mode === 'dark' ? '#f8fafc' : undefined,
-        }}
-      >
-        {navItems.map((item) => (
-          <BottomNavigationAction
-            key={item.label}
-            label={item.label}
-            value={item.path}
-            icon={item.icon}
-            component={Link}
-            href={user ? item.path : '#'}
-            prefetch={false}
-            disabled={!user}
-            sx={
-              item.label === 'Home'
-                ? {
-                  fontWeight: 600,
-                  '& .MuiBottomNavigationAction-label': {
-                    fontSize: '0.75rem',
-                  },
-                }
-                : {}
-            }
-          />
-        ))}
+    <BottomNavigation
+      value={value}
+      onChange={handleChange}
+      sx={{
+        width: '100%',
+        position: 'fixed',
+        bottom: 0,
+        zIndex: 10,
+        borderTop: '1px solid #ccc',
+        bgcolor: theme.mode === 'dark' ? '#334155' : undefined,
+        color: theme.mode === 'dark' ? '#f8fafc' : undefined,
+      }}
+    >
+      {navItems.map((item) => (
         <BottomNavigationAction
-          label="More"
-          value="more"
-          icon={<MoreHorizIcon />}
-          onClick={handleMoreClick}
+          key={item.label}
+          label={item.label}
+          value={item.path}
+          icon={item.icon}
+          component={Link}
+          href={user ? item.path : '#'}
+          prefetch={false}
           disabled={!user}
+          sx={
+            item.label === 'Home'
+              ? {
+                fontWeight: 600,
+                '& .MuiBottomNavigationAction-label': {
+                  fontSize: '0.75rem',
+                },
+              }
+              : {}
+          }
         />
-      </BottomNavigation>
-
-      <Popover
-        open={open}
-        anchorEl={anchorEl}
-        onClose={handleMoreClose}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-        transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <List sx={{ minWidth: 200 }}>
-          {/* Temporarily hidden journals because it's now in the main navigation bar
-          <ListItemButton disabled={!user} component={Link} href="/journals" prefetch={false}>
-            <FlagIcon sx={{ mr: 1 }} />
-            <ListItemText primary="Journals" />
-          </ListItemButton>
-          */}
-          <ListItemButton disabled={!user} component={Link} href="/goals" prefetch={false}>
-            <FlagIcon sx={{ mr: 1 }} />
-            <ListItemText primary="Goals" />
-          </ListItemButton>
-          {/* Temporarily hidden ideas link
-          <ListItemButton disabled={!user} component={Link} href="/ideas" prefetch={false}>
-            <LightbulbIcon sx={{ mr: 1 }} />
-            <ListItemText primary="Ideas" />
-          </ListItemButton>
-          */}
-          <ListItemButton disabled={!user} component={Link} href="/time-table" prefetch={false}>
-            <EventAvailableIcon sx={{ mr: 1 }} />
-            <ListItemText primary="Time Table" />
-          </ListItemButton>
-          <ListItemButton disabled={!user} component={Link} href="/streaks" prefetch={false}>
-            <TimelineIcon sx={{ mr: 1 }} />
-            <ListItemText primary="Streaks" />
-          </ListItemButton>
-          <ListItemButton disabled={!user} component={Link} href="/notes" prefetch={false}>
-            <NoteIcon sx={{ mr: 1 }} />
-            <ListItemText primary="Notes" />
-          </ListItemButton>
-        </List>
-      </Popover>
-    </>
+      ))}
+    </BottomNavigation>
   );
 }
+

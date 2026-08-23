@@ -42,15 +42,10 @@ export async function migrateGuestDataToUser(
     // Collections to migrate
     const collectionsToMigrate = [
       'todos',
-      'ideas',
-      'journals',
-      'streaks',
-      'timeTables',
       'incomeSources',
       'expenditures',
       'totalCashSnapshots',
       'buyItems',
-      'moodEntries',
     ];
 
     for (const collectionName of collectionsToMigrate) {

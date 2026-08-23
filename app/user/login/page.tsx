@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/app/lib/firebase';
 import Cookies from 'js-cookie';
@@ -73,8 +73,18 @@ export default function LoginPage() {
         throw new Error('User data not found.');
       }
 
+      const userData = userDoc.data();
+      if (userData.role !== 'master' && userData.status === 'pending') {
+        await signOut(auth);
+        throw new Error('Your account is pending approval by the master user.');
+      }
+      if (userData.role !== 'master' && userData.status === 'rejected') {
+        await signOut(auth);
+        throw new Error('Your account registration request has been rejected.');
+      }
+
       Cookies.set('uid', user.uid, { expires: 7, path: '/' });
-      Cookies.set('role', userDoc.data().role, { expires: 7, path: '/' });
+      Cookies.set('role', userData.role, { expires: 7, path: '/' });
 
       setSnack({ message: 'Login successful.', type: 'success', open: true });
 

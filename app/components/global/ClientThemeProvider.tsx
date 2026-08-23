@@ -10,10 +10,8 @@ import {
   useCustomTheme,
 } from '@/app/lib/context/themeContext';
 import { TodoProvider } from '../../lib/context/todoContext';
-import { StreaksProvider } from '../../lib/context/StreaksContext';
 import { OnboardingProvider } from '../../lib/context/onBoardingContext';
 import { ProjectsProvider } from '../../lib/context/ProjectsContext';
-import { IncomeSourcesProvider } from '@/app/lib/context/IncomeSourcesContext';
 import { GoalsProvider } from '@/app/lib/context/GoalsContext';
 import { SchedulesProvider } from '@/app/lib/context/SchedulesContext';
 
@@ -27,19 +25,15 @@ export default function ClientThemeProvider({
       <OnboardingProvider>
         <CustomThemeProvider>
           <TodoProvider>
-            <StreaksProvider>
-              <IncomeSourcesProvider>
-                <GoalsProvider>
-                  <SchedulesProvider>
-                    <ProjectsProvider>
-                      <CssBaseline />
-                      <ThemeBodyEffect />
-                      {children}
-                    </ProjectsProvider>
-                  </SchedulesProvider>
-                </GoalsProvider>
-              </IncomeSourcesProvider>
-            </StreaksProvider>
+            <GoalsProvider>
+              <SchedulesProvider>
+                <ProjectsProvider>
+                  <CssBaseline />
+                  <ThemeBodyEffect />
+                  {children}
+                </ProjectsProvider>
+              </SchedulesProvider>
+            </GoalsProvider>
           </TodoProvider>
         </CustomThemeProvider>
       </OnboardingProvider>
