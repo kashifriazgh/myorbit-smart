@@ -26,13 +26,40 @@ If the title is too short, has spelling mistakes, or is poorly phrased, suggest 
 The suggested title is for an individual user's personal goal tracker. It must be direct, personal, and action-oriented (e.g., "Gain weight healthily" or "Reach a healthy target weight").
 Do NOT include geographic locations (like city or country names), profession, demographics, or third-person broad advice/strategies.
 Keep the title concise (maximum 6 words).
+
+In addition to refining the title, evaluate and suggest the best configuration metrics for this goal:
+- direction: "up" (if goal is e.g. "enhance income", "save money", "read more"), "down" (if goal is e.g. "lose weight", "reduce debt"), or null (for general/cumulative).
+- progressMode: "cumulative" (if progress accumulates over time e.g. reading pages, savings, steps), or "current_value" (if user logs a live snapshot e.g. weight, current account balance).
+- suggestedCategory: one of: "finance", "health", "learning", "habit", "work", "lifestyle", "custom".
+- suggestedUnit: a measurement unit suitable for the goal (e.g. "kg", "PKR", "pages", "hours", "tasks").
+- targetValueSuggestion: a suggested number target if none is specified or if it's vague (otherwise null).
+- dueDateSuggestion: a suggested due date in YYYY-MM-DD format parsed from the title. (Calculate it relative to the provided Today's Date. E.g. if the title contains "in next 3 months" or "in 3 months", calculate the date exactly 3 months after Today's Date. Return in YYYY-MM-DD format. If no timeframe is mentioned in the title, return null).
+- startValueNeeded: true if progressMode is "current_value", otherwise false.
+- startValueLabel: a brief prompt label asking for their current level (e.g. "What is your current weight in kg?") or null.
+- trackingMethodSuggestion: "tracker" (frequent status logging) or "milestones" (project-like phases/checkpoints).
+- verb: a single base action verb (e.g. "read", "run", "practice", "study", "work").
+- activityVerb: a short action verb phrase (e.g. "read this book", "run", "practice guitar").
+- reason: a short encouraging sentence explaining why this tracking setup is recommended.
+
 Provide your response strictly in the following JSON format without any markdown or code blocks:
 {
   "isGood": false,
-  "suggestedTitle": "A better, clearer version of the title"
+  "suggestedTitle": "...",
+  "direction": "up" | "down" | null,
+  "progressMode": "cumulative" | "current_value",
+  "suggestedCategory": "finance" | "health" | "learning" | "habit" | "work" | "lifestyle" | "custom",
+  "suggestedUnit": "...",
+  "targetValueSuggestion": 100,
+  "dueDateSuggestion": "YYYY-MM-DD" | null,
+  "startValueNeeded": false,
+  "startValueLabel": "...",
+  "trackingMethodSuggestion": "tracker" | "milestones",
+  "verb": "...",
+  "activityVerb": "...",
+  "reason": "..."
 }`;
-      prompt = `Title: "${title}"`;
-      maxTokens = 80;
+      prompt = `Title: "${title}"\nToday's Date: "${todayDate}"`;
+      maxTokens = 400;
     } else if (action === 'refine-category') {
       const activeCategory = category || type;
       systemPrompt = `You are a goal analysis assistant. Analyze the goal title and its current category.
@@ -167,8 +194,7 @@ Response format:
       method: 'POST',
       headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        response_format: { type: 'json_object' },
+        model: 'groq/compound-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
@@ -199,6 +225,13 @@ Response format:
 
     // Strip code blocks if present
     content = content.replace(/```(?:json)?/gi, '').trim();
+
+    // Safely extract JSON brace boundaries
+    const firstBrace = content.indexOf('{');
+    const lastBrace = content.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      content = content.slice(firstBrace, lastBrace + 1);
+    }
 
     try {
       const parsed = JSON.parse(content);

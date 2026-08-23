@@ -6,51 +6,51 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useMemo,
+  useRef,
   ReactNode,
 } from 'react';
 import { SchedulesProps } from '../interface';
 import {
-  getSchedulesByUserAndDate,
   createSchedule,
   updateSchedule,
   deleteSchedule,
-  getSchedulesByUserAndDateRange,
   getAllSchedulesByUser,
 } from '../functions/schedules';
 import { useAuth } from './userContext';
+import {
+  loadSchedulesCache,
+  saveSchedulesCache,
+  invalidateSchedulesCache,
+  clearSchedulesCache,
+} from '@/app/lib/utils/schedulesCache';
+
+export type SchedulesDataSource = 'firebase' | 'cache' | 'loading';
 
 interface SchedulesContextType {
-  schedules: SchedulesProps[];
-  allSchedules: SchedulesProps[];
+  schedules: SchedulesProps[]; // Derived schedules for the selected date
+  allSchedules: SchedulesProps[]; // All user schedules
   loading: boolean;
+  dataSource: SchedulesDataSource;
   selectedDate: string;
   setSelectedDate: (date: string) => void;
-  fetchSchedules: (date: string) => Promise<void>;
   addSchedule: (schedule: Omit<SchedulesProps, 'id'>) => Promise<string>;
-  editSchedule: (
-    scheduleId: string,
-    updates: Partial<SchedulesProps>
-  ) => Promise<void>;
+  editSchedule: (scheduleId: string, updates: Partial<SchedulesProps>) => Promise<void>;
   removeSchedule: (scheduleId: string) => Promise<void>;
-  getSchedulesForDateRange: (
-    startDate: string,
-    endDate: string
-  ) => Promise<SchedulesProps[]>;
+  getSchedulesForDateRange: (startDate: string, endDate: string) => SchedulesProps[];
+  refreshSchedules: () => void;
 }
 
-const SchedulesContext = createContext<SchedulesContextType | undefined>(
-  undefined
-);
+const SchedulesContext = createContext<SchedulesContextType | undefined>(undefined);
 
-export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
+export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const userId = user?.uid || '';
-  const [schedules, setSchedules] = useState<SchedulesProps[]>([]);
   const [allSchedules, setAllSchedules] = useState<SchedulesProps[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState<SchedulesDataSource>('loading');
   const [selectedDate, setSelectedDate] = useState<string>('');
+
+  const fetchingRef = useRef(false);
 
   // Set initial date to today
   useEffect(() => {
@@ -58,135 +58,159 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({
     setSelectedDate(today);
   }, []);
 
-  const fetchSchedules = useCallback(
-    async (date: string) => {
-      if (!userId || !date) return;
+  // Fetch all schedules from Firebase and store in state + cache
+  const fetchAllFromFirebase = useCallback(async (uid: string) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
 
-      setLoading(true);
-      try {
-        const fetchedSchedules = await getSchedulesByUserAndDate(userId, date);
-        setSchedules(fetchedSchedules);
-      } catch (error) {
-        console.error('Error fetching schedules:', error);
-        throw error;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [userId]
-  );
-
-  const fetchAllSchedules = useCallback(async () => {
-    if (!userId) return;
     try {
-      const fetched = await getAllSchedulesByUser(userId, 500);
+      console.log('%c[ScheduleCache] 🔥 Fetching schedules from Firebase…', 'color:#f59e0b;font-weight:bold');
+      const fetched = await getAllSchedulesByUser(uid, 1000);
       setAllSchedules(fetched);
+      setDataSource('firebase');
+      setLoading(false);
+
+      // Save to localStorage cache
+      saveSchedulesCache(fetched, uid);
+      console.log(`%c[ScheduleCache] ✅ Cached ${fetched.length} schedules locally`, 'color:#22c55e;font-weight:bold');
     } catch (error) {
-      console.error('Error fetching all schedules:', error);
+      console.error('[ScheduleCache] ❌ Failed to fetch schedules:', error);
+      setLoading(false);
+    } finally {
+      fetchingRef.current = false;
     }
-  }, [userId]);
+  }, []);
+
+  // Bootstrap from cache on mount / user change
+  useEffect(() => {
+    if (!user) {
+      setAllSchedules([]);
+      setLoading(false);
+      setDataSource('loading');
+      clearSchedulesCache();
+      return;
+    }
+
+    // Try cache first
+    const cached = loadSchedulesCache(user.uid);
+    if (cached) {
+      console.log(`%c[ScheduleCache] 📦 Loaded ${cached.length} schedules from cache`, 'color:#6366f1;font-weight:bold');
+      setAllSchedules(cached);
+      setDataSource('cache');
+      setLoading(false);
+      return;
+    }
+
+    // Cache miss or stale -> fetch from Firebase
+    setLoading(true);
+    setDataSource('loading');
+    fetchAllFromFirebase(user.uid);
+  }, [user, fetchAllFromFirebase]);
+
+  // Force re-fetch from Firebase
+  const refreshSchedules = useCallback(() => {
+    if (!user) return;
+    invalidateSchedulesCache();
+    setLoading(true);
+    setDataSource('loading');
+    fetchAllFromFirebase(user.uid);
+  }, [user, fetchAllFromFirebase]);
+
+  // Shared state helper to atomically update React state + localStorage cache
+  const applyAndCache = useCallback((updater: (prev: SchedulesProps[]) => SchedulesProps[]) => {
+    setAllSchedules((prev) => {
+      const next = updater(prev);
+      if (user) saveSchedulesCache(next, user.uid);
+      return next;
+    });
+  }, [user]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Derived / Filtered state
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Derived schedules for the selectedDate
+  const schedules = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return allSchedules
+      .filter((s) => {
+        if (s.isFlexible && selectedDate === todayStr) return true;
+        return s.date === selectedDate;
+      })
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }, [allSchedules, selectedDate]);
+
+  // Client-side date range filtering (removes Firebase read requests)
+  const getSchedulesForDateRange = useCallback((startDate: string, endDate: string) => {
+    return allSchedules.filter((s) => {
+      if (s.isFlexible) return false; // flexible schedules are handled separately
+      return s.date >= startDate && s.date <= endDate;
+    });
+  }, [allSchedules]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Mutation handlers
+  // ─────────────────────────────────────────────────────────────────────────
 
   const addSchedule = async (scheduleData: Omit<SchedulesProps, 'id'>) => {
-    try {
-      const scheduleId = await createSchedule(scheduleData);
-      const newSchedule: SchedulesProps = {
-        ...scheduleData,
-        id: scheduleId,
-      };
+    const tempId = `temp_${Date.now()}`;
+    const optimisticSchedule: SchedulesProps = { ...scheduleData, id: tempId };
 
-      // Add to local state if it's for the currently selected date
-      if (scheduleData.date === selectedDate) {
-        setSchedules((prev) =>
-          [...prev, newSchedule].sort((a, b) =>
-            a.startTime.localeCompare(b.startTime)
-          )
-        );
-      }
-      // Also add to allSchedules
-      setAllSchedules((prev) => [newSchedule, ...prev]);
-      return scheduleId;
+    // 1. Optimistic insert
+    applyAndCache((prev) => [optimisticSchedule, ...prev]);
+
+    try {
+      const realId = await createSchedule(scheduleData);
+      // 2. Replace tempId with realId
+      applyAndCache((prev) => prev.map((s) => s.id === tempId ? { ...s, id: realId } : s));
+      return realId;
     } catch (error) {
-      console.error('Error adding schedule:', error);
+      console.error('[ScheduleCache] addSchedule failed:', error);
+      invalidateSchedulesCache();
       throw error;
     }
   };
 
-  const editSchedule = async (
-    scheduleId: string,
-    updates: Partial<SchedulesProps>
-  ) => {
+  const editSchedule = async (scheduleId: string, updates: Partial<SchedulesProps>) => {
+    // 1. Optimistic update
+    applyAndCache((prev) =>
+      prev.map((s) => s.id === scheduleId ? { ...s, ...updates } : s)
+    );
+
     try {
       await updateSchedule(scheduleId, updates);
-
-      // Update local state
-      setSchedules((prev) =>
-        prev.map((schedule) =>
-          schedule.id === scheduleId ? { ...schedule, ...updates } : schedule
-        )
-      );
-      setAllSchedules((prev) =>
-        prev.map((schedule) =>
-          schedule.id === scheduleId ? { ...schedule, ...updates } : schedule
-        )
-      );
     } catch (error) {
-      console.error('Error editing schedule:', error);
+      console.error('[ScheduleCache] editSchedule failed:', error);
+      invalidateSchedulesCache();
       throw error;
     }
   };
 
   const removeSchedule = async (scheduleId: string) => {
+    // 1. Optimistic remove
+    applyAndCache((prev) => prev.filter((s) => s.id !== scheduleId));
+
     try {
       await deleteSchedule(scheduleId);
-
-      // Remove from local state
-      setSchedules((prev) =>
-        prev.filter((schedule) => schedule.id !== scheduleId)
-      );
-      setAllSchedules((prev) =>
-        prev.filter((schedule) => schedule.id !== scheduleId)
-      );
     } catch (error) {
-      console.error('Error removing schedule:', error);
+      console.error('[ScheduleCache] removeSchedule failed:', error);
+      invalidateSchedulesCache();
       throw error;
     }
   };
-
-  const getSchedulesForDateRange = async (
-    startDate: string,
-    endDate: string
-  ) => {
-    try {
-      return await getSchedulesByUserAndDateRange(userId, startDate, endDate);
-    } catch (error) {
-      console.error('Error fetching schedules for date range:', error);
-      throw error;
-    }
-  };
-
-  useEffect(() => {
-    if (selectedDate && userId) {
-      fetchSchedules(selectedDate);
-    }
-  }, [selectedDate, userId, fetchSchedules]);
-
-  useEffect(() => {
-    if (userId) {
-      fetchAllSchedules();
-    }
-  }, [userId, fetchAllSchedules]);
 
   const value: SchedulesContextType = {
     schedules,
     allSchedules,
     loading,
+    dataSource,
     selectedDate,
     setSelectedDate,
-    fetchSchedules,
     addSchedule,
     editSchedule,
     removeSchedule,
     getSchedulesForDateRange,
+    refreshSchedules,
   };
 
   return (

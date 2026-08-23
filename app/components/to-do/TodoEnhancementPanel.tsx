@@ -17,8 +17,9 @@ import {
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { Todo } from '@/app/lib/interface';
-import { updateDoc, doc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+
+
+import { useTodoContext } from '@/app/lib/context/todoContext';
 
 interface Props {
   open: boolean;
@@ -27,6 +28,7 @@ interface Props {
 }
 
 const TodoEnhancementPanel = ({ open, onClose, todo }: Props) => {
+  const { updateTodo } = useTodoContext();
   const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState('');
@@ -169,7 +171,7 @@ Return a concise paragraph describing the schedule.
       const json = await res.json();
       setResult(json.result || 'No schedule returned.');
 
-      await updateDoc(doc(db, 'todos', todo.id!), {
+      await updateTodo(todo.id!, {
         scheduleSummary: json.result || '',
       });
     } catch (err) {
@@ -265,20 +267,19 @@ Return a concise paragraph describing the schedule.
 
                   const handleApply = async () => {
                     try {
-                      const ref = doc(db, 'todos', todo.id!);
                       const updatedSteps = [...(todo.steps || [])];
 
                       if (type === 'title' || type === 'description') {
-                        await updateDoc(ref, { [type]: aiText });
+                        await updateTodo(todo.id!, { [type]: aiText });
                       } else if (type === 'step') {
                         updatedSteps[i].text = aiText;
-                        await updateDoc(ref, { steps: updatedSteps });
+                        await updateTodo(todo.id!, { steps: updatedSteps });
                       } else if (type === 'step_description') {
                         updatedSteps[i].description = aiText;
-                        await updateDoc(ref, { steps: updatedSteps });
+                        await updateTodo(todo.id!, { steps: updatedSteps });
                       } else if (type === 'substep') {
                         updatedSteps[i].subSteps![j].text = aiText;
-                        await updateDoc(ref, { steps: updatedSteps });
+                        await updateTodo(todo.id!, { steps: updatedSteps });
                       }
 
                       alert(`Updated: ${label}`);

@@ -29,8 +29,6 @@ import {
 } from '@mui/icons-material';
 import { useState, useRef, useEffect } from 'react';
 import {
-  addDoc,
-  collection,
   serverTimestamp,
   Timestamp,
   getDoc,
@@ -66,8 +64,11 @@ const normalizeWhatsappPhone = (value: string) => {
   return withCountryCode.slice(0, 12);
 };
 
+import { useTodoContext } from '@/app/lib/context/todoContext';
+
 export default function ToDoModal({ open, onClose }: Props) {
   const { user } = useAuth();
+  const { addTodo } = useTodoContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isPremium = isPremiumClient(process.env.NEXT_PUBLIC_CLIENT_ID);
@@ -250,7 +251,9 @@ export default function ToDoModal({ open, onClose }: Props) {
         hasReminder && reminderDate ? Timestamp.fromDate(reminderDate) : null,
     };
 
-    const docRef = await addDoc(collection(db, 'todos'), docData);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const docId = await addTodo(docData as any);
+    const docRef = { id: docId };
 
     if (hasReminder && reminderDate && user) {
       try {

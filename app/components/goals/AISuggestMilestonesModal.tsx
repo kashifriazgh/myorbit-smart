@@ -98,6 +98,13 @@ export default function AISuggestMilestonesModal({
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
   const [expandedDesc, setExpandedDesc] = useState<Set<number>>(new Set());
 
+  React.useEffect(() => {
+    if (open && milestones.length === 0 && !loading) {
+      handleFetchSuggestions();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const bg = isDark ? '#1e293b' : '#ffffff';
   const surfaceBg = isDark ? '#0f172a' : '#f8f7f4';
   const borderColor = isDark ? '#334155' : '#e2e8f0';
@@ -244,7 +251,7 @@ export default function AISuggestMilestonesModal({
               AI Milestone Suggestions
             </Typography>
             <Typography sx={{ fontSize: 11, color: textMuted }}>
-              ⚡ Powered by Groq · llama-3.1-8b-instant
+              ⚡ Powered by Groq · groq/compound-mini
             </Typography>
           </Box>
           <IconButton size="small" onClick={handleClose} sx={{ color: textMuted }}>

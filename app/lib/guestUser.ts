@@ -7,6 +7,7 @@ import { Timestamp } from 'firebase/firestore';
 export interface GuestUser {
   uid: string;
   email: string;
+  displayName: string;
   firstName: string;
   lastName: string;
   role: 'guest';
@@ -38,6 +39,7 @@ export function getOrCreateGuestUser(): GuestUser {
     return {
       uid: existingGuestUID,
       email: 'guest@myorbit.app',
+      displayName: 'Guest User',
       firstName: 'Guest',
       lastName: 'User',
       role: 'guest',
@@ -59,6 +61,7 @@ export function getOrCreateGuestUser(): GuestUser {
   return {
     uid: guestUID,
     email: 'guest@myorbit.app',
+    displayName: 'Guest User',
     firstName: 'Guest',
     lastName: 'User',
     role: 'guest',
@@ -91,6 +94,7 @@ export function getGuestUserFromCookies(): GuestUser | null {
     return {
       uid: guestUID,
       email: 'guest@myorbit.app',
+      displayName: 'Guest User',
       firstName: 'Guest',
       lastName: 'User',
       role: 'guest',

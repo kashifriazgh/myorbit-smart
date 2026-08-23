@@ -44,7 +44,7 @@ Format:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-8b-instant', // ✅ cheapest + best for your use
+          model: 'groq/compound-mini', // ✅ cheapest + best for your use
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },

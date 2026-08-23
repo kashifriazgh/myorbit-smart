@@ -22,6 +22,7 @@ import {
   Chip,
   Fade,
   Avatar,
+  InputAdornment,
 } from '@mui/material';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -29,7 +30,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import CategoryIcon from '@mui/icons-material/Category';
 import TitleIcon from '@mui/icons-material/Title';
-import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import CloseIcon from '@mui/icons-material/Close';
 
 import { INCOME_CATEGORIES } from '@/app/lib/constant';
@@ -278,7 +278,11 @@ export default function AddIncomeModal({
             helperText={errors.amount}
             required
             InputProps={{
-              startAdornment: <AttachMoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary' }}>PKR</Typography>
+                </InputAdornment>
+              ),
             }}
           />
 

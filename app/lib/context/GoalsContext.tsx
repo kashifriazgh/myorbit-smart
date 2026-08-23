@@ -21,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './userContext';
+import { loadGoalsCache, saveGoalsCache, clearGoalsCache } from '../utils/goalsCache';
 
 interface GoalsContextType {
   goals: Goal[];
@@ -141,8 +142,22 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!userId) {
+      setGoals([]);
+      setLoading(false);
+      clearGoalsCache();
+      return;
+    }
+
+    // Try cache first for immediate rendering
+    const cached = loadGoalsCache(userId);
+    if (cached) {
+      console.log(`%c[GoalCache] 📦 Loaded ${cached.length} goals from localStorage cache`, 'color:#6366f1;font-weight:bold');
+      setGoals(cached);
+      setLoading(false);
+    }
+
     // Fetch by single field to avoid composite index requirement.
-    // We get status == 'In Progress' and then filter by authorId client-side where needed.
     const goalsRef = collection(db, 'goals');
     const q = query(
       goalsRef,
@@ -158,12 +173,13 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
           goalsData.push({
             id: doc.id,
             ...data,
-            // Keep Firestore Timestamp objects as-is for all date fields
             steps: data.steps || [],
           } as Goal);
         });
         setGoals(goalsData);
         setLoading(false);
+        saveGoalsCache(goalsData, userId);
+        console.log(`%c[GoalCache] ✅ Saved ${goalsData.length} goals to cache`, 'color:#22c55e;font-weight:bold');
       },
       (err) => {
         console.error('Error fetching goals:', err);
@@ -235,7 +251,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
           (defaultStatus === GoalStepStatus.IN_PROGRESS
             ? new Date()
             : undefined),
-        endDate: stepData.endDate || new Date(),
+        endDate: stepData.endDate || null,
         weight: stepData.weight ?? 1,
         effortEstimate: stepData.effortEstimate,
         dependsOn: stepData.dependsOn,

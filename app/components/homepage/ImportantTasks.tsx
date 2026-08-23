@@ -33,9 +33,9 @@ import {
 import Link from 'next/link';
 import { useMemo, useState, useEffect } from 'react';
 import moment from 'moment';
-import { updateDoc, doc, Timestamp } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+import { Timestamp } from 'firebase/firestore';
 import { useTodoContext } from '@/app/lib/context/todoContext';
+import TodoCacheDebugOverlay from '@/app/components/dev/TodoCacheDebugOverlay';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
 import { Todo } from '@/app/lib/interface';
@@ -210,7 +210,7 @@ const QuickAddTaskRow = ({ selectedDate, isDark, onAdd }: QuickAddTaskRowProps) 
 };
 
 const ImportantTasks = () => {
-  const { todos, loading, updateStepStatus, addTodo } = useTodoContext();
+  const { todos, loading, updateStepStatus, addTodo, updateTodo } = useTodoContext();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const [viewMode, setViewMode] = useState<'quick' | 'detail'>('quick');
@@ -280,7 +280,7 @@ const ImportantTasks = () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      await addTodo(newTodo);
+      await addTodo(newTodo); // context handles optimistic insert + cache
     } catch (err) {
       console.error('Failed to add quick task:', err);
     }
@@ -354,16 +354,13 @@ const ImportantTasks = () => {
       });
   }, [todos, selectedDate]);
 
-  // Toggle completion — tasks stay visible, checkbox acts as toggle
+  // Toggle completion — goes through context so state + cache update instantly
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
     const newStatus = task.status === 'completed' ? 'in_progress' : 'completed';
     setCompletingId(task.id);
     try {
-      await updateDoc(doc(db, 'todos', task.id), {
-        status: newStatus,
-        updatedAt: new Date(),
-      });
+      await updateTodo(task.id, { status: newStatus });
     } catch (err) {
       console.error('Failed to update task status:', err);
     } finally {
@@ -401,10 +398,10 @@ const ImportantTasks = () => {
         : null;
       const isDateChanged = oldDate ? !moment(oldDate).isSame(newDueDate, 'day') : true;
 
-      await updateDoc(doc(db, 'todos', rescheduleTask.id), {
+      // updateTodo handles optimistic update + cache + Firebase write
+      await updateTodo(rescheduleTask.id, {
         dueDate: Timestamp.fromDate(newDueDate),
-        isFlexible: false, // Turn off flexible if date is set
-        updatedAt: new Date(),
+        isFlexible: false,
       });
 
       if (isDateChanged) {
@@ -423,10 +420,7 @@ const ImportantTasks = () => {
   const toggleWorkStarted = async (task: Todo) => {
     if (!task.id) return;
     try {
-      await updateDoc(doc(db, 'todos', task.id), {
-        workStarted: !task.workStarted,
-        updatedAt: new Date(),
-      });
+      await updateTodo(task.id, { workStarted: !task.workStarted });
     } catch (err) {
       console.error('Failed to toggle workStarted:', err);
     }
@@ -508,6 +502,7 @@ const ImportantTasks = () => {
 
   
   return (
+    <>
     <Card
       sx={{
         height: '100%',
@@ -1168,6 +1163,10 @@ const ImportantTasks = () => {
         <ToDoModal open={todoModalOpen} onClose={() => setTodoModalOpen(false)} />
       </CardContent>
     </Card>
+
+    {/* ── DEV: cache status overlay (remove when no longer needed) ── */}
+    <TodoCacheDebugOverlay />
+  </>
   );
 };
 

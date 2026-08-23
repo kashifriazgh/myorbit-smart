@@ -31,7 +31,7 @@ import {
   RadioButtonUnchecked,
 } from '@mui/icons-material';
 
-import { useGoals, calculateGoalProgress } from '../../lib/context/GoalsContext';
+import { useGoals } from '../../lib/context/GoalsContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { useAuth } from '../../lib/context/userContext';
 import { useTodoContext } from '../../lib/context/todoContext';
@@ -42,7 +42,6 @@ import MilestoneList from '../../components/goals/MilestoneList';
 import MilestoneDetailSheet from '../../components/goals/MilestoneDetailSheet';
 import AISuggestMilestonesModal from '../../components/goals/AISuggestMilestonesModal';
 import CreateTrackerModal from '../../components/goals/CreateTrackerModal';
-import GoalFurnishingDialog from '../../components/goals/GoalFurnishingDialog';
 import TrackerView from '../../components/goals/TrackerView';
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -799,7 +798,7 @@ const GoalDetailInner: React.FC = () => {
   const { user } = useAuth();
   const { todos, addTodo, updateTodo } = useTodoContext();
   const { allSchedules, addSchedule } = useSchedules();
-  const { goals, deleteGoal, addGoalStep, updateGoal, saveGoalTracker, removeGoalTracker, addTrackerCheckIn, loading: goalsLoading } = useGoals();
+  const { goals, deleteGoal, addGoalStep, updateGoal: _updateGoal, saveGoalTracker, removeGoalTracker, addTrackerCheckIn, loading: _goalsLoading } = useGoals();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
@@ -807,6 +806,7 @@ const GoalDetailInner: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [addMilestoneDialogOpen, setAddMilestoneDialogOpen] = useState(false);
+  const [milestoneFormStep, setMilestoneFormStep] = useState<1 | 2>(1);
   const [newMilestoneTitle, setNewMilestoneTitle] = useState('');
   const [newMilestoneTargetValue, setNewMilestoneTargetValue] = useState<
     number | ''
@@ -822,7 +822,6 @@ const GoalDetailInner: React.FC = () => {
   const [firstView, setFirstView] = useState(false);
   const [aiSuggestOpen, setAiSuggestOpen] = useState(false);
   const [trackerModalOpen, setTrackerModalOpen] = useState(false);
-  const [furnishingDialogOpen, setFurnishingDialogOpen] = useState(false);
 
   // States for adding linked Task
   const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
@@ -901,16 +900,6 @@ const GoalDetailInner: React.FC = () => {
     return Math.ceil((dueDateDate.getTime() - Date.now()) / DAY_IN_MS);
   }, [dueDateDate]);
 
-  // Trigger furnishing dialog when goal is not furnished/dismissed
-  useEffect(() => {
-    if (goal && goal.id) {
-      const dismissed = localStorage.getItem(`goal_furnish_dismissed_${goal.id}`) === 'true';
-      if (goal.goalFurnished !== true && !dismissed && !goalsLoading) {
-        setFurnishingDialogOpen(true);
-      }
-    }
-  }, [goal, goalsLoading]);
-
   useEffect(() => {
     if (!goal && goals.length > 0) router.push('/goals');
   }, [goal, goals, router]);
@@ -968,8 +957,9 @@ const GoalDetailInner: React.FC = () => {
     setNewMilestoneTitle('');
     setNewMilestoneTargetValue('');
     setNewMilestoneWeight(1);
-    setNewMilestoneEndDate(new Date());
+    setNewMilestoneEndDate(null);
     setNewMilestoneNotes('');
+    setMilestoneFormStep(1);
     setAddMilestoneDialogOpen(true);
   };
 
@@ -984,7 +974,7 @@ const GoalDetailInner: React.FC = () => {
             ? undefined
             : Number(newMilestoneTargetValue),
         weight: newMilestoneWeight || 1,
-        endDate: newMilestoneEndDate || new Date(),
+        endDate: newMilestoneEndDate || null,
         description: newMilestoneNotes.trim() || undefined,
       });
       setAddMilestoneDialogOpen(false);
@@ -1047,77 +1037,10 @@ const GoalDetailInner: React.FC = () => {
     }
   };
 
-  const deriveStatusFromProgress = (progress: number): Goal['status'] => {
+  const _deriveStatusFromProgress = (progress: number): Goal['status'] => {
     if (progress >= 100) return 'Completed';
     if (progress > 0) return 'In Progress';
     return 'Not Started';
-  };
-
-  const handleConfirmFurnishing = async (furnishedData: {
-    progressMode: 'cumulative' | 'current_value';
-    direction: 'up' | 'down' | null;
-    startValue: number | null;
-    trackingMethod: 'tracker' | 'milestones';
-    overallTargetValue?: number;
-    overallTargetUnit?: string;
-    clarifyingAnswer?: string;
-    dueDate?: Date;
-    aiVerb?: string;
-    aiActivityVerb?: string;
-    aiSuggestedUnit?: string;
-    title?: string;
-  }) => {
-    try {
-      const updates: Partial<Goal> = {
-        progressMode: furnishedData.progressMode,
-        direction: furnishedData.direction,
-        startValue: furnishedData.startValue,
-        trackingMethod: furnishedData.trackingMethod,
-        goalFurnished: true,
-      };
-
-      if (furnishedData.title !== undefined) {
-        updates.title = furnishedData.title;
-      }
-      if (furnishedData.overallTargetValue !== undefined) {
-        updates.overallTargetValue = furnishedData.overallTargetValue;
-      }
-      if (furnishedData.overallTargetUnit !== undefined) {
-        updates.overallTargetUnit = furnishedData.overallTargetUnit;
-      }
-      if (furnishedData.dueDate !== undefined) {
-        updates.dueDate = furnishedData.dueDate;
-      }
-      if (furnishedData.clarifyingAnswer !== undefined) {
-        updates.clarifyingAnswer = furnishedData.clarifyingAnswer;
-      }
-      if (furnishedData.aiVerb !== undefined) {
-        updates.aiVerb = furnishedData.aiVerb;
-      }
-      if (furnishedData.aiActivityVerb !== undefined) {
-        updates.aiActivityVerb = furnishedData.aiActivityVerb;
-      }
-      if (furnishedData.aiSuggestedUnit !== undefined) {
-        updates.aiSuggestedUnit = furnishedData.aiSuggestedUnit;
-      }
-
-      const tempGoal = {
-        ...goal,
-        ...updates,
-      } as Goal;
-      const newProgress = calculateGoalProgress(tempGoal);
-      updates.progress = newProgress;
-      updates.status = deriveStatusFromProgress(newProgress);
-
-      await updateGoal(goal!.id!, updates);
-      setFurnishingDialogOpen(false);
-
-      if (furnishedData.trackingMethod === 'tracker' && !goal!.trackerEnabled) {
-        setTrackerModalOpen(true);
-      }
-    } catch (e) {
-      console.error('Failed to confirm furnishing:', e);
-    }
   };
 
   // colours
@@ -1344,21 +1267,6 @@ const GoalDetailInner: React.FC = () => {
                   Create Tracker
                 </Button>
               )}
-              {!goal.trackerEnabled && (
-                <Button
-                  size="small"
-                  onClick={openAddMilestoneDialog}
-                  disabled={savingMilestone}
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: typeColor,
-                  }}
-                >
-                  {savingMilestone ? 'Saving…' : 'Add milestone'}
-                </Button>
-              )}
             </Stack>
           }
         >
@@ -1397,6 +1305,9 @@ const GoalDetailInner: React.FC = () => {
               setSheetOpen(true);
             }}
             onAddStep={openAddMilestoneDialog}
+            onTriggerAISuggest={() => setAiSuggestOpen(true)}
+            onCreateTracker={() => setTrackerModalOpen(true)}
+            typeColor={typeColor}
           />
         )}
 
@@ -1833,175 +1744,248 @@ const GoalDetailInner: React.FC = () => {
           maxWidth="sm"
           PaperProps={{ sx: { borderRadius: '22px', overflow: 'hidden' } }}
         >
-          <DialogTitle sx={{ fontWeight: 700, pb: 0 }}>
-            Add milestone
+          <DialogTitle sx={{ fontWeight: 700, pb: 0.5 }}>
+            {milestoneFormStep === 1 ? 'Add milestone' : 'Add details'}
           </DialogTitle>
           <DialogContent sx={{ pt: 2, px: 3 }}>
-            <TextField
-              value={newMilestoneTitle}
-              onChange={(event) => setNewMilestoneTitle(event.target.value)}
-              label="Title"
-              placeholder="E.g. Finish proposal"
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              value={newMilestoneTargetValue}
-              onChange={(event) =>
-                setNewMilestoneTargetValue(
-                  event.target.value === '' ? '' : Number(event.target.value),
-                )
-              }
-              label="Target value"
-              placeholder="E.g. 10"
-              type="number"
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              value={newMilestoneWeight}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setNewMilestoneWeight(
-                  Number.isNaN(value) ? 1 : Math.max(1, Math.min(10, value)),
-                );
-              }}
-              label="Weight (1-10, default 1)"
-              placeholder="1"
-              type="number"
-              inputProps={{ min: 1, max: 10 }}
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-
-            {/* Date picker with suggestions */}
-            <Box sx={{ mb: 2 }}>
-              <DatePicker
-                label="Target date"
-                value={newMilestoneEndDate}
-                onChange={(newValue) =>
-                  setNewMilestoneEndDate(newValue as Date | null)
-                }
-                slotProps={{
-                  textField: {
-                    fullWidth: true,
-                    helperText:
-                      newMilestoneEndDate &&
-                      !Number.isNaN(newMilestoneEndDate.getTime())
-                        ? fmtDate(newMilestoneEndDate)
-                        : 'Choose a due date',
-                  },
-                }}
-              />
-            </Box>
-
-            {/* Date suggestions */}
-            {milestoneDateSuggestions.length > 0 && (
-              <Box sx={{ mb: 2 }}>
-                <Typography
-                  sx={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    color: isDark ? '#94a3b8' : '#6b7280',
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                    mb: 1,
-                  }}
-                >
-                  Smart suggestions
+            {milestoneFormStep === 1 ? (
+              <Box sx={{ pt: 1 }}>
+                <Typography sx={{ fontSize: '13px', fontWeight: 600, color: isDark ? '#94a3b8' : '#64748b', mb: 2 }}>
+                  What is the milestone checklist item?
                 </Typography>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 0.75,
-                    maxHeight: '120px',
-                    overflowY: 'auto',
-                    pb: 0.5,
+                <TextField
+                  value={newMilestoneTitle}
+                  onChange={(event) => setNewMilestoneTitle(event.target.value)}
+                  placeholder="E.g. Design first mockups"
+                  fullWidth
+                  autoFocus
+                  variant="standard"
+                  InputProps={{
+                    disableUnderline: true,
+                    style: { fontSize: 22, fontWeight: 700, paddingBottom: 8 },
                   }}
-                >
-                  {milestoneDateSuggestions.map((suggestion, idx) => {
-                    const isActive =
-                      newMilestoneEndDate &&
-                      new Date(newMilestoneEndDate).toDateString() ===
-                        suggestion.date.toDateString();
-                    return (
-                      <Button
-                        key={idx}
-                        size="small"
-                        onClick={() => setNewMilestoneEndDate(suggestion.date)}
-                        sx={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          textTransform: 'none',
-                          px: 1.5,
-                          py: 0.75,
-                          borderRadius: '8px',
-                          border: `1.5px solid ${
-                            isActive
-                              ? typeColor
-                              : isDark
-                                ? '#475569'
-                                : '#cbd5e1'
-                          }`,
-                          backgroundColor: isActive
-                            ? isDark
-                              ? `${typeColor}22`
-                              : `${typeColor}12`
-                            : isDark
-                              ? '#1e293b'
-                              : '#f1f5f9',
-                          color: isActive
-                            ? typeColor
-                            : isDark
-                              ? '#94a3b8'
-                              : '#64748b',
-                          transition: 'all 0.15s ease',
-                          '&:hover': {
-                            borderColor: typeColor,
-                            backgroundColor: isDark
-                              ? `${typeColor}22`
-                              : `${typeColor}12`,
-                            color: typeColor,
-                          },
-                        }}
-                      >
-                        {suggestion.label}
-                      </Button>
+                  sx={{
+                    borderBottom: `2.5px solid ${typeColor}`,
+                    mb: 3,
+                  }}
+                />
+              </Box>
+            ) : (
+              <Box>
+                <TextField
+                  value={newMilestoneTitle}
+                  onChange={(event) => setNewMilestoneTitle(event.target.value)}
+                  label="Title"
+                  placeholder="E.g. Design first mockups"
+                  fullWidth
+                  sx={{ mb: 2 }}
+                />
+                <TextField
+                  value={newMilestoneTargetValue}
+                  onChange={(event) =>
+                    setNewMilestoneTargetValue(
+                      event.target.value === '' ? '' : Number(event.target.value),
+                    )
+                  }
+                  label="Target value (optional)"
+                  placeholder="E.g. 10"
+                  type="number"
+                  fullWidth
+                  sx={{ mb: 2 }}
+                />
+                <TextField
+                  value={newMilestoneWeight}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setNewMilestoneWeight(
+                      Number.isNaN(value) ? 1 : Math.max(1, Math.min(10, value)),
                     );
-                  })}
+                  }}
+                  label="Weight (1-10, default 1)"
+                  placeholder="1"
+                  type="number"
+                  inputProps={{ min: 1, max: 10 }}
+                  fullWidth
+                  sx={{ mb: 2 }}
+                />
+
+                {/* Date picker with suggestions */}
+                <Box sx={{ mb: 2 }}>
+                  <DatePicker
+                    label="Target date (optional)"
+                    value={newMilestoneEndDate}
+                    onChange={(newValue) =>
+                      setNewMilestoneEndDate(newValue as Date | null)
+                    }
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        helperText:
+                          newMilestoneEndDate &&
+                          !Number.isNaN(newMilestoneEndDate.getTime())
+                            ? fmtDate(newMilestoneEndDate)
+                            : 'Choose a due date',
+                      },
+                    }}
+                  />
                 </Box>
+
+                {/* Date suggestions */}
+                {milestoneDateSuggestions.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography
+                      sx={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: isDark ? '#94a3b8' : '#6b7280',
+                        letterSpacing: '0.05em',
+                        textTransform: 'uppercase',
+                        mb: 1,
+                      }}
+                    >
+                      Smart suggestions
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 0.75,
+                        maxHeight: '120px',
+                        overflowY: 'auto',
+                        pb: 0.5,
+                      }}
+                    >
+                      {milestoneDateSuggestions.map((suggestion, idx) => {
+                        const isActive =
+                          newMilestoneEndDate &&
+                          new Date(newMilestoneEndDate).toDateString() ===
+                            suggestion.date.toDateString();
+                        return (
+                          <Button
+                            key={idx}
+                            size="small"
+                            onClick={() => setNewMilestoneEndDate(suggestion.date)}
+                            sx={{
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              textTransform: 'none',
+                              px: 1.5,
+                              py: 0.75,
+                              borderRadius: '8px',
+                              border: `1.5px solid ${
+                                isActive
+                                  ? typeColor
+                                  : isDark
+                                    ? '#475569'
+                                    : '#cbd5e1'
+                              }`,
+                              backgroundColor: isActive
+                                ? isDark
+                                  ? `${typeColor}22`
+                                  : `${typeColor}12`
+                                : isDark
+                                  ? '#1e293b'
+                                  : '#f1f5f9',
+                              color: isActive
+                                ? typeColor
+                                : isDark
+                                  ? '#94a3b8'
+                                  : '#64748b',
+                              transition: 'all 0.15s ease',
+                              '&:hover': {
+                                borderColor: typeColor,
+                                backgroundColor: isDark
+                                  ? `${typeColor}22`
+                                  : `${typeColor}12`,
+                                color: typeColor,
+                              },
+                            }}
+                          >
+                            {suggestion.label}
+                          </Button>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
+
+                <TextField
+                  value={newMilestoneNotes}
+                  onChange={(event) => setNewMilestoneNotes(event.target.value)}
+                  label="Notes (optional)"
+                  placeholder="Add helpful details or context"
+                  fullWidth
+                  multiline
+                  minRows={3}
+                />
               </Box>
             )}
-
-            <TextField
-              value={newMilestoneNotes}
-              onChange={(event) => setNewMilestoneNotes(event.target.value)}
-              label="Notes (optional)"
-              placeholder="Add helpful details or context"
-              fullWidth
-              multiline
-              minRows={3}
-            />
           </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2, pt: 0 }}>
-            <Button
-              onClick={() => setAddMilestoneDialogOpen(false)}
-              sx={{ textTransform: 'none' }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateMilestone}
-              disabled={!newMilestoneTitle.trim() || savingMilestone}
-              variant="contained"
-              sx={{
-                textTransform: 'none',
-                borderRadius: '10px',
-              }}
-            >
-              {savingMilestone ? 'Creating…' : 'Create milestone'}
-            </Button>
+          <DialogActions sx={{ px: 3, pb: 2.5, pt: 0, gap: 1 }}>
+            {milestoneFormStep === 1 ? (
+              <>
+                <Button
+                  onClick={() => setAddMilestoneDialogOpen(false)}
+                  sx={{ textTransform: 'none', color: isDark ? '#94a3b8' : '#64748b' }}
+                >
+                  Cancel
+                </Button>
+                <Box sx={{ flexGrow: 1 }} />
+                <Button
+                  onClick={() => setMilestoneFormStep(2)}
+                  disabled={!newMilestoneTitle.trim()}
+                  sx={{
+                    textTransform: 'none',
+                    color: typeColor,
+                    fontWeight: 700,
+                    borderRadius: '10px',
+                    '&.Mui-disabled': { color: isDark ? '#475569' : '#cbd5e1' },
+                  }}
+                >
+                  Add More detail
+                </Button>
+                <Button
+                  onClick={handleCreateMilestone}
+                  disabled={!newMilestoneTitle.trim() || savingMilestone}
+                  variant="contained"
+                  sx={{
+                    textTransform: 'none',
+                    borderRadius: '10px',
+                    backgroundColor: typeColor,
+                    color: '#fff',
+                    fontWeight: 700,
+                    '&:hover': { backgroundColor: typeColor, opacity: 0.9 },
+                  }}
+                >
+                  {savingMilestone ? 'Saving…' : 'Save it'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  onClick={() => setMilestoneFormStep(1)}
+                  sx={{ textTransform: 'none', color: isDark ? '#94a3b8' : '#64748b' }}
+                >
+                  Back
+                </Button>
+                <Box sx={{ flexGrow: 1 }} />
+                <Button
+                  onClick={handleCreateMilestone}
+                  disabled={!newMilestoneTitle.trim() || savingMilestone}
+                  variant="contained"
+                  sx={{
+                    textTransform: 'none',
+                    borderRadius: '10px',
+                    backgroundColor: typeColor,
+                    color: '#fff',
+                    fontWeight: 700,
+                    '&:hover': { backgroundColor: typeColor, opacity: 0.9 },
+                  }}
+                >
+                  {savingMilestone ? 'Creating…' : 'Create milestone'}
+                </Button>
+              </>
+            )}
           </DialogActions>
         </Dialog>
       </LocalizationProvider>
@@ -2220,24 +2204,6 @@ const GoalDetailInner: React.FC = () => {
         typeColor={typeColor}
         isDark={isDark}
         onConfirm={(tracker) => saveGoalTracker(goal.id!, tracker)}
-      />
-
-      <GoalFurnishingDialog
-        open={furnishingDialogOpen}
-        onClose={() => {
-          setFurnishingDialogOpen(false);
-          if (goal?.id) {
-            localStorage.setItem(`goal_furnish_dismissed_${goal.id}`, 'true');
-          }
-        }}
-        goal={goal}
-        userName={
-          user?.firstName || 
-          (user?.email ? user.email.split('@')[0] : 'Kashif')
-        }
-        typeColor={typeColor}
-        isDark={isDark}
-        onConfirm={handleConfirmFurnishing}
       />
     </Box>
   );

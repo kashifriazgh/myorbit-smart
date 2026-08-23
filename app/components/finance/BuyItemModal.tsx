@@ -32,7 +32,6 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
-import MoneyIcon from '@mui/icons-material/AttachMoney';
 import PriorityIcon from '@mui/icons-material/PriorityHigh';
 import NoteIcon from '@mui/icons-material/Description';
 import PlanIcon from '@mui/icons-material/PlaylistAdd';
@@ -267,7 +266,7 @@ export default function BuyItemModal({
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      <Typography sx={{ fontWeight: 900 }}>₨</Typography>
+                      <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary' }}>PKR</Typography>
                     </InputAdornment>
                   ),
                 }}
@@ -333,7 +332,7 @@ export default function BuyItemModal({
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
-                          <MoneyIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                          <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary' }}>PKR</Typography>
                         </InputAdornment>
                       ),
                     }}

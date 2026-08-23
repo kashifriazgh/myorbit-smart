@@ -3,13 +3,12 @@ import { IconButton } from '@mui/material';
 import PublicIcon from '@mui/icons-material/Public';
 import { useState } from 'react';
 import { Todo, FirestoreUser } from '@/app/lib/interface';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
 import DeleteConfirmModal from '@/app/components/global/DeleteConfirmModal';
 import PrivacyModal from '@/app/components/global/PrivacyModal';
 import TodoEnhancementPanel from '@/app/components/to-do/TodoEnhancementPanel';
 import { AutoAwesome } from '@mui/icons-material';
 import { deleteTodoReminder } from '@/app/lib/utils/whatsapp-reminder';
+import { useTodoContext } from '@/app/lib/context/todoContext';
 
 interface TodoActionButtonsProps {
   todo: Todo;
@@ -22,13 +21,20 @@ export default function TodoActionButtons({
   user,
   onDeleted,
 }: TodoActionButtonsProps) {
+  const { deleteTodo } = useTodoContext();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [enhanceOpen, setEnhanceOpen] = useState(false);
 
   const handleDelete = async () => {
-    await deleteTodoReminder(todo.id!);
-    await updateDoc(doc(db, 'todos', todo.id!), { deleted: true });
+    // Delete reminder (fire-and-forget)
+    deleteTodoReminder(todo.id!).catch((err) =>
+      console.error('Failed to delete todo reminder:', err)
+    );
+
+    // Use context deleteTodo: removes from React state + cache + Firestore
+    await deleteTodo(todo.id!);
+
     setDeleteOpen(false);
     onDeleted?.();
   };

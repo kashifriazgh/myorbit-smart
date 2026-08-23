@@ -15,6 +15,7 @@ import {
   Avatar,
   IconButton,
   Fade,
+  InputAdornment,
 } from '@mui/material';
 import { useState, useEffect } from 'react';
 import { TransactionSource, Bank, CustomPaymentHead, TotalCashSnapshot } from '@/app/lib/interface';
@@ -33,7 +34,6 @@ import FreezeIcon from '@mui/icons-material/AcUnit';
 import BankIcon from '@mui/icons-material/AccountBalance';
 import WalletIcon from '@mui/icons-material/Wallet';
 import PaymentsIcon from '@mui/icons-material/Payments';
-import MoneyIcon from '@mui/icons-material/AttachMoney';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { getSourceKey } from '../TotalCashSnapshot';
 import { formatCurrency } from '@/app/lib/utilts';
@@ -303,7 +303,11 @@ export default function FreezeTransfer({ onFreeze, saving, snapshot }: Props) {
                 )
               }
               InputProps={{
-                startAdornment: <MoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary' }}>PKR</Typography>
+                  </InputAdornment>
+                ),
               }}
               placeholder="0.00"
               error={freezeAmount !== '' && Number(freezeAmount) > activeBalance}

@@ -18,7 +18,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import PersonIcon from '@mui/icons-material/Person';
 import { useEffect, useState } from 'react';
-import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
 import { ToDoStep, Todo } from '@/app/lib/interface';
@@ -492,7 +492,7 @@ export default function TodoDetailPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
-  const { todos, updateStepStatus, updateSubStepStatus } = useTodoContext();
+  const { todos, updateStepStatus, updateSubStepStatus, updateTodo, deleteTodo } = useTodoContext();
 
   const [todo, setTodo] = useState<Todo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -571,7 +571,7 @@ export default function TodoDetailPage() {
     if (!todo?.id) return;
 
     const progress = calculateProgress(updatedSteps);
-    await updateDoc(doc(db, 'todos', todo.id), {
+    await updateTodo(todo.id, {
       steps: updatedSteps,
       progressPercent: progress,
     });
@@ -638,7 +638,7 @@ export default function TodoDetailPage() {
     setIsDeleting(true);
     try {
       if (confirmDelete.type === 'todo') {
-        await deleteDoc(doc(db, 'todos', todo.id));
+        await deleteTodo(todo.id);
         router.push('/to-do'); // 🔹 Redirect after deleting the task
       } else {
         const updated = [...todo.steps];
@@ -660,7 +660,7 @@ export default function TodoDetailPage() {
 
   const markTaskAsComplete = async () => {
     if (!todo?.id) return;
-    await updateDoc(doc(db, 'todos', todo.id), { status: 'completed' });
+    await updateTodo(todo.id, { status: 'completed' });
     setTodo((prev) => (prev ? { ...prev, status: 'completed' } : prev));
     setCompleteConfirmOpen(false);
   };

@@ -2,14 +2,15 @@
 import React from 'react';
 import { IconButton, Tooltip } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { doc, deleteDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+import { useStreaks } from '@/app/lib/context/StreaksContext';
 
 interface DeleteStreakProps {
   streakId: string;
 }
 
 export default function DeleteStreak({ streakId }: DeleteStreakProps) {
+  const { deleteStreakItem } = useStreaks();
+
   const handleDelete = async () => {
     if (!streakId) return;
 
@@ -19,7 +20,7 @@ export default function DeleteStreak({ streakId }: DeleteStreakProps) {
     if (!confirmDelete) return;
 
     try {
-      await deleteDoc(doc(db, 'streaks', streakId));
+      await deleteStreakItem(streakId);
     } catch (error) {
       console.error('Error deleting streak:', error);
     }

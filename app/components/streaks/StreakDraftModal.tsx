@@ -20,9 +20,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
 import { Close as CloseIcon } from '@mui/icons-material';
-import { db } from '@/app/lib/firebase';
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { StreakProps } from '@/app/lib/interface';
+import { useStreaks } from '@/app/lib/context/StreaksContext';
+import { Timestamp } from 'firebase/firestore';
 
 const daysOfWeek = [
   'Monday',
@@ -70,6 +70,7 @@ export default function StreakDraftModal({
   const [error, setError] = useState<string | null>(null);
   const { theme } = useCustomTheme();
   const { user } = useAuth();
+  const { addStreak } = useStreaks();
 
   const parseAIResponse = (result: string): ParsedStreakData => {
     if (!result || typeof result !== 'string') {
@@ -238,7 +239,7 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
     setError(null);
 
     try {
-      const streakData: StreakProps = {
+      const streakData: Omit<StreakProps, 'id'> = {
         userId: user.uid,
         title: editableStreak.title.trim(),
         description: editableStreak.description?.trim() || '',
@@ -260,7 +261,7 @@ CRITICAL: Return ONLY valid JSON, no markdown, no explanations, no additional te
         streaksCount: 0,
       };
 
-      await addDoc(collection(db, 'streaks'), streakData);
+      await addStreak(streakData);
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('streakCreated'));

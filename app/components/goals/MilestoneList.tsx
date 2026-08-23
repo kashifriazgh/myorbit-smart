@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Box, Typography, Button, Chip, Divider } from '@mui/material';
+import { Box, Typography, Button, Chip, Stack } from '@mui/material';
 import { InfoOutlined, TrackChanges } from '@mui/icons-material';
 import { GoalStep, GoalStepStatus } from '../../lib/interface';
 import { useGoals } from '../../lib/context/GoalsContext';
@@ -80,6 +80,8 @@ interface MilestoneListProps {
   onStepsChange?: () => void;
   onAddStep?: () => void;
   onCreateTracker?: () => void;
+  onTriggerAISuggest?: () => void;
+  typeColor?: string;
   smartNudge?: string | null; // null = loading, undefined = not requested
 }
 
@@ -89,8 +91,10 @@ export default function MilestoneList({
   onSelectStep,
   onStepsChange,
   onAddStep,
-  onCreateTracker,
-  smartNudge,
+  onCreateTracker: _onCreateTracker,
+  onTriggerAISuggest,
+  typeColor,
+  smartNudge: _smartNudge,
 }: MilestoneListProps) {
   const { updateStepStatus } = useGoals();
   const { theme } = useCustomTheme();
@@ -117,83 +121,87 @@ export default function MilestoneList({
     <Box>
       {!hasSteps && (
         <Box sx={{
-          borderRadius: '18px',
-          background: isDark ? '#0f172a' : '#f8fafc',
-          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-          p: 3, textAlign: 'center', mb: 2,
+          borderRadius: '24px',
+          background: isDark 
+            ? 'linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%)' 
+            : 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+          border: `1px solid ${isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.15)'}`,
+          p: { xs: 3, sm: 4.5 }, 
+          textAlign: 'center', 
+          mb: 3,
+          boxShadow: isDark ? '0 10px 30px -10px rgba(0,0,0,0.5)' : '0 10px 30px -10px rgba(99, 102, 241, 0.05)',
         }}>
-          {/* Contextual AI nudge or generic fallback */}
-          {smartNudge === null ? (
-            // Loading shimmer
-            <Box sx={{
-              height: 16, borderRadius: '6px', mb: 1.5,
-              background: isDark
-                ? 'linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%)'
-                : 'linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%)',
-              backgroundSize: '200% 100%',
-              animation: 'shimmer 1.4s infinite',
-              '@keyframes shimmer': { '0%': { backgroundPosition: '200% 0' }, '100%': { backgroundPosition: '-200% 0' } },
-              width: '80%', mx: 'auto',
-            }} />
-          ) : smartNudge ? (
-            <Typography sx={{ fontSize: 13, color: isDark ? '#94a3b8' : '#475569', mb: 1.5, lineHeight: 1.6, fontStyle: 'italic' }}>
-              ✨ {smartNudge}
-            </Typography>
-          ) : (
-            <Typography sx={{ fontSize: 13, color: isDark ? '#cbd5e1' : '#64748b', mb: 1.5 }}>
-              No milestones yet. Add your first step to get started.
-            </Typography>
-          )}
-          {onAddStep && (
-            <Button
-              size="medium"
-              onClick={onAddStep}
-              variant="contained"
-              sx={{
-                textTransform: 'none',
-                fontWeight: 700,
-                borderRadius: '12px',
-                py: 1.2,
-                px: 3,
-                width: { xs: '100%', sm: 'auto' },
-              }}
-            >
-              Add Milestone
-            </Button>
-          )}
-          {onCreateTracker && (
-            <>
-              <Divider sx={{ my: 2.5 }}>
-                <Typography sx={{ fontSize: 11, color: isDark ? '#475569' : '#94a3b8', fontWeight: 600 }}>OR</Typography>
-              </Divider>
-              <Typography sx={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', mb: 2, lineHeight: 1.55 }}>
-                For repeating goals (e.g. <em>Run 5 km daily</em> or <em>Read 400 pages by Aug</em>), use a tracker instead.
-              </Typography>
+          <Box sx={{ display: 'inline-flex', p: 1.5, borderRadius: '50%', bgcolor: 'rgba(99, 102, 241, 0.1)', mb: 2 }}>
+            <TrackChanges sx={{ fontSize: 32, color: '#6366f1' }} />
+          </Box>
+
+          <Typography variant="h6" sx={{ fontWeight: 850, mb: 1, color: isDark ? '#f1f5f9' : '#0f172a', fontSize: '1.2rem' }}>
+            Get Started with Milestones 🚀
+          </Typography>
+
+          <Typography sx={{ fontSize: 13, color: isDark ? '#94a3b8' : '#475569', mb: 3.5, maxLen: 480, mx: 'auto', lineHeight: 1.6 }}>
+            Breaking down your goal into small checkpoints makes it significantly easier to achieve. 
+            Let Orbit AI determine the milestones and frequencies automatically, or set them up manually.
+          </Typography>
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="center" alignItems="center">
+            {onTriggerAISuggest && (
               <Button
-                size="medium"
-                variant="outlined"
-                startIcon={<TrackChanges sx={{ fontSize: 15 }} />}
-                onClick={onCreateTracker}
+                size="large"
+                variant="contained"
+                startIcon={<InfoOutlined />}
+                onClick={onTriggerAISuggest}
                 sx={{
                   textTransform: 'none',
-                  fontWeight: 700,
-                  borderRadius: '12px',
-                  py: 1.2,
-                  px: 3,
+                  fontWeight: 800,
+                  borderRadius: '14px',
+                  py: 1.4,
+                  px: 4,
                   width: { xs: '100%', sm: 'auto' },
-                  borderColor: isDark ? '#475569' : '#cbd5e1',
+                  background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                  color: '#fff',
+                  boxShadow: '0 4px 14px rgba(99, 102, 241, 0.3)',
+                  transition: 'all 0.25s',
+                  '&:hover': {
+                    opacity: 0.95,
+                    boxShadow: '0 6px 20px rgba(99, 102, 241, 0.45)',
+                  }
+                }}
+              >
+                Suggest with AI ✨
+              </Button>
+            )}
+
+            {onAddStep && (
+              <Button
+                size="large"
+                variant="outlined"
+                onClick={onAddStep}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 750,
+                  borderRadius: '14px',
+                  py: 1.4,
+                  px: 4,
+                  width: { xs: '100%', sm: 'auto' },
+                  borderColor: isDark ? '#334155' : '#e2e8f0',
                   color: isDark ? '#cbd5e1' : '#475569',
+                  background: isDark ? 'rgba(30, 41, 59, 0.2)' : 'transparent',
                   '&:hover': {
                     borderColor: '#6366f1',
                     color: '#6366f1',
-                    background: '#6366f108',
-                  },
+                    background: 'rgba(99, 102, 241, 0.05)',
+                  }
                 }}
               >
-                Set up a Tracker
+                Add Manually
               </Button>
-            </>
-          )}
+            )}
+          </Stack>
+
+          <Typography sx={{ fontSize: 11, color: isDark ? '#475569' : '#94a3b8', fontWeight: 600, mt: 3.5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            💡 Tip: Milestones do not require mandatory start/due dates.
+          </Typography>
         </Box>
       )}
 
@@ -304,12 +312,14 @@ export default function MilestoneList({
                   </Typography>
                 )}
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                  <Typography
-                    sx={{ fontSize: 11, color: isDark ? '#64748b' : '#6b7280' }}
-                  >
-                    {formatDate(step.endDate)}
-                  </Typography>
-                  {typeof step.weight === 'number' && (
+                  {step.endDate && (
+                    <Typography
+                      sx={{ fontSize: 11, color: isDark ? '#64748b' : '#6b7280' }}
+                    >
+                      {formatDate(step.endDate)}
+                    </Typography>
+                  )}
+                  {typeof step.weight === 'number' && step.weight > 1 && (
                     <Typography
                       sx={{
                         fontSize: 11,
@@ -377,6 +387,35 @@ export default function MilestoneList({
           </Box>
         );
       })}
+
+      {hasSteps && onAddStep && (
+        <Box sx={{ display: 'flex', mt: 3.5, justifyContent: 'center' }}>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={onAddStep}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 800,
+              borderRadius: '14px',
+              py: 1.4,
+              px: 5,
+              fontSize: '14px',
+              backgroundColor: typeColor || '#6366f1',
+              color: '#fff',
+              boxShadow: `0 4px 14px ${(typeColor || '#6366f1')}33`,
+              transition: 'all 0.25s',
+              '&:hover': {
+                backgroundColor: typeColor || '#6366f1',
+                opacity: 0.9,
+                boxShadow: `0 6px 20px ${(typeColor || '#6366f1')}45`,
+              }
+            }}
+          >
+            Add Next Milestone
+          </Button>
+        </Box>
+      )}
     </Box>
   );
 }

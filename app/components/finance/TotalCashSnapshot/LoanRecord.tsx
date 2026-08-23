@@ -18,6 +18,7 @@ import {
   Avatar,
   IconButton,
   Collapse,
+  InputAdornment,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import {
@@ -42,30 +43,20 @@ import {
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
 import CloseIcon from '@mui/icons-material/Close';
-import MoneyIcon from '@mui/icons-material/AttachMoney';
 import PersonIcon from '@mui/icons-material/Person';
 import DateIcon from '@mui/icons-material/CalendarMonth';
 import BankIcon from '@mui/icons-material/AccountBalance';
 import WalletIcon from '@mui/icons-material/Wallet';
-import PaymentsIcon from '@mui/icons-material/Payments';
 import NoteIcon from '@mui/icons-material/Description';
 import SwapIcon from '@mui/icons-material/SwapHoriz';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/AddCircle';
 import WarningIcon from '@mui/icons-material/WarningAmber';
 import Link from 'next/link';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';
 import { getSourceKey } from '../TotalCashSnapshot';
-
-const SOURCE_OPTIONS: TransactionSource[] = [
-  'bank',
-  'in_hand',
-  'easypaisa',
-  'jazzcash',
-  'other',
-  'custom',
-];
 
 interface Props {
   onAddMoney?: (
@@ -91,29 +82,33 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
   const isDark = customTheme?.mode === 'dark';
   const [showModal, setShowModal] = useState(false);
 
-  // Sync with external open state from FAB
-  useEffect(() => {
-    if (externalOpen !== undefined) setShowModal(externalOpen);
-  }, [externalOpen]);
-
   // loan form state
   const [amount, setAmount] = useState<number | ''>('');
-  const [loanType, setLoanType] = useState<'borrow' | 'lend'>('borrow');
-  const [counterparty, setCounterparty] = useState('');
+  const [loanType, setLoanType] = useState<'borrow' | 'lend' | null>(null);
   const [dueDate, setDueDate] = useState<string>('');
-  const [source, setSource] = useState<TransactionSource>('in_hand');
-  const [selectedBank, setSelectedBank] = useState('');
-  const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] =
-    useState('');
   const [note, setNote] = useState('');
   const [banks, setBanks] = useState<Bank[]>([]);
-  const [customPaymentHeads, setCustomPaymentHeads] = useState<
-    CustomPaymentHead[]
-  >([]);
+  const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
 
-  // Holder state
-  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
-  const [newHolderName, setNewHolderName] = useState('');
+  // Category state (UI helpers for step-2)
+  const [fromCategory, setFromCategory] = useState<'outside' | 'my_account'>('outside');
+  const [toCategory, setToCategory] = useState<'outside' | 'immediate_expended' | 'my_account'>('my_account');
+
+  // Source state (From)
+  const [fromType, setFromType] = useState<'outside' | TransactionSource>('outside');
+  const [fromBankId, setFromBankId] = useState('');
+  const [fromCustomId, setFromCustomId] = useState('');
+  const [fromHolder, setFromHolder] = useState('Unassigned');
+  const [newFromHolderName, setNewFromHolderName] = useState('');
+  const [lenderName, setLenderName] = useState('');
+
+  // Destination state (To)
+  const [toType, setToType] = useState<'outside' | 'immediate_expended' | TransactionSource>('in_hand');
+  const [toBankId, setToBankId] = useState('');
+  const [toCustomId, setToCustomId] = useState('');
+  const [toHolder, setToHolder] = useState('Unassigned');
+  const [newToHolderName, setNewToHolderName] = useState('');
+  const [borrowerName, setBorrowerName] = useState('');
 
   // error, loading
   const [error, setError] = useState('');
@@ -121,16 +116,60 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
   const [quickAddLoading, setQuickAddLoading] = useState(false);
   const [insufficientFunds, setInsufficientFunds] = useState(false);
 
+  // Reset all fields when loan type changes (or back button pressed)
+  const handleLoanTypeChange = (type: 'borrow' | 'lend' | null) => {
+    setLoanType(type);
+    setError('');
+    setInsufficientFunds(false);
+    if (type === 'borrow') {
+      setFromCategory('outside');
+      setFromType('outside');
+      setToCategory('my_account');
+      setToType('in_hand');
+    } else if (type === 'lend') {
+      setFromCategory('my_account');
+      setFromType('in_hand');
+      setToCategory('outside');
+      setToType('outside');
+    } else {
+      setFromCategory('outside');
+      setFromType('outside');
+      setToCategory('my_account');
+      setToType('in_hand');
+    }
+    setLenderName('');
+    setBorrowerName('');
+    setFromBankId('');
+    setFromCustomId('');
+    setFromHolder('Unassigned');
+    setNewFromHolderName('');
+    setToBankId('');
+    setToCustomId('');
+    setToHolder('Unassigned');
+    setNewToHolderName('');
+  };
+
+  // Sync with external open state from FAB
+  useEffect(() => {
+    if (externalOpen !== undefined) {
+      setShowModal(externalOpen);
+      if (externalOpen) {
+        // reset to type-selection screen when opened externally
+        handleLoanTypeChange(null);
+        setAmount('');
+        setDueDate('');
+        setNote('');
+      }
+    }
+  }, [externalOpen]);
+
   // fetch banks
   useEffect(() => {
     if (!user) return;
     const fetchBanks = async () => {
       const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
-      const fetched: Bank[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<Bank, 'id'>),
-      }));
+      const fetched: Bank[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Bank, 'id'>) }));
       setBanks(fetched);
     };
     fetchBanks();
@@ -140,49 +179,31 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
   useEffect(() => {
     if (!user) return;
     const fetchCustom = async () => {
-      const q = query(
-        collection(db, 'customPaymentHeads'),
-        where('userId', '==', user.uid),
-      );
+      const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
-      const heads: CustomPaymentHead[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<CustomPaymentHead, 'id'>),
-      }));
+      const heads: CustomPaymentHead[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomPaymentHead, 'id'>) }));
       setCustomPaymentHeads(heads);
     };
     fetchCustom();
   }, [user]);
 
-  // reset error and holder when inputs change
+  // reset error when inputs change
   useEffect(() => {
     setError('');
     setInsufficientFunds(false);
-  }, [amount, source, selectedBank, selectedCustomPaymentHead, loanType]);
-
-  useEffect(() => {
-    setSelectedHolder('Unassigned');
-    setNewHolderName('');
-  }, [source, selectedBank, selectedCustomPaymentHead]);
+  }, [amount, fromType, fromBankId, fromCustomId, toType, toBankId, toCustomId, loanType]);
 
   const handleQuickAdd = async () => {
-    if (!onAddMoney || !amount || amount <= 0) return;
+    if (!onAddMoney || !amount || amount <= 0 || fromType === 'outside') return;
     setQuickAddLoading(true);
     try {
-      const bank = source === 'bank' ? banks.find(b => b.id === selectedBank) : undefined;
-      const customHead = source === 'custom' ? customPaymentHeads.find(c => c.id === selectedCustomPaymentHead) : undefined;
-      
-      const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
-
+      const bank = fromType === 'bank' ? banks.find(b => b.id === fromBankId) : undefined;
+      const customHead = fromType === 'custom' ? customPaymentHeads.find(c => c.id === fromCustomId) : undefined;
+      const holderToSave = fromHolder === 'new' ? newFromHolderName.trim() : (fromHolder === 'Unassigned' ? undefined : fromHolder);
       await onAddMoney(
-        Number(amount),
-        source,
-        false,
-        bank?.id,
-        bank?.name,
-        customHead?.id,
-        customHead?.name,
-        `Quick top-up for loan to ${counterparty}`,
+        Number(amount), fromType, false,
+        bank?.id, bank?.name, customHead?.id, customHead?.name,
+        `Quick top-up for loan from ${lenderName || 'Source'}`,
         holderToSave
       );
       setInsufficientFunds(false);
@@ -196,43 +217,89 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
 
   // validate and create loan
   const handleCreate = async () => {
-    if (!user || !amount || amount <= 0 || !counterparty.trim()) {
-      setError('Please fill all required fields.');
+    if (!user || !amount || amount <= 0 || !loanType) {
+      setError('Please enter a valid amount.');
       return;
     }
-    if (!dueDate) {
-      setError('Due date is required.');
+    if (fromCategory === 'outside' && loanType === 'borrow' && !lenderName.trim()) {
+      setError("Please enter the lender's name.");
       return;
     }
-    if (source === 'bank' && !selectedBank) {
-      setError('Please select a bank.');
+    if (fromType === 'bank' && !fromBankId) { setError('Please select the source bank.'); return; }
+    if (fromType === 'custom' && !fromCustomId) { setError('Please select the source custom wallet.'); return; }
+    if (fromType !== 'outside' && fromHolder === 'new' && !newFromHolderName.trim()) { setError('Please enter the new person name.'); return; }
+    if (toCategory === 'outside' && loanType === 'lend' && !borrowerName.trim()) {
+      setError("Please enter the borrower's name.");
       return;
     }
-    if (source === 'custom' && !selectedCustomPaymentHead) {
-      setError('Please select a payment head.');
-      return;
-    }
+    if (toType === 'bank' && !toBankId) { setError('Please select the destination bank.'); return; }
+    if (toType === 'custom' && !toCustomId) { setError('Please select the destination custom wallet.'); return; }
+    if (toType !== 'outside' && toType !== 'immediate_expended' && toHolder === 'new' && !newToHolderName.trim()) { setError('Please enter the new person name.'); return; }
 
-    const bank =
-      source === 'bank' ? banks.find((b) => b.id === selectedBank) : undefined;
-    const customName =
-      source === 'custom'
-        ? customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
-            ?.name || ''
-        : '';
     setError('');
 
     try {
       setLocalSaving(true);
 
-      const record: Omit<LoanRecord, 'id' | 'createdAt'> = {
+      const fromBank = fromType === 'bank' ? banks.find(b => b.id === fromBankId) : undefined;
+      const fromCustom = fromType === 'custom' ? customPaymentHeads.find(c => c.id === fromCustomId) : undefined;
+      const toBank = toType === 'bank' ? banks.find(b => b.id === toBankId) : undefined;
+      const toCustom = toType === 'custom' ? customPaymentHeads.find(c => c.id === toCustomId) : undefined;
+
+      const fromHolderToSave = fromHolder === 'new' ? newFromHolderName.trim() : (fromHolder === 'Unassigned' ? undefined : fromHolder);
+      const toHolderToSave = toHolder === 'new' ? newToHolderName.trim() : (toHolder === 'Unassigned' ? undefined : toHolder);
+
+      // Determine display names
+      let lenderDispName = 'Outside';
+      if (fromType === 'outside') {
+        lenderDispName = lenderName.trim() || 'Outside Lender';
+      } else if (fromType === 'bank' && fromBank) {
+        lenderDispName = `Bank (${fromBank.name})`;
+      } else if (fromType === 'custom' && fromCustom) {
+        lenderDispName = `Wallet (${fromCustom.name})`;
+      } else {
+        lenderDispName = fromType.replace('_', ' ');
+      }
+
+      let borrowerDispName = 'Outside';
+      if (toType === 'outside') {
+        borrowerDispName = borrowerName.trim() || 'Outside Borrower';
+      } else if (toType === 'immediate_expended') {
+        borrowerDispName = 'Spent Immediately';
+      } else if (toType === 'bank' && toBank) {
+        borrowerDispName = `Bank (${toBank.name})`;
+      } else if (toType === 'custom' && toCustom) {
+        borrowerDispName = `Wallet (${toCustom.name})`;
+      } else {
+        borrowerDispName = toType.replace('_', ' ');
+      }
+
+      const counterparty = loanType === 'borrow' ? lenderDispName : borrowerDispName;
+
+      const record: Omit<LoanRecord, 'id' | 'createdAt'> & {
+        fromSource: string; fromSourceName: string;
+        fromSourceBankId?: string | null; fromSourceCustomId?: string | null; fromSourceHolder?: string | null;
+        toSource: string; toSourceName: string;
+        toSourceBankId?: string | null; toSourceCustomId?: string | null; toSourceHolder?: string | null;
+      } = {
         userId: user.uid,
         amount: Number(amount),
         type: loanType,
-        counterparty: counterparty.trim(),
-        dueDate: Timestamp.fromDate(new Date(dueDate)),
+        counterparty,
+        // Fix: use null instead of undefined to avoid Firestore error
+        dueDate: dueDate ? Timestamp.fromDate(new Date(dueDate)) : null,
         note: note.trim(),
         isSettled: false,
+        fromSource: fromType,
+        fromSourceName: lenderDispName,
+        fromSourceBankId: fromType === 'bank' ? fromBankId : null,
+        fromSourceCustomId: fromType === 'custom' ? fromCustomId : null,
+        fromSourceHolder: fromHolderToSave || null,
+        toSource: toType,
+        toSourceName: borrowerDispName,
+        toSourceBankId: toType === 'bank' ? toBankId : null,
+        toSourceCustomId: toType === 'custom' ? toCustomId : null,
+        toSourceHolder: toHolderToSave || null,
       };
 
       // fetch snapshot
@@ -242,176 +309,155 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
         ? (snapshotSnap.data() as TotalCashSnapshot)
         : {
             userId: user.uid,
-            sources: {
-              in_hand: 0,
-              bank: {},
-              easypaisa: 0,
-              jazzcash: 0,
-              other: 0,
-              custom: {},
-            },
-            heldBy: {},
-            totalAmount: 0,
-            freezeAmount: 0,
-            createdAt: new Date(),
-            updatedAt: new Date(),
+            sources: { in_hand: 0, bank: {}, easypaisa: 0, jazzcash: 0, other: 0, custom: {} },
+            heldBy: {}, totalAmount: 0, freezeAmount: 0,
+            createdAt: new Date(), updatedAt: new Date(),
           };
 
-      // normalize bank/custom objects
-      if (typeof dbSnapshot.sources.bank === 'number')
-        dbSnapshot.sources.bank = { Default: dbSnapshot.sources.bank };
-      if (typeof dbSnapshot.sources.custom === 'number')
-        dbSnapshot.sources.custom = { Default: dbSnapshot.sources.custom };
+      if (typeof dbSnapshot.sources.bank === 'number') dbSnapshot.sources.bank = { Default: dbSnapshot.sources.bank };
+      if (typeof dbSnapshot.sources.custom === 'number') dbSnapshot.sources.custom = { Default: dbSnapshot.sources.custom };
       if (!dbSnapshot.sources.custom) dbSnapshot.sources.custom = {};
       if (!dbSnapshot.heldBy) dbSnapshot.heldBy = {};
 
-      const key = getSourceKey(source, bank?.name, customName);
-      const existingHolders = dbSnapshot.heldBy[key] || [];
+      const updatedSources = { ...dbSnapshot.sources };
+      const updatedHeldBy = { ...dbSnapshot.heldBy };
+      let newTotal = dbSnapshot.totalAmount;
 
-      // check available balance if lending
-      if (loanType === 'lend') {
-        const available =
-          source === 'bank' && bank?.name
-            ? (dbSnapshot.sources.bank?.[bank.name] ?? 0)
-            : source === 'custom' && customName
-              ? (dbSnapshot.sources.custom?.[customName] ?? 0)
-              : ((dbSnapshot.sources[source] as number) ?? 0);
+      // 1. Check balance & Deduct from source if existing source
+      if (fromType !== 'outside') {
+        const fromKey = getSourceKey(fromType, fromBank?.name, fromCustom?.name);
+        const fromAvailableAmt =
+          fromType === 'bank' && fromBank?.name
+            ? (updatedSources.bank[fromBank.name] ?? 0)
+            : fromType === 'custom' && fromCustom?.name
+              ? (updatedSources.custom[fromCustom.name] ?? 0)
+              : ((updatedSources[fromType] as number) ?? 0);
 
-        if (existingHolders.length > 0) {
-          const holdersSum = existingHolders.reduce((s, h) => s + h.amount, 0);
-          const unassignedAmt = available - holdersSum;
-          if (selectedHolder === 'Unassigned') {
+        const fromHolders = updatedHeldBy[fromKey] || [];
+        if (fromHolders.length > 0) {
+          const holdersSum = fromHolders.reduce((s, h) => s + h.amount, 0);
+          const unassignedAmt = fromAvailableAmt - holdersSum;
+          if (!fromHolderToSave) {
             if (amount > unassignedAmt) {
               setInsufficientFunds(true);
-              throw new Error(`Insufficient unassigned balance in ${source.replace('_', ' ')}`);
+              throw new Error(`Insufficient unassigned balance in ${fromType.replace('_', ' ')}`);
             }
           } else {
-            const holderAmt = existingHolders.find(h => h.holderName === selectedHolder)?.amount || 0;
+            const holderAmt = fromHolders.find(h => h.holderName === fromHolderToSave)?.amount || 0;
             if (amount > holderAmt) {
               setInsufficientFunds(true);
-              throw new Error(`Insufficient balance for holder: ${selectedHolder}`);
+              throw new Error(`Insufficient balance for: ${fromHolderToSave}`);
             }
           }
         } else {
-          if (amount > available) {
+          if (amount > fromAvailableAmt) {
             setInsufficientFunds(true);
-            throw new Error(
-              `Insufficient balance in ${source}${
-                bank?.name ? ` (${bank.name})` : ''
-              }`,
-            );
+            throw new Error(`Insufficient balance in ${fromType.replace('_', ' ')}${fromBank?.name ? ` (${fromBank.name})` : ''}`);
+          }
+        }
+
+        // Perform deduction
+        if (fromType === 'bank' && fromBank?.name) {
+          updatedSources.bank[fromBank.name] -= amount;
+        } else if (fromType === 'custom' && fromCustom?.name) {
+          updatedSources.custom[fromCustom.name] -= amount;
+        } else {
+          (updatedSources[fromType] as number) -= amount;
+        }
+        newTotal -= amount;
+
+        if (fromHolderToSave) {
+          const holders = [...fromHolders];
+          const idx = holders.findIndex((h) => h.holderName === fromHolderToSave);
+          if (idx > -1) {
+            holders[idx] = { ...holders[idx], amount: Math.max(0, holders[idx].amount - amount) };
+            updatedHeldBy[fromKey] = holders;
           }
         }
       }
 
-      // create loan
+      // 2. Add to destination if existing source
+      if (toType !== 'outside' && toType !== 'immediate_expended') {
+        const toKey = getSourceKey(toType, toBank?.name, toCustom?.name);
+        const toHolders = updatedHeldBy[toKey] || [];
+
+        if (toType === 'bank' && toBank?.name) {
+          updatedSources.bank[toBank.name] = (updatedSources.bank[toBank.name] ?? 0) + amount;
+        } else if (toType === 'custom' && toCustom?.name) {
+          updatedSources.custom[toCustom.name] = (updatedSources.custom[toCustom.name] ?? 0) + amount;
+        } else {
+          (updatedSources[toType] as number) = ((updatedSources[toType] as number) ?? 0) + amount;
+        }
+        newTotal += amount;
+
+        if (toHolderToSave) {
+          const holders = [...toHolders];
+          const idx = holders.findIndex((h) => h.holderName === toHolderToSave);
+          if (idx > -1) {
+            holders[idx] = { ...holders[idx], amount: holders[idx].amount + amount };
+          } else {
+            holders.push({ holderName: toHolderToSave, amount });
+          }
+          updatedHeldBy[toKey] = holders;
+        }
+      }
+
+      // create loan doc
       const loanRef = await addDoc(collection(db, 'loans'), {
         ...record,
         createdAt: serverTimestamp(),
       });
 
-      const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
-
-      // create transaction
-      await addDoc(collection(db, 'cashTransactions'), {
-        userId: user.uid,
-        amount: record.amount,
-        type: loanType === 'lend' ? 'deduct' : 'add',
-        source,
-        category: 'loan',
-        note: note.trim() || `Loan ${loanType} - ${counterparty}`,
-        referenceId: loanRef.id,
-        createdAt: serverTimestamp(),
-        holderName: holderToSave || null,
-        ...(bank?.id ? { bankId: bank.id } : {}),
-        ...(bank?.name ? { bankName: bank.name } : {}),
-        ...(source === 'custom' && selectedCustomPaymentHead
-          ? {
-              customPaymentHeadId: selectedCustomPaymentHead,
-              customPaymentHeadName:
-                customPaymentHeads.find(
-                  (c) => c.id === selectedCustomPaymentHead,
-                )?.name || '',
-            }
-          : {}),
-      });
-
-      // update snapshot
-      const updatedSources = { ...dbSnapshot.sources };
-      const updatedHeldBy = { ...dbSnapshot.heldBy };
-
-      if (loanType === 'lend') {
-        if (source === 'bank' && bank?.name) {
-          updatedSources.bank[bank.name] -= amount;
-        } else if (source === 'custom' && selectedCustomPaymentHead) {
-          const customName =
-            customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
-              ?.name || '';
-          if (customName) {
-            updatedSources.custom[customName] =
-              (updatedSources.custom[customName] || 0) - amount;
-          }
-        } else {
-          (updatedSources[source] as number) -= amount;
-        }
-        dbSnapshot.totalAmount -= amount;
-
-        // Deduct from holder
-        if (holderToSave && holderToSave !== 'Unassigned' && holderToSave !== 'Self') {
-          const holders = [...(updatedHeldBy[key] || [])];
-          const idx = holders.findIndex((h) => h.holderName === holderToSave);
-          if (idx > -1) {
-            holders[idx] = { ...holders[idx], amount: Math.max(0, holders[idx].amount - amount) };
-            updatedHeldBy[key] = holders;
-          }
-        }
-      } else {
-        // borrowing
-        if (source === 'bank' && bank?.name) {
-          updatedSources.bank[bank.name] = (updatedSources.bank[bank.name] ?? 0) + amount;
-        } else if (source === 'custom' && selectedCustomPaymentHead) {
-          const customName =
-            customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)
-              ?.name || '';
-          if (customName) {
-            updatedSources.custom[customName] =
-              (updatedSources.custom[customName] || 0) + amount;
-          }
-        } else {
-          (updatedSources[source] as number) += amount;
-        }
-        dbSnapshot.totalAmount += amount;
-
-        // Add to holder
-        if (holderToSave && holderToSave !== 'Unassigned' && holderToSave !== 'Self') {
-          const holders = [...(updatedHeldBy[key] || [])];
-          const idx = holders.findIndex((h) => h.holderName === holderToSave);
-          if (idx > -1) {
-            holders[idx] = { ...holders[idx], amount: holders[idx].amount + amount };
-          } else {
-            holders.push({ holderName: holderToSave, amount });
-          }
-          updatedHeldBy[key] = holders;
-        }
+      // Deduction transaction
+      if (fromType !== 'outside') {
+        await addDoc(collection(db, 'cashTransactions'), {
+          userId: user.uid, amount: record.amount, type: 'deduct', source: fromType,
+          category: 'loan',
+          note: note.trim() || `Loan Source Deduction - ${counterparty}`,
+          referenceId: loanRef.id, createdAt: serverTimestamp(),
+          holderName: fromHolderToSave || null,
+          ...(fromBank?.id ? { bankId: fromBank.id, BankName: fromBank.name } : {}),
+          ...(fromCustom?.id ? { customPaymentHeadId: fromCustom.id, customPaymentHeadName: fromCustom.name } : {}),
+        });
       }
 
+      // Addition transaction
+      if (toType !== 'outside' && toType !== 'immediate_expended') {
+        await addDoc(collection(db, 'cashTransactions'), {
+          userId: user.uid, amount: record.amount, type: 'add', source: toType,
+          category: 'loan',
+          note: note.trim() || `Loan Deposit - ${counterparty}`,
+          referenceId: loanRef.id, createdAt: serverTimestamp(),
+          holderName: toHolderToSave || null,
+          ...(toBank?.id ? { bankId: toBank.id, BankName: toBank.name } : {}),
+          ...(toCustom?.id ? { customPaymentHeadId: toCustom.id, customPaymentHeadName: toCustom.name } : {}),
+        });
+      }
+
+      // If borrowed from outside and spent immediately, still log a transaction event
+      if (fromType === 'outside' && toType === 'immediate_expended') {
+        await addDoc(collection(db, 'cashTransactions'), {
+          userId: user.uid, amount: record.amount, type: 'add', source: 'other',
+          category: 'loan',
+          note: note.trim() || `Borrow - ${counterparty} (Spent Immediately)`,
+          referenceId: loanRef.id, createdAt: serverTimestamp(),
+        });
+      }
+
+      // update snapshot
       await updateDoc(snapshotRef, {
-        sources: updatedSources,
-        heldBy: updatedHeldBy,
-        totalAmount: dbSnapshot.totalAmount,
-        updatedAt: serverTimestamp(),
+        sources: updatedSources, heldBy: updatedHeldBy,
+        totalAmount: newTotal, updatedAt: serverTimestamp(),
       });
 
       // reset
-      setAmount('');
-      setCounterparty('');
-      setDueDate('');
-      setSource('in_hand');
-      setSelectedBank('');
-      setLoanType('borrow');
-      setNote('');
-      setSelectedHolder('Unassigned');
-      setNewHolderName('');
+      setAmount(''); setDueDate(''); setNote('');
+      setLenderName(''); setBorrowerName('');
+      setFromType('outside'); setToType('in_hand');
+      setFromBankId(''); setFromCustomId(''); setToBankId(''); setToCustomId('');
+      setFromHolder('Unassigned'); setNewFromHolderName('');
+      setToHolder('Unassigned'); setNewToHolderName('');
+      setLoanType(null); setFromCategory('outside'); setToCategory('my_account');
       setShowModal(false);
       onExternalClose?.();
       if (onSuccess) onSuccess();
@@ -422,41 +468,65 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
     }
   };
 
+  // Get source label for insufficient-funds button
   const getSourceLabel = () => {
-    if (source === 'bank') {
-      const bank = banks.find(b => b.id === selectedBank);
-      return bank ? `Bank (${bank.name})` : 'Bank';
-    }
-    if (source === 'custom') {
-      const head = customPaymentHeads.find(c => c.id === selectedCustomPaymentHead);
-      return head ? head.name : 'Custom Head';
-    }
-    return source.replace('_', ' ');
+    if (fromType === 'bank') { const b = banks.find(b => b.id === fromBankId); return b ? `Bank (${b.name})` : 'Bank'; }
+    if (fromType === 'custom') { const h = customPaymentHeads.find(c => c.id === fromCustomId); return h ? h.name : 'Custom Wallet'; }
+    return fromType.replace('_', ' ');
   };
 
-  // Balance calculation for rendering
-  let available = 0;
-  if (source === 'bank' && selectedBank) {
-    const bName = banks.find((b) => b.id === selectedBank)?.name;
-    available = bName ? snapshot.sources.bank?.[bName] ?? 0 : 0;
-  } else if (source === 'custom' && selectedCustomPaymentHead) {
-    const cName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
-    available = cName ? snapshot.sources.custom?.[cName] ?? 0 : 0;
-  } else if (source !== 'bank' && source !== 'custom') {
-    available = (snapshot.sources[source] as number) ?? 0;
+  // Balance & holders for rendering
+  let fromAvailable = 0;
+  if (fromType !== 'outside') {
+    if (fromType === 'bank' && fromBankId) {
+      const bName = banks.find((b) => b.id === fromBankId)?.name;
+      fromAvailable = bName ? snapshot.sources.bank?.[bName] ?? 0 : 0;
+    } else if (fromType === 'custom' && fromCustomId) {
+      const cName = customPaymentHeads.find((c) => c.id === fromCustomId)?.name;
+      fromAvailable = cName ? snapshot.sources.custom?.[cName] ?? 0 : 0;
+    } else if (fromType !== 'bank' && fromType !== 'custom') {
+      fromAvailable = (snapshot.sources[fromType] as number) ?? 0;
+    }
   }
 
-  const bankName = banks.find((b) => b.id === selectedBank)?.name;
-  const customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
-  const sourceKey = getSourceKey(source, bankName, customPaymentHeadName);
-  const existingHolders = snapshot.heldBy?.[sourceKey] || [];
-  const hasHolders = existingHolders.length > 0;
+  const fromBankName = banks.find((b) => b.id === fromBankId)?.name;
+  const fromCustomName = customPaymentHeads.find((c) => c.id === fromCustomId)?.name;
+  const fromSourceKey = fromType !== 'outside'
+    ? getSourceKey(fromType as import('@/app/lib/interface').TransactionSource, fromBankName, fromCustomName)
+    : '';
+  const fromExistingHolders = fromType !== 'outside' ? (snapshot.heldBy?.[fromSourceKey] || []) : [];
+
+  const toBankName = banks.find((b) => b.id === toBankId)?.name;
+  const toCustomName = customPaymentHeads.find((c) => c.id === toCustomId)?.name;
+  const toSourceKey = (toType !== 'outside' && toType !== 'immediate_expended')
+    ? getSourceKey(toType as import('@/app/lib/interface').TransactionSource, toBankName, toCustomName)
+    : '';
+  const toExistingHolders = (toType !== 'outside' && toType !== 'immediate_expended') ? (snapshot.heldBy?.[toSourceKey] || []) : [];
 
   const handleClose = () => {
     if (localSaving) return;
     setShowModal(false);
     onExternalClose?.();
+    setLoanType(null);
+    setFromCategory('outside');
+    setToCategory('my_account');
   };
+
+  // Reusable account type selector options — must be an array (not Fragment) for MUI Select
+  const accountMenuItems = [
+    <MenuItem key="in_hand" value="in_hand">💵 Cash in Hand</MenuItem>,
+    <MenuItem key="bank" value="bank">🏦 Bank Account</MenuItem>,
+    <MenuItem key="easypaisa" value="easypaisa">📱 EasyPaisa</MenuItem>,
+    <MenuItem key="jazzcash" value="jazzcash">📱 JazzCash</MenuItem>,
+    <MenuItem key="other" value="other">💼 Other</MenuItem>,
+    <MenuItem key="custom" value="custom">🗂️ Custom Wallet</MenuItem>,
+  ];
+
+  const headerGradient = loanType === 'borrow'
+    ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+    : loanType === 'lend'
+      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+      : 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)';
 
   return (
     <>
@@ -474,312 +544,563 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
           }
         }}
       >
+        {/* ── Dialog Header ── */}
         <Box sx={{
-          background: 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)',
-          p: 3,
+          background: headerGradient,
+          p: 2.5,
           color: 'white',
-          position: 'relative'
+          position: 'relative',
+          transition: 'background 0.4s ease',
         }}>
           <Stack direction="row" alignItems="center" spacing={1.5}>
-            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}>
-              <SwapIcon />
+            {loanType !== null && (
+              <IconButton
+                onClick={() => handleLoanTypeChange(null)}
+                size="small"
+                sx={{ color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
+              >
+                <ArrowBackIcon fontSize="small" />
+              </IconButton>
+            )}
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', width: 36, height: 36 }}>
+              <SwapIcon fontSize="small" />
             </Avatar>
             <Box>
               <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.2 }}>
-                Outstanding Loan
+                {loanType === 'borrow' ? 'Borrow Money' : loanType === 'lend' ? 'Lend Money' : 'Record a Loan'}
               </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 600 }}>
-                Record new borrow or lend transaction
+              <Typography variant="caption" sx={{ opacity: 0.85, fontWeight: 600 }}>
+                {loanType === null
+                  ? 'What kind of transaction is this?'
+                  : loanType === 'borrow'
+                    ? 'Someone gives you money to pay back later'
+                    : 'You give money to someone to receive back later'}
               </Typography>
             </Box>
           </Stack>
-          <IconButton
-            onClick={handleClose}
-            sx={{
-              position: 'absolute',
-              right: 12,
-              top: 12,
-              color: 'white',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
-            }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
+          <Stack direction="row" spacing={0.5} sx={{ position: 'absolute', right: 12, top: 12 }}>
+            <Link href="/finance/loans" passHref>
+              <IconButton
+                size="small"
+                onClick={() => setShowModal(false)}
+                title="View All Loan Records"
+                sx={{ color: 'rgba(255,255,255,0.8)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.15)' } }}
+              >
+                <ArrowForwardIcon fontSize="small" />
+              </IconButton>
+            </Link>
+            <IconButton
+              onClick={handleClose}
+              size="small"
+              sx={{ color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Stack>
         </Box>
 
-        <DialogContent sx={{ px: 3, py: 3 }}>
-          <Stack spacing={2.5}>
-            {/* View Records Link */}
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: 2,
-                bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#f0f9ff',
-                border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.05)' : '#e0f2fe'}`,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <Typography variant="caption" fontWeight="700" color="text.secondary">
-                ALL LOAN RECORDS
+        {/* ── STEP 1: Type Selection ── */}
+        {loanType === null && (
+          <DialogContent sx={{ px: 3, py: 3 }}>
+            <Stack spacing={2.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600} textAlign="center">
+                Choose what you want to record:
               </Typography>
-              <Link href="/finance/loans" passHref>
-                <Button
-                  size="small"
-                  endIcon={<ArrowForwardIcon sx={{ fontSize: 14 }} />}
-                  onClick={() => setShowModal(false)}
-                  sx={{ textTransform: 'none', fontWeight: 800, fontSize: '0.75rem' }}
-                >
-                  View History
-                </Button>
-              </Link>
-            </Box>
 
-            <TextField
-              fullWidth
-              label="Amount"
-              type="number"
-              value={amount}
-              onChange={(e) =>
-                setAmount(e.target.value === '' ? '' : Number(e.target.value))
-              }
-              InputProps={{
-                startAdornment: <MoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
-              }}
-              placeholder="0.00"
-            />
-
-            <FormControl fullWidth>
-              <InputLabel>Loan Type</InputLabel>
-              <Select
-                value={loanType}
-                onChange={(e) => {
-                  setLoanType(e.target.value as 'borrow' | 'lend');
-                  setSelectedHolder('Unassigned');
-                }}
-                label="Loan Type"
-                startAdornment={<SwapIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
-              >
-                <MenuItem value="borrow">Borrow (Receive Money)</MenuItem>
-                <MenuItem value="lend">Lend (Give Money)</MenuItem>
-              </Select>
-            </FormControl>
-
-            <TextField
-              fullWidth
-              label={loanType === 'borrow' ? "Lender Name" : "Borrower Name"}
-              value={counterparty}
-              onChange={(e) => setCounterparty(e.target.value)}
-              placeholder="e.g. John Doe"
-              InputProps={{
-                startAdornment: <PersonIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
-              }}
-            />
-
-            <TextField
-              fullWidth
-              type="date"
-              label="Expected Due Date"
-              InputLabelProps={{ shrink: true }}
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              InputProps={{
-                startAdornment: <DateIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
-              }}
-            />
-
-            <FormControl fullWidth>
-              <InputLabel>Cash Source</InputLabel>
-              <Select
-                value={source}
-                onChange={(e) => {
-                  const val = e.target.value as TransactionSource;
-                  setSource(val);
-                  setSelectedBank('');
-                  setSelectedCustomPaymentHead('');
-                  setSelectedHolder('Unassigned');
-                }}
-                label="Cash Source"
-                startAdornment={<PaymentsIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
-              >
-                {SOURCE_OPTIONS.map((mode) => (
-                  <MenuItem key={mode} value={mode} sx={{ textTransform: 'capitalize' }}>
-                    {mode.replace('_', ' ')}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            {source === 'bank' && (
-              <FormControl fullWidth>
-                <InputLabel>Select Bank</InputLabel>
-                <Select
-                  value={selectedBank}
-                  onChange={(e) => {
-                    setSelectedBank(e.target.value);
-                    setSelectedHolder('Unassigned');
+              <Stack direction="row" spacing={2}>
+                {/* Borrow Card */}
+                <Box
+                  onClick={() => handleLoanTypeChange('borrow')}
+                  sx={{
+                    flex: 1, p: 2.5, borderRadius: 3, cursor: 'pointer', textAlign: 'center',
+                    border: `2px solid ${isDark ? 'rgba(245,158,11,0.3)' : '#fde68a'}`,
+                    bgcolor: isDark ? 'rgba(245,158,11,0.07)' : '#fffbeb',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      border: '2px solid #f59e0b',
+                      transform: 'translateY(-3px)',
+                      boxShadow: '0 8px 20px rgba(245,158,11,0.2)',
+                    },
                   }}
-                  label="Select Bank"
-                  startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
                 >
-                  {banks.map((bank) => (
-                    <MenuItem key={bank.id} value={bank.id}>
-                      {bank.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
+                  <Typography fontSize="2.2rem" mb={0.5}>🤲</Typography>
+                  <Typography fontWeight={900} fontSize="1.05rem" color="#d97706">Borrow</Typography>
+                  <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mt={0.5}>
+                    Someone gives you money
+                  </Typography>
+                </Box>
 
-            {source === 'custom' && (
-              <FormControl fullWidth>
-                <InputLabel>Select Payment Head</InputLabel>
-                <Select
-                  value={selectedCustomPaymentHead}
-                  onChange={(e) => {
-                    setSelectedCustomPaymentHead(e.target.value);
-                    setSelectedHolder('Unassigned');
+                {/* Lend Card */}
+                <Box
+                  onClick={() => handleLoanTypeChange('lend')}
+                  sx={{
+                    flex: 1, p: 2.5, borderRadius: 3, cursor: 'pointer', textAlign: 'center',
+                    border: `2px solid ${isDark ? 'rgba(16,185,129,0.3)' : '#a7f3d0'}`,
+                    bgcolor: isDark ? 'rgba(16,185,129,0.07)' : '#ecfdf5',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      border: '2px solid #10b981',
+                      transform: 'translateY(-3px)',
+                      boxShadow: '0 8px 20px rgba(16,185,129,0.2)',
+                    },
                   }}
-                  label="Select Payment Head"
-                  startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
                 >
-                  {customPaymentHeads.map((head) => (
-                    <MenuItem key={head.id} value={head.id}>
-                      {head.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
+                  <Typography fontSize="2.2rem" mb={0.5}>🤝</Typography>
+                  <Typography fontWeight={900} fontSize="1.05rem" color="#059669">Lend</Typography>
+                  <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mt={0.5}>
+                    You give money to someone
+                  </Typography>
+                </Box>
+              </Stack>
 
-            {/* Holder Selection (optional for borrow, required if hasHolders for lend) */}
-            {(loanType === 'borrow' || (loanType === 'lend' && hasHolders)) && (
-              <Box sx={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`, borderRadius: 2, p: 2 }}>
-                <Typography variant="caption" fontWeight="800" color="primary" sx={{ mb: 1.5, display: 'block' }}>
-                  {loanType === 'borrow' ? 'ASSIGN TO HOLDER (OPTIONAL)' : 'SELECT LENDING HOLDER'}
-                </Typography>
-                <Stack spacing={2}>
-                  <FormControl fullWidth>
-                    <InputLabel>Select Holder</InputLabel>
-                    <Select
-                      value={selectedHolder}
-                      onChange={(e) => setSelectedHolder(e.target.value)}
-                      label="Select Holder"
-                    >
-                      <MenuItem value="Unassigned">
-                        Unassigned / Self 
-                        {loanType === 'lend' && ` (${formatCurrency(available - existingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})`}
-                      </MenuItem>
-                      {existingHolders.map((h) => (
-                        <MenuItem key={h.holderName} value={h.holderName}>
-                          {h.holderName} {loanType === 'lend' && `(${formatCurrency(h.amount, 'PKR')})`}
-                        </MenuItem>
-                      ))}
-                      {loanType === 'borrow' && (
-                        <MenuItem value="new"><em>-- Create New Holder --</em></MenuItem>
+              <Box sx={{ textAlign: 'center', pt: 0.5 }}>
+                <Link href="/finance/loans" passHref>
+                  <Button
+                    size="small"
+                    endIcon={<ArrowForwardIcon sx={{ fontSize: 13 }} />}
+                    onClick={() => setShowModal(false)}
+                    sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.75rem', color: 'text.secondary' }}
+                  >
+                    View existing loan records
+                  </Button>
+                </Link>
+              </Box>
+            </Stack>
+          </DialogContent>
+        )}
+
+        {/* ── STEP 2: Form (shown after type selected) ── */}
+        {loanType !== null && (
+          <>
+            <DialogContent sx={{ px: 3, py: 2.5 }}>
+              <Stack spacing={2}>
+
+                {/* Amount */}
+                <TextField
+                  fullWidth size="small"
+                  label="Amount"
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary' }}>PKR</Typography>
+                      </InputAdornment>
+                    ),
+                  }}
+                  placeholder="0.00"
+                  autoFocus
+                />
+
+                {/* ══ BORROW FORM ══ */}
+                {loanType === 'borrow' && (
+                  <>
+                    {/* FROM — who gave the money */}
+                    <Box>
+                      <Typography variant="caption" fontWeight={800} color="text.secondary"
+                        sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        Who gave you this money?
+                      </Typography>
+                      <Stack direction="row" spacing={1}>
+                        {[
+                          { val: 'outside', label: 'Outside Person', emoji: '👤' },
+                          { val: 'my_account', label: 'My Own Account', emoji: '🏦' },
+                        ].map((opt) => (
+                          <Box
+                            key={opt.val}
+                            onClick={() => {
+                              setFromCategory(opt.val as 'outside' | 'my_account');
+                              setFromType(opt.val === 'outside' ? 'outside' : 'in_hand');
+                              setFromBankId(''); setFromCustomId(''); setFromHolder('Unassigned'); setNewFromHolderName(''); setLenderName('');
+                            }}
+                            sx={{
+                              flex: 1, p: 1.5, borderRadius: 2, cursor: 'pointer', textAlign: 'center',
+                              border: `2px solid ${fromCategory === opt.val ? '#f59e0b' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')}`,
+                              bgcolor: fromCategory === opt.val ? (isDark ? 'rgba(245,158,11,0.1)' : '#fffbeb') : 'transparent',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <Typography fontSize="1.3rem">{opt.emoji}</Typography>
+                            <Typography variant="caption" fontWeight={700} display="block">{opt.label}</Typography>
+                          </Box>
+                        ))}
+                      </Stack>
+                    </Box>
+
+                    {/* Outside — Lender name */}
+                    {fromCategory === 'outside' && (
+                      <TextField
+                        fullWidth size="small"
+                        label="Lender's Name"
+                        value={lenderName}
+                        onChange={(e) => setLenderName(e.target.value)}
+                        placeholder="e.g. Uncle Ali, a friend, XYZ Bank"
+                        InputProps={{ startAdornment: <PersonIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} /> }}
+                      />
+                    )}
+
+                    {/* My account — pickers */}
+                    {fromCategory === 'my_account' && (
+                      <Stack spacing={1.5}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Account Type</InputLabel>
+                          <Select value={fromType} label="Account Type"
+                            onChange={(e) => { setFromType(e.target.value as TransactionSource); setFromBankId(''); setFromCustomId(''); setFromHolder('Unassigned'); }}>
+                            {accountMenuItems}
+                          </Select>
+                        </FormControl>
+                        {fromType === 'bank' && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Bank</InputLabel>
+                            <Select value={fromBankId} label="Select Bank" startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
+                              onChange={(e) => { setFromBankId(e.target.value); setFromHolder('Unassigned'); }}>
+                              {banks.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {fromType === 'custom' && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Custom Wallet</InputLabel>
+                            <Select value={fromCustomId} label="Select Custom Wallet" startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
+                              onChange={(e) => { setFromCustomId(e.target.value); setFromHolder('Unassigned'); }}>
+                              {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {fromExistingHolders.length > 0 && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Paid by (optional)</InputLabel>
+                            <Select value={fromHolder} label="Paid by (optional)" onChange={(e) => setFromHolder(e.target.value)}>
+                              <MenuItem value="Unassigned">General / Self ({formatCurrency(fromAvailable - fromExistingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})</MenuItem>
+                              {fromExistingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName} ({formatCurrency(h.amount, 'PKR')})</MenuItem>)}
+                              <MenuItem value="new"><em>+ Add new person</em></MenuItem>
+                            </Select>
+                          </FormControl>
+                        )}
+                        {fromHolder === 'new' && (
+                          <TextField fullWidth size="small" label="New Person Name" value={newFromHolderName} onChange={(e) => setNewFromHolderName(e.target.value)} placeholder="e.g. Ali" />
+                        )}
+                      </Stack>
+                    )}
+
+                    {/* TO — where money went */}
+                    <Box>
+                      <Typography variant="caption" fontWeight={800} color="text.secondary"
+                        sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        Where did this money go?
+                      </Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        {[
+                          { val: 'my_account', label: 'My Account', emoji: '🏦' },
+                          { val: 'immediate_expended', label: 'Spent Right Away', emoji: '💸' },
+                          { val: 'outside', label: 'Outside Entity', emoji: '🏢' },
+                        ].map((opt) => (
+                          <Box
+                            key={opt.val}
+                            onClick={() => {
+                              setToCategory(opt.val as typeof toCategory);
+                              if (opt.val === 'immediate_expended') setToType('immediate_expended');
+                              else if (opt.val === 'outside') setToType('outside');
+                              else setToType('in_hand');
+                              setToBankId(''); setToCustomId(''); setToHolder('Unassigned'); setNewToHolderName(''); setBorrowerName('');
+                            }}
+                            sx={{
+                              flex: '1 1 28%', p: 1.2, borderRadius: 2, cursor: 'pointer', textAlign: 'center',
+                              border: `2px solid ${toCategory === opt.val ? '#0ea5e9' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')}`,
+                              bgcolor: toCategory === opt.val ? (isDark ? 'rgba(14,165,233,0.1)' : '#f0f9ff') : 'transparent',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <Typography fontSize="1.1rem">{opt.emoji}</Typography>
+                            <Typography variant="caption" fontWeight={700} display="block" sx={{ fontSize: '0.68rem' }}>{opt.label}</Typography>
+                          </Box>
+                        ))}
+                      </Stack>
+                    </Box>
+
+                    {/* Spent Immediately notice */}
+                    {toCategory === 'immediate_expended' && (
+                      <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(239,68,68,0.07)' : '#fef2f2', border: `1px solid ${isDark ? 'rgba(239,68,68,0.2)' : '#fee2e2'}` }}>
+                        <Typography variant="caption" color="error" fontWeight={700}>
+                          💸 This money was spent immediately — it will not be added to your wallet balance.
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {/* Outside entity note */}
+                    {toCategory === 'outside' && (
+                      <TextField fullWidth size="small" label="Where did it go? (optional)" value={borrowerName} onChange={(e) => setBorrowerName(e.target.value)} placeholder="e.g. Shop name, person"
+                        InputProps={{ startAdornment: <PersonIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} /> }} />
+                    )}
+
+                    {/* My Account — destination pickers */}
+                    {toCategory === 'my_account' && (
+                      <Stack spacing={1.5}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Deposit Into</InputLabel>
+                          <Select value={toType} label="Deposit Into"
+                            onChange={(e) => { setToType(e.target.value as TransactionSource); setToBankId(''); setToCustomId(''); setToHolder('Unassigned'); }}>
+                            {accountMenuItems}
+                          </Select>
+                        </FormControl>
+                        {toType === 'bank' && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Bank</InputLabel>
+                            <Select value={toBankId} label="Select Bank" startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
+                              onChange={(e) => { setToBankId(e.target.value); setToHolder('Unassigned'); }}>
+                              {banks.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {toType === 'custom' && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Custom Wallet</InputLabel>
+                            <Select value={toCustomId} label="Select Custom Wallet" startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
+                              onChange={(e) => { setToCustomId(e.target.value); setToHolder('Unassigned'); }}>
+                              {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {toExistingHolders.length > 0 && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>For person (optional)</InputLabel>
+                            <Select value={toHolder} label="For person (optional)" onChange={(e) => setToHolder(e.target.value)}>
+                              <MenuItem value="Unassigned">General / Self</MenuItem>
+                              {toExistingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName}</MenuItem>)}
+                              <MenuItem value="new"><em>+ Add new person</em></MenuItem>
+                            </Select>
+                          </FormControl>
+                        )}
+                        {toHolder === 'new' && (
+                          <TextField fullWidth size="small" label="New Person Name" value={newToHolderName} onChange={(e) => setNewToHolderName(e.target.value)} placeholder="e.g. Ali" />
+                        )}
+                      </Stack>
+                    )}
+                  </>
+                )}
+
+                {/* ══ LEND FORM ══ */}
+                {loanType === 'lend' && (
+                  <>
+                    {/* FROM — where money came from */}
+                    <Box>
+                      <Typography variant="caption" fontWeight={800} color="text.secondary"
+                        sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        Where is this money coming from?
+                      </Typography>
+                      <Stack spacing={1.5}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Account Type</InputLabel>
+                          <Select value={fromType} label="Account Type"
+                            onChange={(e) => { setFromType(e.target.value as TransactionSource); setFromBankId(''); setFromCustomId(''); setFromHolder('Unassigned'); }}>
+                            {accountMenuItems}
+                          </Select>
+                        </FormControl>
+                        {fromType === 'bank' && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Bank</InputLabel>
+                            <Select value={fromBankId} label="Select Bank" startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
+                              onChange={(e) => { setFromBankId(e.target.value); setFromHolder('Unassigned'); }}>
+                              {banks.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {fromType === 'custom' && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Custom Wallet</InputLabel>
+                            <Select value={fromCustomId} label="Select Custom Wallet" startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
+                              onChange={(e) => { setFromCustomId(e.target.value); setFromHolder('Unassigned'); }}>
+                              {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {fromExistingHolders.length > 0 && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Deduct from person (optional)</InputLabel>
+                            <Select value={fromHolder} label="Deduct from person (optional)" onChange={(e) => setFromHolder(e.target.value)}>
+                              <MenuItem value="Unassigned">General / Self ({formatCurrency(fromAvailable - fromExistingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})</MenuItem>
+                              {fromExistingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName} ({formatCurrency(h.amount, 'PKR')})</MenuItem>)}
+                              <MenuItem value="new"><em>+ Add new person</em></MenuItem>
+                            </Select>
+                          </FormControl>
+                        )}
+                        {fromHolder === 'new' && (
+                          <TextField fullWidth size="small" label="New Person Name" value={newFromHolderName} onChange={(e) => setNewFromHolderName(e.target.value)} placeholder="e.g. Ali" />
+                        )}
+                      </Stack>
+                    </Box>
+
+                    {/* TO — who gets the money */}
+                    <Box>
+                      <Typography variant="caption" fontWeight={800} color="text.secondary"
+                        sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        Who are you giving this money to?
+                      </Typography>
+                      <Stack direction="row" spacing={1}>
+                        {[
+                          { val: 'outside', label: 'Outside Person', emoji: '👤' },
+                          { val: 'my_account', label: 'My Own Account', emoji: '🏦' },
+                        ].map((opt) => (
+                          <Box
+                            key={opt.val}
+                            onClick={() => {
+                              setToCategory(opt.val as 'outside' | 'my_account');
+                              setToType(opt.val === 'outside' ? 'outside' : 'in_hand');
+                              setToBankId(''); setToCustomId(''); setToHolder('Unassigned'); setNewToHolderName(''); setBorrowerName('');
+                            }}
+                            sx={{
+                              flex: 1, p: 1.5, borderRadius: 2, cursor: 'pointer', textAlign: 'center',
+                              border: `2px solid ${toCategory === opt.val ? '#10b981' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')}`,
+                              bgcolor: toCategory === opt.val ? (isDark ? 'rgba(16,185,129,0.1)' : '#ecfdf5') : 'transparent',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <Typography fontSize="1.3rem">{opt.emoji}</Typography>
+                            <Typography variant="caption" fontWeight={700} display="block">{opt.label}</Typography>
+                          </Box>
+                        ))}
+                      </Stack>
+                    </Box>
+
+                    {/* Borrower name */}
+                    {toCategory === 'outside' && (
+                      <TextField fullWidth size="small" label="Borrower's Name" value={borrowerName} onChange={(e) => setBorrowerName(e.target.value)} placeholder="e.g. Ahmed, a friend"
+                        InputProps={{ startAdornment: <PersonIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} /> }} />
+                    )}
+
+                    {/* To account details */}
+                    {toCategory === 'my_account' && (
+                      <Stack spacing={1.5}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Deposit Into</InputLabel>
+                          <Select value={toType} label="Deposit Into"
+                            onChange={(e) => { setToType(e.target.value as TransactionSource); setToBankId(''); setToCustomId(''); setToHolder('Unassigned'); }}>
+                            {accountMenuItems}
+                          </Select>
+                        </FormControl>
+                        {toType === 'bank' && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Bank</InputLabel>
+                            <Select value={toBankId} label="Select Bank" startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
+                              onChange={(e) => { setToBankId(e.target.value); setToHolder('Unassigned'); }}>
+                              {banks.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {toType === 'custom' && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Custom Wallet</InputLabel>
+                            <Select value={toCustomId} label="Select Custom Wallet" startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
+                              onChange={(e) => { setToCustomId(e.target.value); setToHolder('Unassigned'); }}>
+                              {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {toExistingHolders.length > 0 && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>For person (optional)</InputLabel>
+                            <Select value={toHolder} label="For person (optional)" onChange={(e) => setToHolder(e.target.value)}>
+                              <MenuItem value="Unassigned">General / Self</MenuItem>
+                              {toExistingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName}</MenuItem>)}
+                              <MenuItem value="new"><em>+ Add new person</em></MenuItem>
+                            </Select>
+                          </FormControl>
+                        )}
+                        {toHolder === 'new' && (
+                          <TextField fullWidth size="small" label="New Person Name" value={newToHolderName} onChange={(e) => setNewToHolderName(e.target.value)} placeholder="e.g. Ali" />
+                        )}
+                      </Stack>
+                    )}
+                  </>
+                )}
+
+                {/* ── Due Date & Note (shared) ── */}
+                <TextField
+                  fullWidth size="small"
+                  type="date"
+                  label="Due Date (optional)"
+                  InputLabelProps={{ shrink: true }}
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  InputProps={{ startAdornment: <DateIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} /> }}
+                />
+
+                <TextField
+                  fullWidth size="small"
+                  label="Note (optional)"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="e.g. For rent, borrowed for groceries…"
+                  multiline rows={2}
+                  InputProps={{ startAdornment: <NoteIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18, mt: 0.5, alignSelf: 'flex-start' }} /> }}
+                />
+
+                {/* Error & quick-add button */}
+                <Collapse in={!!error || insufficientFunds}>
+                  <Box sx={{
+                    p: 1.5, borderRadius: 2,
+                    bgcolor: insufficientFunds ? (isDark ? 'rgba(239,68,68,0.1)' : '#fef2f2') : 'transparent',
+                    border: insufficientFunds ? `1px solid ${isDark ? 'rgba(239,68,68,0.2)' : '#fee2e2'}` : 'none',
+                  }}>
+                    <Stack spacing={1.5}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <WarningIcon color="error" sx={{ fontSize: 18 }} />
+                        <Typography color="error" variant="caption" fontWeight="bold">{error}</Typography>
+                      </Stack>
+                      {insufficientFunds && onAddMoney && fromType !== 'outside' && (
+                        <Button
+                          variant="contained" color="error" size="small" fullWidth
+                          onClick={handleQuickAdd} disabled={quickAddLoading}
+                          startIcon={quickAddLoading ? <CircularProgress size={14} color="inherit" /> : <AddIcon />}
+                          sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 1.5, boxShadow: 'none' }}
+                        >
+                          {quickAddLoading ? 'Adding Funds...' : `Add ${formatCurrency(Number(amount), 'PKR')} to ${getSourceLabel()}`}
+                        </Button>
                       )}
-                    </Select>
-                  </FormControl>
+                    </Stack>
+                  </Box>
+                </Collapse>
 
-                  {loanType === 'borrow' && selectedHolder === 'new' && (
-                    <TextField
-                      fullWidth
-                      label="New Holder Name"
-                      value={newHolderName}
-                      onChange={(e) => setNewHolderName(e.target.value)}
-                      placeholder="e.g. Ali, Mother, etc."
-                      size="small"
-                    />
-                  )}
-                </Stack>
-              </Box>
-            )}
+              </Stack>
+            </DialogContent>
 
-            <TextField
-              fullWidth
-              label="Note / Remark"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. For project expenses"
-              size="small"
-              multiline
-              rows={2}
-              InputProps={{
-                startAdornment: <NoteIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20, mt: 1, alignSelf: 'flex-start' }} />,
-              }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-
-            <Collapse in={!!error || insufficientFunds}>
-              <Box sx={{
-                p: 2,
-                borderRadius: 2,
-                bgcolor: insufficientFunds ? (isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2') : 'transparent',
-                border: insufficientFunds ? `1px solid ${isDark ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2'}` : 'none'
-              }}>
-                <Stack spacing={1.5}>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <WarningIcon color="error" sx={{ fontSize: 20 }} />
-                    <Typography color="error" variant="caption" fontWeight="bold">
-                      {error}
-                    </Typography>
-                  </Stack>
-                  
-                  {insufficientFunds && onAddMoney && (
-                    <Button
-                      variant="contained"
-                      color="error"
-                      size="small"
-                      fullWidth
-                      onClick={handleQuickAdd}
-                      disabled={quickAddLoading}
-                      startIcon={quickAddLoading ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
-                      sx={{
-                        textTransform: 'none',
-                        fontWeight: 800,
-                        borderRadius: 1.5,
-                        boxShadow: 'none'
-                      }}
-                    >
-                      {quickAddLoading ? 'Adding Funds...' : `Add ${formatCurrency(Number(amount), 'PKR')} to ${getSourceLabel()}`}
-                    </Button>
-                  )}
-                </Stack>
-              </Box>
-            </Collapse>
-          </Stack>
-        </DialogContent>
-
-        <DialogActions sx={{ px: 3, py: 3, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-          <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary' }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleCreate}
-            disabled={
-              localSaving ||
-              quickAddLoading ||
-              (source === 'bank' && !selectedBank) ||
-              (source === 'custom' && !selectedCustomPaymentHead) ||
-              (selectedHolder === 'new' && !newHolderName.trim()) ||
-              !amount || !counterparty.trim() || !dueDate
-            }
-            sx={{
-              borderRadius: 2,
-              fontWeight: 800,
-              px: 4,
-              bgcolor: '#0ea5e9',
-              boxShadow: '0 4px 14px 0 rgba(14, 165, 233, 0.39)',
-              textTransform: 'none',
-              '&:hover': { bgcolor: '#0369a1' }
-            }}
-          >
-            {localSaving ? <CircularProgress size={20} color="inherit" /> : 'Record Loan'}
-          </Button>
-        </DialogActions>
+            <DialogActions sx={{
+              px: 3, py: 2,
+              bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fafafa',
+              borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f0f0f0'}`,
+            }}>
+              <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'none' }}>
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleCreate}
+                disabled={
+                  localSaving || quickAddLoading || !amount ||
+                  (fromType === 'bank' && !fromBankId) ||
+                  (fromType === 'custom' && !fromCustomId) ||
+                  (fromType !== 'outside' && fromHolder === 'new' && !newFromHolderName.trim()) ||
+                  (toType === 'bank' && !toBankId) ||
+                  (toType === 'custom' && !toCustomId) ||
+                  (toType !== 'outside' && toType !== 'immediate_expended' && toHolder === 'new' && !newToHolderName.trim()) ||
+                  (fromCategory === 'outside' && loanType === 'borrow' && !lenderName.trim()) ||
+                  (toCategory === 'outside' && loanType === 'lend' && !borrowerName.trim())
+                }
+                sx={{
+                  borderRadius: 2, fontWeight: 800, px: 3.5, textTransform: 'none',
+                  bgcolor: loanType === 'borrow' ? '#f59e0b' : '#10b981',
+                  boxShadow: loanType === 'borrow' ? '0 4px 14px rgba(245,158,11,0.35)' : '0 4px 14px rgba(16,185,129,0.35)',
+                  '&:hover': { bgcolor: loanType === 'borrow' ? '#d97706' : '#059669' },
+                }}
+              >
+                {localSaving
+                  ? <CircularProgress size={20} color="inherit" />
+                  : `Save ${loanType === 'borrow' ? 'Borrow' : 'Lend'} Record`}
+              </Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
     </>
   );

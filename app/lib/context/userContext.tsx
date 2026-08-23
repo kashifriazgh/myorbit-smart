@@ -330,6 +330,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
+              displayName: data.displayName || firebaseUser.displayName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || 'User',
               firstName: data.firstName || '',
               lastName: data.lastName || '',
               role: data.role || 'viewer',

@@ -50,7 +50,7 @@ Suggest 4-5 sequential, specific milestones that directly work toward THIS goal.
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant', messages: [
+        model: 'groq/compound-mini', messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],

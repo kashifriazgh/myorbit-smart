@@ -15,6 +15,7 @@ import {
   Fade,
   Box,
   CircularProgress,
+  LinearProgress,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import {
@@ -29,7 +30,10 @@ import { useAuth } from '@/app/lib/context/userContext';
 import {
   Close as CloseIcon,
   SwapHoriz as SwapIcon,
-  AttachMoney as MoneyIcon,
+  ArrowForward as ArrowForwardIcon,
+  ArrowBack as ArrowBackIcon,
+  AccountBalance as BankIcon,
+  Wallet as WalletIcon,
 } from '@mui/icons-material';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { getSourceKey } from '../TotalCashSnapshot';
@@ -54,13 +58,34 @@ interface Props {
   onExternalClose?: () => void;
 }
 
-const SOURCE_OPTIONS: TransactionSource[] = [
-  'bank',
-  'in_hand',
-  'easypaisa',
-  'jazzcash',
-  'other',
-  'custom',
+const SOURCE_ICONS: Record<string, string> = {
+  in_hand: '💵',
+  bank: '🏦',
+  easypaisa: '📱',
+  jazzcash: '📱',
+  other: '💼',
+  custom: '🗂️',
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  in_hand: 'Cash in Hand',
+  bank: 'Bank Account',
+  easypaisa: 'EasyPaisa',
+  jazzcash: 'JazzCash',
+  other: 'Other',
+  custom: 'Custom Wallet',
+};
+
+const SOURCE_OPTIONS: TransactionSource[] = ['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other', 'custom'];
+
+// Steps: 0 = From, 1 = To, 2 = Amount + confirm
+type Step = 0 | 1 | 2;
+
+const STEP_TITLES = ['Where from?', 'Where to?', 'How much?'];
+const STEP_SUBTITLES = [
+  'Select the source account to transfer from',
+  'Select the destination account',
+  'Enter the amount to transfer',
 ];
 
 export default function TransferFunds({ snapshot, onTransfer, saving, externalOpen, onExternalClose }: Props) {
@@ -69,12 +94,15 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
   const isDark = theme?.mode === 'dark';
 
   const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<Step>(0);
 
   // Sync with external open state from FAB
   useEffect(() => {
-    if (externalOpen !== undefined) setOpen(externalOpen);
+    if (externalOpen !== undefined) {
+      setOpen(externalOpen);
+      if (externalOpen) setStep(0); // always start at step 0
+    }
   }, [externalOpen]);
-  const [amount, setAmount] = useState<number | ''>('');
 
   // From state
   const [fromSource, setFromSource] = useState<TransactionSource>('in_hand');
@@ -89,13 +117,12 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
   const [toHolder, setToHolder] = useState('Unassigned');
   const [newHolderName, setNewHolderName] = useState('');
 
+  // Amount & note
+  const [amount, setAmount] = useState<number | ''>('');
   const [note, setNote] = useState('');
 
-  // Fetch banks & custom heads
   const [banks, setBanks] = useState<Bank[]>([]);
-  const [customPaymentHeads, setCustomPaymentHeads] = useState<
-    CustomPaymentHead[]
-  >([]);
+  const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -105,32 +132,22 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
       setBanks(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Bank));
     };
     const fetchCustom = async () => {
-      const q = query(
-        collection(db, 'customPaymentHeads'),
-        where('userId', '==', user.uid),
-      );
+      const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
-      setCustomPaymentHeads(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CustomPaymentHead),
-      );
+      setCustomPaymentHeads(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CustomPaymentHead));
     };
     fetchBanks();
     fetchCustom();
   }, [user]);
 
-  // Names helpers
+  // Derived names
   const fromBankName = banks.find((b) => b.id === fromBankId)?.name;
-  const fromCustomName = customPaymentHeads.find(
-    (c) => c.id === fromCustomId,
-  )?.name;
+  const fromCustomName = customPaymentHeads.find((c) => c.id === fromCustomId)?.name;
   const toBankName = banks.find((b) => b.id === toBankId)?.name;
-  const toCustomName = customPaymentHeads.find(
-    (c) => c.id === toCustomId,
-  )?.name;
+  const toCustomName = customPaymentHeads.find((c) => c.id === toCustomId)?.name;
 
-  // From Source Key & Balance
+  // From balance
   const fromKey = getSourceKey(fromSource, fromBankName, fromCustomName);
-
   let fromSourceBalance = 0;
   if (fromSource === 'bank' && fromBankName) {
     fromSourceBalance = snapshot.sources.bank?.[fromBankName] || 0;
@@ -139,40 +156,30 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
   } else {
     fromSourceBalance = (snapshot.sources[fromSource] as number) || 0;
   }
-
   const fromHolders = snapshot.heldBy?.[fromKey] || [];
   const fromHoldersSum = fromHolders.reduce((s, h) => s + h.amount, 0);
   const fromUnassignedBalance = fromSourceBalance - fromHoldersSum;
-
   let activeFromBalance = fromSourceBalance;
   if (fromHolders.length > 0) {
-    if (fromHolder === 'Unassigned') {
-      activeFromBalance = fromUnassignedBalance;
-    } else {
-      activeFromBalance =
-        fromHolders.find((h) => h.holderName === fromHolder)?.amount || 0;
-    }
+    activeFromBalance = fromHolder === 'Unassigned' ? fromUnassignedBalance : (fromHolders.find((h) => h.holderName === fromHolder)?.amount || 0);
   }
 
-  // To Source Key
+  // To holders
   const toKey = getSourceKey(toSource, toBankName, toCustomName);
   const toHolders = snapshot.heldBy?.[toKey] || [];
 
-  const handleSaveClick = async () => {
-    if (!amount || amount <= 0 || amount > activeFromBalance) return;
+  const isInsufficient = amount !== '' && Number(amount) > activeFromBalance;
 
+  const handleSaveClick = async () => {
+    if (!amount || amount <= 0 || isInsufficient) return;
     const finalToHolder = toHolder === 'new' ? newHolderName.trim() : toHolder;
     if (toHolder === 'new' && !finalToHolder) return;
 
     await onTransfer(
       Number(amount),
-      fromSource,
-      fromBankName,
-      fromCustomName,
+      fromSource, fromBankName, fromCustomName,
       fromHolder === 'Unassigned' ? undefined : fromHolder,
-      toSource,
-      toBankName,
-      toCustomName,
+      toSource, toBankName, toCustomName,
       finalToHolder === 'Unassigned' ? undefined : finalToHolder,
       note,
     );
@@ -180,15 +187,10 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
     // Reset
     setOpen(false);
     onExternalClose?.();
+    setStep(0);
     setAmount('');
-    setFromSource('in_hand');
-    setFromBankId('');
-    setFromCustomId('');
-    setFromHolder('Unassigned');
-    setToSource('in_hand');
-    setToBankId('');
-    setToCustomId('');
-    setToHolder('Unassigned');
+    setFromSource('in_hand'); setFromBankId(''); setFromCustomId(''); setFromHolder('Unassigned');
+    setToSource('in_hand'); setToBankId(''); setToCustomId(''); setToHolder('Unassigned');
     setNewHolderName('');
     setNote('');
   };
@@ -197,372 +199,295 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
     if (saving) return;
     setOpen(false);
     onExternalClose?.();
+    setTimeout(() => setStep(0), 300);
   };
+
+  const canProceedStep0 = !(fromSource === 'bank' && !fromBankId) && !(fromSource === 'custom' && !fromCustomId);
+  const canProceedStep1 = !(toSource === 'bank' && !toBankId) && !(toSource === 'custom' && !toCustomId);
+  const canSubmit = !!amount && amount > 0 && !isInsufficient && canProceedStep0 && canProceedStep1 && !(toHolder === 'new' && !newHolderName.trim());
+
+  const fromLabel = `${SOURCE_ICONS[fromSource]} ${fromBankName || fromCustomName || SOURCE_LABELS[fromSource]}`;
+  const toLabel = `${SOURCE_ICONS[toSource]} ${toBankName || toCustomName || SOURCE_LABELS[toSource]}`;
+
+  // Gradient per step
+  const gradients = [
+    'linear-gradient(135deg, #6366f1 0%, #4338ca 100%)',
+    'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)',
+    'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+  ];
 
   return (
     <>
       <Dialog
         open={open}
         onClose={handleClose}
-        fullWidth
-        maxWidth="xs"
+        fullWidth maxWidth="xs"
         TransitionComponent={Fade}
-        PaperProps={{
-          sx: {
-            borderRadius: 4,
-            overflow: 'hidden',
-            backgroundColor: isDark ? '#0f172a' : '#ffffff',
-          },
-        }}
+        PaperProps={{ sx: { borderRadius: 4, overflow: 'hidden', backgroundColor: isDark ? '#0f172a' : '#ffffff' } }}
       >
-        <Box
-          sx={{
-            background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-            p: 3,
-            color: 'white',
-            position: 'relative',
-          }}
-        >
-          <Stack direction="row" alignItems="center" spacing={1.5}>
-            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}>
-              <SwapIcon />
-            </Avatar>
-            <Box>
-              <Typography
-                variant="h6"
-                fontWeight="900"
-                sx={{ lineHeight: 1.2 }}
-              >
-                Transfer Funds
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{ opacity: 0.8, fontWeight: 600 }}
-              >
-                Transfer between sources or holders
-              </Typography>
-            </Box>
-          </Stack>
-          <IconButton
-            onClick={handleClose}
+        {/* Header */}
+        <Box sx={{ background: gradients[step], pb: 0, color: 'white', position: 'relative', transition: 'background 0.4s ease' }}>
+          <Box sx={{ p: 2.5 }}>
+            <Stack direction="row" alignItems="center" spacing={1.5}>
+              {step > 0 && (
+                <IconButton size="small" onClick={() => setStep((s) => (s - 1) as Step)}
+                  sx={{ color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}>
+                  <ArrowBackIcon fontSize="small" />
+                </IconButton>
+              )}
+              <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', width: 36, height: 36 }}>
+                <SwapIcon fontSize="small" />
+              </Avatar>
+              <Box>
+                <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.1 }}>
+                  {STEP_TITLES[step]}
+                </Typography>
+                <Typography variant="caption" sx={{ opacity: 0.85, fontWeight: 600 }}>
+                  {STEP_SUBTITLES[step]}
+                </Typography>
+              </Box>
+            </Stack>
+          </Box>
+
+          {/* Step progress bar */}
+          <LinearProgress
+            variant="determinate"
+            value={((step + 1) / 3) * 100}
             sx={{
-              position: 'absolute',
-              right: 12,
-              top: 12,
-              color: 'white',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+              height: 3,
+              bgcolor: 'rgba(255,255,255,0.2)',
+              '& .MuiLinearProgress-bar': { bgcolor: 'rgba(255,255,255,0.9)' },
             }}
-          >
+          />
+
+          <IconButton onClick={handleClose} size="small"
+            sx={{ position: 'absolute', right: 12, top: 12, color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}>
             <CloseIcon fontSize="small" />
           </IconButton>
         </Box>
 
-        <DialogContent sx={{ px: 3, py: 3 }}>
-          <Stack spacing={2.5}>
-            <TextField
-              fullWidth
-              label="Amount"
-              type="number"
-              value={amount}
-              onChange={(e) =>
-                setAmount(e.target.value === '' ? '' : Number(e.target.value))
-              }
-              InputProps={{
-                startAdornment: (
-                  <MoneyIcon
-                    sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }}
-                  />
-                ),
-              }}
-              placeholder="0.00"
-              error={amount !== '' && Number(amount) > activeFromBalance}
-              helperText={
-                amount !== '' && Number(amount) > activeFromBalance
-                  ? 'Insufficient funds'
-                  : ''
-              }
-            />
-
-            {/* From Source Details */}
-            <Box
-              sx={{
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`,
-                borderRadius: 2,
-                p: 2,
-              }}
-            >
-              <Typography
-                variant="caption"
-                fontWeight="800"
-                color="primary"
-                sx={{ mb: 1.5, display: 'block' }}
-              >
-                FROM SOURCE & HOLDER
-              </Typography>
-              <Stack spacing={2}>
-                <FormControl fullWidth>
-                  <InputLabel>Source Type</InputLabel>
-                  <Select
-                    value={fromSource}
-                    onChange={(e) => {
-                      setFromSource(e.target.value as TransactionSource);
-                      setFromBankId('');
-                      setFromCustomId('');
-                      setFromHolder('Unassigned');
+        {/* ── STEP 0: From ── */}
+        {step === 0 && (
+          <DialogContent sx={{ px: 3, py: 3 }}>
+            <Stack spacing={2}>
+              <Stack direction="row" flexWrap="wrap" gap={1.2} useFlexGap>
+                {SOURCE_OPTIONS.map((opt) => (
+                  <Box
+                    key={opt}
+                    onClick={() => { setFromSource(opt); setFromBankId(''); setFromCustomId(''); setFromHolder('Unassigned'); }}
+                    sx={{
+                      flex: '1 1 28%', py: 2, px: 1, borderRadius: 3, cursor: 'pointer', textAlign: 'center',
+                      border: `2px solid ${fromSource === opt ? '#6366f1' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')}`,
+                      bgcolor: fromSource === opt ? (isDark ? 'rgba(99,102,241,0.15)' : '#eef2ff') : 'transparent',
+                      transition: 'all 0.15s ease',
+                      '&:hover': { border: '2px solid #6366f1', bgcolor: isDark ? 'rgba(99,102,241,0.1)' : '#eef2ff' },
                     }}
-                    label="Source Type"
                   >
-                    {SOURCE_OPTIONS.map((mode) => (
-                      <MenuItem
-                        key={mode}
-                        value={mode}
-                        sx={{ textTransform: 'capitalize' }}
-                      >
-                        {mode.replace('_', ' ')}
-                      </MenuItem>
-                    ))}
+                    <Typography fontSize="1.8rem">{SOURCE_ICONS[opt]}</Typography>
+                    <Typography fontWeight={700} fontSize="0.8rem" mt={0.5}>{SOURCE_LABELS[opt]}</Typography>
+                  </Box>
+                ))}
+              </Stack>
+
+              {fromSource === 'bank' && (
+                <FormControl fullWidth size="small">
+                  <InputLabel>Select Bank</InputLabel>
+                  <Select value={fromBankId} onChange={(e) => { setFromBankId(e.target.value); setFromHolder('Unassigned'); }} label="Select Bank"
+                    startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
+                    <MenuItem value=""><em>— Choose a bank —</em></MenuItem>
+                    {banks.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
                   </Select>
                 </FormControl>
+              )}
 
-                {fromSource === 'bank' && (
-                  <FormControl fullWidth>
-                    <InputLabel>Select Bank</InputLabel>
-                    <Select
-                      value={fromBankId}
-                      onChange={(e) => {
-                        setFromBankId(e.target.value);
-                        setFromHolder('Unassigned');
-                      }}
-                      label="Select Bank"
-                    >
-                      {banks.map((bank) => (
-                        <MenuItem key={bank.id} value={bank.id}>
-                          {bank.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
+              {fromSource === 'custom' && (
+                <FormControl fullWidth size="small">
+                  <InputLabel>Select Custom Wallet</InputLabel>
+                  <Select value={fromCustomId} onChange={(e) => { setFromCustomId(e.target.value); setFromHolder('Unassigned'); }} label="Select Custom Wallet"
+                    startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
+                    <MenuItem value=""><em>— Choose a wallet —</em></MenuItem>
+                    {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              )}
 
-                {fromSource === 'custom' && (
-                  <FormControl fullWidth>
-                    <InputLabel>Select Custom Head</InputLabel>
-                    <Select
-                      value={fromCustomId}
-                      onChange={(e) => {
-                        setFromCustomId(e.target.value);
-                        setFromHolder('Unassigned');
-                      }}
-                      label="Select Custom Head"
-                    >
-                      {customPaymentHeads.map((head) => (
-                        <MenuItem key={head.id} value={head.id}>
-                          {head.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
+              {fromHolders.length > 0 && (
+                <FormControl fullWidth size="small">
+                  <InputLabel>Transfer from person (optional)</InputLabel>
+                  <Select value={fromHolder} onChange={(e) => setFromHolder(e.target.value)} label="Transfer from person (optional)">
+                    <MenuItem value="Unassigned">General / Self ({formatCurrency(fromUnassignedBalance, 'PKR')})</MenuItem>
+                    {fromHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName} ({formatCurrency(h.amount, 'PKR')})</MenuItem>)}
+                  </Select>
+                </FormControl>
+              )}
 
-                {fromHolders.length > 0 && (
-                  <FormControl fullWidth>
-                    <InputLabel>Select Holder</InputLabel>
-                    <Select
-                      value={fromHolder}
-                      onChange={(e) => setFromHolder(e.target.value)}
-                      label="Select Holder"
-                    >
-                      <MenuItem value="Unassigned">
-                        Unassigned / Self (
-                        {formatCurrency(fromUnassignedBalance, 'PKR')})
-                      </MenuItem>
-                      {fromHolders.map((h) => (
-                        <MenuItem key={h.holderName} value={h.holderName}>
-                          {h.holderName} ({formatCurrency(h.amount, 'PKR')})
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
+              {/* Balance pill */}
+              <Box sx={{ textAlign: 'center', py: 1 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700} display="block">AVAILABLE</Typography>
+                <Typography fontWeight={900} fontSize="1.5rem" color="#6366f1">{formatCurrency(activeFromBalance, 'PKR')}</Typography>
+              </Box>
+            </Stack>
+          </DialogContent>
+        )}
 
-                <Typography
-                  variant="caption"
-                  sx={{ color: 'text.secondary', fontWeight: 600 }}
-                >
-                  Available in selection:{' '}
-                  <strong>{formatCurrency(activeFromBalance, 'PKR')}</strong>
+        {/* ── STEP 1: To ── */}
+        {step === 1 && (
+          <DialogContent sx={{ px: 3, py: 3 }}>
+            <Stack spacing={2}>
+              {/* From summary pill */}
+              <Box sx={{ textAlign: 'center', p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(99,102,241,0.1)' : '#eef2ff', border: '1px solid rgba(99,102,241,0.25)' }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>TRANSFERRING FROM</Typography>
+                <Typography fontWeight={900} fontSize="1rem" color="#6366f1">{fromLabel}</Typography>
+              </Box>
+
+              <Stack direction="row" flexWrap="wrap" gap={1.2} useFlexGap>
+                {SOURCE_OPTIONS.map((opt) => (
+                  <Box
+                    key={opt}
+                    onClick={() => { setToSource(opt); setToBankId(''); setToCustomId(''); setToHolder('Unassigned'); }}
+                    sx={{
+                      flex: '1 1 28%', py: 2, px: 1, borderRadius: 3, cursor: 'pointer', textAlign: 'center',
+                      border: `2px solid ${toSource === opt ? '#0ea5e9' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')}`,
+                      bgcolor: toSource === opt ? (isDark ? 'rgba(14,165,233,0.12)' : '#f0f9ff') : 'transparent',
+                      transition: 'all 0.15s ease',
+                      '&:hover': { border: '2px solid #0ea5e9', bgcolor: isDark ? 'rgba(14,165,233,0.08)' : '#f0f9ff' },
+                    }}
+                  >
+                    <Typography fontSize="1.8rem">{SOURCE_ICONS[opt]}</Typography>
+                    <Typography fontWeight={700} fontSize="0.8rem" mt={0.5}>{SOURCE_LABELS[opt]}</Typography>
+                  </Box>
+                ))}
+              </Stack>
+
+              {toSource === 'bank' && (
+                <FormControl fullWidth size="small">
+                  <InputLabel>Select Bank</InputLabel>
+                  <Select value={toBankId} onChange={(e) => { setToBankId(e.target.value); setToHolder('Unassigned'); }} label="Select Bank"
+                    startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
+                    <MenuItem value=""><em>— Choose a bank —</em></MenuItem>
+                    {banks.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              )}
+
+              {toSource === 'custom' && (
+                <FormControl fullWidth size="small">
+                  <InputLabel>Select Custom Wallet</InputLabel>
+                  <Select value={toCustomId} onChange={(e) => { setToCustomId(e.target.value); setToHolder('Unassigned'); }} label="Select Custom Wallet"
+                    startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
+                    <MenuItem value=""><em>— Choose a wallet —</em></MenuItem>
+                    {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              )}
+
+              <FormControl fullWidth size="small">
+                <InputLabel>For person (optional)</InputLabel>
+                <Select value={toHolder} onChange={(e) => setToHolder(e.target.value)} label="For person (optional)">
+                  <MenuItem value="Unassigned">General / Self</MenuItem>
+                  {toHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName} ({formatCurrency(h.amount, 'PKR')})</MenuItem>)}
+                  <MenuItem value="new"><em>+ Add new person</em></MenuItem>
+                </Select>
+              </FormControl>
+
+              {toHolder === 'new' && (
+                <TextField fullWidth size="small" label="New Person Name" value={newHolderName} onChange={(e) => setNewHolderName(e.target.value)} placeholder="e.g. Ali, Wife, etc." />
+              )}
+            </Stack>
+          </DialogContent>
+        )}
+
+        {/* ── STEP 2: Amount ── */}
+        {step === 2 && (
+          <DialogContent sx={{ px: 3, py: 3 }}>
+            <Stack spacing={2.5} alignItems="center">
+              {/* From → To summary */}
+              <Stack direction="row" alignItems="center" spacing={1} justifyContent="center"
+                sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc', width: '100%', border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}` }}>
+                <Box textAlign="center">
+                  <Typography variant="caption" color="text.secondary" fontWeight={700} display="block">FROM</Typography>
+                  <Typography fontWeight={900} fontSize="0.85rem" color="#6366f1">{fromLabel}</Typography>
+                </Box>
+                <ArrowForwardIcon sx={{ color: 'text.disabled', fontSize: 18 }} />
+                <Box textAlign="center">
+                  <Typography variant="caption" color="text.secondary" fontWeight={700} display="block">TO</Typography>
+                  <Typography fontWeight={900} fontSize="0.85rem" color="#0ea5e9">{toLabel}</Typography>
+                </Box>
+              </Stack>
+
+              {/* Big amount input */}
+              <Box sx={{ width: '100%', textAlign: 'center', py: 1 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={1.5} sx={{ textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Enter Amount (PKR)
                 </Typography>
-              </Stack>
-            </Box>
+                <TextField
+                  fullWidth
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="0"
+                  autoFocus
+                  error={isInsufficient}
+                  helperText={isInsufficient ? `Max: ${formatCurrency(activeFromBalance, 'PKR')}` : ''}
+                  inputProps={{ style: { fontSize: '2.5rem', fontWeight: 900, textAlign: 'center', letterSpacing: '-0.02em', padding: '12px 0' } }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': { borderRadius: 3 },
+                    '& .MuiOutlinedInput-notchedOutline': { borderWidth: 2 },
+                  }}
+                />
+              </Box>
 
-            {/* To Source Details */}
-            <Box
+              {/* Available balance */}
+              <Typography variant="body2" color={isInsufficient ? 'error.main' : 'text.secondary'} fontWeight={700}>
+                Available: <strong style={{ color: isInsufficient ? undefined : '#10b981' }}>{formatCurrency(activeFromBalance, 'PKR')}</strong>
+              </Typography>
+
+              {/* Note */}
+              <TextField
+                fullWidth size="small" label="Note (optional)" value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. Monthly home allowance, savings transfer…"
+                multiline rows={2}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+            </Stack>
+          </DialogContent>
+        )}
+
+        {/* Actions */}
+        <DialogActions sx={{ px: 3, py: 2, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fafafa', borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f0f0f0'}` }}>
+          <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'none' }}>Cancel</Button>
+
+          {step < 2 ? (
+            <Button
+              variant="contained"
+              endIcon={<ArrowForwardIcon />}
+              disabled={(step === 0 && !canProceedStep0) || (step === 1 && !canProceedStep1)}
+              onClick={() => setStep((s) => (s + 1) as Step)}
               sx={{
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}`,
-                borderRadius: 2,
-                p: 2,
+                borderRadius: 2, fontWeight: 800, px: 3, textTransform: 'none',
+                bgcolor: step === 0 ? '#6366f1' : '#0ea5e9',
+                '&:hover': { bgcolor: step === 0 ? '#4338ca' : '#0369a1' },
+                boxShadow: step === 0 ? '0 4px 14px rgba(99,102,241,0.35)' : '0 4px 14px rgba(14,165,233,0.35)',
               }}
             >
-              <Typography
-                variant="caption"
-                fontWeight="800"
-                color="secondary"
-                sx={{ mb: 1.5, display: 'block' }}
-              >
-                TO SOURCE & HOLDER
-              </Typography>
-              <Stack spacing={2}>
-                <FormControl fullWidth>
-                  <InputLabel>Source Type</InputLabel>
-                  <Select
-                    value={toSource}
-                    onChange={(e) => {
-                      setToSource(e.target.value as TransactionSource);
-                      setToBankId('');
-                      setToCustomId('');
-                      setToHolder('Unassigned');
-                    }}
-                    label="Source Type"
-                  >
-                    {SOURCE_OPTIONS.map((mode) => (
-                      <MenuItem
-                        key={mode}
-                        value={mode}
-                        sx={{ textTransform: 'capitalize' }}
-                      >
-                        {mode.replace('_', ' ')}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-
-                {toSource === 'bank' && (
-                  <FormControl fullWidth>
-                    <InputLabel>Select Bank</InputLabel>
-                    <Select
-                      value={toBankId}
-                      onChange={(e) => {
-                        setToBankId(e.target.value);
-                        setToHolder('Unassigned');
-                      }}
-                      label="Select Bank"
-                    >
-                      {banks.map((bank) => (
-                        <MenuItem key={bank.id} value={bank.id}>
-                          {bank.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
-
-                {toSource === 'custom' && (
-                  <FormControl fullWidth>
-                    <InputLabel>Select Custom Head</InputLabel>
-                    <Select
-                      value={toCustomId}
-                      onChange={(e) => {
-                        setToCustomId(e.target.value);
-                        setToHolder('Unassigned');
-                      }}
-                      label="Select Custom Head"
-                    >
-                      {customPaymentHeads.map((head) => (
-                        <MenuItem key={head.id} value={head.id}>
-                          {head.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
-
-                <FormControl fullWidth>
-                  <InputLabel>Select Target Holder</InputLabel>
-                  <Select
-                    value={toHolder}
-                    onChange={(e) => setToHolder(e.target.value)}
-                    label="Select Target Holder"
-                  >
-                    <MenuItem value="Unassigned">Unassigned / Self</MenuItem>
-                    {toHolders.map((h) => (
-                      <MenuItem key={h.holderName} value={h.holderName}>
-                        {h.holderName} ({formatCurrency(h.amount, 'PKR')})
-                      </MenuItem>
-                    ))}
-                    <MenuItem value="new">
-                      <em>-- Create New Holder --</em>
-                    </MenuItem>
-                  </Select>
-                </FormControl>
-
-                {toHolder === 'new' && (
-                  <TextField
-                    fullWidth
-                    label="New Holder Name"
-                    value={newHolderName}
-                    onChange={(e) => setNewHolderName(e.target.value)}
-                    placeholder="e.g. Ali, Wife, etc."
-                    size="small"
-                  />
-                )}
-              </Stack>
-            </Box>
-
-            <TextField
-              fullWidth
-              label="Note / Reference"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Giving monthly home allowance"
-              size="small"
-              multiline
-              rows={2}
-            />
-          </Stack>
-        </DialogContent>
-
-        <DialogActions
-          sx={{
-            px: 3,
-            py: 3,
-            bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc',
-            borderTop: '1px solid rgba(0,0,0,0.05)',
-          }}
-        >
-          <Button
-            onClick={handleClose}
-            sx={{ fontWeight: 700, color: 'text.secondary' }}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSaveClick}
-            disabled={
-              saving ||
-              !amount ||
-              amount <= 0 ||
-              amount > activeFromBalance ||
-              (fromSource === 'bank' && !fromBankId) ||
-              (fromSource === 'custom' && !fromCustomId) ||
-              (toSource === 'bank' && !toBankId) ||
-              (toSource === 'custom' && !toCustomId) ||
-              (toHolder === 'new' && !newHolderName.trim())
-            }
-            sx={{
-              borderRadius: 2,
-              fontWeight: 800,
-              px: 4,
-              boxShadow: '0 4px 14px 0 rgba(59, 130, 246, 0.39)',
-              textTransform: 'none',
-            }}
-          >
-            {saving ? (
-              <CircularProgress size={20} color="inherit" />
-            ) : (
-              'Transfer'
-            )}
-          </Button>
+              Next
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              onClick={handleSaveClick}
+              disabled={saving || !canSubmit}
+              sx={{
+                borderRadius: 2, fontWeight: 800, px: 3.5, textTransform: 'none',
+                bgcolor: '#10b981',
+                boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
+                '&:hover': { bgcolor: '#059669' },
+              }}
+            >
+              {saving ? <CircularProgress size={20} color="inherit" /> : 'Confirm Transfer'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </>

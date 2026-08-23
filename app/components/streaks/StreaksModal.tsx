@@ -17,11 +17,12 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import { addDoc, collection, Timestamp } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+import { Timestamp } from 'firebase/firestore';
+
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { StreakProps } from '@/app/lib/interface';
+import { useStreaks } from '@/app/lib/context/StreaksContext';
 
 const daysOfWeek = [
   'Monday',
@@ -65,6 +66,7 @@ export default function StreaksModal({
 
   const { user } = useAuth();
   const { theme } = useCustomTheme();
+  const { addStreak } = useStreaks();
 
   if (!theme) return null;
 
@@ -74,7 +76,7 @@ export default function StreaksModal({
 
     setLoading(true);
 
-    const streakData: StreakProps = {
+    const streakData: Omit<StreakProps, 'id'> = {
       userId: user.uid,
       title: title.trim(),
       description: description.trim() || '',
@@ -93,8 +95,8 @@ export default function StreaksModal({
     };
 
     try {
-      await addDoc(collection(db, 'streaks'), streakData);
-      onSave(streakData);
+      const docId = await addStreak(streakData);
+      onSave({ ...streakData, id: docId });
       onClose();
       setTitle('');
       setDescription('');

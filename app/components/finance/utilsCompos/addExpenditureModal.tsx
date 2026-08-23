@@ -22,6 +22,7 @@ import {
   Fade,
   Avatar,
   Alert,
+  InputAdornment,
 } from '@mui/material';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -29,7 +30,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import CategoryIcon from '@mui/icons-material/Category';
 import TitleIcon from '@mui/icons-material/Title';
-import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import CloseIcon from '@mui/icons-material/Close';
 import { EXPENSE_CATEGORIES } from '@/app/lib/constant';
 import { Expenditure } from '@/app/lib/interface';
@@ -297,7 +297,11 @@ export default function AddExpenditureDialog({
             helperText={errors.amount}
             required
             InputProps={{
-              startAdornment: <AttachMoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary' }}>PKR</Typography>
+                </InputAdornment>
+              ),
             }}
           />
 

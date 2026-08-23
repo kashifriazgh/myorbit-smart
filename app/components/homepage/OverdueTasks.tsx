@@ -24,16 +24,9 @@ import {
   KeyboardArrowLeft,
   KeyboardArrowRight,
 } from '@mui/icons-material';
-import { useEffect, useState, useCallback } from 'react';
-import {
-  collection,
-  getDocs,
-  updateDoc,
-  doc,
-  Timestamp,
-} from 'firebase/firestore';
+import { useEffect, useState, useMemo } from 'react';
+import { Timestamp } from 'firebase/firestore';
 import moment from 'moment-timezone';
-import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { Todo } from '@/app/lib/interface';
@@ -42,6 +35,14 @@ import { deleteTodoReminder, rescheduleTodoReminder } from '@/app/lib/utils/what
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { incrementTodoRescheduleCount } from '@/app/lib/utilts';
+import { useTodoContext } from '@/app/lib/context/todoContext';
+
+// Converts a Firestore Timestamp or plain Date to a JS Date
+function toPlainDate(v: Date | { toDate: () => Date } | null | undefined): Date | null {
+  if (!v) return null;
+  if (typeof (v as { toDate?: unknown }).toDate === 'function') return (v as { toDate: () => Date }).toDate();
+  return v as Date;
+}
 
 export default function OverdueTasks() {
   const { user } = useAuth();
@@ -49,8 +50,9 @@ export default function OverdueTasks() {
   const theme = customTheme?.theme;
   const muiTheme = useMuiTheme();
 
-  const [tasks, setTasks] = useState<Todo[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ── Use TodoContext ────────────────────────────────────────────────────────
+  const { todos, loading, updateTodo } = useTodoContext();
+
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [fadeOutId, setFadeOutId] = useState<string | null>(null);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -59,70 +61,59 @@ export default function OverdueTasks() {
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
 
   const [activeStep, setActiveStep] = useState(0);
+
+  // Filter tasks from Context: overdue only
+  const tasks = useMemo(() => {
+    if (!user) return [];
+    const now = moment().tz('Asia/Karachi').startOf('day');
+
+    return todos
+      .filter((t) => {
+        if (!t.dueDate) return false;
+        const due = moment(t.dueDate).startOf('day');
+        return (
+          t.authorId === user.uid &&
+          t.status !== 'completed' &&
+          due.isBefore(now, 'day')
+        );
+      })
+      .sort((a, b) => {
+        const timeA = toPlainDate(a.dueDate)?.getTime() ?? 0;
+        const timeB = toPlainDate(b.dueDate)?.getTime() ?? 0;
+        return timeA - timeB;
+      })
+      .slice(0, 6);
+  }, [todos, user]);
+
   const maxSteps = Math.min(tasks.length, 6);
 
-  const fetchTasks = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const snap = await getDocs(collection(db, 'todos'));
-      const now = moment().tz('Asia/Karachi').startOf('day');
-
-      const filtered = snap.docs
-        .map((doc) => ({ ...doc.data(), id: doc.id }) as Todo)
-        .filter((t) => {
-          const due = moment(
-            (t.dueDate as Timestamp)?.toDate?.() || t.dueDate,
-          ).startOf('day');
-          return (
-            t.authorId === user.uid &&
-            t.status !== 'completed' &&
-            due.isBefore(now, 'day')
-          );
-        })
-        .sort(
-          (a, b) =>
-            moment(a.dueDate as Timestamp).valueOf() -
-            moment(b.dueDate as Timestamp).valueOf(),
-        )
-        .slice(0, 6);
-
-      setTasks(filtered);
-    } catch (err) {
-      console.error('❌ Failed to fetch overdue tasks:', err);
-    } finally {
-      setLoading(false);
+  // Keep activeStep in bounds when task length decreases
+  useEffect(() => {
+    if (activeStep >= tasks.length && tasks.length > 0) {
+      setActiveStep(tasks.length - 1);
     }
-  }, [user]);
+  }, [tasks.length, activeStep]);
 
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
-
     setCompletingId(task.id);
 
     try {
-      await updateDoc(doc(db, 'todos', task.id), {
+      // Use Context updateTodo: updates state + cache + firestore
+      await updateTodo(task.id, {
         status: 'completed',
         progressPercent: 100,
         completedAt: new Date(),
-        updatedAt: new Date(),
       });
 
       // Delete WhatsApp reminder if active
-      await deleteTodoReminder(task.id);
+      await deleteTodoReminder(task.id).catch((e) => console.error(e));
 
       // Trigger fade out animation
       setFadeOutId(task.id);
       setTimeout(() => {
-        setTasks((prev) => {
-          const updated = prev.filter((t) => t.id !== task.id);
-          if (activeStep >= updated.length) {
-            setActiveStep(Math.max(updated.length - 1, 0));
-          }
-          return updated;
-        });
         setFadeOutId(null);
-      }, 400); // fade duration in ms
+      }, 400);
     } catch (err) {
       console.error('❌ Error updating task:', err);
     } finally {
@@ -132,10 +123,7 @@ export default function OverdueTasks() {
 
   const handleReschedule = (task: Todo) => {
     setRescheduleTask(task);
-    const date =
-      task.dueDate instanceof Timestamp
-        ? task.dueDate.toDate()
-        : new Date(task.dueDate as Date);
+    const date = toPlainDate(task.dueDate) ?? new Date();
     setNewDueDate(date);
     setRescheduleOpen(true);
   };
@@ -144,38 +132,31 @@ export default function OverdueTasks() {
     if (!rescheduleTask || !rescheduleTask.id || !newDueDate) return;
     setReschedulingLoading(true);
     try {
-      const oldDate = rescheduleTask.dueDate
-        ? (rescheduleTask.dueDate instanceof Timestamp ? rescheduleTask.dueDate.toDate() : new Date(rescheduleTask.dueDate))
-        : null;
+      const oldDate = toPlainDate(rescheduleTask.dueDate);
       const isDateChanged = oldDate ? !moment(oldDate).isSame(newDueDate, 'day') : true;
 
-      await updateDoc(doc(db, 'todos', rescheduleTask.id), {
+      // Use Context updateTodo: updates state + cache + firestore
+      await updateTodo(rescheduleTask.id, {
         dueDate: Timestamp.fromDate(newDueDate),
-        updatedAt: new Date(),
       });
 
       if (isDateChanged) {
-        await incrementTodoRescheduleCount(rescheduleTask.id);
+        await incrementTodoRescheduleCount(rescheduleTask.id).catch((e) => console.error(e));
       }
 
       // Reschedule WhatsApp reminder if active
       if (user) {
-        await rescheduleTodoReminder(rescheduleTask.id, newDueDate, user.uid);
+        await rescheduleTodoReminder(rescheduleTask.id, newDueDate, user.uid).catch((e) => console.error(e));
       }
 
       setRescheduleOpen(false);
       setRescheduleTask(null);
-      await fetchTasks();
     } catch (err) {
       console.error('❌ Failed to reschedule:', err);
     } finally {
       setReschedulingLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
 
   const activeTask = tasks[activeStep];
 
@@ -289,7 +270,7 @@ export default function OverdueTasks() {
                     </Tooltip>
                   </Stack>
                 </Box>
-
+                
                 <Box className="flex flex-wrap gap-2 mt-1 text-xs">
                   <Chip
                     label={activeTask.status}
@@ -307,10 +288,7 @@ export default function OverdueTasks() {
                     }}
                   />
                   <Chip
-                    label={`Due: ${moment(
-                      (activeTask.dueDate as Timestamp)?.toDate?.() ||
-                        activeTask.dueDate,
-                    ).format('MMM D')}`}
+                    label={`Due: ${moment(activeTask.dueDate).format('MMM D')}`}
                     size="small"
                     variant="outlined"
                   />

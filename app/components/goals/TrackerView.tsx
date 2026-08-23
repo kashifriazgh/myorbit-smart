@@ -4,10 +4,10 @@ import React, { useState, useMemo } from 'react';
 import {
   Box, Typography, Button, IconButton, LinearProgress,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Chip, Tooltip,
+  TextField, Tooltip,
 } from '@mui/material';
 import {
-  Close, LocalFireDepartment, CheckCircle, RadioButtonUnchecked,
+  Close, CheckCircle, RadioButtonUnchecked,
   DeleteOutline,
 } from '@mui/icons-material';
 import { GoalTracker, TrackerCheckIn } from '../../lib/interface';
@@ -191,7 +191,7 @@ interface Props {
 }
 
 export default function TrackerView({
-  goalTitle,
+  goalTitle: _goalTitle,
   tracker,
   activityVerb,
   verb,
@@ -222,7 +222,7 @@ export default function TrackerView({
   const missedCount = pastCheckIns.length - doneCheckIns.length;
   const consistency = pastCheckIns.length > 0 ? Math.round((doneCheckIns.length / pastCheckIns.length) * 100) : 100;
   const remaining = totalCheckIns - doneCheckIns.length;
-  const streak = useMemo(() => calcStreak(checkIns), [checkIns]);
+  const _streak = useMemo(() => calcStreak(checkIns), [checkIns]);
 
   const actualTotal = hasUnit
     ? doneCheckIns.reduce((s, c) => s + (c.value ?? 0), 0)
@@ -267,10 +267,21 @@ export default function TrackerView({
     }
   }, [progressMode, direction, latestValue, totalTarget, actualTotal]);
 
-  // Next pending check-in (for check-in dialog)
-  const nextPending = useMemo(() => {
-    return checkIns.find(c => !c.completed && c.scheduledDate <= today) ?? null;
+  // Target check-in (past/today incomplete first, then upcoming future incomplete)
+  const targetCheckIn = useMemo(() => {
+    const pastOrToday = checkIns.find(c => !c.completed && c.scheduledDate <= today);
+    if (pastOrToday) return pastOrToday;
+    const future = checkIns.find(c => !c.completed);
+    return future ?? null;
   }, [checkIns]);
+
+  const nextIncomplete = useMemo(() => {
+    return checkIns.find(c => !c.completed) ?? null;
+  }, [checkIns]);
+
+  const isEarlyState = useMemo(() => {
+    return !!(targetCheckIn && targetCheckIn.scheduledDate > today);
+  }, [targetCheckIn]);
 
   const recentDone = useMemo(() =>
     [...doneCheckIns].sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')).slice(0, 5),
@@ -291,37 +302,47 @@ export default function TrackerView({
         background: cardBg, borderRadius: '16px',
         border: `1px solid ${borderColor}`, p: 2, mb: 1.5,
       }}>
-        <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={0.5}>
+        <Box display="flex" flexWrap="wrap" justifyContent="space-between" alignItems="center" gap={1.5} mb={0.5}>
           <Box>
-            <Typography sx={{ fontSize: 15, fontWeight: 700, color: textPrimary }}>{goalTitle}</Typography>
-            <Typography sx={{ fontSize: 12, color: textMuted }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: textPrimary }}>
               {activityVerb
                 ? `${activityVerb.charAt(0).toUpperCase() + activityVerb.slice(1)} (${freqLabel.toLowerCase()})`
                 : `${freqLabel} check-in`} · due {fmtDate(tracker.dueDate)}
             </Typography>
           </Box>
-          <Box display="flex" alignItems="center" gap={1}>
-            {streak > 0 && (
-              <Chip
-                icon={<LocalFireDepartment sx={{ fontSize: 14, color: '#f97316 !important' }} />}
-                label={`${streak} ${frequency === 'daily' ? 'day' : frequency === 'weekly' ? 'week' : 'period'} streak`}
-                size="small"
-                sx={{ background: '#fff7ed', color: '#f97316', fontWeight: 700, fontSize: 11, border: '1px solid #fed7aa' }}
-              />
+          <Box display="flex" flexWrap="wrap" alignItems="center" gap={1}>
+            {nextIncomplete && (
+              <Typography sx={{ fontSize: 12, fontWeight: 750, color: textMuted, mr: 1 }}>
+                Next check-in date is {fmtDate(nextIncomplete.scheduledDate)}
+              </Typography>
             )}
             <Button
               variant="contained"
               size="small"
               onClick={() => setCheckInOpen(true)}
-              disabled={!nextPending}
+              disabled={isEarlyState || !targetCheckIn}
               sx={{
                 textTransform: 'none', fontWeight: 700, fontSize: 12, borderRadius: '10px',
                 background: typeColor, color: '#fff', whiteSpace: 'nowrap',
                 '&:hover': { background: typeColor, opacity: 0.88 },
               }}
             >
-              {nextPending ? (nextPending.scheduledDate === today ? 'Check in today' : 'Log overdue') : 'Up to date'}
+              {!targetCheckIn ? 'Completed' : 'Track progress'}
             </Button>
+            {isEarlyState && targetCheckIn && (
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setCheckInOpen(true)}
+                sx={{
+                  textTransform: 'none', fontWeight: 700, fontSize: 12, borderRadius: '10px',
+                  borderColor: typeColor, color: typeColor, whiteSpace: 'nowrap',
+                  '&:hover': { background: `${typeColor}08`, borderColor: typeColor },
+                }}
+              >
+                Make an early check-in
+              </Button>
+            )}
             <Tooltip title="Remove tracker">
               <IconButton size="small" onClick={() => setConfirmRemove(true)} sx={{ color: textMuted }}>
                 <DeleteOutline fontSize="small" />
@@ -441,11 +462,11 @@ export default function TrackerView({
       )}
 
       {/* ── Check-in dialog ── */}
-      {nextPending && (
+      {targetCheckIn && (
         <CheckInDialog
           open={checkInOpen}
           onClose={() => setCheckInOpen(false)}
-          checkIn={nextPending}
+          checkIn={targetCheckIn}
           tracker={tracker}
           verb={verb}
           activityVerb={activityVerb}

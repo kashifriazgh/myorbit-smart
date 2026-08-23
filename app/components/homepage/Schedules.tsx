@@ -1,7 +1,7 @@
 'use client';
 
 import moment from 'moment';
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -18,7 +18,6 @@ import {
   Snackbar,
   Badge,
   styled,
-  
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -32,15 +31,8 @@ import {
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { SchedulesProps } from '../../lib/interface';
-import {
-  getSchedulesByUserAndDate,
-  createSchedule,
-  updateSchedule,
-  deleteSchedule,
-  getSchedulesByUserAndDateRange,
-  getAllSchedulesByUser,
-} from '../../lib/functions/schedules';
 import SchedulesModal from './SchedulesModal';
+import { useSchedules } from '../../lib/context/SchedulesContext';
 
 // Custom Styled Badge
 const StyledBadge = styled(Badge)(({ theme }) => ({
@@ -101,17 +93,11 @@ const QuickAddScheduleRow = ({ isDark, onAdd }: QuickAddScheduleRowProps) => {
   const [active, setActive] = useState(false);
   const [title, setTitle] = useState('');
   const [startTime, setStartTime] = useState(() => {
-    // Default to next rounded hour
     const now = new Date();
     now.setMinutes(0, 0, 0);
     now.setHours(now.getHours() + 1);
     return now.toTimeString().slice(0, 5);
   });
-  const titleRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (active) setTimeout(() => titleRef.current?.focus(), 50);
-  }, [active]);
 
   const commit = async () => {
     if (title.trim()) {
@@ -153,7 +139,6 @@ const QuickAddScheduleRow = ({ isDark, onAdd }: QuickAddScheduleRowProps) => {
         isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
       }`}
     >
-      {/* Time input */}
       <input
         type="time"
         value={startTime}
@@ -164,9 +149,8 @@ const QuickAddScheduleRow = ({ isDark, onAdd }: QuickAddScheduleRowProps) => {
         style={{ colorScheme: isDark ? 'dark' : 'light' }}
       />
 
-      {/* Title input */}
       <input
-        ref={titleRef}
+        autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => {
@@ -198,9 +182,20 @@ const QuickAddScheduleRow = ({ isDark, onAdd }: QuickAddScheduleRowProps) => {
 const Schedules: React.FC = () => {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
-  const [selectedDate, setSelectedDate] = useState<string>('');
   const [viewMode, setViewMode] = useState<'quick' | 'daily' | 'future'>('quick');
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // Use new context provider
+  const {
+    schedules,
+    allSchedules,
+    loading,
+    selectedDate,
+    setSelectedDate,
+    addSchedule,
+    editSchedule,
+    removeSchedule,
+  } = useSchedules();
 
   // Load view mode from localStorage on mount
   useEffect(() => {
@@ -218,9 +213,6 @@ const Schedules: React.FC = () => {
     }
   }, [viewMode, isLoaded]);
 
-  const [schedules, setSchedules] = useState<SchedulesProps[]>([]);
-  const [counts, setCounts] = useState<{ [date: string]: number }>({});
-  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<SchedulesProps | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -249,90 +241,32 @@ const Schedules: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (dates.length > 0) setSelectedDate(dates[0].fullDate);
-  }, [dates]);
+    if (dates.length > 0 && !selectedDate) setSelectedDate(dates[0].fullDate);
+  }, [dates, selectedDate, setSelectedDate]);
 
-  const fetchCounts = useCallback(async () => {
-    if (user) {
-      try {
-        const start = dates[0].fullDate;
-        const end = new Date();
-        end.setDate(end.getDate() + 30);
-        const range = await getSchedulesByUserAndDateRange(
-          user.uid,
-          start,
-          end.toISOString().split('T')[0]
-        );
-        const countsMap: { [date: string]: number } = {};
-        const todayStr = new Date().toISOString().split('T')[0];
-        range.forEach(s => {
-          if (s.isFlexible) {
-            countsMap[todayStr] = (countsMap[todayStr] || 0) + 1;
-          } else {
-            countsMap[s.date] = (countsMap[s.date] || 0) + 1;
-          }
-        });
-        setCounts(countsMap);
-      } catch (error) {
-        console.error('Error fetching counts:', error);
-      }
-    }
-  }, [user, dates]);
+  // Compute counts locally from context's cached allSchedules list
+  const counts = useMemo(() => {
+    const countsMap: { [date: string]: number } = {};
+    const todayStr = new Date().toISOString().split('T')[0];
 
-  const fetchSchedules = useCallback(async () => {
-    if (selectedDate && user && (viewMode === 'daily' || viewMode === 'quick')) {
-      setLoading(true);
-      try {
-        const fetchedSchedules = await getSchedulesByUserAndDate(user.uid, selectedDate);
-        const todayStr = new Date().toISOString().split('T')[0];
-        const finalSchedules = fetchedSchedules;
-        if (selectedDate === todayStr) {
-          const all = await getAllSchedulesByUser(user.uid, 500);
-          const flexible = all.filter(s => s.isFlexible);
-          const existingIds = new Set(finalSchedules.map(s => s.id));
-          flexible.forEach(s => { if (!existingIds.has(s.id)) finalSchedules.push(s); });
-        }
-        setSchedules(finalSchedules.sort((a, b) => a.startTime.localeCompare(b.startTime)));
-      } catch (error) {
-        console.error('Error fetching schedules:', error);
-        setSnackbar({ open: true, message: 'Failed to load schedules', severity: 'error' });
-      } finally {
-        setLoading(false);
-      }
-    } else if (user && viewMode === 'future') {
-      setLoading(true);
-      try {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const end = new Date();
-        end.setDate(end.getDate() + 90);
-        const fetched = await getSchedulesByUserAndDateRange(
-          user.uid,
-          todayStr,
-          end.toISOString().split('T')[0]
-        );
-        setSchedules(fetched);
-      } catch {
-        setSnackbar({ open: true, message: 'Failed to load future schedules', severity: 'error' });
-      } finally {
-        setLoading(false);
-      }
-    }
-  }, [selectedDate, user, viewMode]);
+    allSchedules.forEach((s) => {
+      const effectiveDate = s.isFlexible ? todayStr : s.date;
+      countsMap[effectiveDate] = (countsMap[effectiveDate] || 0) + 1;
+    });
 
-  useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
-  useEffect(() => { fetchCounts(); }, [fetchCounts]);
+    return countsMap;
+  }, [allSchedules]);
 
-  useEffect(() => {
-    const handleScheduleCreated = (event: CustomEvent) => {
-      const createdDate = event.detail?.date;
-      if (user) {
-        fetchCounts();
-        if (createdDate === selectedDate || viewMode === 'future') fetchSchedules();
-      }
-    };
-    window.addEventListener('scheduleCreated', handleScheduleCreated as EventListener);
-    return () => window.removeEventListener('scheduleCreated', handleScheduleCreated as EventListener);
-  }, [selectedDate, user, viewMode, fetchSchedules, fetchCounts]);
+  // Derive future schedules list locally
+  const futureSchedules = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return allSchedules
+      .filter((s) => {
+        if (s.isFlexible) return false;
+        return s.date >= todayStr;
+      })
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+  }, [allSchedules]);
 
   const formatTime = (time: string) => {
     const [hours, minutes] = time.split(':');
@@ -350,7 +284,7 @@ const Schedules: React.FC = () => {
   const handleAddSchedule = () => { setEditingSchedule(null); setModalOpen(true); };
 
   const handleEditSchedule = (scheduleId: string) => {
-    const schedule = schedules.find(s => s.id === scheduleId);
+    const schedule = allSchedules.find(s => s.id === scheduleId);
     if (schedule) { setEditingSchedule(schedule); setModalOpen(true); }
   };
 
@@ -359,15 +293,12 @@ const Schedules: React.FC = () => {
     try {
       if (!scheduleData.title || !scheduleData.startTime) throw new Error('Title and start time are required');
       if (scheduleData.id) {
-        await updateSchedule(scheduleData.id, scheduleData);
+        await editSchedule(scheduleData.id, scheduleData);
         setSnackbar({ open: true, message: 'Schedule updated successfully', severity: 'success' });
       } else {
-        const { ...scheduleToCreate } = scheduleData;
-        await createSchedule(scheduleToCreate);
+        await addSchedule(scheduleData);
         setSnackbar({ open: true, message: 'Schedule created successfully', severity: 'success' });
       }
-      fetchCounts();
-      fetchSchedules();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save schedule';
       setSnackbar({ open: true, message: errorMessage, severity: 'error' });
@@ -379,10 +310,8 @@ const Schedules: React.FC = () => {
   const handleDeleteSchedule = async (scheduleId: string) => {
     setIsSaving(true);
     try {
-      await deleteSchedule(scheduleId);
+      await removeSchedule(scheduleId);
       setSnackbar({ open: true, message: 'Schedule deleted successfully', severity: 'success' });
-      fetchCounts();
-      fetchSchedules();
     } catch {
       setSnackbar({ open: true, message: 'Failed to delete schedule', severity: 'error' });
     } finally {
@@ -409,13 +338,12 @@ const Schedules: React.FC = () => {
     return now > scheduleDateTime;
   };
 
-  // Quick add handler
   const handleQuickAdd = async (title: string, startTime: string) => {
     if (!user) return;
     const endHour = (parseInt(startTime.split(':')[0]) + 1) % 24;
     const endTime = `${String(endHour).padStart(2, '0')}:${startTime.split(':')[1]}`;
     try {
-      await createSchedule({
+      await addSchedule({
         userId: user.uid,
         title,
         date: selectedDate,
@@ -424,28 +352,21 @@ const Schedules: React.FC = () => {
         status: 'pending',
         isFlexible: false,
       });
-      await fetchSchedules();
-      await fetchCounts();
     } catch (err) {
       console.error('Failed to quick-add schedule:', err);
     }
   };
 
-  // Toggle schedule status (quick view)
   const handleToggleStatus = async (schedule: SchedulesProps) => {
     if (!schedule.id) return;
     const newStatus = schedule.status === 'completed' ? 'pending' : 'completed';
     try {
-      await updateSchedule(schedule.id, { status: newStatus });
-      setSchedules(prev =>
-        prev.map(s => s.id === schedule.id ? { ...s, status: newStatus } : s)
-      );
+      await editSchedule(schedule.id, { status: newStatus });
     } catch (err) {
       console.error('Failed to toggle status:', err);
     }
   };
 
-  // Date tab strip (shared across quick + daily)
   const DateTabStrip = () => (
     <Box display="flex" justifyContent="center" mb={2}>
       <Box display="flex" alignItems="center" gap={1}>
@@ -511,14 +432,12 @@ const Schedules: React.FC = () => {
       }}
     >
       <CardContent sx={{ p: 2 }}>
-        {/* Title row */}
         <Box mb={1.5}>
           <Typography variant="subtitle1" fontWeight={700} sx={{ color: isDark ? '#f1f5f9' : '#0f172a' }}>
             📅 Schedules
           </Typography>
         </Box>
 
-        {/* Controls row: tab switcher left, Add button right */}
         <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
           <Box
             sx={{
@@ -567,19 +486,16 @@ const Schedules: React.FC = () => {
           </IconButton>
         </Box>
 
-        {/* ── QUICK VIEW ── */}
         {viewMode === 'quick' && (
           <>
             <DateTabStrip />
 
-            {/* Quick add row */}
             <QuickAddScheduleRow
               selectedDate={selectedDate}
               isDark={isDark}
               onAdd={handleQuickAdd}
             />
 
-            {/* Compact schedule list */}
             {loading ? (
               <Box>
                 {[...Array(3)].map((_, i) => (
@@ -621,7 +537,6 @@ const Schedules: React.FC = () => {
                         '&:hover': { opacity: 1, bgcolor: isDark ? '#1e293b' : '#fef3c7' },
                       }}
                     >
-                      {/* Status toggle */}
                       <Box
                         onClick={() => handleToggleStatus(schedule)}
                         sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
@@ -632,7 +547,6 @@ const Schedules: React.FC = () => {
                         }
                       </Box>
 
-                      {/* Time badge */}
                       {!schedule.isFlexible && (
                         <Typography
                           variant="caption"
@@ -653,7 +567,6 @@ const Schedules: React.FC = () => {
                         </Typography>
                       )}
 
-                      {/* Title */}
                       <Typography
                         variant="body2"
                         noWrap
@@ -670,7 +583,6 @@ const Schedules: React.FC = () => {
                         {schedule.title}
                       </Typography>
 
-                      {/* Edit */}
                       <IconButton
                         size="small"
                         onClick={() => handleEditSchedule(schedule.id!)}
@@ -684,7 +596,6 @@ const Schedules: React.FC = () => {
               </Box>
             )}
 
-            {/* Footer */}
             <Box mt={2} display="flex" justifyContent="flex-end">
               <Button
                 variant="text"
@@ -698,7 +609,6 @@ const Schedules: React.FC = () => {
           </>
         )}
 
-        {/* ── DAILY VIEW ── */}
         {viewMode === 'daily' && (
           <>
             <DateTabStrip />
@@ -771,7 +681,6 @@ const Schedules: React.FC = () => {
           </>
         )}
 
-        {/* ── FUTURE VIEW ── */}
         {viewMode === 'future' && (
           <>
             <Box sx={{ maxHeight: '420px', overflowY: 'auto', pr: 1 }}>
@@ -783,7 +692,7 @@ const Schedules: React.FC = () => {
                     </Box>
                   ))}
                 </Box>
-              ) : schedules.length === 0 ? (
+              ) : futureSchedules.length === 0 ? (
                 <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={4} textAlign="center">
                   <TimeIcon sx={{ fontSize: 48, color: 'grey.400', mb: 1 }} />
                   <Typography variant="body2" color="text.secondary">No future schedules found</Typography>
@@ -791,7 +700,7 @@ const Schedules: React.FC = () => {
                 </Box>
               ) : (
                 <ScheduleDetailList
-                  schedules={schedules}
+                  schedules={futureSchedules}
                   viewMode="future"
                   theme={theme}
                   isTimePassed={isTimePassed}

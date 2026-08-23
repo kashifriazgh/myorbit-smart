@@ -15,6 +15,7 @@ import {
   IconButton,
   Fade,
   CircularProgress,
+  InputAdornment,
 } from '@mui/material';
 import { useState, useEffect } from 'react';
 import {
@@ -24,16 +25,14 @@ import {
   CustomPaymentHead,
 } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
-import { collection, getDocs, query, where, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
 import CloseIcon from '@mui/icons-material/Close';
 import DeductIcon from '@mui/icons-material/RemoveCircle';
 import BankIcon from '@mui/icons-material/AccountBalance';
 import WalletIcon from '@mui/icons-material/Wallet';
-import PaymentsIcon from '@mui/icons-material/Payments';
-import MoneyIcon from '@mui/icons-material/AttachMoney';
 import BalanceIcon from '@mui/icons-material/AccountBalanceWallet';
-import LayersIcon from '@mui/icons-material/Layers';
+import NoteIcon from '@mui/icons-material/Description';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';
 import { getSourceKey } from '../TotalCashSnapshot';
@@ -56,110 +55,73 @@ interface Props {
   onExternalClose?: () => void;
 }
 
+const SOURCE_ICONS: Record<string, string> = {
+  in_hand: '💵',
+  bank: '🏦',
+  easypaisa: '📱',
+  jazzcash: '📱',
+  other: '💼',
+  custom: '🗂️',
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  in_hand: 'Cash in Hand',
+  bank: 'Bank Account',
+  easypaisa: 'EasyPaisa',
+  jazzcash: 'JazzCash',
+  other: 'Other',
+  custom: 'Custom Wallet',
+};
+
+const SOURCE_OPTIONS: TransactionSource[] = ['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other', 'custom'];
+
 export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, onExternalClose }: Props) {
   const { user } = useAuth();
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
+
   const [showModal, setShowModal] = useState(false);
   const [amount, setAmount] = useState<number | ''>('');
   const [source, setSource] = useState<TransactionSource>('in_hand');
   const [selectedBank, setSelectedBank] = useState('');
-  const [fromFreeze, setFromFreeze] = useState(false);
   const [note, setNote] = useState('');
+  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
+
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
+  const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] = useState('');
 
   // Sync with external open state from FAB
   useEffect(() => {
     if (externalOpen !== undefined) setShowModal(externalOpen);
   }, [externalOpen]);
 
-  const [selectedHolder, setSelectedHolder] = useState('Unassigned');
-
-  const [banks, setBanks] = useState<Bank[]>([]);
-  const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
-  const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] = useState('');
-  
-  const [newBankName, setNewBankName] = useState('');
-  const [newCustomPaymentHeadName, setNewCustomPaymentHeadName] = useState('');
-  const [addingSource, setAddingSource] = useState(false);
-
-  // 🔹 Fetch banks for current user
+  // Fetch banks
   useEffect(() => {
     if (!user) return;
     const fetchBanks = async () => {
       const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
-      const fetched: Bank[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<Bank, 'id'>),
-      }));
-      setBanks(fetched);
+      setBanks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Bank, 'id'>) })));
     };
     fetchBanks();
   }, [user]);
 
-  // 🔹 Fetch custom payment heads for current user
+  // Fetch custom heads
   useEffect(() => {
     if (!user) return;
-    const fetchCustomPaymentHeads = async () => {
+    const fetchCustom = async () => {
       const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
-      const fetched: CustomPaymentHead[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<CustomPaymentHead, 'id'>),
-      }));
-      setCustomPaymentHeads(fetched);
+      setCustomPaymentHeads(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomPaymentHead, 'id'>) })));
     };
-    fetchCustomPaymentHeads();
+    fetchCustom();
   }, [user]);
 
-  // Reset selected holder when source/bank/custom changes
+  // Reset selected holder when source changes
   useEffect(() => {
     setSelectedHolder('Unassigned');
   }, [source, selectedBank, selectedCustomPaymentHead]);
-
-  const handleAddBank = async () => {
-    if (!user || !newBankName.trim()) return;
-    setAddingSource(true);
-    try {
-      const docRef = await addDoc(collection(db, 'banks'), {
-        userId: user.uid,
-        name: newBankName.trim(),
-        createdAt: Timestamp.now(),
-      });
-      const newBank: Bank = {
-        id: docRef.id,
-        userId: user.uid,
-        name: newBankName.trim(),
-        createdAt: Timestamp.now(),
-      };
-      setBanks((prev) => [...prev, newBank]);
-      setSelectedBank(newBank.id!);
-      setNewBankName('');
-    } finally {
-      setAddingSource(false);
-    }
-  };
-
-  const handleAddCustomPaymentHead = async () => {
-    if (!user || !newCustomPaymentHeadName.trim()) return;
-    setAddingSource(true);
-    try {
-      const docRef = await addDoc(collection(db, 'customPaymentHeads'), {
-        userId: user.uid,
-        name: newCustomPaymentHeadName.trim(),
-        createdAt: Timestamp.now(),
-      });
-      const newCustomPaymentHead: CustomPaymentHead = {
-        id: docRef.id,
-        userId: user.uid,
-        name: newCustomPaymentHeadName.trim(),
-        createdAt: Timestamp.now(),
-      };
-      setCustomPaymentHeads((prev) => [...prev, newCustomPaymentHead]);
-      setSelectedCustomPaymentHead(newCustomPaymentHead.id!);
-      setNewCustomPaymentHeadName('');
-    } finally {
-      setAddingSource(false);
-    }
-  };
 
   const handleSaveClick = async () => {
     if (!amount || amount <= 0) return;
@@ -174,7 +136,6 @@ export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, 
       bankName = banks.find((b) => b.id === selectedBank)?.name;
       if (!bankId || !bankName) return;
     }
-
     if (source === 'custom') {
       customPaymentHeadId = selectedCustomPaymentHead;
       customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
@@ -183,17 +144,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, 
 
     const holderToSave = selectedHolder === 'Unassigned' ? undefined : selectedHolder;
 
-    await onDeduct(
-      Number(amount),
-      source,
-      bankId,
-      bankName,
-      fromFreeze,
-      customPaymentHeadId,
-      customPaymentHeadName,
-      note,
-      holderToSave
-    );
+    await onDeduct(Number(amount), source, bankId, bankName, false, customPaymentHeadId, customPaymentHeadName, note, holderToSave);
 
     setShowModal(false);
     onExternalClose?.();
@@ -201,49 +152,30 @@ export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, 
     setSource('in_hand');
     setSelectedBank('');
     setSelectedCustomPaymentHead('');
-    setFromFreeze(false);
     setSelectedHolder('Unassigned');
     setNote('');
   };
 
-  // 🔹 Compute current balance for validation & display
-  let balance = 0;
-  if (fromFreeze) {
-    balance = snapshot.freezeAmount ?? 0;
-  } else if (source === 'bank' && selectedBank) {
-    const selectedBankName = banks.find((b) => b.id === selectedBank)?.name;
-    balance = selectedBankName
-      ? snapshot.sources.bank?.[selectedBankName] ?? 0
-      : 0; // key by bank name in snapshot
-  } else if (source === 'custom' && selectedCustomPaymentHead) {
-    const selectedCustomPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
-    balance = selectedCustomPaymentHeadName
-      ? snapshot.sources.custom?.[selectedCustomPaymentHeadName] ?? 0
-      : 0; // key by custom payment head name in snapshot
-  } else if (source !== 'bank' && source !== 'custom') {
-    balance = (snapshot.sources[source] as number) ?? 0;
-  }
-
+  // Balance computation
   const bankName = banks.find((b) => b.id === selectedBank)?.name;
   const customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
   const sourceKey = getSourceKey(source, bankName, customPaymentHeadName);
   const existingHolders = snapshot.heldBy?.[sourceKey] || [];
-  const hasHolders = existingHolders.length > 0;
 
-  // Compute active balance for validation & display
-  let activeBalance = balance;
-  if (!fromFreeze && hasHolders) {
-    const holdersSum = existingHolders.reduce((s, h) => s + h.amount, 0);
-    const unassignedAmt = balance - holdersSum;
-    if (selectedHolder === 'Unassigned') {
-      activeBalance = unassignedAmt;
-    } else {
-      activeBalance = existingHolders.find((h) => h.holderName === selectedHolder)?.amount ?? 0;
-    }
+  let balance = 0;
+  if (source === 'bank' && bankName) {
+    balance = snapshot.sources.bank?.[bankName] ?? 0;
+  } else if (source === 'custom' && customPaymentHeadName) {
+    balance = snapshot.sources.custom?.[customPaymentHeadName] ?? 0;
+  } else if (source !== 'bank' && source !== 'custom') {
+    balance = (snapshot.sources[source] as number) ?? 0;
   }
 
-  const { theme } = useCustomTheme();
-  const isDark = theme?.mode === 'dark';
+  const holdersSum = existingHolders.reduce((s, h) => s + h.amount, 0);
+  let activeBalance = balance;
+  if (existingHolders.length > 0) {
+    activeBalance = selectedHolder === 'Unassigned' ? balance - holdersSum : (existingHolders.find((h) => h.holderName === selectedHolder)?.amount ?? 0);
+  }
 
   const handleClose = () => {
     if (saving) return;
@@ -251,296 +183,166 @@ export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, 
     onExternalClose?.();
   };
 
+  const isInsufficient = amount !== '' && Number(amount) > activeBalance;
+
   return (
     <>
-      <Dialog 
-        open={showModal} 
+      <Dialog
+        open={showModal}
         onClose={handleClose}
-        fullWidth
-        maxWidth="xs"
+        fullWidth maxWidth="xs"
         TransitionComponent={Fade}
-        PaperProps={{
-          sx: {
-            borderRadius: 4,
-            overflow: 'hidden',
-            backgroundColor: isDark ? '#0f172a' : '#ffffff',
-          }
-        }}
+        PaperProps={{ sx: { borderRadius: 4, overflow: 'hidden', backgroundColor: isDark ? '#0f172a' : '#ffffff' } }}
       >
-        <Box sx={{ 
-          background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
-          p: 3,
-          color: 'white',
-          position: 'relative'
-        }}>
+        {/* Header */}
+        <Box sx={{ background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', p: 2.5, color: 'white', position: 'relative' }}>
           <Stack direction="row" alignItems="center" spacing={1.5}>
-            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}>
-              <DeductIcon />
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', width: 36, height: 36 }}>
+              <DeductIcon fontSize="small" />
             </Avatar>
             <Box>
-              <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.2 }}>
-                Deduct Funds
-              </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 600 }}>
-                Withdraw or spend from your balance
-              </Typography>
+              <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.2 }}>Deduct Funds</Typography>
+              <Typography variant="caption" sx={{ opacity: 0.85, fontWeight: 600 }}>Withdraw or spend from your balance</Typography>
             </Box>
           </Stack>
-          <IconButton 
-            onClick={handleClose}
-            sx={{ 
-              position: 'absolute', 
-              right: 12, 
-              top: 12, 
-              color: 'white',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
-            }}
-          >
+          <IconButton onClick={handleClose} size="small"
+            sx={{ position: 'absolute', right: 12, top: 12, color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}>
             <CloseIcon fontSize="small" />
           </IconButton>
         </Box>
 
-        <DialogContent sx={{ px: 3, py: 3 }}>
-          <Stack spacing={2.5}>
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
+          <Stack spacing={2}>
+
+            {/* Amount */}
             <TextField
-              fullWidth
-              label="Amount"
-              type="number"
+              fullWidth size="small" label="Amount" type="number"
               value={amount}
-              onChange={(e) =>
-                setAmount(e.target.value === '' ? '' : Number(e.target.value))
-              }
+              onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
               InputProps={{
-                startAdornment: <MoneyIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary' }}>PKR</Typography>
+                  </InputAdornment>
+                ),
               }}
               placeholder="0.00"
-              error={amount !== '' && Number(amount) > activeBalance}
-              helperText={amount !== '' && Number(amount) > activeBalance ? "Insufficient funds" : ""}
+              error={isInsufficient}
+              helperText={isInsufficient ? 'Insufficient funds' : ''}
+              autoFocus
             />
 
-            <FormControl fullWidth>
-              <InputLabel>Fund Type</InputLabel>
-              <Select
-                value={fromFreeze ? 'freeze' : 'normal'}
-                onChange={(e) => setFromFreeze(e.target.value === 'freeze')}
-                label="Fund Type"
-                startAdornment={<LayersIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
-              >
-                <MenuItem value="normal">Normal Balance</MenuItem>
-                <MenuItem value="freeze">Freezed Balance</MenuItem>
-              </Select>
-            </FormControl>
-
-            {!fromFreeze && (
-              <>
-                <FormControl fullWidth>
-                  <InputLabel>Source</InputLabel>
-                  <Select
-                    value={source}
-                    onChange={(e) =>
-                      setSource(e.target.value as TransactionSource)
-                    }
-                    label="Source"
-                    startAdornment={<PaymentsIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
+            {/* Source — icon cards */}
+            <Box>
+              <Typography variant="caption" fontWeight={800} color="text.secondary"
+                sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Deduct from which account?
+              </Typography>
+              <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
+                {SOURCE_OPTIONS.map((opt) => (
+                  <Box
+                    key={opt}
+                    onClick={() => { setSource(opt); setSelectedBank(''); setSelectedCustomPaymentHead(''); }}
+                    sx={{
+                      flex: '1 1 28%', p: 1.2, borderRadius: 2, cursor: 'pointer', textAlign: 'center',
+                      border: `2px solid ${source === opt ? '#ef4444' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')}`,
+                      bgcolor: source === opt ? (isDark ? 'rgba(239,68,68,0.12)' : '#fef2f2') : 'transparent',
+                      transition: 'all 0.15s ease',
+                      '&:hover': { border: '2px solid #ef4444', bgcolor: isDark ? 'rgba(239,68,68,0.08)' : '#fef2f2' },
+                    }}
                   >
-                    <MenuItem value="in_hand">In Hand</MenuItem>
-                    <MenuItem value="bank">Bank</MenuItem>
-                    <MenuItem value="easypaisa">Easypaisa</MenuItem>
-                    <MenuItem value="jazzcash">JazzCash</MenuItem>
-                    <MenuItem value="other">Other</MenuItem>
-                    <MenuItem value="custom">Custom Payment Head</MenuItem>
-                  </Select>
-                </FormControl>
+                    <Typography fontSize="1.2rem">{SOURCE_ICONS[opt]}</Typography>
+                    <Typography variant="caption" fontWeight={700} display="block" sx={{ fontSize: '0.68rem', lineHeight: 1.3 }}>
+                      {SOURCE_LABELS[opt]}
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
 
-                {source === 'bank' && (
-                  <Stack spacing={2}>
-                    <FormControl fullWidth>
-                      <InputLabel>Select Bank</InputLabel>
-                      <Select
-                        value={selectedBank}
-                        onChange={(e) => setSelectedBank(e.target.value)}
-                        label="Select Bank"
-                        startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
-                      >
-                        <MenuItem value=""><em>-- Add New Bank --</em></MenuItem>
-                        {banks.map((bank) => (
-                          <MenuItem key={bank.id} value={bank.id}>
-                            {bank.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-
-                    {!selectedBank && (
-                      <Box sx={{ 
-                        p: 2, 
-                        borderRadius: 2, 
-                        bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#fff5f5',
-                        border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#feb2b2'}`
-                      }}>
-                        <Typography variant="caption" fontWeight="700" color="#b91c1c" sx={{ mb: 1, display: 'block' }}>
-                          NEW BANK ACCOUNT
-                        </Typography>
-                        <Stack direction="row" spacing={1}>
-                          <TextField
-                            fullWidth
-                            size="small"
-                            label="Bank Name"
-                            value={newBankName}
-                            onChange={(e) => setNewBankName(e.target.value)}
-                          />
-                          <Button
-                            variant="contained"
-                            color="error"
-                            size="small"
-                            onClick={handleAddBank}
-                            disabled={!newBankName.trim() || addingSource}
-                            sx={{ whiteSpace: 'nowrap', borderRadius: 1.5 }}
-                          >
-                            Add
-                          </Button>
-                        </Stack>
-                      </Box>
-                    )}
-                  </Stack>
-                )}
-
-                {source === 'custom' && (
-                  <Stack spacing={2}>
-                    <FormControl fullWidth>
-                      <InputLabel>Select Payment Head</InputLabel>
-                      <Select
-                        value={selectedCustomPaymentHead}
-                        onChange={(e) => setSelectedCustomPaymentHead(e.target.value)}
-                        label="Select Payment Head"
-                        startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} />}
-                      >
-                        <MenuItem value=""><em>-- Add New Head --</em></MenuItem>
-                        {customPaymentHeads.map((head) => (
-                          <MenuItem key={head.id} value={head.id}>
-                            {head.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-
-                    {!selectedCustomPaymentHead && (
-                      <Box sx={{ 
-                        p: 2, 
-                        borderRadius: 2, 
-                        bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#fff5f5',
-                        border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#feb2b2'}`
-                      }}>
-                        <Typography variant="caption" fontWeight="700" color="#b91c1c" sx={{ mb: 1, display: 'block' }}>
-                          NEW PAYMENT HEAD
-                        </Typography>
-                        <Stack direction="row" spacing={1}>
-                          <TextField
-                            fullWidth
-                            size="small"
-                            label="Head Name"
-                            value={newCustomPaymentHeadName}
-                            onChange={(e) => setNewCustomPaymentHeadName(e.target.value)}
-                          />
-                          <Button
-                            variant="contained"
-                            color="error"
-                            size="small"
-                            onClick={handleAddCustomPaymentHead}
-                            disabled={!newCustomPaymentHeadName.trim() || addingSource}
-                            sx={{ whiteSpace: 'nowrap', borderRadius: 1.5 }}
-                          >
-                            Add
-                          </Button>
-                        </Stack>
-                      </Box>
-                    )}
-                  </Stack>
-                )}
-
-                {/* Holder Selection dropdown if holders exist */}
-                {hasHolders && (
-                  <FormControl fullWidth>
-                    <InputLabel>Select Holder</InputLabel>
-                    <Select
-                      value={selectedHolder}
-                      onChange={(e) => setSelectedHolder(e.target.value)}
-                      label="Select Holder"
-                    >
-                      <MenuItem value="Unassigned">
-                        Unassigned / Self ({formatCurrency(balance - existingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})
-                      </MenuItem>
-                      {existingHolders.map((h) => (
-                        <MenuItem key={h.holderName} value={h.holderName}>
-                          {h.holderName} ({formatCurrency(h.amount, 'PKR')})
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
-              </>
+            {/* Bank selector (no create option) */}
+            {source === 'bank' && (
+              <FormControl fullWidth size="small">
+                <InputLabel>Select Bank</InputLabel>
+                <Select value={selectedBank} onChange={(e) => setSelectedBank(e.target.value)} label="Select Bank"
+                  startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
+                  <MenuItem value=""><em>— Choose a bank —</em></MenuItem>
+                  {banks.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
+                </Select>
+              </FormControl>
             )}
 
-            <Box 
-              sx={{ 
-                p: 1.5, 
-                borderRadius: 2, 
-                bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#f8fafc',
-                border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.05)' : '#e2e8f0'}`,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5
-              }}
-            >
+            {/* Custom wallet selector (no create option) */}
+            {source === 'custom' && (
+              <FormControl fullWidth size="small">
+                <InputLabel>Select Custom Wallet</InputLabel>
+                <Select value={selectedCustomPaymentHead} onChange={(e) => setSelectedCustomPaymentHead(e.target.value)} label="Select Custom Wallet"
+                  startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
+                  <MenuItem value=""><em>— Choose a wallet —</em></MenuItem>
+                  {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+            )}
+
+            {/* Holder selector (if holders exist) */}
+            {existingHolders.length > 0 && (
+              <FormControl fullWidth size="small">
+                <InputLabel>Deduct from person (optional)</InputLabel>
+                <Select value={selectedHolder} onChange={(e) => setSelectedHolder(e.target.value)} label="Deduct from person (optional)">
+                  <MenuItem value="Unassigned">
+                    General / Self ({formatCurrency(balance - holdersSum, 'PKR')})
+                  </MenuItem>
+                  {existingHolders.map((h) => (
+                    <MenuItem key={h.holderName} value={h.holderName}>
+                      {h.holderName} ({formatCurrency(h.amount, 'PKR')})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {/* Balance chip */}
+            <Box sx={{
+              p: 1.5, borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1.5,
+              bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc',
+              border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}`,
+            }}>
               <BalanceIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
               <Box>
-                <Typography variant="caption" color="text.secondary" fontWeight="700">
-                  {selectedHolder === 'Unassigned' ? 'UNASSIGNED BALANCE' : `${selectedHolder.toUpperCase()}'S BALANCE`}
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                  {selectedHolder === 'Unassigned' ? 'AVAILABLE BALANCE' : `${selectedHolder.toUpperCase()}'S BALANCE`}
                 </Typography>
-                <Typography variant="body2" fontWeight="900" color={activeBalance < (amount || 0) ? 'error.main' : 'text.primary'}>
+                <Typography variant="body2" fontWeight={900} color={isInsufficient ? 'error.main' : 'text.primary'}>
                   {formatCurrency(activeBalance, 'PKR')}
                 </Typography>
               </Box>
             </Box>
 
+            {/* Note */}
             <TextField
-              fullWidth
-              label="Note / Reason"
-              value={note}
+              fullWidth size="small" label="Note (optional)" value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Rent, Grocery, Bill payment, etc."
-              size="small"
-              multiline
-              rows={2}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              placeholder="e.g. Rent, Grocery, Bill payment…"
+              multiline rows={2}
+              InputProps={{ startAdornment: <NoteIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18, mt: 0.5, alignSelf: 'flex-start' }} /> }}
             />
           </Stack>
         </DialogContent>
 
-        <DialogActions sx={{ px: 3, py: 3, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fcfcfc', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-          <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary' }}>
-            Cancel
-          </Button>
+        <DialogActions sx={{ px: 3, py: 2, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fafafa', borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f0f0f0'}` }}>
+          <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'none' }}>Cancel</Button>
           <Button
-            variant="contained"
-            color="error"
+            variant="contained" color="error"
             onClick={handleSaveClick}
             disabled={
-              saving ||
-              (amount !== '' && Number(amount) > activeBalance) ||
-              (!fromFreeze && source === 'bank' && !selectedBank) ||
-              (!fromFreeze && source === 'custom' && !selectedCustomPaymentHead) ||
+              saving || isInsufficient ||
+              (source === 'bank' && !selectedBank) ||
+              (source === 'custom' && !selectedCustomPaymentHead) ||
               !amount || amount <= 0
             }
-            sx={{ 
-              borderRadius: 2, 
-              fontWeight: 800, 
-              px: 4,
-              boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.39)',
-              textTransform: 'none'
-            }}
+            sx={{ borderRadius: 2, fontWeight: 800, px: 3.5, textTransform: 'none', boxShadow: '0 4px 14px rgba(239,68,68,0.35)' }}
           >
-            {saving ? <CircularProgress size={20} color="inherit" /> : 'Complete Deduction'}
+            {saving ? <CircularProgress size={20} color="inherit" /> : 'Deduct Funds'}
           </Button>
         </DialogActions>
       </Dialog>

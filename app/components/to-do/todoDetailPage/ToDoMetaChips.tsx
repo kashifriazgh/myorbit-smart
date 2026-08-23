@@ -6,14 +6,15 @@ import { useState } from 'react';
 import OptionModal from '@/app/components/global/LevelModal';
 import { PRIORITY_OPTIONS, STATUS_OPTIONS } from '@/app/lib/constant';
 import { Todo } from '@/app/lib/interface';
-import { updateDoc, doc, Timestamp } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+import { Timestamp } from 'firebase/firestore';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
 import { deleteTodoReminder, rescheduleTodoReminder } from '@/app/lib/utils/whatsapp-reminder';
 import { incrementTodoRescheduleCount } from '@/app/lib/utilts';
+
+import { useTodoContext } from '@/app/lib/context/todoContext';
 
 interface TodoMetaChipsProps {
   todo: Todo;
@@ -23,6 +24,7 @@ interface TodoMetaChipsProps {
 export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
   const { theme } = useCustomTheme();
   const { user } = useAuth();
+  const { updateTodo } = useTodoContext();
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [dueDateOpen, setDueDateOpen] = useState(false);
@@ -40,18 +42,17 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
         : null;
       const isDateChanged = oldDate ? !moment(oldDate).isSame(newDueDate, 'day') : true;
 
-      await updateDoc(doc(db, 'todos', todo.id), {
+      await updateTodo(todo.id, {
         dueDate: Timestamp.fromDate(newDueDate),
         isFlexible: false, // Turn off flexible if date is set
-        updatedAt: new Date(),
       });
 
       if (isDateChanged) {
-        await incrementTodoRescheduleCount(todo.id);
+        await incrementTodoRescheduleCount(todo.id).catch((e) => console.error(e));
       }
       
       if (user) {
-        await rescheduleTodoReminder(todo.id, newDueDate, user.uid);
+        await rescheduleTodoReminder(todo.id, newDueDate, user.uid).catch((e) => console.error(e));
       }
 
       onUpdate({ dueDate: newDueDate, isFlexible: false });
@@ -66,9 +67,8 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
   const updateAssignee = async () => {
     if (!todo.id) return;
     try {
-      await updateDoc(doc(db, 'todos', todo.id), {
+      await updateTodo(todo.id, {
         assignee: newAssignee.trim() || null,
-        updatedAt: new Date(),
       });
       onUpdate({ assignee: newAssignee.trim() || undefined });
       setAssigneeOpen(false);
@@ -212,9 +212,10 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
           key: o.value,
           label: o.label,
         }))}
-        onChange={(value) =>
-          onUpdate({ priority: value as 'routine' | 'urgent' | 'critical' })
-        }
+        onChange={async (value) => {
+          await updateTodo(todo.id!, { priority: value as 'routine' | 'urgent' | 'critical' });
+          onUpdate({ priority: value as 'routine' | 'urgent' | 'critical' });
+        }}
       />
       <OptionModal
         open={statusOpen}
@@ -229,8 +230,11 @@ export default function TodoMetaChips({ todo, onUpdate }: TodoMetaChipsProps) {
         }))}
         onChange={async (value) => {
           if (value === 'completed') {
-            await deleteTodoReminder(todo.id!);
+            await deleteTodoReminder(todo.id!).catch((e) => console.error(e));
           }
+          await updateTodo(todo.id!, {
+            status: value as 'in_progress' | 'completed' | 'hold' | 'left-over',
+          });
           onUpdate({
             status: value as 'in_progress' | 'completed' | 'hold' | 'left-over',
           });

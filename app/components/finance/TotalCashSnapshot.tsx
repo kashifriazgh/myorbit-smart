@@ -11,6 +11,7 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import HistoryIcon from '@mui/icons-material/History';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
+import SyncIcon from '@mui/icons-material/Sync';
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { db } from '@/app/lib/firebase';
 import {
@@ -112,31 +113,157 @@ export default function TotalCashSnapshotComponent({
 
   const fabRef = useRef<HTMLDivElement>(null);
 
+  const [isCached, setIsCached] = useState(false);
+  const [needsFetch, setNeedsFetch] = useState(false);
+
+  const triggerRefresh = () => {
+    try {
+      localStorage.removeItem(`finance_cache_${userId}`);
+    } catch {}
+    setIsCached(false);
+    setLoading(true);
+    setNeedsFetch(true);
+  };
+
+  // Bootstrap from cache on mount
   useEffect(() => {
     if (!userId) return;
-    const q = query(collection(db, 'loans'), where('userId', '==', userId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: LoanRecord[] = snapshot.docs.map((doc) => ({
+    try {
+      const cachedRaw = localStorage.getItem(`finance_cache_${userId}`);
+      if (cachedRaw) {
+        const cache = JSON.parse(cachedRaw);
+        const age = Date.now() - new Date(cache.timestamp).getTime();
+        // Use cache if it is fresh (less than 10 minutes old)
+        if (age < 10 * 60 * 1000) {
+          setSnapshot(cache.snapshot);
+          setLoans(cache.loans);
+          setLiabilities(cache.liabilities);
+          setIsCached(true);
+          setNeedsFetch(false);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load finance cache:', e);
+    }
+    setNeedsFetch(true);
+  }, [userId]);
+
+  // Set up Firebase subscriptions conditionally
+  useEffect(() => {
+    if (!userId || !needsFetch) return;
+
+    const qLoans = query(collection(db, 'loans'), where('userId', '==', userId));
+    const unsubLoans = onSnapshot(qLoans, (snap) => {
+      const list: LoanRecord[] = snap.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<LoanRecord, 'id'>),
       }));
       setLoans(list);
     });
-    return unsubscribe;
-  }, [userId]);
 
-  useEffect(() => {
-    if (!userId) return;
-    const q = query(collection(db, 'liabilities'), where('userId', '==', userId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: Liability[] = snapshot.docs.map((doc) => ({
+    const qLiabilities = query(collection(db, 'liabilities'), where('userId', '==', userId));
+    const unsubLiabilities = onSnapshot(qLiabilities, (snap) => {
+      const list: Liability[] = snap.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<Liability, 'id'>),
       }));
       setLiabilities(list);
     });
-    return unsubscribe;
-  }, [userId]);
+
+    const docRef = doc(db, 'totalCashSnapshots', userId);
+    const unsubSnap = onSnapshot(docRef, async (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as TotalCashSnapshot;
+
+        let normalizedBank: Record<string, number> = {};
+        if (typeof data.sources.bank === 'number') {
+          normalizedBank = { Default: data.sources.bank };
+        } else {
+          normalizedBank = data.sources.bank || {};
+        }
+
+        let normalizedCustom: Record<string, number> = {};
+        if (typeof data.sources.custom === 'number') {
+          normalizedCustom = { Default: data.sources.custom };
+        } else {
+          normalizedCustom = data.sources.custom || {};
+        }
+
+        const normSnapshot: TotalCashSnapshot = {
+          ...data,
+          sources: {
+            ...data.sources,
+            bank: normalizedBank,
+            custom: normalizedCustom,
+          },
+          heldBy: data.heldBy || {},
+          sourceOwnership: data.sourceOwnership || {},
+        };
+        setSnapshot(normSnapshot);
+      } else {
+        const initial: TotalCashSnapshot = {
+          userId,
+          sources: {
+            in_hand: 0,
+            bank: {},
+            easypaisa: 0,
+            jazzcash: 0,
+            other: 0,
+            custom: {},
+          },
+          heldBy: {},
+          sourceOwnership: {},
+          totalAmount: 0,
+          freezeAmount: 0,
+          updatedAt: new Date(),
+          createdAt: new Date(),
+        };
+        await setDoc(docRef, initial);
+        setSnapshot(initial);
+      }
+      setLoading(false);
+    }, (error) => {
+      console.error("Error listening to totalCashSnapshots:", error);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubLoans();
+      unsubLiabilities();
+      unsubSnap();
+    };
+  }, [userId, needsFetch]);
+
+  // Atomically save to cache when loaded
+  useEffect(() => {
+    if (!userId || !needsFetch || loading || !snapshot) return;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          `finance_cache_${userId}`,
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            snapshot,
+            loans,
+            liabilities,
+          })
+        );
+        setIsCached(true);
+      } catch (e) {
+        console.warn('Failed to save finance cache:', e);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [userId, needsFetch, loading, snapshot, loans, liabilities]);
+
+  // Automatically trigger fetch when any transaction dialog opens
+  useEffect(() => {
+    if (openAdd || openDeduct || openTransfer || openLoan || openLiability || showTransactionHistory) {
+      setNeedsFetch(true);
+    }
+  }, [openAdd, openDeduct, openTransfer, openLoan, openLiability, showTransactionHistory]);
 
   const totalsData = useMemo(() => {
     let borrowLoansSum = 0;
@@ -197,64 +324,6 @@ export default function TotalCashSnapshotComponent({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  useEffect(() => {
-    const fetchSnapshot = async () => {
-      setLoading(true);
-      const docRef = doc(db, 'totalCashSnapshots', userId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as TotalCashSnapshot;
-
-        let normalizedBank: Record<string, number> = {};
-        if (typeof data.sources.bank === 'number') {
-          normalizedBank = { Default: data.sources.bank };
-        } else {
-          normalizedBank = data.sources.bank || {};
-        }
-
-        let normalizedCustom: Record<string, number> = {};
-        if (typeof data.sources.custom === 'number') {
-          normalizedCustom = { Default: data.sources.custom };
-        } else {
-          normalizedCustom = data.sources.custom || {};
-        }
-
-        setSnapshot({
-          ...data,
-          sources: {
-            ...data.sources,
-            bank: normalizedBank,
-            custom: normalizedCustom,
-          },
-          heldBy: data.heldBy || {},
-          sourceOwnership: data.sourceOwnership || {},
-        });
-      } else {
-        const initial: TotalCashSnapshot = {
-          userId,
-          sources: {
-            in_hand: 0,
-            bank: {},
-            easypaisa: 0,
-            jazzcash: 0,
-            other: 0,
-            custom: {},
-          },
-          heldBy: {},
-          sourceOwnership: {},
-          totalAmount: 0,
-          freezeAmount: 0,
-          updatedAt: new Date(),
-          createdAt: new Date(),
-        };
-        await setDoc(docRef, initial);
-        setSnapshot(initial);
-      }
-      setLoading(false);
-    };
-    fetchSnapshot();
-  }, [userId]);
-
   const handleAddMoney = async (
     amount: number,
     source: TransactionSource,
@@ -266,6 +335,7 @@ export default function TotalCashSnapshotComponent({
     note?: string,
     holderName?: string
   ) => {
+    triggerRefresh();
     setSaving(true);
 
     const txn: Omit<CashTransaction, 'id'> = {
@@ -353,6 +423,7 @@ export default function TotalCashSnapshotComponent({
     note?: string,
     holderName?: string
   ) => {
+    triggerRefresh();
     setSaving(true);
 
     const docRef = doc(db, 'totalCashSnapshots', userId);
@@ -483,6 +554,7 @@ export default function TotalCashSnapshotComponent({
     toHolder?: string,
     note?: string
   ) => {
+    triggerRefresh();
     setSaving(true);
     try {
       const docRef = doc(db, 'totalCashSnapshots', userId);
@@ -667,9 +739,18 @@ export default function TotalCashSnapshotComponent({
     <Box sx={{ maxWidth: 600, mx: 'auto', mt: 4, position: 'relative' }}>
       {/* Header row with inline action trigger */}
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
-        <Typography variant="h6" fontWeight="bold">
-          Your Money
-        </Typography>
+        <Box display="flex" alignItems="center" gap={1}>
+          <Typography variant="h6" fontWeight="bold">
+            Your Money
+          </Typography>
+          {isCached && (
+            <Tooltip title="Data loaded from local cache. Click to sync with server.">
+              <IconButton size="small" onClick={triggerRefresh} sx={{ color: 'primary.main', p: 0.5 }}>
+                <SyncIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
 
         {/* Compact inline FAB trigger */}
         <Box

@@ -129,6 +129,7 @@ export interface Todo {
   aiSummary?: string;
   aiPrioritySuggestion?: 'low' | 'medium' | 'high' | 'critical';
   aiConfidence?: number; // 0.0 – 1.0
+  scheduleSummary?: string; // AI-generated schedule/action plan for the task
   // Activity log (optional)
   history?: {
     updatedAt: Date;
@@ -238,6 +239,7 @@ export interface Theme {
 }
 
 export interface FirestoreUser {
+  displayName: string;
   uid: string;
   email: string;
   firstName: string;
