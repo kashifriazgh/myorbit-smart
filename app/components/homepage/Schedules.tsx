@@ -18,6 +18,9 @@ import {
   Snackbar,
   Badge,
   styled,
+  Menu,
+  MenuItem,
+  Divider,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -27,7 +30,7 @@ import {
   ArrowForward as ArrowIcon,
   CheckCircle,
   RadioButtonUnchecked,
-  Notifications as NotificationsIcon,
+  Person as PersonIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
@@ -301,8 +304,24 @@ const Schedules: React.FC = () => {
 
   const [sendingNotificationId, setSendingNotificationId] = useState<string | null>(null);
 
-  const handleTriggerNotification = async (schedule: SchedulesProps) => {
-    if (!user || !schedule.id) return;
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [activeMenuSchedule, setActiveMenuSchedule] = useState<SchedulesProps | null>(null);
+
+  const handleOpenShareMenu = (event: React.MouseEvent<HTMLElement>, schedule: SchedulesProps) => {
+    setMenuAnchorEl(event.currentTarget);
+    setActiveMenuSchedule(schedule);
+  };
+
+  const handleCloseShareMenu = () => {
+    setMenuAnchorEl(null);
+    setActiveMenuSchedule(null);
+  };
+
+  const handleSendNotificationToUser = async (targetUid: string | null) => {
+    if (!user || !activeMenuSchedule || !activeMenuSchedule.id) return;
+    const schedule = activeMenuSchedule;
+    handleCloseShareMenu();
+
     setSendingNotificationId(schedule.id);
     try {
       const { userAuth } = await import('@/app/lib/firebase');
@@ -318,8 +337,13 @@ const Schedules: React.FC = () => {
           'Authorization': `Bearer ${idToken}`
         },
         body: JSON.stringify({
-          title: `Schedule Alert: ${schedule.title} 📅`,
-          bodyText: `Scheduled at ${formatTime(schedule.startTime)}. Click to view in app!`,
+          targetUid: targetUid, // Null will trigger sending to self
+          title: targetUid 
+            ? `Reminder from ${user.displayName || 'User'} ⏰`
+            : `Schedule Alert: ${schedule.title} 📅`,
+          bodyText: targetUid
+            ? `${user.displayName || 'User'} wants to remind you about: ${schedule.title}`
+            : `Scheduled at ${formatTime(schedule.startTime)}. Click to view in app!`,
           appUrl: '/'
         })
       });
@@ -331,7 +355,7 @@ const Schedules: React.FC = () => {
 
       setSnackbar({
         open: true,
-        message: 'Notification sent successfully!',
+        message: targetUid ? 'Reminder sent to shared user!' : 'Notification sent to yourself!',
         severity: 'success'
       });
     } catch (error) {
@@ -715,14 +739,14 @@ const Schedules: React.FC = () => {
                       <IconButton
                         size="small"
                         disabled={sendingNotificationId === schedule.id}
-                        onClick={() => handleTriggerNotification(schedule)}
-                        title="Send Test Push Notification"
-                        sx={{ p: 0.3, flexShrink: 0, color: isDark ? '#475569' : '#94a3b8', '&:hover': { color: '#10b981' } }}
+                        onClick={(e) => handleOpenShareMenu(e, schedule)}
+                        title="Send Notification / Share Reminder"
+                        sx={{ p: 0.3, flexShrink: 0, color: isDark ? '#475569' : '#94a3b8', '&:hover': { color: '#3b82f6' } }}
                       >
                         {sendingNotificationId === schedule.id ? (
-                          <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#10b981', borderRadius: '50%' }} />
+                          <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#3b82f6', borderRadius: '50%' }} />
                         ) : (
-                          <NotificationsIcon sx={{ fontSize: '1rem' }} />
+                          <PersonIcon sx={{ fontSize: '1rem' }} />
                         )}
                       </IconButton>
 
@@ -794,7 +818,7 @@ const Schedules: React.FC = () => {
                   getTimeRange={getTimeRange}
                   getPriorityColor={getPriorityColor}
                   handleEditSchedule={handleEditSchedule}
-                  onTriggerNotification={handleTriggerNotification}
+                  onOpenShareMenu={handleOpenShareMenu}
                   sendingNotificationId={sendingNotificationId}
                 />
               )}
@@ -852,7 +876,7 @@ const Schedules: React.FC = () => {
                   getTimeRange={getTimeRange}
                   getPriorityColor={getPriorityColor}
                   handleEditSchedule={handleEditSchedule}
-                  onTriggerNotification={handleTriggerNotification}
+                  onOpenShareMenu={handleOpenShareMenu}
                   sendingNotificationId={sendingNotificationId}
                 />
               )}
@@ -896,6 +920,48 @@ const Schedules: React.FC = () => {
         existingSchedules={schedules}
       />
 
+      <Menu
+        anchorEl={menuAnchorEl}
+        open={Boolean(menuAnchorEl)}
+        onClose={handleCloseShareMenu}
+        PaperProps={{
+          sx: {
+            bgcolor: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f1f5f9' : '#0f172a',
+            border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+            borderRadius: '12px',
+            minWidth: '200px',
+            py: 0.5,
+          }
+        }}
+      >
+        <Box sx={{ px: 2, py: 0.75, opacity: 0.6, fontSize: '0.65rem', fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Send Reminder
+        </Box>
+        <MenuItem 
+          onClick={() => handleSendNotificationToUser(null)}
+          sx={{ fontSize: '0.8rem', fontWeight: 600, py: 1 }}
+        >
+          👤 Send to Myself
+        </MenuItem>
+        
+        {user?.sharedWith && user.sharedWith.length > 0 && [
+          <Divider key="divider" sx={{ my: 0.5, borderColor: isDark ? '#334155' : '#e2e8f0' }} />,
+          <Box key="shared-label" sx={{ px: 2, py: 0.75, opacity: 0.6, fontSize: '0.65rem', fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Shared Users
+          </Box>,
+          ...user.sharedWith.map((sharedUser) => (
+            <MenuItem
+              key={sharedUser.uid}
+              onClick={() => handleSendNotificationToUser(sharedUser.uid)}
+              sx={{ fontSize: '0.8rem', fontWeight: 600, py: 1 }}
+            >
+              💬 Send to {sharedUser.displayName}
+            </MenuItem>
+          ))
+        ]}
+      </Menu>
+
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
@@ -920,7 +986,7 @@ interface ScheduleDetailListProps {
   getTimeRange: (startTime: string, endTime: string, isFlexible?: boolean) => string;
   getPriorityColor: (priority: string) => string;
   handleEditSchedule: (id: string) => void;
-  onTriggerNotification: (schedule: SchedulesProps) => void;
+  onOpenShareMenu: (event: React.MouseEvent<HTMLElement>, schedule: SchedulesProps) => void;
   sendingNotificationId: string | null;
 }
 
@@ -932,7 +998,7 @@ const ScheduleDetailList = ({
   getTimeRange,
   getPriorityColor,
   handleEditSchedule,
-  onTriggerNotification,
+  onOpenShareMenu,
   sendingNotificationId,
 }: ScheduleDetailListProps) => {
   const groups: { [date: string]: SchedulesProps[] } = {};
@@ -991,14 +1057,14 @@ const ScheduleDetailList = ({
                       <IconButton
                         size="small"
                         disabled={sendingNotificationId === schedule.id}
-                        onClick={() => onTriggerNotification(schedule)}
-                        title="Send Test Push Notification"
-                        sx={{ padding: '2px', color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', '&:hover': { color: '#10b981' } }}
+                        onClick={(e) => onOpenShareMenu(e, schedule)}
+                        title="Send Notification / Share Reminder"
+                        sx={{ padding: '2px', color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', '&:hover': { color: '#3b82f6' } }}
                       >
                         {sendingNotificationId === schedule.id ? (
-                          <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#10b981', borderRadius: '50%' }} />
+                          <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#3b82f6', borderRadius: '50%' }} />
                         ) : (
-                          <NotificationsIcon sx={{ fontSize: '0.9rem' }} />
+                          <PersonIcon sx={{ fontSize: '0.9rem' }} />
                         )}
                       </IconButton>
                       <IconButton

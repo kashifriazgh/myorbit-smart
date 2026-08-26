@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  onSnapshot,
 } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { userAuth as auth, userDb as db } from '../firebase';
@@ -75,26 +76,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setContextParagraph(cachedParagraph);
     }
 
+    let unsubscribeUserDoc: (() => void) | null = null;
+
     // 2. Subscribe to Auth state changes
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log('🔍 Firebase auth state changed:', firebaseUser ? 'User logged in' : 'No user');
 
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+        unsubscribeUserDoc = null;
+      }
+
       if (firebaseUser) {
-        // If we have a cached user and UIDs match, we can skip the Firestore document read request!
-        if (initialUser && initialUser.uid === firebaseUser.uid) {
-          console.log('✅ Local session matched active auth user. Skipped Firestore user read.');
-          // Ensure cookies are present
-          Cookies.set('uid', firebaseUser.uid, { expires: 7, path: '/' });
-          Cookies.set('role', initialUser.role || 'viewer', { expires: 7, path: '/' });
+        // If on the signup page, don't subscribe to document or perform automatic redirects/signouts
+        if (typeof window !== 'undefined' && window.location.pathname === '/user/signup') {
+          console.log('📝 User is on the signup page. Skipping document listener.');
           return;
         }
 
-        // If no cached user or UID mismatch, fetch from Firestore
-        try {
-          console.log('🔥 Cache miss: Fetching user document from Firestore...');
-          const ref = doc(db, 'users', firebaseUser.uid);
-          const snap = await getDoc(ref);
-
+        const ref = doc(db, 'users', firebaseUser.uid);
+        
+        unsubscribeUserDoc = onSnapshot(ref, async (snap) => {
           if (snap.exists()) {
             const data = snap.data();
             if (data.role !== 'master' && (data.status === 'pending' || data.status === 'rejected')) {
@@ -110,6 +112,29 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               return;
             }
 
+            // Generate shareId and username if they don't exist yet
+            let shareId = data.shareId;
+            let username = data.username;
+            let needsUpdate = false;
+            const updateFields: Record<string, string> = {};
+
+            if (!shareId) {
+              shareId = `U-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+              updateFields.shareId = shareId;
+              needsUpdate = true;
+            }
+
+            if (!username && firebaseUser.email) {
+              username = firebaseUser.email.split('@')[0].toLowerCase();
+              updateFields.username = username;
+              needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+              await setDoc(ref, updateFields, { merge: true });
+              return;
+            }
+
             const userObj: FirestoreUser = {
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
@@ -120,6 +145,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               createdAt: data.createdAt,
               isGuest: false,
               guideVisited: data.guideVisited || false,
+              shareId: shareId,
+              username: data.username || '',
+              sharedWith: data.sharedWith || [],
             };
 
             setUser(userObj);
@@ -127,7 +155,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem('myorbit_cached_user', JSON.stringify(userObj));
             Cookies.set('uid', firebaseUser.uid, { expires: 7, path: '/' });
             Cookies.set('role', data.role || 'viewer', { expires: 7, path: '/' });
-            console.log('✅ Firebase user session cached and initialized');
+            console.log('✅ Firebase user session synchronized in real-time');
 
             // Fetch onboarding once if mismatch / missing
             if (!cachedOnboardingStr) {
@@ -155,13 +183,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             setUser(null);
             setIsGuest(false);
           }
-        } catch (err) {
-          console.error('❌ Error fetching Firestore user:', err);
-          Cookies.remove('uid', { path: '/' });
-          Cookies.remove('role', { path: '/' });
-          setUser(null);
-          setIsGuest(false);
-        }
+        }, (err) => {
+          console.error('❌ Error in user doc snapshot subscription:', err);
+        });
       } else {
         console.log('🔍 No Firebase user, initializing guest user');
         Cookies.remove('uid', { path: '/' });
@@ -180,6 +204,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       unsubscribeAuth();
+      if (unsubscribeUserDoc) unsubscribeUserDoc();
     };
   }, []);
 

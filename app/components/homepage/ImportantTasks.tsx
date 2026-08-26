@@ -29,7 +29,10 @@ import {
   ExpandMore,
   ExpandLess,
   Add,
+  NotificationsActive as NotifyIcon,
+  Person as PersonIcon,
 } from '@mui/icons-material';
+import { Menu, MenuItem } from '@mui/material';
 import Link from 'next/link';
 import { useMemo, useState, useEffect } from 'react';
 import moment from 'moment';
@@ -297,6 +300,9 @@ const ImportantTasks = () => {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
   const [todoModalOpen, setTodoModalOpen] = useState(false);
+  const [notiMenuAnchorEl, setNotiMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [activeNotiTask, setActiveNotiTask] = useState<Todo | null>(null);
+  const [sendingNotiTaskId, setSendingNotiTaskId] = useState<string | null>(null);
 
   // Calculate daily progress percentage based on active & completed tasks of the selected date
   const progressPercent = useMemo(() => {
@@ -490,6 +496,48 @@ const ImportantTasks = () => {
       else next.add(taskId);
       return next;
     });
+  };
+
+  const handleOpenNotiMenu = (event: React.MouseEvent<HTMLElement>, task: Todo) => {
+    setNotiMenuAnchorEl(event.currentTarget);
+    setActiveNotiTask(task);
+  };
+
+  const handleCloseNotiMenu = () => {
+    setNotiMenuAnchorEl(null);
+    setActiveNotiTask(null);
+  };
+
+  const handleSendTaskNotification = async (targetUid: string | null) => {
+    if (!user || !activeNotiTask || !activeNotiTask.id) return;
+    const task = activeNotiTask;
+    handleCloseNotiMenu();
+    setSendingNotiTaskId(task.id);
+    try {
+      const { userAuth } = await import('@/app/lib/firebase');
+      const idToken = await userAuth.currentUser?.getIdToken(true);
+      if (!idToken) throw new Error('Could not retrieve authentication session token.');
+      const res = await fetch('/api/send-test-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({
+          targetUid,
+          title: targetUid
+            ? `Task Reminder from ${user.displayName || 'User'} 📋`
+            : `Task Reminder: ${task.title} 📋`,
+          bodyText: targetUid
+            ? `${user.displayName || 'User'} wants to remind you about: ${task.title}`
+            : `Don't forget: ${task.title}. Click to view in app!`,
+          appUrl: `/to-do/${task.id}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to dispatch notification.');
+    } catch (err) {
+      console.error('Task notification error:', err);
+    } finally {
+      setSendingNotiTaskId(null);
+    }
   };
 
   if (loading) {
@@ -924,6 +972,19 @@ const ImportantTasks = () => {
                           <Event fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      <Tooltip title="Send Reminder Notification">
+                        <IconButton
+                          size="small"
+                          disabled={sendingNotiTaskId === task.id}
+                          onClick={(e) => handleOpenNotiMenu(e, task)}
+                        >
+                          {sendingNotiTaskId === task.id ? (
+                            <CircularProgress size={18} />
+                          ) : (
+                            <NotifyIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Mark as done">
                         <IconButton
                           size="small"
@@ -1232,6 +1293,41 @@ const ImportantTasks = () => {
 
         {/* Todo Modal */}
         <ToDoModal open={todoModalOpen} onClose={() => setTodoModalOpen(false)} />
+
+        {/* Notification share Menu */}
+        <Menu
+          anchorEl={notiMenuAnchorEl}
+          open={Boolean(notiMenuAnchorEl)}
+          onClose={handleCloseNotiMenu}
+          PaperProps={{
+            sx: {
+              bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
+              color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
+              border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
+              borderRadius: '12px',
+              minWidth: '200px',
+              py: 0.5,
+            }
+          }}
+        >
+          <Box sx={{ px: 2, py: 0.75, opacity: 0.6, fontSize: '0.65rem', fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Send Task Reminder
+          </Box>
+          <MenuItem onClick={() => handleSendTaskNotification(null)} sx={{ fontSize: '0.8rem', fontWeight: 600, py: 1 }}>
+            <PersonIcon sx={{ fontSize: '1rem', mr: 1 }} /> Send to Myself
+          </MenuItem>
+          {user?.sharedWith && user.sharedWith.length > 0 && [
+            <Divider key="task-noti-divider" sx={{ my: 0.5 }} />,
+            <Box key="task-noti-label" sx={{ px: 2, py: 0.75, opacity: 0.6, fontSize: '0.65rem', fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Shared Users
+            </Box>,
+            ...user.sharedWith.map((su) => (
+              <MenuItem key={su.uid} onClick={() => handleSendTaskNotification(su.uid)} sx={{ fontSize: '0.8rem', fontWeight: 600, py: 1 }}>
+                <PersonIcon sx={{ fontSize: '1rem', mr: 1 }} /> Send to {su.displayName}
+              </MenuItem>
+            ))
+          ]}
+        </Menu>
       </CardContent>
     </Card>
 

@@ -8,6 +8,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import AccountIcon from '@mui/icons-material/AccountCircle';
 import SecurityIcon from '@mui/icons-material/Security';
 import PaletteIcon from '@mui/icons-material/Palette';
+import PeopleIcon from '@mui/icons-material/People';
 
 const settingsSections = [
   {
@@ -28,6 +29,14 @@ const settingsSections = [
         description: 'Link your WhatsApp account for task reminders',
         badge: 'WhatsApp',
         badgeColor: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+      },
+      {
+        href: '/settings/sharing',
+        icon: <PeopleIcon className="text-sky-400" />,
+        title: 'Device Sharing',
+        description: 'Connect with other users to exchange push notification alerts',
+        badge: 'NEW',
+        badgeColor: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
       },
     ],
   },

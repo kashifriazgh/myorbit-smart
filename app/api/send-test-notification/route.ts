@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { userDb } from '@/app/lib/firebase';
 import { userFirebaseConfig } from '@/app/lib/firebaseUsersConfig';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 
 /**
  * Signs a JWT assertion locally using Node's native crypto module (RS256).
@@ -110,15 +110,37 @@ export async function POST(req: NextRequest) {
     const projectIdMatch = clientEmail.match(/@([^.]+)\.iam/);
     const projectId = projectIdMatch ? projectIdMatch[1] : 'forms-389a6';
 
-    // 3. Fetch user's registered FCM devices (FIDs)
-    const deviceCol = collection(userDb, 'users', userId, 'notificationDevices');
+    // 3. Fetch target user's registered FCM devices (FIDs)
+    const targetUid = body.targetUid;
+    let finalTargetUid = userId;
+
+    if (targetUid && targetUid !== userId) {
+      // Security Check: Load the authenticated user's document to verify targetUid is in sharedWith
+      const authUserRef = doc(userDb, 'users', userId);
+      const authUserSnap = await getDoc(authUserRef);
+      if (!authUserSnap.exists()) {
+        return NextResponse.json({ error: 'Authenticated user profile not found.' }, { status: 404 });
+      }
+      
+      const authUserData = authUserSnap.data();
+      const sharedList: { uid: string }[] = authUserData.sharedWith || [];
+      const isShared = sharedList.some(item => item.uid === targetUid);
+      
+      if (!isShared) {
+        return NextResponse.json({ error: 'You do not have permission to send notifications to this user.' }, { status: 403 });
+      }
+      
+      finalTargetUid = targetUid;
+    }
+
+    const deviceCol = collection(userDb, 'users', finalTargetUid, 'notificationDevices');
     const deviceSnapshot = await getDocs(deviceCol);
     const activeDevices = deviceSnapshot.docs
       .map((doc) => doc.data())
       .filter((device) => device.enabled === true);
 
     if (activeDevices.length === 0) {
-      return NextResponse.json({ error: 'No active device subscriptions found for this user.' }, { status: 404 });
+      return NextResponse.json({ error: 'No active device subscriptions found for the target user.' }, { status: 404 });
     }
 
     // 4. Generate OAuth 2.0 Access Token

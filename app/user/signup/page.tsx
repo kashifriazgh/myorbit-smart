@@ -91,12 +91,16 @@ export default function SignupPage() {
     setError('');
 
     try {
+      console.log('🚀 [SIGNUP] Starting signup process for:', email);
+      console.log('🚀 [SIGNUP] 1. Calling createUserWithEmailAndPassword...');
+      
       const userCred = await createUserWithEmailAndPassword(
         auth,
         email,
         password
       );
       const user = userCred.user;
+      console.log('🚀 [SIGNUP] 2. Auth user created successfully. UID:', user.uid);
 
       let role: 'master' | 'editor' | 'viewer' = 'master';
       let status: 'active' | 'pending' = 'active';
@@ -106,9 +110,14 @@ export default function SignupPage() {
         status = 'pending';
       }
 
+      const shareId = `U-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+      const derivedUsername = email.split('@')[0].toLowerCase();
+
       const userData = {
         uid: user.uid,
         email: user.email,
+        username: derivedUsername,
+        shareId,
         firstName,
         lastName,
         role,
@@ -116,45 +125,63 @@ export default function SignupPage() {
         createdAt: Timestamp.now(),
       };
 
+      console.log('🚀 [SIGNUP] 3. Writing user document to Firestore...', userData);
       await setDoc(doc(db, 'users', user.uid), userData);
+      console.log('🚀 [SIGNUP] 4. Firestore user document write completed!');
 
       // Migrate guest data if user was a guest
+      console.log('🚀 [SIGNUP] 5. Checking guest migration status. isGuest:', isGuest, 'currentUser:', currentUser?.uid);
       if (isGuest && currentUser) {
+        console.log('🚀 [SIGNUP] 6. Starting guest migration from', currentUser.uid, 'to', user.uid);
         try {
           const migrationResult = await migrateGuestDataToUser(
             currentUser.uid,
             user.uid
           );
-          if (
-            migrationResult.success &&
-            migrationResult.migratedCollections.length > 0
-          ) {
-            console.log(
-              '✅ Guest data migrated successfully:',
-              migrationResult.migratedCollections
-            );
-          }
+          console.log('🚀 [SIGNUP] 7. Guest migration result:', migrationResult);
         } catch (migrationError) {
-          console.error('❌ Failed to migrate guest data:', migrationError);
+          console.error('🚀 [SIGNUP] ❌ Failed to migrate guest data:', migrationError);
         }
       }
 
       if (status === 'pending') {
+        console.log('🚀 [SIGNUP] 8. Account is pending. Calling signOut...');
         // Sign out immediately so session is not created
         await signOut(auth);
+        console.log('🚀 [SIGNUP] 9. SignOut completed. Clearing session cookies...');
         Cookies.remove('uid', { path: '/' });
         Cookies.remove('role', { path: '/' });
+        
         setSignupSuccess(true);
+
+        // Reset input fields and clear loading state
+        setFirstName('');
+        setLastName('');
+        setEmail('');
+        setPassword('');
+        setLoading(false);
+
+        console.log('🚀 [SIGNUP] 10. Signup successful. Setting 6s redirect to login...');
         setTimeout(() => {
           router.push('/user/login');
-        }, 4000);
+        }, 6000);
       } else {
+        console.log('🚀 [SIGNUP] 8. Account is master. Redirecting to home...');
         router.push('/');
       }
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : 'Signup failed.');
+      console.error('🚀 [SIGNUP] ❌ Catch block caught error:', err);
+      if (err instanceof Error) {
+        if (err.message.includes('auth/email-already-in-use')) {
+          setError('This email is already registered. If your account is pending administrator approval, please try logging in or contact your administrator.');
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Signup failed.');
+      }
     } finally {
+      console.log('🚀 [SIGNUP] Finished handleSignup process.');
       setLoading(false);
     }
   };
@@ -223,9 +250,8 @@ export default function SignupPage() {
 
           {signupSuccess ? (
             <Alert severity="success" sx={{ mb: 3, borderRadius: 3, fontWeight: 600 }}>
-              <AlertTitle sx={{ fontWeight: 800 }}>🎉 Signup Successful!</AlertTitle>
-              Your account has been created. It is currently **pending approval** by the master user.
-              You will be able to sign in once approved. Redirecting to login...
+              <AlertTitle sx={{ fontWeight: 800 }}>🎉 Account Created</AlertTitle>
+              Your account has been created and is pending approval by the administrator. Please try logging in after some time. Redirecting to login page...
             </Alert>
           ) : (
             <>
