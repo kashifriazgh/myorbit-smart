@@ -4,39 +4,47 @@ import {
   FirebaseApp,
   FirebaseOptions,
 } from 'firebase/app';
-import { getDatabase, ref, set, Database } from 'firebase/database';
+import { getDatabase, Database } from 'firebase/database';
 import {
   getMessaging,
-  getToken,
+  register,
+  onRegistered,
+  onUnregistered,
   onMessage,
   Messaging,
 } from 'firebase/messaging';
+import { getInstallations, getId } from 'firebase/installations';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { userDb } from '../firebase';
 
 let sharedApp: FirebaseApp | null = null;
 let sharedDb: Database | null = null;
 let sharedMessaging: Messaging | null = null;
+let listenersSetup = false;
+let foregroundHandlerSetup = false;
+
 type SharedFirebaseConfig = FirebaseOptions & { vapidKey: string };
 
 let sharedConfig: SharedFirebaseConfig | null = null;
-let foregroundHandlerSetup = false;
 
 /**
- * Fetches the configuration for RTDB and FCM from the secure API and initializes a secondary app.
+ * Fetches the configuration for RTDB and FCM.
  */
 export async function getSharedFirebaseConfig(): Promise<SharedFirebaseConfig> {
   if (sharedConfig) return sharedConfig;
 
   sharedConfig = {
-    apiKey: 'AIzaSyDZFNapAjmnS0TZIM1lK8wNA4PDgedVnRo',
-    authDomain: 'forms-389a6.firebaseapp.com',
-    projectId: 'forms-389a6',
-    storageBucket: 'forms-389a6.firebasestorage.app',
-    messagingSenderId: '721032079467',
-    appId: '1:721032079467:web:b525c93448811b8bf4292e',
+    apiKey: 'AIzaSyDblRCWL3l1VSOHkUiBshnO5CWISnTXjYw',
+    authDomain: 'centralize-users.firebaseapp.com',
+    projectId: 'centralize-users',
+    storageBucket: 'centralize-users.firebasestorage.app',
+    messagingSenderId: '354356008461',
+    appId: '1:354356008461:web:a3ead68b25b52b3852a744',
     databaseURL:
-      'https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app',
+      'https://centralize-users-default-rtdb.asia-southeast1.firebasedatabase.app/',
     vapidKey:
-      'BH-Py3hgXNTO92ksco5vUvezLLth_VbVhS_eSUt4PzUtfJrHTbB4PMfnm6QS15N-oDCSukq_sSKcrTVNklQfacs',
+      process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ||
+      'BFe8C_IjXW8Rbw23Ab1w5DCo_sI__ov2eMhOOOpDtAted0zi9vbu48WrCSMRDb87Lg7gzn07u9j39VJlV392UCc',
   };
   return sharedConfig;
 }
@@ -87,94 +95,154 @@ export async function getSharedMessaging(): Promise<Messaging | null> {
 }
 
 /**
- * Requests browser permission for push notifications and registers the FCM token to RTDB.
+ * Helper to fetch the current Firebase Installation ID (FID).
  */
-export async function requestNotificationPermissionAndGetToken(
-  clientId: string,
-  userId: string,
-): Promise<string | null> {
+export async function getCurrentFid(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
   try {
-    if (typeof window === 'undefined') return null;
-
-    console.log('FCM: Requesting notification permission...');
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      throw new Error('Notification permission denied by user.');
-    }
-    console.log('FCM: Notification permission granted.');
-
-    const database = await getSharedDatabase();
-    const messaging = await getSharedMessaging();
-    const config = await getSharedFirebaseConfig();
-
-    if (!messaging) {
-      throw new Error(
-        'Firebase Messaging is not supported or could not be initialized in this browser.',
-      );
-    }
-
-    const vapidKey = config.vapidKey;
-    console.log('FCM: Retrieving FCM Token with VAPID Key:', vapidKey);
-
-    // Register service worker manually with cache busting to bypass browser cache
-    let registration: ServiceWorkerRegistration | undefined;
-    try {
-      console.log('FCM: Registering service worker manually...');
-      registration = await navigator.serviceWorker.register(
-        '/firebase-messaging-sw.js?v=' + Date.now(),
-        {
-          scope: '/',
-        },
-      );
-      console.log(
-        'FCM: Service worker registered manually successfully:',
-        registration,
-      );
-    } catch (swErr) {
-      console.error('FCM: Manual service worker registration failed:', swErr);
-      throw new Error(
-        `Service Worker registration failed: ${(swErr as Error).message}`,
-      );
-    }
-
-    const token = await getToken(messaging, {
-      vapidKey,
-      serviceWorkerRegistration: registration,
-    });
-
-    if (token) {
-      console.log('FCM: Token retrieved successfully:', token);
-
-      // Save FCM token to RTDB under fcm-tokens/${clientId}/${userId}
-      const tokenRef = ref(database, `fcm-tokens/${clientId}/${userId}`);
-      await set(tokenRef, {
-        token: token,
-        updatedAt: Date.now(),
-        device:
-          typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
-      });
-
-      console.log(
-        `FCM: Saved token to RTDB under fcm-tokens/${clientId}/${userId}`,
-      );
-      return token;
-    } else {
-      throw new Error(
-        'No registration token available. Request permission to generate one.',
-      );
-    }
+    const app = await getSharedApp();
+    const installations = getInstallations(app);
+    return await getId(installations);
   } catch (err) {
-    console.error('FCM: Failed to get push token:', err);
-    throw err;
+    console.error('FCM: Failed to get installation ID:', err);
+    return null;
   }
 }
+
+/**
+ * Saves/updates the FID registration details in the centralized users Firestore database.
+ */
+export async function saveFidToDatabase(userId: string, fid: string): Promise<void> {
+  try {
+    const deviceRef = doc(userDb, 'users', userId, 'notificationDevices', fid);
+    const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
+    const browser = detectBrowser(userAgent);
+    const deviceType = detectDeviceType(userAgent);
+
+    await setDoc(
+      deviceRef,
+      {
+        fid,
+        platform: 'web',
+        enabled: true,
+        lastSeenAt: serverTimestamp(),
+        userAgent,
+        browser,
+        deviceType,
+      },
+      { merge: true }
+    );
+
+    // Separately merge createdAt using merge: true to avoid overwriting it
+    await setDoc(
+      deviceRef,
+      {
+        createdAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    console.log(`FCM: Saved active registration in Firestore for user ${userId}, FID: ${fid}`);
+  } catch (err) {
+    console.error('FCM: Failed to save FID to Firestore:', err);
+  }
+}
+
+/**
+ * Marks the FID registration as disabled on unregistration triggers.
+ */
+export async function removeFidFromDatabase(userId: string, fid: string): Promise<void> {
+  try {
+    const deviceRef = doc(userDb, 'users', userId, 'notificationDevices', fid);
+    await setDoc(
+      deviceRef,
+      {
+        enabled: false,
+        lastSeenAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    console.log(`FCM: Disabled registration in Firestore for user ${userId}, FID: ${fid}`);
+  } catch (err) {
+    console.error('FCM: Failed to disable FID in Firestore:', err);
+  }
+}
+
+/**
+ * Registers the user's browser device with FCM.
+ */
+export async function registerNotificationDevice(userId: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    throw new Error('Notification permission denied by user.');
+  }
+
+  const messaging = await getSharedMessaging();
+  const config = await getSharedFirebaseConfig();
+
+  if (!messaging) {
+    throw new Error('Firebase Messaging is not supported or could not be initialized.');
+  }
+
+  // Register service worker manually with cache busting to bypass browser cache
+  let registration: ServiceWorkerRegistration | undefined;
+  try {
+    console.log('FCM: Registering service worker manually...');
+    registration = await navigator.serviceWorker.register(
+      '/firebase-messaging-sw.js?v=' + Date.now(),
+      {
+        scope: '/',
+      }
+    );
+    console.log('FCM: Service worker registered manually successfully:', registration);
+  } catch (swErr) {
+    console.error('FCM: Manual service worker registration failed:', swErr);
+    throw new Error(`Service Worker registration failed: ${(swErr as Error).message}`);
+  }
+
+  // Set up FID lifecycle listeners before calling register
+  setupFidLifecycleListeners(messaging, userId);
+
+  const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || config.vapidKey;
+  console.log('FCM: Registering app instance using VAPID Key:', vapidKey);
+
+  // Call the modern FID-based register API
+  await register(messaging, {
+    vapidKey,
+    serviceWorkerRegistration: registration,
+  });
+
+  // Manually guarantee the current FID is saved to Firestore
+  const fid = await getCurrentFid();
+  if (fid) {
+    await saveFidToDatabase(userId, fid);
+  }
+}
+
+/**
+ * Registers the event listeners for FID lifecycle.
+ */
+function setupFidLifecycleListeners(messaging: Messaging, userId: string) {
+  if (listenersSetup) return;
+
+  onRegistered(messaging, (installationId) => {
+    console.log('FCM: onRegistered callback fired. FID:', installationId);
+    saveFidToDatabase(userId, installationId);
+  });
+
+  onUnregistered(messaging, (installationId) => {
+    console.log('FCM: onUnregistered callback fired. FID:', installationId);
+    removeFidFromDatabase(userId, installationId);
+  });
+
+  listenersSetup = true;
+  console.log('FCM: FID lifecycle listeners registered.');
+}
+
 /**
  * Sets up the foreground push notification handler.
- * Firebase's onMessage only fires when the app tab IS focused.
- * We use the Service Worker to showNotification so it looks identical
- * to a background notification.
- *
- * Call this once from the root layout (client component).
  */
 export async function setupForegroundNotifications(): Promise<void> {
   if (typeof window === 'undefined') return;
@@ -201,16 +269,11 @@ export async function setupForegroundNotifications(): Promise<void> {
       };
 
       try {
-        // Use SW showNotification so it appears as a real OS notification
         const registration = await navigator.serviceWorker.ready;
         await registration.showNotification(title, options);
         console.log('FCM: Foreground notification shown via SW.');
       } catch (swErr) {
-        // Fallback: use Notification API directly
-        console.warn(
-          'FCM: SW showNotification failed, falling back to Notification API:',
-          swErr,
-        );
+        console.warn('FCM: SW showNotification failed, falling back to Notification API:', swErr);
         if (Notification.permission === 'granted') {
           new Notification(title, options);
         }
@@ -220,9 +283,26 @@ export async function setupForegroundNotifications(): Promise<void> {
     foregroundHandlerSetup = true;
     console.log('FCM: Foreground notification handler registered.');
   } catch (err) {
-    console.error(
-      'FCM: Failed to set up foreground notification handler:',
-      err,
-    );
+    console.error('FCM: Failed to set up foreground notification handler:', err);
   }
+}
+
+/**
+ * Utility to detect browser name from userAgent.
+ */
+function detectBrowser(ua: string): string {
+  if (ua.includes('Firefox')) return 'Firefox';
+  if (ua.includes('Edg/')) return 'Edge';
+  if (ua.includes('Chrome') && !ua.includes('Chromium')) return 'Chrome';
+  if (ua.includes('Safari') && !ua.includes('Chrome')) return 'Safari';
+  return 'Unknown';
+}
+
+/**
+ * Utility to detect device type from userAgent.
+ */
+function detectDeviceType(ua: string): 'desktop' | 'mobile' | 'tablet' | 'unknown' {
+  if (/tablet|ipad|playbook|silk/i.test(ua)) return 'tablet';
+  if (/mobile|iphone|ipod|android|blackberry|opera mini|iemobile/i.test(ua)) return 'mobile';
+  return 'desktop';
 }

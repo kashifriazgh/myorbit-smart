@@ -23,12 +23,8 @@ import { OnboardingData } from '@/app/lib/interface';
 
 // Onboarding Steps
 import NameStep from '@/app/components/onboarding/steps/NameStep';
-import LocationStep from '@/app/components/onboarding/steps/LocationStep';
 import ProfileDetailsStep from '@/app/components/onboarding/steps/ProfileDetailsStep';
-import ProductivityStep from '@/app/components/onboarding/steps/ProductivityStep';
-import NotificationStep from '@/app/components/onboarding/steps/NotificationStep';
-import AIBehaviorStep from '@/app/components/onboarding/steps/AIBehaviorStep';
-import PlanningStep from '@/app/components/onboarding/steps/PlanningStep';
+import ProfessionStep from '@/app/components/onboarding/steps/ProfessionStep';
 
 export default function UserProfilePage() {
   const { user, onboardingData, updateOnboardingData, loading } = useAuth();
@@ -62,6 +58,11 @@ export default function UserProfilePage() {
   const handleSave = async () => {
     if (!localData.firstName?.trim() || !localData.lastName?.trim()) {
       setErrorMessage('First Name and Last Name are required.');
+      setErrorOpen(true);
+      return;
+    }
+    if (!localData.mobile?.value?.trim()) {
+      setErrorMessage('Mobile Number is required.');
       setErrorOpen(true);
       return;
     }
@@ -156,27 +157,17 @@ export default function UserProfilePage() {
       {/* Main Profile Form */}
       <Box maxWidth={700} mx="auto" sx={{ px: { xs: 2, sm: 3 }, mt: 4 }}>
         <Stack spacing={4}>
-          {/* Section 1: Name */}
+          {/* Section 1: Name & Contact */}
           <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
             <CardContent sx={{ p: 4 }}>
               <NameStep
-                value={{ firstName: localData.firstName, lastName: localData.lastName }}
-                onChange={handleChange}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Section 2: Location & Profession */}
-          <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-            <CardContent sx={{ p: 4 }}>
-              <LocationStep
                 value={localData}
                 onChange={handleChange}
               />
             </CardContent>
           </Card>
 
-          {/* Section 3: Profile Details */}
+          {/* Section 2: Profile Details */}
           <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
             <CardContent sx={{ p: 4 }}>
               <ProfileDetailsStep
@@ -186,40 +177,10 @@ export default function UserProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Section 4: Productivity Style */}
+          {/* Section 3: Profession */}
           <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
             <CardContent sx={{ p: 4 }}>
-              <ProductivityStep
-                value={localData}
-                onChange={handleChange}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Section 5: Notifications & Focus */}
-          <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-            <CardContent sx={{ p: 4 }}>
-              <NotificationStep
-                value={localData}
-                onChange={handleChange}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Section 6: AI Personality */}
-          <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-            <CardContent sx={{ p: 4 }}>
-              <AIBehaviorStep
-                value={localData}
-                onChange={handleChange}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Section 7: Planning Preferences */}
-          <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-            <CardContent sx={{ p: 4 }}>
-              <PlanningStep
+              <ProfessionStep
                 value={localData}
                 onChange={handleChange}
               />

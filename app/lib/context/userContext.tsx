@@ -1,118 +1,16 @@
 'use client';
 
-import { onAuthStateChanged, getAuth, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   doc,
   getDoc,
   setDoc,
-  onSnapshot,
-  collection,
-  query,
-  where,
-  getDocs,
-  Timestamp,
 } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { app, db } from '../firebase';
-import { FirestoreUser, OnboardingData, Goal, TotalCashSnapshot, LoanRecord, SchedulesProps } from '../interface';
+import { userAuth as auth, userDb as db } from '../firebase';
+import { FirestoreUser, OnboardingData } from '../interface';
 import { getOrCreateGuestUser } from '../guestUser';
 import Cookies from 'js-cookie';
-import { getTaskMetrics, TodoAggregateStats, generateTodoAnalysisSummary, getScheduleMetrics, ScheduleMetrics } from '../utilts';
-
-const auth = getAuth(app);
-
-// ─── Context Status ──────────────────────────────────────────────────────────
-
-export type ContextStatus = 'idle' | 'fetching' | 'generating' | 'saved' | 'error';
-
-// ─── Todo Context ─────────────────────────────────────────────────────────────
-
-export interface TodoContextData {
-  summary: string;
-  totalCompletedCount: number;
-  totalActiveCount: number;
-  sampledCompletedCount: number;
-  sampledActiveCount: number;
-  generatedAt: string;
-  locked: boolean;
-  sampledCompleted?: {
-    title: string;
-    priority: string;
-    completedAt: string;
-    progressPercent: number;
-    progressLabel: string;
-    pace: 'Ahead' | 'On Track' | 'Behind' | 'Overdue' | null;
-    rescheduleStatus: 'Stable' | 'Minor Slippage' | 'Frequently Delayed' | 'Chronically Postponed';
-    staleness: 'Fresh' | 'Aging' | 'Stale' | 'Needs Review' | null;
-  }[];
-  sampledActive?: {
-    title: string;
-    priority: string;
-    progressPercent: number;
-    progressLabel: string;
-    pace: 'Ahead' | 'On Track' | 'Behind' | 'Overdue' | null;
-    rescheduleStatus: 'Stable' | 'Minor Slippage' | 'Frequently Delayed' | 'Chronically Postponed';
-    staleness: 'Fresh' | 'Aging' | 'Stale' | 'Needs Review' | null;
-    status: string;
-    daysPassed: number;
-    createdAt: string;
-    dueDate: string;
-  }[];
-  aggregateSummary?: TodoAggregateStats;
-}
-
-// ─── Goal Context ─────────────────────────────────────────────────────────────
-
-export interface GoalContextData {
-  summary: string;
-  totalCompletedCount: number;
-  totalActiveCount: number;
-  sampledCompletedCount: number;
-  sampledActiveCount: number;
-  checkInsLast30Days: number;
-  overallConsistency: number;
-  generatedAt: string;
-  locked: boolean;
-}
-
-// ─── Finance Context ──────────────────────────────────────────────────────────
-
-export interface FinanceContextData {
-  summary: string;
-  availableAmount: number;
-  freezeAmount: number;
-  totalAmount: number;
-  upcomingExpensesCount: number;
-  upcomingExpensesTotal: number;
-  outstandingBorrowTotal: number;
-  outstandingLendTotal: number;
-  generatedAt: string;
-  locked: boolean;
-}
-
-// ─── Consolidated Context ─────────────────────────────────────────────────────
-
-export interface ConsolidatedContextData {
-  summary: string;
-  generatedAt: string;
-  locked: boolean;
-}
-
-// ─── Streak Context Deleted ──────────────────────────────────────────────────
-
-// ─── Schedule Context ─────────────────────────────────────────────────────────
-
-export interface ScheduleContextData {
-  summary: string;
-  totalCount: number;
-  averageDailySchedules: number;
-  flexibleCount: number;
-  generatedAt: string;
-  locked: boolean;
-  manualMetrics?: ScheduleMetrics;
-}
-
-// ─── Main Context Type ────────────────────────────────────────────────────────
 
 interface UserContextType {
   user: FirestoreUser | null;
@@ -121,41 +19,8 @@ interface UserContextType {
   onboardingData: OnboardingData | null;
   updateOnboardingData: (data: Partial<OnboardingData>) => Promise<void>;
   markGuideAsVisited: () => Promise<void>;
-
-  // Todo AI Context
-  todoContextData: TodoContextData | null;
-  todoContextStatus: ContextStatus;
-  todoContextLocked: boolean;
-  generateTodoContext: () => Promise<void>;
-  toggleTodoContextLock: (locked: boolean) => Promise<void>;
-
-  // Goal AI Context
-  goalContextData: GoalContextData | null;
-  goalContextStatus: ContextStatus;
-  goalContextLocked: boolean;
-  generateGoalContext: () => Promise<void>;
-  toggleGoalContextLock: (locked: boolean) => Promise<void>;
-
-  // Finance AI Context
-  financeContextData: FinanceContextData | null;
-  financeContextStatus: ContextStatus;
-  financeContextLocked: boolean;
-  generateFinanceContext: () => Promise<void>;
-  toggleFinanceContextLock: (locked: boolean) => Promise<void>;
-
-  // Consolidated AI Context
-  consolidatedContextData: ConsolidatedContextData | null;
-  consolidatedContextStatus: ContextStatus;
-  consolidatedContextLocked: boolean;
-  generateConsolidatedContext: () => Promise<void>;
-  toggleConsolidatedContextLock: (locked: boolean) => Promise<void>;
-
-  // Schedule AI Context
-  scheduleContextData: ScheduleContextData | null;
-  scheduleContextStatus: ContextStatus;
-  scheduleContextLocked: boolean;
-  generateScheduleContext: () => Promise<void>;
-  toggleScheduleContextLock: (locked: boolean) => Promise<void>;
+  contextParagraph: string;
+  updateContextParagraph: (paragraph: string) => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType>({
@@ -165,111 +30,68 @@ const UserContext = createContext<UserContextType>({
   onboardingData: null,
   updateOnboardingData: async () => {},
   markGuideAsVisited: async () => {},
-  todoContextData: null,
-  todoContextStatus: 'idle',
-  todoContextLocked: false,
-  generateTodoContext: async () => {},
-  toggleTodoContextLock: async () => {},
-  goalContextData: null,
-  goalContextStatus: 'idle',
-  goalContextLocked: false,
-  generateGoalContext: async () => {},
-  toggleGoalContextLock: async () => {},
-  financeContextData: null,
-  financeContextStatus: 'idle',
-  financeContextLocked: false,
-  generateFinanceContext: async () => {},
-  toggleFinanceContextLock: async () => {},
-  consolidatedContextData: null,
-  consolidatedContextStatus: 'idle',
-  consolidatedContextLocked: false,
-  generateConsolidatedContext: async () => {},
-  toggleConsolidatedContextLock: async () => {},
-  scheduleContextData: null,
-  scheduleContextStatus: 'idle',
-  scheduleContextLocked: false,
-  generateScheduleContext: async () => {},
-  toggleScheduleContextLock: async () => {},
+  contextParagraph: '',
+  updateContextParagraph: async () => {},
 });
-
-// ─── localStorage helpers ─────────────────────────────────────────────────────
-
-const LS_TODO    = 'reFetchTodosLocked';
-const LS_GOAL    = 'reFetchGoalsLocked';
-const LS_FINANCE = 'reFetchFinanceLocked';
-const LS_CONSOLIDATED = 'reFetchConsolidatedLocked';
-const LS_SCHEDULE = 'reFetchSchedulesLocked';
-
-function getLock(key: string): boolean {
-  try { return localStorage.getItem(key) === 'true'; } catch { return false; }
-}
-function setLock(key: string, value: boolean) {
-  try { localStorage.setItem(key, String(value)); } catch { /* silent */ }
-}
-
-function toDateStr(val: Timestamp | Date | undefined | null): string {
-  if (!val) return '';
-  const d = val instanceof Date ? val : val.toDate();
-  return d.toISOString().split('T')[0];
-}
-
-function getMs(val: Timestamp | Date | unknown): number {
-  if (!val) return 0;
-  if (val instanceof Date) return val.getTime();
-  const obj = val as { toDate?: () => Date; seconds?: number };
-  if (typeof obj.toDate === 'function') return obj.toDate().getTime();
-  if (typeof obj.seconds === 'number') return obj.seconds * 1000;
-  return 0;
-}
-
-
-// ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<FirestoreUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
   const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null);
+  const [contextParagraph, setContextParagraph] = useState<string>('');
 
-  // Todo context state
-  const [todoContextData, setTodoContextData] = useState<TodoContextData | null>(null);
-  const [todoContextStatus, setTodoContextStatus] = useState<ContextStatus>('idle');
-  const [todoContextLocked, setTodoContextLocked] = useState(false);
-
-  // Goal context state
-  const [goalContextData, setGoalContextData] = useState<GoalContextData | null>(null);
-  const [goalContextStatus, setGoalContextStatus] = useState<ContextStatus>('idle');
-  const [goalContextLocked, setGoalContextLocked] = useState(false);
-
-  // Finance context state
-  const [financeContextData, setFinanceContextData] = useState<FinanceContextData | null>(null);
-  const [financeContextStatus, setFinanceContextStatus] = useState<ContextStatus>('idle');
-  const [financeContextLocked, setFinanceContextLocked] = useState(false);
-
-  // Consolidated context state
-  const [consolidatedContextData, setConsolidatedContextData] = useState<ConsolidatedContextData | null>(null);
-  const [consolidatedContextStatus, setConsolidatedContextStatus] = useState<ContextStatus>('idle');
-  const [consolidatedContextLocked, setConsolidatedContextLocked] = useState(false);
-
-  // Schedule context state
-  const [scheduleContextData, setScheduleContextData] = useState<ScheduleContextData | null>(null);
-  const [scheduleContextStatus, setScheduleContextStatus] = useState<ContextStatus>('idle');
-  const [scheduleContextLocked, setScheduleContextLocked] = useState(false);
-
-  // Fires once after Firestore lock status is known — prevents premature auto-triggers
-  const [contextLoaded, setContextLoaded] = useState(false);
-
-  // ── Auth effect ────────────────────────────────────────────────────────────
+  // ── Auth & Session effect ──────────────────────────────────────────────────
   useEffect(() => {
-    let unsubscribeOnboarding: (() => void) | null = null;
+    // 1. Try to load cached user and onboarding from localStorage on mount
+    const cachedUserStr = localStorage.getItem('myorbit_cached_user');
+    const cachedOnboardingStr = localStorage.getItem('myorbit_cached_onboarding');
+    const cachedParagraph = localStorage.getItem('myorbit_cached_context_paragraph');
 
+    let initialUser: FirestoreUser | null = null;
+    if (cachedUserStr) {
+      try {
+        initialUser = JSON.parse(cachedUserStr);
+        setUser(initialUser);
+        setIsGuest(initialUser?.isGuest ?? false);
+        setLoading(false);
+        console.log('📦 Served user session from local cache:', initialUser?.email);
+      } catch (e) {
+        console.error('Error parsing cached user:', e);
+      }
+    }
+
+    if (cachedOnboardingStr) {
+      try {
+        const initialOnboarding = JSON.parse(cachedOnboardingStr);
+        setOnboardingData(initialOnboarding);
+        console.log('📦 Served onboarding profile from local cache');
+      } catch (e) {
+        console.error('Error parsing cached onboarding:', e);
+      }
+    }
+
+    if (cachedParagraph) {
+      setContextParagraph(cachedParagraph);
+    }
+
+    // 2. Subscribe to Auth state changes
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log('🔍 Firebase auth state changed:', firebaseUser ? 'User logged in' : 'No user');
 
-      if (unsubscribeOnboarding) { unsubscribeOnboarding(); unsubscribeOnboarding = null; }
-
       if (firebaseUser) {
+        // If we have a cached user and UIDs match, we can skip the Firestore document read request!
+        if (initialUser && initialUser.uid === firebaseUser.uid) {
+          console.log('✅ Local session matched active auth user. Skipped Firestore user read.');
+          // Ensure cookies are present
+          Cookies.set('uid', firebaseUser.uid, { expires: 7, path: '/' });
+          Cookies.set('role', initialUser.role || 'viewer', { expires: 7, path: '/' });
+          return;
+        }
+
+        // If no cached user or UID mismatch, fetch from Firestore
         try {
+          console.log('🔥 Cache miss: Fetching user document from Firestore...');
           const ref = doc(db, 'users', firebaseUser.uid);
           const snap = await getDoc(ref);
 
@@ -280,12 +102,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               await signOut(auth);
               Cookies.remove('uid', { path: '/' });
               Cookies.remove('role', { path: '/' });
+              localStorage.removeItem('myorbit_cached_user');
+              localStorage.removeItem('myorbit_cached_onboarding');
+              localStorage.removeItem('myorbit_cached_context_paragraph');
               setUser(getOrCreateGuestUser());
               setIsGuest(true);
               return;
             }
 
-            setUser({
+            const userObj: FirestoreUser = {
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
               displayName: data.displayName || firebaseUser.displayName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || 'User',
@@ -295,11 +120,34 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               createdAt: data.createdAt,
               isGuest: false,
               guideVisited: data.guideVisited || false,
-            });
+            };
+
+            setUser(userObj);
             setIsGuest(false);
+            localStorage.setItem('myorbit_cached_user', JSON.stringify(userObj));
             Cookies.set('uid', firebaseUser.uid, { expires: 7, path: '/' });
             Cookies.set('role', data.role || 'viewer', { expires: 7, path: '/' });
-            console.log('✅ Firebase user authenticated and cookies set');
+            console.log('✅ Firebase user session cached and initialized');
+
+            // Fetch onboarding once if mismatch / missing
+            if (!cachedOnboardingStr) {
+              const obSnap = await getDoc(doc(db, 'initialOnboarding', firebaseUser.uid));
+              if (obSnap.exists()) {
+                const obData = obSnap.data() as OnboardingData;
+                setOnboardingData(obData);
+                localStorage.setItem('myorbit_cached_onboarding', JSON.stringify(obData));
+              }
+            }
+
+            // Fetch context paragraph once if missing
+            if (!cachedParagraph) {
+              const contextSnap = await getDoc(doc(db, 'context', firebaseUser.uid));
+              if (contextSnap.exists()) {
+                const paragraphVal = contextSnap.data()?.paragraph || '';
+                setContextParagraph(paragraphVal);
+                localStorage.setItem('myorbit_cached_context_paragraph', paragraphVal);
+              }
+            }
           } else {
             console.warn('⚠️ No Firestore user document found.');
             Cookies.remove('uid', { path: '/' });
@@ -314,933 +162,84 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setIsGuest(false);
         }
-
-        unsubscribeOnboarding = onSnapshot(
-          doc(db, 'initialOnboarding', firebaseUser.uid),
-          (snap) => {
-            setOnboardingData(snap.exists() ? (snap.data() as OnboardingData) : null);
-          },
-          (err) => console.error('❌ Error listening to initialOnboarding:', err)
-        );
       } else {
-        console.log('🔍 No Firebase user, checking for guest user');
+        console.log('🔍 No Firebase user, initializing guest user');
         Cookies.remove('uid', { path: '/' });
         Cookies.remove('role', { path: '/' });
+        localStorage.removeItem('myorbit_cached_user');
+        localStorage.removeItem('myorbit_cached_onboarding');
+        localStorage.removeItem('myorbit_cached_context_paragraph');
         setUser(getOrCreateGuestUser());
         setIsGuest(true);
         setOnboardingData(null);
+        setContextParagraph('');
       }
 
       setLoading(false);
     });
 
-    return () => { unsubscribeAuth(); if (unsubscribeOnboarding) unsubscribeOnboarding(); };
+    return () => {
+      unsubscribeAuth();
+    };
   }, []);
 
-  // ── Load saved contexts from Firestore once per session ───────────────────
-  useEffect(() => {
-    if (!user || isGuest) {
-      setTodoContextData(null);
-      setTodoContextLocked(false);
-      setGoalContextData(null);
-      setGoalContextLocked(false);
-      setFinanceContextData(null);
-      setFinanceContextLocked(false);
-      setConsolidatedContextData(null);
-      setConsolidatedContextLocked(false);
-      setScheduleContextData(null);
-      setScheduleContextLocked(false);
-      return;
-    }
-
-    const load = async () => {
-      try {
-        const ref = doc(db, 'context', user.uid);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const data = snap.data();
-
-          // Todo context
-          const tc = data?.todoContext as TodoContextData | undefined;
-          if (tc) {
-            setTodoContextData(tc);
-            setTodoContextLocked(tc.locked ?? false);
-            setLock(LS_TODO, tc.locked ?? false);
-          } else {
-            setTodoContextLocked(getLock(LS_TODO));
-          }
-
-          // Goal context
-          const gc = data?.goalContext as GoalContextData | undefined;
-          if (gc) {
-            setGoalContextData(gc);
-            setGoalContextLocked(gc.locked ?? false);
-            setLock(LS_GOAL, gc.locked ?? false);
-          } else {
-            setGoalContextLocked(getLock(LS_GOAL));
-          }
-
-          // Finance context
-          const fc = data?.financeContext as FinanceContextData | undefined;
-          if (fc) {
-            setFinanceContextData(fc);
-            setFinanceContextLocked(fc.locked ?? false);
-            setLock(LS_FINANCE, fc.locked ?? false);
-          } else {
-            setFinanceContextLocked(getLock(LS_FINANCE));
-          }
-
-          // Consolidated context
-          const cc = data?.consolidatedContext as ConsolidatedContextData | undefined;
-          if (cc) {
-            setConsolidatedContextData(cc);
-            setConsolidatedContextLocked(cc.locked ?? false);
-            setLock(LS_CONSOLIDATED, cc.locked ?? false);
-          } else {
-            setConsolidatedContextLocked(getLock(LS_CONSOLIDATED));
-          }
-
-          // Schedule context
-          const schC = data?.scheduleContext as ScheduleContextData | undefined;
-          if (schC) {
-            setScheduleContextData(schC);
-            setScheduleContextLocked(schC.locked ?? false);
-            setLock(LS_SCHEDULE, schC.locked ?? false);
-          } else {
-            setScheduleContextLocked(getLock(LS_SCHEDULE));
-          }
-        } else {
-          setTodoContextLocked(getLock(LS_TODO));
-          setGoalContextLocked(getLock(LS_GOAL));
-          setFinanceContextLocked(getLock(LS_FINANCE));
-          setConsolidatedContextLocked(getLock(LS_CONSOLIDATED));
-          setScheduleContextLocked(getLock(LS_SCHEDULE));
-        }
-      } catch (err) {
-        console.error('❌ Error loading contexts from Firestore:', err);
-        setTodoContextLocked(getLock(LS_TODO));
-        setGoalContextLocked(getLock(LS_GOAL));
-        setFinanceContextLocked(getLock(LS_FINANCE));
-        setConsolidatedContextLocked(getLock(LS_CONSOLIDATED));
-        setScheduleContextLocked(getLock(LS_SCHEDULE));
-      }
-    };
-
-    load().then(() => setContextLoaded(true));
-  }, [user, isGuest]);
-
-  // ── Auto-trigger both contexts globally once contextLoaded is true ─────────
-  // UserProvider wraps the entire app, so this fires on ANY page the user lands on.
-  useEffect(() => {
-    if (!contextLoaded || !user || isGuest) return;
-
-    if (!getLock(LS_TODO)) {
-      console.log('🌍 Global auto-trigger: generating todo context...');
-      generateTodoContext();
-    } else {
-      console.log('🔒 Todo context auto-trigger skipped (locked).');
-    }
-
-    if (!getLock(LS_GOAL)) {
-      console.log('🌍 Global auto-trigger: generating goal context...');
-      generateGoalContext();
-    } else {
-      console.log('🔒 Goal context auto-trigger skipped (locked).');
-    }
-
-    if (!getLock(LS_FINANCE)) {
-      console.log('🌍 Global auto-trigger: generating finance context...');
-      generateFinanceContext();
-    } else {
-      console.log('🔒 Finance context auto-trigger skipped (locked).');
-    }
-
-    if (!getLock(LS_CONSOLIDATED)) {
-      console.log('🌍 Global auto-trigger: generating consolidated context...');
-      generateConsolidatedContext();
-    } else {
-      console.log('🔒 Consolidated context auto-trigger skipped (locked).');
-    }
-
-    if (!getLock(LS_SCHEDULE)) {
-      console.log('🌍 Global auto-trigger: generating schedule context...');
-      generateScheduleContext();
-    } else {
-      console.log('🔒 Schedule context auto-trigger skipped (locked).');
-    }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextLoaded]); // Runs exactly once after Firestore load completes
-
-  // ── Generate Todo Context ──────────────────────────────────────────────────
-  const generateTodoContext = useCallback(async () => {
-    if (!user || isGuest) return;
-    if (getLock(LS_TODO)) {
-      console.log('🔒 Todo context locked (localStorage). Skipping.');
-      return;
-    }
-
-    // Firestore double-check
-    try {
-      const snap = await getDoc(doc(db, 'context', user.uid));
-      if (snap.exists() && snap.data()?.todoContext?.locked) {
-        setLock(LS_TODO, true);
-        setTodoContextLocked(true);
-        return;
-      }
-    } catch { /* continue */ }
-
-    setTodoContextStatus('fetching');
-    try {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const today = new Date();
-
-      const allSnap = await getDocs(query(
-        collection(db, 'todos'),
-        where('authorId', '==', user.uid)
-      ));
-
-      type RawTodo = {
-        id: string;
-        title: string;
-        priority: string;
-        progressPercent: number;
-        status: string;
-        startDate?: Timestamp | Date;
-        createdAt?: Timestamp | Date;
-        completedAt?: Timestamp | Date;
-        dueDate?: Timestamp | Date;
-        tags?: string[];
-        isArchived?: boolean;
-        rescheduleCounts?: number;
-        steps?: {
-          done: boolean;
-          status: 'in_progress' | 'completed' | 'hold' | 'left-over';
-        }[];
-      };
-
-      const allDocs: RawTodo[] = allSnap.docs.map((d) => ({ id: d.id, ...d.data() } as RawTodo));
-
-      // Separate completed (last 30 days) vs active (last 30 days), excluding archived
-      const recentDocs = allDocs.filter((d) => {
-        if (d.isArchived === true) return false;
-        const createdMs = getMs(d.createdAt);
-        return createdMs >= thirtyDaysAgo.getTime();
-      });
-
-      const completedDocs = recentDocs.filter((d) => d.status === 'completed');
-      const activeDocs = recentDocs.filter((d) => d.status === 'in_progress' || d.status === 'hold');
-
-      const totalCompletedCount = completedDocs.length;
-      const totalActiveCount = activeDocs.length;
-
-      if (totalCompletedCount === 0 && totalActiveCount === 0) {
-        console.log('📋 No todos found in last 30 days.');
-        setTodoContextStatus('idle');
-        return;
-      }
-
-      // Helper: days passed from a date to today
-      const daysPassed = (val: Timestamp | Date | undefined | null): number => {
-        if (!val) return 0;
-        const d = val instanceof Date ? val : (val as Timestamp).toDate();
-        return Math.max(0, Math.floor((today.getTime() - d.getTime()) / 86400000));
-      };
-
-      // 5 most recent completed — sort by completedAt desc, fallback to updatedAt/createdAt
-      const sampledCompleted = [...completedDocs]
-        .sort((a, b) => {
-          const da = a.completedAt ?? a.createdAt;
-          const db2 = b.completedAt ?? b.createdAt;
-          const ta = da instanceof Date ? da.getTime() : (da as Timestamp)?.toDate?.()?.getTime?.() ?? 0;
-          const tb = db2 instanceof Date ? db2.getTime() : (db2 as Timestamp)?.toDate?.()?.getTime?.() ?? 0;
-          return tb - ta;
-        })
-        .slice(0, 5)
-        .map((t) => {
-          const metrics = getTaskMetrics({
-            createdAt: t.createdAt,
-            dueDate: t.dueDate,
-            rescheduleCounts: t.rescheduleCounts,
-            status: t.status,
-            progressPercent: t.progressPercent,
-            steps: t.steps,
-          });
-          return {
-            title: t.title,
-            priority: t.priority,
-            completedAt: toDateStr(t.completedAt as Timestamp | Date | null ?? t.createdAt as Timestamp | Date | null),
-            progressPercent: metrics.progress,
-            progressLabel: metrics.progressLabel,
-            pace: metrics.pace,
-            rescheduleStatus: metrics.rescheduleStatus,
-            staleness: metrics.staleness,
-          };
-        });
-
-      // 5 most latest active — sort by createdAt desc, include daysPassed and progress
-      const sampledActive = [...activeDocs]
-        .sort((a, b) => {
-          const ta = a.createdAt instanceof Date ? a.createdAt.getTime() : (a.createdAt as Timestamp)?.toDate?.()?.getTime?.() ?? 0;
-          const tb = b.createdAt instanceof Date ? b.createdAt.getTime() : (b.createdAt as Timestamp)?.toDate?.()?.getTime?.() ?? 0;
-          return tb - ta;
-        })
-        .slice(0, 5)
-        .map((t) => {
-          const metrics = getTaskMetrics({
-            createdAt: t.createdAt,
-            dueDate: t.dueDate,
-            rescheduleCounts: t.rescheduleCounts,
-            status: t.status,
-            progressPercent: t.progressPercent,
-            steps: t.steps,
-          });
-          return {
-            title: t.title,
-            priority: t.priority,
-            progressPercent: metrics.progress,
-            progressLabel: metrics.progressLabel,
-            pace: metrics.pace,
-            rescheduleStatus: metrics.rescheduleStatus,
-            staleness: metrics.staleness,
-            status: t.status,
-            daysPassed: daysPassed(t.startDate ?? t.createdAt),
-            createdAt: toDateStr(t.createdAt as Timestamp | Date | null),
-            dueDate: toDateStr(t.dueDate as Timestamp | Date | null),
-          };
-        });
-
-      setTodoContextStatus('generating');
-      const res = await fetch('/api/context/todo-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          completedTodos: sampledCompleted,
-          activeTodos: sampledActive,
-          totalCompletedCount,
-          totalActiveCount,
-        }),
-      });
-      if (!res.ok) throw new Error('Todo summary API failed');
-      const result = await res.json();
-      if (result.error) throw new Error(result.error);
-
-      const aggregateSummary = generateTodoAnalysisSummary(
-        activeDocs.map((t) => ({
-          createdAt: t.createdAt,
-          dueDate: t.dueDate,
-          rescheduleCounts: t.rescheduleCounts,
-          status: t.status,
-          progressPercent: t.progressPercent,
-          steps: t.steps,
-        })),
-        totalCompletedCount
-      );
-
-      const contextData: TodoContextData = {
-        summary: result.summary,
-        totalCompletedCount,
-        totalActiveCount,
-        sampledCompletedCount: sampledCompleted.length,
-        sampledActiveCount: sampledActive.length,
-        generatedAt: new Date().toISOString(),
-        locked: true,
-        sampledCompleted,
-        sampledActive,
-        aggregateSummary,
-      };
-
-      await setDoc(doc(db, 'context', user.uid), { userId: user.uid, todoContext: contextData, updatedAt: new Date().toISOString() }, { merge: true });
-      setLock(LS_TODO, true);
-      setTodoContextData(contextData);
-      setTodoContextLocked(true);
-      setTodoContextStatus('saved');
-      console.log('✅ Todo context generated and saved.');
-    } catch (err) {
-      console.error('❌ Error generating todo context:', err);
-      setTodoContextStatus('error');
-    }
-  }, [user, isGuest]);
-
-  // ── Toggle Todo Context Lock ───────────────────────────────────────────────
-  const toggleTodoContextLock = useCallback(async (locked: boolean) => {
-    if (!user || isGuest) return;
-    setLock(LS_TODO, locked);
-    setTodoContextLocked(locked);
-    try {
-      await setDoc(doc(db, 'context', user.uid),
-        { todoContext: { ...(todoContextData || {}), locked }, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-      if (todoContextData) setTodoContextData({ ...todoContextData, locked });
-    } catch (err) { console.error('❌ Error updating todo lock:', err); }
-  }, [user, isGuest, todoContextData]);
-
-  // ── Generate Goal Context ──────────────────────────────────────────────────
-  const generateGoalContext = useCallback(async () => {
-    if (!user || isGuest) return;
-    if (getLock(LS_GOAL)) {
-      console.log('🔒 Goal context locked (localStorage). Skipping.');
-      return;
-    }
-
-    // Firestore double-check
-    try {
-      const snap = await getDoc(doc(db, 'context', user.uid));
-      if (snap.exists() && snap.data()?.goalContext?.locked) {
-        setLock(LS_GOAL, true);
-        setGoalContextLocked(true);
-        return;
-      }
-    } catch { /* continue */ }
-
-    setGoalContextStatus('fetching');
-    try {
-      const goalsSnap = await getDocs(query(
-        collection(db, 'goals'),
-        where('userId', '==', user.uid)
-      ));
-
-      const allGoals = goalsSnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ...data,
-        } as Goal;
-      });
-
-      // Filter: completed vs active (excluding archived)
-      const nonArchivedGoals = allGoals.filter((g) => g.isArchived !== true);
-      const completedGoals = nonArchivedGoals.filter((g) => g.status === 'Completed');
-      const activeGoals = nonArchivedGoals.filter((g) => g.status !== 'Completed');
-
-      const totalCompletedCount = completedGoals.length;
-      const totalActiveCount = activeGoals.length;
-
-      if (totalCompletedCount === 0 && totalActiveCount === 0) {
-        console.log('📋 No goals found.');
-        setGoalContextStatus('idle');
-        return;
-      }
-
-      // Check-ins in the last 30 days
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const thirtyDaysAgoMs = thirtyDaysAgo.getTime();
-
-      let checkInsLast30Days = 0;
-      let totalConsistencySum = 0;
-      let trackerGoalsCount = 0;
-
-      activeGoals.forEach((g) => {
-        if (g.trackerEnabled && g.tracker) {
-          trackerGoalsCount++;
-          // Consistency calculation
-          const checkIns = g.tracker.checkIns || [];
-          const todayStr = new Date().toISOString().split('T')[0];
-          const pastCheckIns = checkIns.filter((c) => c.scheduledDate <= todayStr);
-          const doneCheckIns = checkIns.filter((c) => c.completed);
-          const consistency = pastCheckIns.length > 0
-            ? Math.round((doneCheckIns.length / pastCheckIns.length) * 100)
-            : 100;
-          totalConsistencySum += consistency;
-
-          // Count check-ins completed in the last 30 days
-          checkIns.forEach((c) => {
-            if (c.completed && c.completedAt) {
-              const completedMs = getMs(new Date(c.completedAt));
-              if (completedMs >= thirtyDaysAgoMs) {
-                checkInsLast30Days++;
-              }
-            }
-          });
-        }
-      });
-
-      const overallConsistency = trackerGoalsCount > 0
-        ? Math.round(totalConsistencySum / trackerGoalsCount)
-        : 100;
-
-      // Sample 5 completed goals (most recent, sorting by completedAt or createdAt)
-      const sampledCompleted = [...completedGoals]
-        .sort((a, b) => {
-          const ta = getMs(a.completedAt || a.createdAt);
-          const tb = getMs(b.completedAt || b.createdAt);
-          return tb - ta;
-        })
-        .slice(0, 5)
-        .map((g) => ({
-          title: g.title,
-          completedAt: toDateStr(g.completedAt || g.createdAt),
-        }));
-
-      // Sample 5 active goals (most recent, sorting by updatedAt or createdAt)
-      const sampledActive = [...activeGoals]
-        .sort((a, b) => {
-          const ta = getMs(a.updatedAt || a.createdAt);
-          const tb = getMs(b.updatedAt || b.createdAt);
-          return tb - ta;
-        })
-        .slice(0, 5)
-        .map((g) => ({
-          title: g.title,
-          progress: g.progress || 0,
-          priority: g.priority || 'Medium',
-          frequency: g.trackerEnabled && g.tracker ? g.tracker.frequency : undefined,
-          consistency: g.trackerEnabled && g.tracker ? (() => {
-            const checkIns = g.tracker.checkIns || [];
-            const todayStr = new Date().toISOString().split('T')[0];
-            const pastCheckIns = checkIns.filter((c) => c.scheduledDate <= todayStr);
-            const doneCheckIns = checkIns.filter((c) => c.completed);
-            return pastCheckIns.length > 0 ? Math.round((doneCheckIns.length / pastCheckIns.length) * 100) : 100;
-          })() : undefined,
-        }));
-
-      setGoalContextStatus('generating');
-      const res = await fetch('/api/context/goal-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          completedGoals: sampledCompleted,
-          activeGoals: sampledActive,
-          totalCompletedCount,
-          totalActiveCount,
-          checkInsLast30Days,
-          overallConsistency,
-        }),
-      });
-      if (!res.ok) throw new Error('Goal summary API failed');
-      const result = await res.json();
-      if (result.error) throw new Error(result.error);
-
-      const contextData: GoalContextData = {
-        summary: result.summary,
-        totalCompletedCount,
-        totalActiveCount,
-        sampledCompletedCount: sampledCompleted.length,
-        sampledActiveCount: sampledActive.length,
-        checkInsLast30Days,
-        overallConsistency,
-        generatedAt: new Date().toISOString(),
-        locked: true,
-      };
-
-      await setDoc(doc(db, 'context', user.uid), { userId: user.uid, goalContext: contextData, updatedAt: new Date().toISOString() }, { merge: true });
-      setLock(LS_GOAL, true);
-      setGoalContextData(contextData);
-      setGoalContextLocked(true);
-      setGoalContextStatus('saved');
-      console.log('✅ Goal context generated and saved.');
-    } catch (err) {
-      console.error('❌ Error generating goal context:', err);
-      setGoalContextStatus('error');
-    }
-  }, [user, isGuest]);
-
-  // ── Toggle Goal Context Lock ───────────────────────────────────────────────
-  const toggleGoalContextLock = useCallback(async (locked: boolean) => {
-    if (!user || isGuest) return;
-    setLock(LS_GOAL, locked);
-    setGoalContextLocked(locked);
-    try {
-      await setDoc(doc(db, 'context', user.uid),
-        { goalContext: { ...(goalContextData || {}), locked }, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-      if (goalContextData) setGoalContextData({ ...goalContextData, locked });
-    } catch (err) { console.error('❌ Error updating goal lock:', err); }
-  }, [user, isGuest, goalContextData]);
-
-  // ── Generate Finance Context ───────────────────────────────────────────────
-  const generateFinanceContext = useCallback(async () => {
-    if (!user || isGuest) return;
-    if (getLock(LS_FINANCE)) {
-      console.log('🔒 Finance context locked (localStorage). Skipping.');
-      return;
-    }
-
-    // Firestore double-check
-    try {
-      const snap = await getDoc(doc(db, 'context', user.uid));
-      if (snap.exists() && snap.data()?.financeContext?.locked) {
-        setLock(LS_FINANCE, true);
-        setFinanceContextLocked(true);
-        return;
-      }
-    } catch { /* continue */ }
-
-    setFinanceContextStatus('fetching');
-    try {
-      // 1. Fetch total cash snapshot
-      const cashRef = doc(db, 'totalCashSnapshots', user.uid);
-      const cashSnap = await getDoc(cashRef);
-
-      let availableAmount = 0;
-      let freezeAmount = 0;
-      let totalAmount = 0;
-      let breakdown = 'none';
-
-      if (cashSnap.exists()) {
-        const cashData = cashSnap.data() as TotalCashSnapshot;
-        totalAmount = cashData.totalAmount || 0;
-        freezeAmount = cashData.freezeAmount || 0;
-        availableAmount = totalAmount - freezeAmount;
-
-        const src = cashData.sources;
-        if (src) {
-          const breakdownItems: string[] = [];
-          if (src.in_hand) breakdownItems.push(`In Hand: PKR ${src.in_hand}`);
-          if (src.easypaisa) breakdownItems.push(`Easypaisa: PKR ${src.easypaisa}`);
-          if (src.jazzcash) breakdownItems.push(`Jazzcash: PKR ${src.jazzcash}`);
-          if (src.other) breakdownItems.push(`Other: PKR ${src.other}`);
-          if (src.bank) {
-            Object.entries(src.bank).forEach(([bankName, val]) => {
-              if (val) breakdownItems.push(`Bank (${bankName}): PKR ${val}`);
-            });
-          }
-          if (src.custom) {
-            Object.entries(src.custom).forEach(([headName, val]) => {
-              if (val) breakdownItems.push(`${headName}: PKR ${val}`);
-            });
-          }
-          if (breakdownItems.length > 0) breakdown = breakdownItems.join(', ');
-        }
-      }
-
-      // 2. Fetch expenditures (upcoming/unpaid) - Expenditures feature removed
-      const upcomingExpensesCount = 0;
-      const upcomingExpensesTotal = 0;
-      const expensesDetail = '';
-
-      // 3. Fetch loans (outstanding/unsettled)
-      const loansSnap = await getDocs(query(
-        collection(db, 'loans'),
-        where('userId', '==', user.uid)
-      ));
-      const allLoans = loansSnap.docs.map(d => ({ id: d.id, ...d.data() } as LoanRecord));
-      const outstandingLoans = allLoans.filter(l => !l.isSettled);
-      const borrowLoans = outstandingLoans.filter(l => l.type === 'borrow');
-      const lendLoans = outstandingLoans.filter(l => l.type === 'lend');
-
-      const outstandingBorrowTotal = borrowLoans.reduce((sum, l) => sum + (l.amount || 0), 0);
-      const outstandingLendTotal = lendLoans.reduce((sum, l) => sum + (l.amount || 0), 0);
-
-      const borrowDetail = borrowLoans.map(l => `Owes ${l.counterparty} PKR ${l.amount}`).join(', ');
-      const lendDetail = lendLoans.map(l => `${l.counterparty} owes User PKR ${l.amount}`).join(', ');
-      const loansDetail = `Borrowings: [${borrowDetail || 'none'}], Lendings: [${lendDetail || 'none'}]`;
-
-      setFinanceContextStatus('generating');
-      const res = await fetch('/api/context/finance-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          availableAmount,
-          freezeAmount,
-          totalAmount,
-          upcomingExpensesCount,
-          upcomingExpensesTotal,
-          outstandingBorrowTotal,
-          outstandingLendTotal,
-          expensesDetail,
-          loansDetail,
-          breakdown,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Finance summary API failed');
-      const result = await res.json();
-      if (result.error) throw new Error(result.error);
-
-      const contextData: FinanceContextData = {
-        summary: result.summary,
-        availableAmount,
-        freezeAmount,
-        totalAmount,
-        upcomingExpensesCount,
-        upcomingExpensesTotal,
-        outstandingBorrowTotal,
-        outstandingLendTotal,
-        generatedAt: new Date().toISOString(),
-        locked: true,
-      };
-
-      await setDoc(doc(db, 'context', user.uid), { userId: user.uid, financeContext: contextData, updatedAt: new Date().toISOString() }, { merge: true });
-      setLock(LS_FINANCE, true);
-      setFinanceContextData(contextData);
-      setFinanceContextLocked(true);
-      setFinanceContextStatus('saved');
-      console.log('✅ Finance context generated and saved.');
-    } catch (err) {
-      console.error('❌ Error generating finance context:', err);
-      setFinanceContextStatus('error');
-    }
-  }, [user, isGuest]);
-
-  // ── Toggle Finance Context Lock ────────────────────────────────────────────
-  const toggleFinanceContextLock = useCallback(async (locked: boolean) => {
-    if (!user || isGuest) return;
-    setLock(LS_FINANCE, locked);
-    setFinanceContextLocked(locked);
-    try {
-      await setDoc(doc(db, 'context', user.uid),
-        { financeContext: { ...(financeContextData || {}), locked }, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-      if (financeContextData) setFinanceContextData({ ...financeContextData, locked });
-    } catch (err) { console.error('❌ Error updating finance lock:', err); }
-  }, [user, isGuest, financeContextData]);
-
-  // ── Streak context logic removed ───────────────────────────────────────────
-
-  // ── Generate Schedule Context ──────────────────────────────────────────────
-  const generateScheduleContext = useCallback(async () => {
-    if (!user || isGuest) return;
-    if (getLock(LS_SCHEDULE)) {
-      console.log('🔒 Schedule context locked (localStorage). Skipping.');
-      return;
-    }
-
-    // Firestore double-check
-    try {
-      const snap = await getDoc(doc(db, 'context', user.uid));
-      if (snap.exists() && snap.data()?.scheduleContext?.locked) {
-        setLock(LS_SCHEDULE, true);
-        setScheduleContextLocked(true);
-        return;
-      }
-    } catch { /* continue */ }
-
-    setScheduleContextStatus('fetching');
-    try {
-      const schedulesSnap = await getDocs(query(
-        collection(db, 'schedules'),
-        where('userId', '==', user.uid)
-      ));
-
-      const allSchedules = schedulesSnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ...data,
-        } as SchedulesProps;
-      });
-
-      const getYYYYMMDD = (d: Date): string => {
-        const yr = d.getFullYear();
-        const mo = String(d.getMonth() + 1).padStart(2, '0');
-        const da = String(d.getDate()).padStart(2, '0');
-        return `${yr}-${mo}-${da}`;
-      };
-
-      // Define a 20-day window: [today - 19 days, today]
-      const today = new Date();
-      const days: string[] = [];
-      for (let i = 19; i >= 0; i--) {
-        const temp = new Date(today);
-        temp.setDate(today.getDate() - i);
-        days.push(getYYYYMMDD(temp));
-      }
-
-      let totalCountForWindow = 0;
-
-      days.forEach((dayStr) => {
-        const dailyItems = allSchedules.filter((s) => {
-          if (s.status === 'cancelled') return false;
-          if (s.isFlexible) {
-            // Flexible/daily schedules created on or before dayStr
-            const createdDateStr = s.createdAt ? toDateStr(s.createdAt) : '';
-            return createdDateStr && createdDateStr <= dayStr;
-          } else {
-            // Specific date schedule
-            return s.date === dayStr;
-          }
-        });
-        totalCountForWindow += dailyItems.length;
-      });
-
-      const averageDailySchedules = parseFloat((totalCountForWindow / 20).toFixed(1));
-      const totalCount = allSchedules.filter((s) => s.status !== 'cancelled').length;
-      const flexibleCount = allSchedules.filter((s) => s.isFlexible && s.status !== 'cancelled').length;
-
-      // Sample 5 active schedules (preferring flexible first, then sorted by date and startTime)
-      const sampledSchedules = allSchedules
-        .filter((s) => s.status !== 'cancelled')
-        .sort((a, b) => {
-          if (a.isFlexible && !b.isFlexible) return -1;
-          if (!a.isFlexible && b.isFlexible) return 1;
-          if (a.date !== b.date) return a.date.localeCompare(b.date);
-          return a.startTime.localeCompare(b.startTime);
-        })
-        .slice(0, 5)
-        .map((s) => ({
-          title: s.title,
-          isFlexible: s.isFlexible || false,
-          startTime: s.startTime || '',
-          endTime: s.endTime || '',
-          duration: s.duration || 0,
-          priority: s.priority || 'medium',
-          objective: s.objective || '',
-        }));
-
-      setScheduleContextStatus('generating');
-      const res = await fetch('/api/context/schedule-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          schedules: sampledSchedules,
-          totalCount,
-          averageDailySchedules,
-          flexibleCount,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Schedule summary API failed');
-      const result = await res.json();
-      if (result.error) throw new Error(result.error);
-
-      const manualMetrics = getScheduleMetrics(allSchedules);
-
-      const contextData: ScheduleContextData = {
-        summary: result.summary,
-        totalCount,
-        averageDailySchedules,
-        flexibleCount,
-        generatedAt: new Date().toISOString(),
-        locked: true,
-        manualMetrics,
-      };
-
-      await setDoc(doc(db, 'context', user.uid), { userId: user.uid, scheduleContext: contextData, updatedAt: new Date().toISOString() }, { merge: true });
-      setLock(LS_SCHEDULE, true);
-      setScheduleContextData(contextData);
-      setScheduleContextLocked(true);
-      setScheduleContextStatus('saved');
-      console.log('✅ Schedule context generated and saved.');
-    } catch (err) {
-      console.error('❌ Error generating schedule context:', err);
-      setScheduleContextStatus('error');
-    }
-  }, [user, isGuest]);
-
-  // ── Toggle Schedule Context Lock ───────────────────────────────────────────
-  const toggleScheduleContextLock = useCallback(async (locked: boolean) => {
-    if (!user || isGuest) return;
-    setLock(LS_SCHEDULE, locked);
-    setScheduleContextLocked(locked);
-    try {
-      await setDoc(doc(db, 'context', user.uid),
-        { scheduleContext: { ...(scheduleContextData || {}), locked }, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-      if (scheduleContextData) setScheduleContextData({ ...scheduleContextData, locked });
-    } catch (err) { console.error('❌ Error updating schedule lock:', err); }
-  }, [user, isGuest, scheduleContextData]);
-
-  // ── Generate Consolidated Context ──────────────────────────────────────────
-  const generateConsolidatedContext = useCallback(async () => {
-    if (!user || isGuest) return;
-    if (getLock(LS_CONSOLIDATED)) {
-      console.log('🔒 Consolidated context locked (localStorage). Skipping.');
-      return;
-    }
-
-    // Firestore double-check
-    try {
-      const snap = await getDoc(doc(db, 'context', user.uid));
-      if (snap.exists() && snap.data()?.consolidatedContext?.locked) {
-        setLock(LS_CONSOLIDATED, true);
-        setConsolidatedContextLocked(true);
-        return;
-      }
-    } catch { /* continue */ }
-
-    setConsolidatedContextStatus('fetching');
-    try {
-      // 1. Get onboarding data
-      const obRef = doc(db, 'initialOnboarding', user.uid);
-      const obSnap = await getDoc(obRef);
-      const obData = obSnap.exists() ? obSnap.data() : null;
-
-      // 2. Get current contexts from Firestore
-      const snap = await getDoc(doc(db, 'context', user.uid));
-      const contextDoc = snap.exists() ? snap.data() : null;
-      const todoContext = contextDoc?.todoContext || null;
-      const goalContext = contextDoc?.goalContext || null;
-      const financeContext = contextDoc?.financeContext || null;
-      const scheduleContext = contextDoc?.scheduleContext || null;
-
-      setConsolidatedContextStatus('generating');
-      const res = await fetch('/api/context/consolidated-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          onboardingData: obData,
-          todoContext,
-          goalContext,
-          financeContext,
-          scheduleContext,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Consolidated summary API failed');
-      const result = await res.json();
-      if (result.error) throw new Error(result.error);
-
-      const contextData: ConsolidatedContextData = {
-        summary: result.summary,
-        generatedAt: new Date().toISOString(),
-        locked: true,
-      };
-
-      await setDoc(doc(db, 'context', user.uid), { userId: user.uid, consolidatedContext: contextData, updatedAt: new Date().toISOString() }, { merge: true });
-      setLock(LS_CONSOLIDATED, true);
-      setConsolidatedContextData(contextData);
-      setConsolidatedContextLocked(true);
-      setConsolidatedContextStatus('saved');
-      console.log('✅ Consolidated context generated and saved.');
-    } catch (err) {
-      console.error('❌ Error generating consolidated context:', err);
-      setConsolidatedContextStatus('error');
-    }
-  }, [user, isGuest]);
-
-  // ── Toggle Consolidated Context Lock ───────────────────────────────────────
-  const toggleConsolidatedContextLock = useCallback(async (locked: boolean) => {
-    if (!user || isGuest) return;
-    setLock(LS_CONSOLIDATED, locked);
-    setConsolidatedContextLocked(locked);
-    try {
-      await setDoc(doc(db, 'context', user.uid),
-        { consolidatedContext: { ...(consolidatedContextData || {}), locked }, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-      if (consolidatedContextData) setConsolidatedContextData({ ...consolidatedContextData, locked });
-    } catch (err) { console.error('❌ Error updating consolidated lock:', err); }
-  }, [user, isGuest, consolidatedContextData]);
-
-  // ── updateOnboardingData ──────────────────────────────────────────────────
+  // ── updateOnboardingData (Write-through Cache) ─────────────────────────────
   const updateOnboardingData = async (data: Partial<OnboardingData>) => {
     if (!user || isGuest) return;
     try {
-      await setDoc(doc(db, 'initialOnboarding', user.uid), data, { merge: true });
+      const obRef = doc(db, 'initialOnboarding', user.uid);
+      const updatedOnboarding = { ...(onboardingData || {}), ...data };
+      
+      // Save to Firestore
+      await setDoc(obRef, data, { merge: true });
+      
+      // Update local state and write to localStorage
+      setOnboardingData(updatedOnboarding);
+      localStorage.setItem('myorbit_cached_onboarding', JSON.stringify(updatedOnboarding));
+
+      // Also update Name in 'users' collection if applicable
       if (data.firstName || data.lastName) {
         const nameUpdates: Record<string, string> = {};
         if (data.firstName !== undefined) nameUpdates.firstName = data.firstName;
         if (data.lastName !== undefined) nameUpdates.lastName = data.lastName;
+        
         await setDoc(doc(db, 'users', user.uid), nameUpdates, { merge: true });
+        
         setUser((prev) => {
           if (!prev) return null;
-          return {
+          const updatedUserObj = {
             ...prev,
             firstName: data.firstName !== undefined ? data.firstName : prev.firstName,
             lastName: data.lastName !== undefined ? data.lastName : prev.lastName,
           };
+          localStorage.setItem('myorbit_cached_user', JSON.stringify(updatedUserObj));
+          return updatedUserObj;
         });
       }
+      console.log('✅ Onboarding details synced to Firestore & Local Cache');
     } catch (err) {
       console.error('❌ Error updating onboarding/profile data:', err);
       throw err;
+    }
+  };
+
+  // ── updateContextParagraph (Write-through Cache) ───────────────────────────
+  const updateContextParagraph = async (paragraph: string) => {
+    setContextParagraph(paragraph);
+    localStorage.setItem('myorbit_cached_context_paragraph', paragraph);
+
+    if (user && !isGuest) {
+      try {
+        const ref = doc(db, 'context', user.uid);
+        await setDoc(ref, {
+          userId: user.uid,
+          paragraph,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        console.log('✅ AI paragraph context synced to Firestore');
+      } catch (err) {
+        console.error('❌ Error writing context paragraph to Firestore:', err);
+      }
     }
   };
 
@@ -1256,7 +255,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         await setDoc(doc(db, 'users', user.uid), { guideVisited: true }, { merge: true });
         setUser((prev) => {
           if (!prev) return null;
-          return { ...prev, guideVisited: true };
+          const updatedUserObj = { ...prev, guideVisited: true };
+          localStorage.setItem('myorbit_cached_user', JSON.stringify(updatedUserObj));
+          return updatedUserObj;
         });
       } catch (err) {
         console.error('Error updating guideVisited in Firestore:', err);
@@ -1277,31 +278,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         isGuest,
         onboardingData,
         updateOnboardingData,
-        todoContextData,
-        todoContextStatus,
-        todoContextLocked,
-        generateTodoContext,
-        toggleTodoContextLock,
-        goalContextData,
-        goalContextStatus,
-        goalContextLocked,
-        generateGoalContext,
-        toggleGoalContextLock,
-        financeContextData,
-        financeContextStatus,
-        financeContextLocked,
-        generateFinanceContext,
-        toggleFinanceContextLock,
-        consolidatedContextData,
-        consolidatedContextStatus,
-        consolidatedContextLocked,
-        generateConsolidatedContext,
-        toggleConsolidatedContextLock,
-        scheduleContextData,
-        scheduleContextStatus,
-        scheduleContextLocked,
-        generateScheduleContext,
-        toggleScheduleContextLock,
+        contextParagraph,
+        updateContextParagraph,
         markGuideAsVisited,
       }}
     >

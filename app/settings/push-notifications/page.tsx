@@ -8,7 +8,7 @@ import BackIcon from '@mui/icons-material/ArrowBack';
 import CheckIcon from '@mui/icons-material/CheckCircle';
 import InfoIcon from '@mui/icons-material/InfoOutlined';
 import DevicesIcon from '@mui/icons-material/DevicesOther';
-import { requestNotificationPermissionAndGetToken } from '@/app/lib/utils/fcm';
+import { registerNotificationDevice, getCurrentFid } from '@/app/lib/utils/fcm';
 import { useAuth } from '@/app/lib/context/userContext';
 
 type SubscriptionStatus = 'idle' | 'loading' | 'subscribed' | 'denied' | 'error';
@@ -19,6 +19,8 @@ export default function PushNotificationsPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [checkingStatus, setCheckingStatus] = useState(true);
   const [hasInitialized, setHasInitialized] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
+  const [testFeedback, setTestFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Initialize and check subscription status when auth and user are loaded
   useEffect(() => {
@@ -37,21 +39,37 @@ export default function PushNotificationsPage() {
         setStatus('denied');
         setCheckingStatus(false);
       } else if (Notification.permission === 'granted') {
-        // Auto-sync/check token
         setStatus('loading');
         setCheckingStatus(true);
         const autoSync = async () => {
           try {
-            const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${user.uid}`;
-            const token = await requestNotificationPermissionAndGetToken(clientId, user.uid);
-            if (token) {
-              setStatus('subscribed');
+            const { isSupported } = await import('firebase/messaging');
+            const supported = await isSupported();
+            if (!supported) {
+              setStatus('error');
+              setErrorMessage('Push notifications are not supported by this browser.');
+              return;
+            }
+
+            const fid = await getCurrentFid();
+            if (fid) {
+              const { doc, getDoc } = await import('firebase/firestore');
+              const { userDb } = await import('@/app/lib/firebase');
+              const deviceRef = doc(userDb, 'users', user.uid, 'notificationDevices', fid);
+              const snapshot = await getDoc(deviceRef);
+              if (snapshot.exists() && snapshot.data().enabled === true) {
+                setStatus('subscribed');
+              } else {
+                // Not registered or disabled locally, auto-register to sync
+                await registerNotificationDevice(user.uid);
+                setStatus('subscribed');
+              }
             } else {
               setStatus('error');
-              setErrorMessage('Failed to retrieve push token. Please try again.');
+              setErrorMessage('Failed to retrieve installation ID.');
             }
           } catch (err) {
-            console.error('Auto-sync FCM token failed:', err);
+            console.error('Auto-sync FCM device failed:', err);
             setStatus('error');
             setErrorMessage((err as Error).message || 'Failed to auto-sync notification token.');
           } finally {
@@ -75,14 +93,16 @@ export default function PushNotificationsPage() {
     setStatus('loading');
     setErrorMessage('');
     try {
-      const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${user.uid}`;
-      const token = await requestNotificationPermissionAndGetToken(clientId, user.uid);
-      if (token) {
-        setStatus('subscribed');
-      } else {
+      const { isSupported } = await import('firebase/messaging');
+      const supported = await isSupported();
+      if (!supported) {
         setStatus('error');
-        setErrorMessage('Could not retrieve push token. Please try again.');
+        setErrorMessage('Push notifications are not supported by this browser.');
+        return;
       }
+
+      await registerNotificationDevice(user.uid);
+      setStatus('subscribed');
     } catch (err) {
       const msg = (err as Error).message;
       if (msg.toLowerCase().includes('denied') || msg.toLowerCase().includes('permission')) {
@@ -91,6 +111,46 @@ export default function PushNotificationsPage() {
         setStatus('error');
         setErrorMessage(msg);
       }
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    if (!user) return;
+    setSendingTest(true);
+    setTestFeedback(null);
+    setErrorMessage('');
+    try {
+      const { userAuth } = await import('@/app/lib/firebase');
+      const idToken = await userAuth.currentUser?.getIdToken(true);
+      if (!idToken) {
+        throw new Error('Could not retrieve authentication session token.');
+      }
+
+      const res = await fetch('/api/send-test-notification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to dispatch test notification.');
+      }
+
+      setTestFeedback({
+        type: 'success',
+        message: 'Test notification dispatched successfully! Watch your device for the alert.'
+      });
+    } catch (err) {
+      console.error('FCM Test Dispatch failed:', err);
+      setTestFeedback({
+        type: 'error',
+        message: (err as Error).message || 'Failed to dispatch test notification.'
+      });
+    } finally {
+      setSendingTest(false);
     }
   };
 
@@ -197,10 +257,35 @@ export default function PushNotificationsPage() {
                   <CheckIcon className="text-emerald-400 text-[18px]" />
                   <span className="text-emerald-300 text-sm font-extrabold">Subscribed</span>
                 </div>
+
+                <button
+                  onClick={handleSendTestNotification}
+                  disabled={sendingTest || isLoading}
+                  className={`
+                    px-6 py-2.5 rounded-xl font-extrabold text-xs transition-all duration-200 mt-2
+                    ${sendingTest
+                      ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
+                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20 hover:scale-105 active:scale-95'
+                    }
+                  `}
+                >
+                  {sendingTest ? 'Sending Test alert…' : '🔔 Send Test Notification'}
+                </button>
+
+                {testFeedback && (
+                  <div className={`mt-1 px-4 py-2.5 rounded-xl text-xs font-semibold max-w-sm text-center ${
+                    testFeedback.type === 'success'
+                      ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-400'
+                      : 'bg-red-500/10 border border-red-500/25 text-red-400'
+                  }`}>
+                    {testFeedback.message}
+                  </div>
+                )}
+
                 <button
                   onClick={handleSubscribe}
-                  disabled={isLoading}
-                  className="text-xs font-bold text-slate-500 hover:text-amber-400 hover:scale-105 active:scale-95 transition-all underline underline-offset-4 decoration-slate-700 hover:decoration-amber-500/50"
+                  disabled={isLoading || sendingTest}
+                  className="text-xs font-bold text-slate-500 hover:text-amber-400 hover:scale-105 active:scale-95 transition-all underline underline-offset-4 decoration-slate-700 hover:decoration-amber-500/50 mt-4"
                 >
                   {isLoading ? 'Syncing Token...' : '🔄 Sync/Re-register device token'}
                 </button>

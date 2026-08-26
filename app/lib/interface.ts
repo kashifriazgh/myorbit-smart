@@ -286,6 +286,7 @@ export interface TotalCashSnapshot {
       hasOwnThisMoney: boolean;
       ownerName?: string;
       ownserName?: string;
+      isLocked?: boolean;
     };
   };
 
@@ -1071,6 +1072,7 @@ export type OnboardingFieldValue =
 export interface OnboardingData {
   firstName?: string;
   lastName?: string;
+  mobile?: OnBoardingField<string>;
   country?: OnBoardingField<string>;
   city?: OnBoardingField<string>;
   professionType?: OnBoardingField<'job' | 'business'>;

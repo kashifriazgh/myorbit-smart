@@ -235,6 +235,10 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
     if (toType === 'bank' && !toBankId) { setError('Please select the destination bank.'); return; }
     if (toType === 'custom' && !toCustomId) { setError('Please select the destination custom wallet.'); return; }
     if (toType !== 'outside' && toType !== 'immediate_expended' && toHolder === 'new' && !newToHolderName.trim()) { setError('Please enter the new person name.'); return; }
+    if (isFromLocked) {
+      setError('The selected source is locked. Unlock it in Account Breakdown to record this loan.');
+      return;
+    }
 
     setError('');
 
@@ -494,6 +498,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
   const fromSourceKey = fromType !== 'outside'
     ? getSourceKey(fromType as import('@/app/lib/interface').TransactionSource, fromBankName, fromCustomName)
     : '';
+  const isFromLocked = fromType !== 'outside' && snapshot.sourceOwnership?.[fromSourceKey]?.isLocked;
   const fromExistingHolders = fromType !== 'outside' ? (snapshot.heldBy?.[fromSourceKey] || []) : [];
 
   const toBankName = banks.find((b) => b.id === toBankId)?.name;
@@ -781,6 +786,13 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                         {fromHolder === 'new' && (
                           <TextField fullWidth size="small" label="New Person Name" value={newFromHolderName} onChange={(e) => setNewFromHolderName(e.target.value)} placeholder="e.g. Ali" />
                         )}
+                        {isFromLocked && (
+                          <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="caption" color="error.main" fontWeight="bold">
+                              🔒 This source is locked. Unlock it in Account Breakdown to use it.
+                            </Typography>
+                          </Box>
+                        )}
                       </Stack>
                     )}
 
@@ -927,6 +939,13 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                         )}
                         {fromHolder === 'new' && (
                           <TextField fullWidth size="small" label="New Person Name" value={newFromHolderName} onChange={(e) => setNewFromHolderName(e.target.value)} placeholder="e.g. Ali" />
+                        )}
+                        {isFromLocked && (
+                          <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="caption" color="error.main" fontWeight="bold">
+                              🔒 This source is locked. Unlock it in Account Breakdown to use it.
+                            </Typography>
+                          </Box>
                         )}
                       </Stack>
                     </Box>
@@ -1077,7 +1096,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                 variant="contained"
                 onClick={handleCreate}
                 disabled={
-                  localSaving || quickAddLoading || !amount ||
+                  localSaving || quickAddLoading || !amount || !!isFromLocked ||
                   (fromType === 'bank' && !fromBankId) ||
                   (fromType === 'custom' && !fromCustomId) ||
                   (fromType !== 'outside' && fromHolder === 'new' && !newFromHolderName.trim()) ||

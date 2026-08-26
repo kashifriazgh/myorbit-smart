@@ -51,17 +51,18 @@ self.addEventListener('notificationclick', (event) => {
   if (event.action === 'dismiss') return;
 
   const appUrl = (event.notification.data && event.notification.data.appUrl) || '/';
+  const targetUrl = new URL(appUrl, self.location.origin).href;
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       // Focus existing window if open
       for (const client of clientList) {
-        if (client.url === appUrl && 'focus' in client) {
+        if (client.url === targetUrl && 'focus' in client) {
           return client.focus();
         }
       }
       // Otherwise open new tab
       if (clients.openWindow) {
-        return clients.openWindow(appUrl);
+        return clients.openWindow(targetUrl);
       }
     })
   );
@@ -77,13 +78,13 @@ try {
 }
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDZFNapAjmnS0TZIM1lK8wNA4PDgedVnRo",
-  authDomain: "forms-389a6.firebaseapp.com",
-  projectId: "forms-389a6",
-  storageBucket: "forms-389a6.firebasestorage.app",
-  messagingSenderId: "721032079467",
-  appId: "1:721032079467:web:b525c93448811b8bf4292e",
-  databaseURL: "https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app"
+  apiKey: "AIzaSyDblRCWL3l1VSOHkUiBshnO5CWISnTXjYw",
+  authDomain: "centralize-users.firebaseapp.com",
+  projectId: "centralize-users",
+  storageBucket: "centralize-users.firebasestorage.app",
+  messagingSenderId: "354356008461",
+  appId: "1:354356008461:web:a3ead68b25b52b3852a744",
+  databaseURL: "https://centralize-users-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
 if (typeof firebase !== 'undefined') {

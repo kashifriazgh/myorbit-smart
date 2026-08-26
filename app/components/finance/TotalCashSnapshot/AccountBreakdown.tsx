@@ -21,6 +21,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import EditIcon from '@mui/icons-material/Edit';
+import LockIcon from '@mui/icons-material/Lock';
 import { db } from '@/app/lib/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -47,12 +48,14 @@ export default function AccountBreakdown({
   } | null>(null);
   const [hasOwnThisMoney, setHasOwnThisMoney] = useState(true);
   const [ownerName, setOwnerName] = useState('');
+  const [isLocked, setIsLocked] = useState(false);
   const [savingOwnership, setSavingOwnership] = useState(false);
 
   const handleOpenEditOwnership = (key: string, displayName: string) => {
-    const current = snapshot.sourceOwnership?.[key] || { hasOwnThisMoney: true, ownerName: '' };
+    const current = snapshot.sourceOwnership?.[key] || { hasOwnThisMoney: true, ownerName: '', isLocked: false };
     setHasOwnThisMoney(current.hasOwnThisMoney !== false);
     setOwnerName(current.ownerName || current.ownserName || '');
+    setIsLocked(current.isLocked === true);
     setEditOwnership({ key, displayName });
   };
 
@@ -68,6 +71,7 @@ export default function AccountBreakdown({
           hasOwnThisMoney,
           ownerName: val,
           ownserName: val,
+          isLocked,
         },
       };
 
@@ -207,8 +211,8 @@ export default function AccountBreakdown({
                           }}
                         >
                           <Box display="flex" justifyContent="space-between" alignItems="center">
-                            <Typography fontSize="0.82rem" fontWeight={600}>
-                              {bankName}
+                            <Typography fontSize="0.82rem" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              {bankName} {snapshot.sourceOwnership?.[bankKey]?.isLocked && <LockIcon sx={{ fontSize: 13, color: 'error.main' }} />}
                             </Typography>
                             <Box display="flex" alignItems="center" gap={0.5}>
                               <Typography fontSize="0.82rem" fontWeight="900" color="primary">
@@ -263,8 +267,8 @@ export default function AccountBreakdown({
                           }}
                         >
                           <Box display="flex" justifyContent="space-between" alignItems="center">
-                            <Typography fontSize="0.82rem" fontWeight={600}>
-                              {customName}
+                            <Typography fontSize="0.82rem" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              {customName} {snapshot.sourceOwnership?.[customKey]?.isLocked && <LockIcon sx={{ fontSize: 13, color: 'error.main' }} />}
                             </Typography>
                             <Box display="flex" alignItems="center" gap={0.5}>
                               <Typography fontSize="0.82rem" fontWeight="900" color="secondary">
@@ -311,9 +315,9 @@ export default function AccountBreakdown({
                     fontSize="0.82rem"
                     fontWeight={700}
                     color="text.secondary"
-                    sx={{ textTransform: 'capitalize' }}
+                    sx={{ textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: 0.5 }}
                   >
-                    {name.replace('_', ' ')}
+                    {name.replace('_', ' ')} {snapshot.sourceOwnership?.[name]?.isLocked && <LockIcon sx={{ fontSize: 13, color: 'error.main' }} />}
                   </Typography>
                   <Box display="flex" alignItems="center" gap={0.5}>
                     <Typography fontSize="0.82rem" fontWeight="900">
@@ -384,6 +388,26 @@ export default function AccountBreakdown({
                 <Typography fontSize="0.9rem" fontWeight={600}>
                   I own this money
                 </Typography>
+              }
+            />
+
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={isLocked}
+                  onChange={(e) => setIsLocked(e.target.checked)}
+                  color="error"
+                />
+              }
+              label={
+                <Box>
+                  <Typography fontSize="0.9rem" fontWeight={600}>
+                    Lock this Source
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Prevent any deductions or transfers from this source
+                  </Typography>
+                </Box>
               }
             />
 

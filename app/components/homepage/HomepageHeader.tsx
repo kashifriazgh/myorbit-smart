@@ -43,7 +43,7 @@ const HomepageHeader = memo(() => {
   return (
     <Box className="w-full mb-6">
       <div
-        className="rounded-2xl shadow-lg lg:p-6 p-4 sm:p-5"
+        className="rounded-2xl shadow-lg p-5"
         style={{
           background:
             theme?.mode === 'dark'
@@ -52,21 +52,11 @@ const HomepageHeader = memo(() => {
           border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
         }}
       >
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 lg:gap-6">
-          {/* Greeting Section hidden */}
-          <div className="flex-1 lg:w-[40%]">
-            {/* Greeting hidden as requested */}
-          </div>
-
-          {/* Search Section */}
-          <div className="flex-1 lg:w-[60%]">
-            {loading ? (
-              <Skeleton variant="rounded" height={56} />
-            ) : (
-              <ProductivityEditor variant="compact" />
-            )}
-          </div>
-        </div>
+        {loading ? (
+          <Skeleton variant="text" width={200} height={32} />
+        ) : (
+          <ProductivityEditor />
+        )}
       </div>
     </Box>
   );

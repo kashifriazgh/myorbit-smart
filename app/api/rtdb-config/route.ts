@@ -22,18 +22,17 @@ export async function GET(req: NextRequest) {
 
   // Hardcoded centralized configuration details for RTDB and FCM
   const rtdbConfig = {
-    apiKey: 'AIzaSyDZFNapAjmnS0TZIM1lK8wNA4PDgedVnRo',
-    authDomain: 'forms-389a6.firebaseapp.com',
-    projectId: 'forms-389a6',
-    storageBucket: 'forms-389a6.firebasestorage.app',
-    messagingSenderId: '721032079467',
-    appId: '1:721032079467:web:b525c93448811b8bf4292e',
+    apiKey: 'AIzaSyDblRCWL3l1VSOHkUiBshnO5CWISnTXjYw',
+    authDomain: 'centralize-users.firebaseapp.com',
+    projectId: 'centralize-users',
+    storageBucket: 'centralize-users.firebasestorage.app',
+    messagingSenderId: '354356008461',
+    appId: '1:354356008461:web:a3ead68b25b52b3852a744',
     databaseURL:
-      'https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app',
-
-    // IMPORTANT: Generate this VAPID Web Push key in Firebase Console -> Project Settings -> Cloud Messaging -> Web configuration
+      'https://centralize-users-default-rtdb.asia-southeast1.firebasedatabase.app/',
     vapidKey:
-      'BFGvN2a5o2rX6a_mJmDk0jH3lQc_7g7wK9xH5V2hE9zD0vH8zJ7hL0dM7pX9vI1uS2tV4wX5yZ6aB7cDeFgHiJk',
+      process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ||
+      'BFe8C_IjXW8Rbw23Ab1w5DCo_sI__ov2eMhOOOpDtAted0zi9vbu48WrCSMRDb87Lg7gzn07u9j39VJlV392UCc',
   };
 
   return NextResponse.json(rtdbConfig);

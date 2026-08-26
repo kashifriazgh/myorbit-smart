@@ -106,7 +106,7 @@ function Checkmark({
 interface QuickAddTaskRowProps {
   selectedDate: string;
   isDark: boolean;
-  onAdd: (title: string, dueDate: Date) => Promise<void>;
+  onAdd: (title: string, dueDate: Date) => void;
 }
 
 const QuickAddTaskRow = ({ selectedDate, isDark, onAdd }: QuickAddTaskRowProps) => {
@@ -120,9 +120,9 @@ const QuickAddTaskRow = ({ selectedDate, isDark, onAdd }: QuickAddTaskRowProps) 
     }
   }, [selectedDate]);
 
-  const commit = async () => {
+  const commit = () => {
     if (title.trim()) {
-      await onAdd(title.trim(), moment(dueDateStr).toDate());
+      onAdd(title.trim(), moment(dueDateStr).toDate());
       setTitle('');
     }
     setActive(false);
@@ -143,11 +143,11 @@ const QuickAddTaskRow = ({ selectedDate, isDark, onAdd }: QuickAddTaskRowProps) 
         `}
       >
         <span
-          className={`w-5 h-5 rounded-md border-2 border-dashed flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
+          className={`w-6 h-6 rounded-md border-2 border-dashed flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
             isDark ? 'border-slate-700' : 'border-slate-300'
           }`}
         >
-          <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
             <path d="M6 1v10M1 6h10" />
           </svg>
         </span>
@@ -158,53 +158,110 @@ const QuickAddTaskRow = ({ selectedDate, isDark, onAdd }: QuickAddTaskRowProps) 
 
   return (
     <Box
-      className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl border mb-2 transition-all ${
-        isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
-      }`}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        px: 1.5,
+        py: 0.75,
+        mb: 2,
+        borderRadius: '14px',
+        border: `1.5px solid ${isDark ? '#0284c744' : '#bae6fd88'}`,
+        bgcolor: isDark ? '#0f172a' : '#f0f9ff',
+        boxShadow: isDark
+          ? 'inset 0 1px 0 rgba(255,255,255,0.03), 0 0 0 3px rgba(56,189,248,0.07)'
+          : '0 0 0 3px rgba(186,230,253,0.1)',
+        overflow: 'hidden',
+      }}
     >
-      <Box className="flex items-center gap-2 flex-1">
-        <span className="w-5 h-5 rounded-md border-2 border-sky-400 flex-shrink-0" />
-        <input
-          autoFocus
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              commit();
-            }
-            if (e.key === 'Escape') {
-              setActive(false);
-              setTitle('');
-            }
-          }}
-          placeholder="Task title…"
-          className={`
-            flex-1 text-sm bg-transparent border-none
-            focus:outline-none placeholder:text-slate-500
-            ${isDark ? 'text-slate-200' : 'text-slate-700'}
-          `}
-        />
-      </Box>
-      
+      {/* Date badge with Calendar icon */}
+      <Tooltip title={`Due: ${moment(dueDateStr).format('MMM D, YYYY')}`} arrow>
+        <Box sx={{
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 32,
+          height: 32,
+          borderRadius: '8px',
+          bgcolor: isDark ? 'rgba(56,189,248,0.1)' : 'rgba(224,242,254,0.6)',
+          flexShrink: 0,
+          cursor: 'pointer',
+          transition: 'all 0.2s',
+          '&:hover': {
+            bgcolor: isDark ? 'rgba(56,189,248,0.2)' : 'rgba(224,242,254,0.9)',
+          }
+        }}>
+          <Event sx={{ fontSize: '1.1rem', color: isDark ? '#38bdf8' : '#0284c7' }} />
+          <input
+            type="date"
+            value={dueDateStr}
+            onChange={(e) => setDueDateStr(e.target.value)}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: 'pointer',
+            }}
+          />
+        </Box>
+      </Tooltip>
+
+      {/* Divider */}
+      <Box sx={{ width: '1px', height: 18, bgcolor: isDark ? '#1e293b' : '#bae6fd', flexShrink: 0 }} />
+
+      {/* Input - minWidth: 0 prevents overflow */}
       <input
-        type="date"
-        value={dueDateStr}
-        onChange={(e) => setDueDateStr(e.target.value)}
-        className={`bg-transparent border-none text-xs outline-none cursor-pointer p-0.5 w-[115px] ${
-          isDark ? 'text-slate-400' : 'text-slate-500'
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') { setActive(false); setTitle(''); }
+        }}
+        placeholder="Task title…"
+        style={{ minWidth: 0, flex: 1, background: 'transparent', border: 'none', outline: 'none' }}
+        className={`text-[0.93rem] placeholder:text-slate-400 ${
+          isDark ? 'text-slate-100' : 'text-slate-800'
         }`}
-        style={{ colorScheme: isDark ? 'dark' : 'light' }}
       />
-      
-      <Button
-        size="small"
-        variant="text"
+
+      {/* Circular Glowing button */}
+      <Box
+        component="button"
         onClick={commit}
         disabled={!title.trim()}
-        sx={{ minWidth: 'auto', p: 0.5, fontWeight: 'bold' }}
+        sx={{
+          flexShrink: 0,
+          width: 30,
+          height: 30,
+          borderRadius: '50%',
+          border: 'none',
+          cursor: title.trim() ? 'pointer' : 'default',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: title.trim()
+            ? '#0284c7'
+            : (isDark ? '#1e293b' : '#f1f5f9'),
+          color: title.trim() ? '#fff' : (isDark ? '#475569' : '#cbd5e1'),
+          boxShadow: title.trim() ? '0 0 10px rgba(2,132,199,0.55)' : 'none',
+          outline: `2px solid ${title.trim() ? '#38bdf8' : 'transparent'}`,
+          outlineOffset: '2px',
+          transition: 'all 0.18s ease',
+          '&:hover': {
+            transform: title.trim() ? 'scale(1.1)' : 'none',
+            boxShadow: title.trim() ? '0 0 16px rgba(2,132,199,0.7)' : 'none',
+          },
+        }}
       >
-        Add
-      </Button>
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="2,7 5.5,11 12,3" />
+        </svg>
+      </Box>
     </Box>
   );
 };
@@ -263,27 +320,26 @@ const ImportantTasks = () => {
     return total > 0 ? Math.round((completed / total) * 100) : 0;
   }, [todos, selectedDate]);
 
-  const handleQuickAddTask = async (title: string, dueDate: Date) => {
+  const handleQuickAddTask = (title: string, dueDate: Date) => {
     if (!user) return;
-    try {
-      const newTodo: Omit<Todo, 'id'> = {
-        title,
-        priority: 'routine',
-        status: 'in_progress',
-        dueDate: Timestamp.fromDate(dueDate),
-        isFlexible: false,
-        progressPercent: 0,
-        steps: [],
-        assignedUsers: [],
-        authorId: user.uid,
-        authorName: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.email || '',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      await addTodo(newTodo); // context handles optimistic insert + cache
-    } catch (err) {
+    const newTodo: Omit<Todo, 'id'> = {
+      title,
+      priority: 'routine',
+      status: 'in_progress',
+      dueDate: Timestamp.fromDate(dueDate),
+      isFlexible: false,
+      progressPercent: 0,
+      steps: [],
+      assignedUsers: [],
+      authorId: user.uid,
+      authorName: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.email || '',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    addTodo(newTodo).catch((err) => {
       console.error('Failed to add quick task:', err);
-    }
+      alert('Failed to save task. Action undone.');
+    });
   };
 
   // Generate 5 dates starting from today (same as Schedules)
@@ -733,13 +789,12 @@ const ImportantTasks = () => {
                     done={isDone}
                     onToggle={() => markCompleted(task)}
                     isDark={theme?.mode === 'dark'}
-                    size="sm"
+                    size="md"
                   />
 
                   <Link href={`/to-do/${task.id}`} style={{ textDecoration: 'none', flex: 1, minWidth: 0 }}>
                     <Typography
                       variant="body2"
-                      noWrap
                       sx={{
                         fontWeight: isDone ? 400 : 600,
                         color: isDone
@@ -749,6 +804,13 @@ const ImportantTasks = () => {
                         cursor: 'pointer',
                         transition: 'color 0.15s',
                         '&:hover': { color: '#6366f1' },
+                        fontSize: '0.95rem',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        wordBreak: 'break-word',
                       }}
                     >
                       {task.title}
@@ -781,7 +843,7 @@ const ImportantTasks = () => {
           <Stack spacing={2}>
             {filteredTasks.slice(0, 5).map((task) => (
               <Fade in key={task.id} timeout={300}>
-                <Card className="rounded-xl shadow-sm hover:shadow-md transition">
+                <Card className="rounded-xl shadow-sm hover:shadow-md transition" sx={{ opacity: task.status === 'completed' ? 0.65 : 1 }}>
                 <CardContent>
                   <Box className="flex justify-between items-start gap-2">
                     <Box className="flex items-center gap-2">
@@ -804,8 +866,17 @@ const ImportantTasks = () => {
                           }}
                         />
                       )}
-                      <Link href={`/to-do/${task.id}`}>
-                        <Typography variant="subtitle1" fontWeight="medium">
+                      <Link href={`/to-do/${task.id}`} style={{ textDecoration: 'none' }}>
+                        <Typography
+                          variant="subtitle1"
+                          fontWeight="medium"
+                          sx={{
+                            textDecoration: task.status === 'completed' ? 'line-through' : 'none',
+                            color: task.status === 'completed'
+                              ? (theme?.mode === 'dark' ? '#475569' : '#94a3b8')
+                              : 'inherit',
+                          }}
+                        >
                           {task?.title}
                         </Typography>
                       </Link>

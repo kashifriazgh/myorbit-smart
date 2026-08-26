@@ -14,6 +14,7 @@ import {
   CircularProgress,
   Stack,
   Divider,
+  Fade,
 } from '@mui/material';
 import { useRouter } from 'next/navigation';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -356,6 +357,8 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
         onClose={onClose}
         maxWidth="xs"
         fullWidth
+        TransitionComponent={Fade}
+        transitionDuration={400}
         PaperProps={{
           sx: {
             background: isDarkBg,

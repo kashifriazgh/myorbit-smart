@@ -16,6 +16,7 @@ import {
 import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 import TotalCashSnapshotComponent from '../components/finance/TotalCashSnapshot';
 import { useAuth } from '../lib/context/userContext';
@@ -60,6 +61,20 @@ export default function Finance() {
       lightSubText: '#334155',
       darkSubText: '#94a3b8',
     },
+    {
+      title: 'Guide & Sandbox',
+      href: '/finance/tutorial',
+      description: 'Interactive tutorial & sandbox guide',
+      icon: <HelpOutlineIcon sx={{ fontSize: 28 }} />,
+      lightBg: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)',
+      darkBg: 'linear-gradient(135deg, #303643 0%, #1e293b 100%)',
+      lightBubble: '#bae6fd',
+      darkBubble: '#1e293b',
+      lightText: '#0f172a',
+      darkText: '#f1f5f9',
+      lightSubText: '#334155',
+      darkSubText: '#94a3b8',
+    },
   ];
 
   return (
@@ -83,7 +98,7 @@ export default function Finance() {
           </p>
 
           <div
-            className={`grid gap-6 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}
+            className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
           >
             {cardData.map((card, idx) => {
               const bgColor = isDark ? card.darkBg : card.lightBg;

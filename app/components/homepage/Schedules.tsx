@@ -27,6 +27,7 @@ import {
   ArrowForward as ArrowIcon,
   CheckCircle,
   RadioButtonUnchecked,
+  Notifications as NotificationsIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
@@ -86,23 +87,47 @@ const CustomStepIcon: React.FC<{
 interface QuickAddScheduleRowProps {
   selectedDate: string;
   isDark: boolean;
-  onAdd: (title: string, startTime: string) => Promise<void>;
+  schedules: SchedulesProps[];
+  onAdd: (title: string, startTime: string) => void;
 }
 
-const QuickAddScheduleRow = ({ isDark, onAdd }: QuickAddScheduleRowProps) => {
+const QuickAddScheduleRow = ({ isDark, schedules, onAdd }: QuickAddScheduleRowProps) => {
   const [active, setActive] = useState(false);
   const [title, setTitle] = useState('');
-  const [startTime, setStartTime] = useState(() => {
+
+  /** Compute default time: 30 mins after the latest schedule, or next rounded hour */
+  const computeDefaultTime = () => {
+    if (schedules.length > 0) {
+      const latestTime = schedules
+        .map((s) => s.startTime)
+        .sort()
+        .at(-1)!;
+      const [h, m] = latestTime.split(':').map(Number);
+      const totalMins = h * 60 + m + 30;
+      const newH = Math.floor(totalMins / 60) % 24;
+      const newM = totalMins % 60;
+      return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+    }
     const now = new Date();
     now.setMinutes(0, 0, 0);
     now.setHours(now.getHours() + 1);
     return now.toTimeString().slice(0, 5);
-  });
+  };
 
-  const commit = async () => {
+  const [startTime, setStartTime] = useState(computeDefaultTime);
+
+  // Recompute the default time whenever schedules change and row is inactive
+  useEffect(() => {
+    if (!active) setStartTime(computeDefaultTime());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules, active]);
+
+  const commit = () => {
     if (title.trim()) {
-      await onAdd(title.trim(), startTime);
+      onAdd(title.trim(), startTime);
+      // Reset immediately — no await
       setTitle('');
+      setStartTime(computeDefaultTime());
     }
     setActive(false);
   };
@@ -120,11 +145,11 @@ const QuickAddScheduleRow = ({ isDark, onAdd }: QuickAddScheduleRowProps) => {
         `}
       >
         <span
-          className={`w-5 h-5 rounded-md border-2 border-dashed flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
+          className={`w-6 h-6 rounded-md border-2 border-dashed flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
             isDark ? 'border-slate-700' : 'border-slate-300'
           }`}
         >
-          <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
             <path d="M6 1v10M1 6h10" />
           </svg>
         </span>
@@ -135,20 +160,48 @@ const QuickAddScheduleRow = ({ isDark, onAdd }: QuickAddScheduleRowProps) => {
 
   return (
     <Box
-      className={`flex items-center gap-2 px-3 py-2 rounded-xl border mb-2 transition-all ${
-        isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
-      }`}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        px: 1.5,
+        py: 0.75,
+        mb: 2,
+        borderRadius: '14px',
+        border: `1.5px solid ${isDark ? '#f59e0b44' : '#fcd34d88'}`,
+        bgcolor: isDark ? '#0f172a' : '#fffbeb',
+        boxShadow: isDark
+          ? 'inset 0 1px 0 rgba(255,255,255,0.03), 0 0 0 3px rgba(245,158,11,0.07)'
+          : '0 0 0 3px rgba(251,191,36,0.1)',
+        overflow: 'hidden',
+      }}
     >
-      <input
-        type="time"
-        value={startTime}
-        onChange={(e) => setStartTime(e.target.value)}
-        className={`bg-transparent border-none text-xs outline-none cursor-pointer p-0.5 w-[72px] flex-shrink-0 ${
-          isDark ? 'text-amber-400' : 'text-amber-600'
-        }`}
-        style={{ colorScheme: isDark ? 'dark' : 'light' }}
-      />
+      {/* Compact time badge */}
+      <Box sx={{
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.4,
+        bgcolor: isDark ? 'rgba(245,158,11,0.1)' : 'rgba(253,211,77,0.25)',
+        borderRadius: '8px',
+        px: 0.8,
+        py: 0.3,
+      }}>
+        <input
+          type="time"
+          value={startTime}
+          onChange={(e) => setStartTime(e.target.value)}
+          className={`bg-transparent border-none text-sm outline-none cursor-pointer font-bold ${
+            isDark ? 'text-amber-400' : 'text-amber-700'
+          }`}
+          style={{ colorScheme: isDark ? 'dark' : 'light', width: 78 }}
+        />
+      </Box>
 
+      {/* Slim vertical divider */}
+      <Box sx={{ width: '1px', height: 18, bgcolor: isDark ? '#1e293b' : '#fde68a', flexShrink: 0 }} />
+
+      {/* Title — minWidth:0 is the key fix so it never overflows */}
       <input
         autoFocus
         value={title}
@@ -157,23 +210,47 @@ const QuickAddScheduleRow = ({ isDark, onAdd }: QuickAddScheduleRowProps) => {
           if (e.key === 'Enter') commit();
           if (e.key === 'Escape') { setActive(false); setTitle(''); }
         }}
-        placeholder="Schedule title…"
-        className={`
-          flex-1 text-sm bg-transparent border-none
-          focus:outline-none placeholder:text-slate-500
-          ${isDark ? 'text-slate-200' : 'text-slate-700'}
-        `}
+        placeholder="What's scheduled…"
+        style={{ minWidth: 0, flex: 1, background: 'transparent', border: 'none', outline: 'none' }}
+        className={`text-[0.93rem] placeholder:text-slate-400 ${
+          isDark ? 'text-slate-100' : 'text-slate-800'
+        }`}
       />
 
-      <Button
-        size="small"
-        variant="text"
+      {/* Circular glowing submit — always pinned, never overflows */}
+      <Box
+        component="button"
         onClick={commit}
         disabled={!title.trim()}
-        sx={{ minWidth: 'auto', p: 0.5, fontWeight: 'bold', color: '#f59e0b' }}
+        sx={{
+          flexShrink: 0,
+          width: 30,
+          height: 30,
+          borderRadius: '50%',
+          border: 'none',
+          cursor: title.trim() ? 'pointer' : 'default',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: title.trim()
+            ? '#f59e0b'
+            : (isDark ? '#1e293b' : '#f1f5f9'),
+          color: title.trim() ? '#1a0a00' : (isDark ? '#334155' : '#cbd5e1'),
+          boxShadow: title.trim() ? '0 0 10px rgba(245,158,11,0.55)' : 'none',
+          outline: `2px solid ${title.trim() ? '#fbbf24' : 'transparent'}`,
+          outlineOffset: '2px',
+          transition: 'all 0.18s ease',
+          '&:hover': {
+            transform: title.trim() ? 'scale(1.1)' : 'none',
+            boxShadow: title.trim() ? '0 0 16px rgba(245,158,11,0.7)' : 'none',
+          },
+        }}
       >
-        Add
-      </Button>
+        {/* Checkmark icon */}
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="2,7 5.5,11 12,3" />
+        </svg>
+      </Box>
     </Box>
   );
 };
@@ -221,6 +298,53 @@ const Schedules: React.FC = () => {
     message: string;
     severity: 'success' | 'error' | 'info' | 'warning';
   }>({ open: false, message: '', severity: 'info' });
+
+  const [sendingNotificationId, setSendingNotificationId] = useState<string | null>(null);
+
+  const handleTriggerNotification = async (schedule: SchedulesProps) => {
+    if (!user || !schedule.id) return;
+    setSendingNotificationId(schedule.id);
+    try {
+      const { userAuth } = await import('@/app/lib/firebase');
+      const idToken = await userAuth.currentUser?.getIdToken(true);
+      if (!idToken) {
+        throw new Error('Could not retrieve authentication session token.');
+      }
+
+      const res = await fetch('/api/send-test-notification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          title: `Schedule Alert: ${schedule.title} 📅`,
+          bodyText: `Scheduled at ${formatTime(schedule.startTime)}. Click to view in app!`,
+          appUrl: '/'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to dispatch notification.');
+      }
+
+      setSnackbar({
+        open: true,
+        message: 'Notification sent successfully!',
+        severity: 'success'
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to send notification';
+      setSnackbar({
+        open: true,
+        message: msg,
+        severity: 'error'
+      });
+    } finally {
+      setSendingNotificationId(null);
+    }
+  };
 
   const isDark = theme?.mode === 'dark';
 
@@ -338,23 +462,22 @@ const Schedules: React.FC = () => {
     return now > scheduleDateTime;
   };
 
-  const handleQuickAdd = async (title: string, startTime: string) => {
+  const handleQuickAdd = (title: string, startTime: string) => {
     if (!user) return;
     const endHour = (parseInt(startTime.split(':')[0]) + 1) % 24;
     const endTime = `${String(endHour).padStart(2, '0')}:${startTime.split(':')[1]}`;
-    try {
-      await addSchedule({
-        userId: user.uid,
-        title,
-        date: selectedDate,
-        startTime,
-        endTime,
-        status: 'pending',
-        isFlexible: false,
-      });
-    } catch (err) {
+    // Fire-and-forget — UI already updated optimistically via the row resetting
+    addSchedule({
+      userId: user.uid,
+      title,
+      date: selectedDate,
+      startTime,
+      endTime,
+      status: 'pending',
+      isFlexible: false,
+    }).catch((err) => {
       console.error('Failed to quick-add schedule:', err);
-    }
+    });
   };
 
   const handleToggleStatus = async (schedule: SchedulesProps) => {
@@ -493,6 +616,7 @@ const Schedules: React.FC = () => {
             <QuickAddScheduleRow
               selectedDate={selectedDate}
               isDark={isDark}
+              schedules={schedules}
               onAdd={handleQuickAdd}
             />
 
@@ -542,8 +666,8 @@ const Schedules: React.FC = () => {
                         sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
                       >
                         {done
-                          ? <CheckCircle sx={{ fontSize: 18, color: '#22c55e' }} />
-                          : <RadioButtonUnchecked sx={{ fontSize: 18, color: passed ? '#3b82f6' : (isDark ? '#64748b' : '#94a3b8') }} />
+                          ? <CheckCircle sx={{ fontSize: 22, color: '#22c55e' }} />
+                          : <RadioButtonUnchecked sx={{ fontSize: 22, color: passed ? '#3b82f6' : (isDark ? '#64748b' : '#94a3b8') }} />
                         }
                       </Box>
 
@@ -553,23 +677,22 @@ const Schedules: React.FC = () => {
                           sx={{
                             fontWeight: 700,
                             color: passed && !done ? '#3b82f6' : (isDark ? '#94a3b8' : '#64748b'),
-                            fontSize: '0.68rem',
+                            fontSize: '0.78rem',
                             flexShrink: 0,
-                            minWidth: 56,
+                            minWidth: 64,
                           }}
                         >
                           {formatTime(schedule.startTime)}
                         </Typography>
                       )}
                       {schedule.isFlexible && (
-                        <Typography variant="caption" sx={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.68rem', flexShrink: 0 }}>
+                        <Typography variant="caption" sx={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.78rem', flexShrink: 0 }}>
                           Flexible
                         </Typography>
                       )}
 
                       <Typography
                         variant="body2"
-                        noWrap
                         sx={{
                           flex: 1,
                           fontWeight: done ? 400 : 600,
@@ -577,7 +700,13 @@ const Schedules: React.FC = () => {
                             ? (isDark ? '#475569' : '#94a3b8')
                             : (isDark ? '#f1f5f9' : '#1e293b'),
                           textDecoration: done ? 'line-through' : 'none',
-                          fontSize: '0.82rem',
+                          fontSize: '0.92rem',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          wordBreak: 'break-word',
                         }}
                       >
                         {schedule.title}
@@ -585,10 +714,24 @@ const Schedules: React.FC = () => {
 
                       <IconButton
                         size="small"
+                        disabled={sendingNotificationId === schedule.id}
+                        onClick={() => handleTriggerNotification(schedule)}
+                        title="Send Test Push Notification"
+                        sx={{ p: 0.3, flexShrink: 0, color: isDark ? '#475569' : '#94a3b8', '&:hover': { color: '#10b981' } }}
+                      >
+                        {sendingNotificationId === schedule.id ? (
+                          <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#10b981', borderRadius: '50%' }} />
+                        ) : (
+                          <NotificationsIcon sx={{ fontSize: '1rem' }} />
+                        )}
+                      </IconButton>
+
+                      <IconButton
+                        size="small"
                         onClick={() => handleEditSchedule(schedule.id!)}
                         sx={{ p: 0.3, flexShrink: 0, color: isDark ? '#475569' : '#94a3b8', '&:hover': { color: '#f59e0b' } }}
                       >
-                        <EditIcon sx={{ fontSize: '0.85rem' }} />
+                        <EditIcon sx={{ fontSize: '1rem' }} />
                       </IconButton>
                     </Box>
                   );
@@ -651,6 +794,8 @@ const Schedules: React.FC = () => {
                   getTimeRange={getTimeRange}
                   getPriorityColor={getPriorityColor}
                   handleEditSchedule={handleEditSchedule}
+                  onTriggerNotification={handleTriggerNotification}
+                  sendingNotificationId={sendingNotificationId}
                 />
               )}
             </Box>
@@ -707,6 +852,8 @@ const Schedules: React.FC = () => {
                   getTimeRange={getTimeRange}
                   getPriorityColor={getPriorityColor}
                   handleEditSchedule={handleEditSchedule}
+                  onTriggerNotification={handleTriggerNotification}
+                  sendingNotificationId={sendingNotificationId}
                 />
               )}
             </Box>
@@ -773,6 +920,8 @@ interface ScheduleDetailListProps {
   getTimeRange: (startTime: string, endTime: string, isFlexible?: boolean) => string;
   getPriorityColor: (priority: string) => string;
   handleEditSchedule: (id: string) => void;
+  onTriggerNotification: (schedule: SchedulesProps) => void;
+  sendingNotificationId: string | null;
 }
 
 const ScheduleDetailList = ({
@@ -783,6 +932,8 @@ const ScheduleDetailList = ({
   getTimeRange,
   getPriorityColor,
   handleEditSchedule,
+  onTriggerNotification,
+  sendingNotificationId,
 }: ScheduleDetailListProps) => {
   const groups: { [date: string]: SchedulesProps[] } = {};
   const todayStr = new Date().toISOString().split('T')[0];
@@ -837,6 +988,19 @@ const ScheduleDetailList = ({
                       <Typography variant="body2" sx={{ fontWeight: 600, color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a' }}>
                         {schedule.title}
                       </Typography>
+                      <IconButton
+                        size="small"
+                        disabled={sendingNotificationId === schedule.id}
+                        onClick={() => onTriggerNotification(schedule)}
+                        title="Send Test Push Notification"
+                        sx={{ padding: '2px', color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', '&:hover': { color: '#10b981' } }}
+                      >
+                        {sendingNotificationId === schedule.id ? (
+                          <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#10b981', borderRadius: '50%' }} />
+                        ) : (
+                          <NotificationsIcon sx={{ fontSize: '0.9rem' }} />
+                        )}
+                      </IconButton>
                       <IconButton
                         size="small"
                         onClick={() => handleEditSchedule(schedule.id!)}

@@ -36,8 +36,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
-  // 🔐 Restrict /user/dashboard to only master users (not guests)
-  if (isDashboardPage && (role !== 'master' || !uid)) {
+  // 🔐 Restrict /user/dashboard to authenticated users (not guests)
+  if (isDashboardPage && !uid) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 

@@ -61,13 +61,27 @@ export default function TodosList() {
           new Date(t.createdAt) >= thirtyDaysAgo,
       )
       .sort((a, b) => {
+        // Critical tasks at the absolute top
+        if (a.priority === 'critical' && b.priority !== 'critical') return -1;
+        if (b.priority === 'critical' && a.priority !== 'critical') return 1;
+
+        // Nearest due date first (ascending order)
+        if (a.dueDate && b.dueDate) {
+          return (toPlainDate(a.dueDate)?.getTime() ?? 0) - (toPlainDate(b.dueDate)?.getTime() ?? 0);
+        }
+        // Tasks with due date come before tasks without due date
+        if (a.dueDate) return -1;
+        if (b.dueDate) return 1;
+
+        // If neither has a due date, sort by status (in_progress before hold)
         const ORDER: Record<string, number> = { in_progress: 1, hold: 2, completed: 3, 'left-over': 4 };
         const statusDiff = (ORDER[a.status || 'left-over'] || 99) - (ORDER[b.status || 'left-over'] || 99);
         if (statusDiff !== 0) return statusDiff;
-        if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return (toPlainDate(b.dueDate)?.getTime() ?? 0) - (toPlainDate(a.dueDate)?.getTime() ?? 0);
+
+        // Fallback to creation date (newest first)
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
       });
   }, [allTodos]);
 
@@ -227,8 +241,9 @@ export default function TodosList() {
                         <Link href={`/to-do/${todo.id}`} style={{ textDecoration: 'none' }}>
                           <Typography
                             variant="h6" fontWeight="bold"
-                            sx={{ cursor: 'pointer', color: 'inherit', mb: 1, '&:hover': { color: muiTheme.palette.primary.main, textDecoration: 'underline' } }}
+                            sx={{ cursor: 'pointer', color: 'inherit', mb: 1, '&:hover': { color: muiTheme.palette.primary.main, textDecoration: 'underline' }, display: 'flex', alignItems: 'center', gap: 1 }}
                           >
+                            {todo.priority === 'critical' && <FlagIcon sx={{ color: '#ef4444' }} />}
                             {todo.title}
                           </Typography>
                         </Link>

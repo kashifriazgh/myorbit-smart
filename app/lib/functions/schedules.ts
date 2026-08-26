@@ -20,7 +20,7 @@ import {
   rescheduleScheduleReminder,
   getUserWhatsAppConfig,
 } from '../utils/whatsapp-reminder';
-import { requestNotificationPermissionAndGetToken } from '../utils/fcm';
+import { registerNotificationDevice } from '../utils/fcm';
 
 const COLLECTION_NAME = 'schedules';
 
@@ -66,14 +66,12 @@ export const createSchedule = async (
         // Pass the reminder method so the RTDB worker knows whether to send WhatsApp or push
         config.method = (scheduleData.reminder?.method as 'whatsapp' | 'push') || 'whatsapp';
 
-        // For push reminders: ensure the FCM token is registered under the real userId
-        // so the Node.js worker finds it at fcm-tokens/{clientId}/{userId}
+        // For push reminders: ensure the device is registered under the real userId
         if (config.method === 'push' && typeof window !== 'undefined') {
           try {
-            const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${scheduleData.userId}`;
-            await requestNotificationPermissionAndGetToken(clientId, scheduleData.userId);
+            await registerNotificationDevice(scheduleData.userId);
           } catch (tokenErr) {
-            console.warn('Could not refresh FCM token before push reminder:', tokenErr);
+            console.warn('Could not register FCM device before push reminder:', tokenErr);
           }
         }
         
@@ -148,13 +146,12 @@ export const updateSchedule = async (
             const resolvedMethod = (updates.reminder?.method || oldData.reminder?.method || 'whatsapp') as 'whatsapp' | 'push';
             config.method = resolvedMethod;
 
-            // For push reminders: ensure FCM token is under the real userId
+            // For push reminders: ensure the device is registered under the real userId
             if (resolvedMethod === 'push' && typeof window !== 'undefined') {
               try {
-                const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || `user_${oldData.userId}`;
-                await requestNotificationPermissionAndGetToken(clientId, oldData.userId);
+                await registerNotificationDevice(oldData.userId);
               } catch (tokenErr) {
-                console.warn('Could not refresh FCM token on schedule update:', tokenErr);
+                console.warn('Could not register FCM device on schedule update:', tokenErr);
               }
             }
 

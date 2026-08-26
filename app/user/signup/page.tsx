@@ -36,7 +36,7 @@ import {
   where,
   Timestamp,
 } from 'firebase/firestore';
-import { auth, db } from '@/app/lib/firebase';
+import { userAuth as auth, userDb as db } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
 import Cookies from 'js-cookie';

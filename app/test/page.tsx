@@ -35,14 +35,14 @@ interface CheckResult {
 // ─── Hardcoded RTDB config (same as fcm.ts / firestore.ts) ───────────────────
 
 const hardcodedRtdbConfig = {
-  apiKey: 'AIzaSyDZFNapAjmnS0TZIM1lK8wNA4PDgedVnRo',
-  authDomain: 'forms-389a6.firebaseapp.com',
+  apiKey: 'AIzaSyDblRCWL3l1VSOHkUiBshnO5CWISnTXjYw',
+  authDomain: 'centralize-users.firebaseapp.com',
   databaseURL:
-    'https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app',
-  projectId: 'forms-389a6',
-  storageBucket: 'forms-389a6.firebasestorage.app',
-  messagingSenderId: '721032079467',
-  appId: '1:721032079467:web:b525c93448811b8bf4292e',
+    'https://centralize-users-default-rtdb.asia-southeast1.firebasedatabase.app/',
+  projectId: 'centralize-users',
+  storageBucket: 'centralize-users.firebasestorage.app',
+  messagingSenderId: '354356008461',
+  appId: '1:354356008461:web:a3ead68b25b52b3852a744',
 };
 
 function getHardcodedRtdb() {

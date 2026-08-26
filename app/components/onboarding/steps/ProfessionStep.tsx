@@ -14,14 +14,9 @@ import BusinessIcon from '@mui/icons-material/Business';
 import WorkIcon from '@mui/icons-material/Work';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const PAK_CITIES = [
-  'Karachi', 'Lahore', 'Islamabad', 'Faisalabad', 'Rawalpindi', 
-  'Multan', 'Hyderabad', 'Peshawar', 'Quetta', 'Sialkot'
-];
-
 const JOB_OPTIONS = [
   'Software Engineer', 'Teacher', 'Doctor', 'Manager', 
-  'Sales Executive', 'Accountant', 'Graphic Designer', 'Other'
+  'Sales Executive', 'Accountant', 'Graphic Designer', 'Govt Employee', 'Other'
 ];
 
 const BUSINESS_OPTIONS = [
@@ -51,7 +46,7 @@ const item = {
   show: { opacity: 1, y: 0 }
 };
 
-export default function LocationStep({ value, onChange }: Props) {
+export default function ProfessionStep({ value, onChange }: Props) {
   const handleFieldChange = (
     field: keyof OnboardingData,
     fieldValue: OnboardingFieldValue,
@@ -66,8 +61,6 @@ export default function LocationStep({ value, onChange }: Props) {
 
   const professionType = value.professionType?.value;
   const profession = value.profession?.value;
-  const country = value.country?.value;
-  const city = value.city?.value;
 
   const handleProfessionTypeChange = (
     event: React.MouseEvent<HTMLElement>,
@@ -93,57 +86,19 @@ export default function LocationStep({ value, onChange }: Props) {
         <motion.div variants={item}>
           <Box>
             <Typography variant="h5" fontWeight="700" gutterBottom>
-              Where are you located?
+              What is your profession?
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Help us tailor the app to your region and professional needs.
+              Help us understand your daily schedule context.
             </Typography>
           </Box>
         </motion.div>
 
         <Stack spacing={3}>
           <motion.div variants={item}>
-            <FormControl fullWidth>
-              <InputLabel>Country</InputLabel>
-              <Select
-                value={country || ''}
-                label="Country"
-                onChange={(e) => handleFieldChange('country', e.target.value)}
-                sx={{ borderRadius: 2 }}
-              >
-                <MenuItem value="Pakistan">Pakistan</MenuItem>
-                <MenuItem value="USA">USA</MenuItem>
-                <MenuItem value="UK">UK</MenuItem>
-                <MenuItem value="Canada">Canada</MenuItem>
-                <MenuItem value="Other">Other</MenuItem>
-              </Select>
-            </FormControl>
-          </motion.div>
-
-          <motion.div variants={item}>
-            <FormControl fullWidth disabled={country !== 'Pakistan'}>
-              <InputLabel>City</InputLabel>
-              <Select
-                value={city || ''}
-                label="City"
-                onChange={(e) => handleFieldChange('city', e.target.value)}
-                sx={{ borderRadius: 2 }}
-              >
-                {PAK_CITIES.map(c => (
-                  <MenuItem key={c} value={c}>{c}</MenuItem>
-                ))}
-                <MenuItem value="Other">Other</MenuItem>
-              </Select>
-            </FormControl>
-          </motion.div>
-
-          <motion.div variants={item}>
             <Box>
-              <Typography variant="subtitle2" gutterBottom fontWeight="600">
-                What&apos;s your primary profession?
-              </Typography>
               <ToggleButtonGroup
-                value={professionType}
+                value={professionType || ''}
                 exclusive
                 onChange={handleProfessionTypeChange}
                 fullWidth

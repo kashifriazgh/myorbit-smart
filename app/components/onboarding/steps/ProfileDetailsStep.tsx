@@ -7,18 +7,10 @@ import {
   InputLabel, 
   Select, 
   MenuItem, 
-  Autocomplete, 
-  TextField, 
-  Chip 
 } from '@mui/material';
 import { motion } from 'framer-motion';
 
 const AGE_GROUPS = ['15-19', '20-24', '25-29', '30-34', '35-39', '40-44', '45-49', '50+'];
-const SKILLS_OPTIONS = [
-  'Graphic Designer', 'Web Developer', 'Content Writer', 'Sports Coach', 
-  'Digital Marketer', 'Video Editor', 'Data Analyst', 'Project Manager',
-  'UI/UX Designer', 'SEO Specialist', 'Public Speaker'
-];
 const EDUCATION_LEVELS = [
   'High School', '12th Classes', 'Intermediate', 'Bachelor\'s', 'Master\'s', 'PhD', 'Self-Taught', 'Other'
 ];
@@ -60,8 +52,6 @@ export default function ProfileDetailsStep({ value, onChange }: Props) {
 
   const ageGroup = value.ageGroup?.value;
   const gender = value.gender?.value;
-  const skills = value.skills?.value || [];
-  const hobby = value.hobby?.value;
   const education = value.education?.value;
 
   return (
@@ -113,34 +103,6 @@ export default function ProfileDetailsStep({ value, onChange }: Props) {
                 </Select>
               </FormControl>
             </Stack>
-          </motion.div>
-
-          <motion.div variants={item}>
-            <Autocomplete
-              multiple
-              freeSolo
-              options={SKILLS_OPTIONS}
-              value={skills}
-              onChange={(_, newValue) => handleFieldChange('skills', newValue)}
-              renderTags={(val, getTagProps) =>
-                val.map((option: string, index: number) => (
-                  <Chip variant="outlined" label={option} {...getTagProps({ index })} key={option} />
-                ))
-              }
-              renderInput={(params) => (
-                <TextField {...params} label="Skills" placeholder="Add skills (type and press Enter)" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
-              )}
-            />
-          </motion.div>
-
-          <motion.div variants={item}>
-            <TextField
-              label="Hobby"
-              fullWidth
-              value={hobby || ''}
-              onChange={(e) => handleFieldChange('hobby', e.target.value)}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
           </motion.div>
 
           <motion.div variants={item}>

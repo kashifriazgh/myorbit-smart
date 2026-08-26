@@ -10,7 +10,7 @@ import {
   Snackbar,
 } from '@mui/material';
 import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '@/app/lib/firebase';
+import { userAuth as auth } from '@/app/lib/firebase';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 export default function ResetPasswordPage() {

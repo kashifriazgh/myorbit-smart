@@ -16,9 +16,6 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import FlagIcon from '@mui/icons-material/Flag';
-import TimelineIcon from '@mui/icons-material/Timeline';
-import NoteIcon from '@mui/icons-material/Note';
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import HelpCenterIcon from '@mui/icons-material/HelpCenter';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 
@@ -26,11 +23,8 @@ import { useCustomTheme } from '@/app/lib/context/themeContext';
 import TodosGuide from '../components/guide/TodosGuide';
 import SchedulesGuide from '../components/guide/SchedulesGuide';
 import GoalsGuide from '../components/guide/GoalsGuide';
-import StreaksGuide from '../components/guide/StreaksGuide';
-import NotesGuide from '../components/guide/NotesGuide';
-import TimeTableGuide from '../components/guide/TimeTableGuide';
 
-type GuideTabId = 'todos' | 'schedules' | 'goals' | 'streaks' | 'notes' | 'timetable';
+type GuideTabId = 'todos' | 'schedules' | 'goals';
 
 interface GuideSection {
   id: GuideTabId;
@@ -75,33 +69,6 @@ export default function GuidePage() {
       description: language === 'ur' 
         ? 'طویل مدتی مقاصد، اہم سنگ میل، اور ترقی کا لاگ۔' 
         : 'Long-term aspirations, milestones, and strategic progress logs.',
-      isAvailable: true,
-    },
-    {
-      id: 'streaks',
-      label: language === 'ur' ? 'سلسلے (سٹريکس)' : 'Streaks',
-      icon: <TimelineIcon />,
-      description: language === 'ur' 
-        ? 'عادتوں کی ٹریکنگ، روزمرہ کا تسلسل، اور تسلسلی گراف۔' 
-        : 'Habit tracking, daily streaks, visual grids, and consistency boosts.',
-      isAvailable: true,
-    },
-    {
-      id: 'notes',
-      label: language === 'ur' ? 'نوٹس' : 'Notes',
-      icon: <NoteIcon />,
-      description: language === 'ur' 
-        ? 'معلومات کا ذخیرہ، ایڈیٹر، لوگوں کا ذکر، اور ٹیگنگ سسٹم۔' 
-        : 'Knowledge bases, text editors, mentions, and tagging systems.',
-      isAvailable: true,
-    },
-    {
-      id: 'timetable',
-      label: language === 'ur' ? 'ٹائم ٹیبل' : 'Time Table',
-      icon: <CalendarMonthIcon />,
-      description: language === 'ur' 
-        ? 'گھنٹہ وار شیڈول، ہفتہ وار منصوبہ ساز، کلاس/روٹین ٹریکر۔' 
-        : 'Hourly schedules, weekly planners, class/routine trackers.',
       isAvailable: true,
     },
   ];
@@ -347,12 +314,6 @@ export default function GuidePage() {
                 <SchedulesGuide language={language} />
               ) : activeTab === 'goals' ? (
                 <GoalsGuide language={language} />
-              ) : activeTab === 'streaks' ? (
-                <StreaksGuide language={language} />
-              ) : activeTab === 'notes' ? (
-                <NotesGuide language={language} />
-              ) : activeTab === 'timetable' ? (
-                <TimeTableGuide language={language} />
               ) : null}
             </>
           )}

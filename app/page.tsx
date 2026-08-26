@@ -11,6 +11,7 @@ import Goals from './components/homepage/Goals';
 import Schedules from './components/homepage/Schedules';
 import QuickLinks from './components/homepage/QuickLinks';
 import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingInitializer';
+import InstallShortcutBanner from './components/global/InstallShortcutBanner';
 
 // Lazy load components
 const ImportantTasks = lazy(
@@ -65,6 +66,7 @@ export default function Homepage() {
       }}
     >
       <OnBoardingInitializer />
+      <InstallShortcutBanner />
       <GuestUserBanner />
       <GuideBanner />
 

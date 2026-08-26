@@ -4,7 +4,7 @@ import { Button } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
-import { auth } from '@/app/lib/firebase';
+import { userAuth as auth } from '@/app/lib/firebase';
 import { clearGuestUser } from '@/app/lib/guestUser';
 import { useAuth } from '@/app/lib/context/userContext';
 import Cookies from 'js-cookie';
@@ -25,6 +25,9 @@ export default function LogoutButton() {
         await signOut(auth);
         Cookies.remove('uid', { path: '/' });
         Cookies.remove('role', { path: '/' });
+        localStorage.removeItem('myorbit_cached_user');
+        localStorage.removeItem('myorbit_cached_onboarding');
+        localStorage.removeItem('myorbit_cached_context_paragraph');
         router.push('/');
       }
     } catch (err) {

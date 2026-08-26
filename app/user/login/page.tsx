@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '@/app/lib/firebase';
+import { userAuth as auth, userDb as db } from '@/app/lib/firebase';
 import Cookies from 'js-cookie';
 import {
   Box,

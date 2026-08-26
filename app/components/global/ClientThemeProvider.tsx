@@ -14,6 +14,7 @@ import { OnboardingProvider } from '../../lib/context/onBoardingContext';
 import { ProjectsProvider } from '../../lib/context/ProjectsContext';
 import { GoalsProvider } from '@/app/lib/context/GoalsContext';
 import { SchedulesProvider } from '@/app/lib/context/SchedulesContext';
+import ContextSynchronizer from './ContextSynchronizer';
 
 export default function ClientThemeProvider({
   children,
@@ -30,6 +31,7 @@ export default function ClientThemeProvider({
                 <ProjectsProvider>
                   <CssBaseline />
                   <ThemeBodyEffect />
+                  <ContextSynchronizer />
                   {children}
                 </ProjectsProvider>
               </SchedulesProvider>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Box,
@@ -8,194 +8,141 @@ import {
   Card,
   CardContent,
   Grid,
-  Divider,
   Button,
   Stack,
   IconButton,
   Chip,
   Alert,
-  CircularProgress,
-  Tooltip,
+  Snackbar,
+  Divider,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import FlagIcon from '@mui/icons-material/Flag';
-import BookIcon from '@mui/icons-material/Book';
-import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import PsychologyIcon from '@mui/icons-material/Psychology';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ChecklistIcon from '@mui/icons-material/Checklist';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import ContactPhoneIcon from '@mui/icons-material/ContactPhone';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useTodoContext } from '@/app/lib/context/todoContext';
+import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 export default function UserContextPage() {
-  const {
-    user,
-    onboardingData,
-    todoContextData,
-    todoContextStatus,
-    todoContextLocked,
-    generateTodoContext,
-    toggleTodoContextLock,
-    goalContextData,
-    goalContextStatus,
-    goalContextLocked,
-    generateGoalContext,
-    toggleGoalContextLock,
-    financeContextData,
-    financeContextStatus,
-    financeContextLocked,
-    generateFinanceContext,
-    toggleFinanceContextLock,
-    consolidatedContextData,
-    consolidatedContextStatus,
-    consolidatedContextLocked,
-    generateConsolidatedContext,
-    toggleConsolidatedContextLock,
-    scheduleContextData,
-    scheduleContextStatus,
-    scheduleContextLocked,
-    generateScheduleContext,
-    toggleScheduleContextLock,
-  } = useAuth();
+  const { user, onboardingData, contextParagraph } = useAuth();
+  const { todos, refreshTodos } = useTodoContext();
+  const { allSchedules, refreshSchedules } = useSchedules();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
   const router = useRouter();
-  const [showAnalysis, setShowAnalysis] = React.useState(false);
-  const [showScheduleAnalysis, setShowScheduleAnalysis] = React.useState(false);
 
-  // Format the structured context JSON that would be sent to the AI
-  const aiContextPayload = useMemo(() => {
-    if (!onboardingData) return {};
+  const [snack, setSnack] = useState({ open: false, message: '', type: 'success' as 'success' | 'info' });
+  const [recalculating, setRecalculating] = useState(false);
 
-    const data = onboardingData;
+  // ── Retrieve Local Storage Cache for Finance info ──────────────────────────
+  const cashSnapshot = useMemo(() => {
+    try {
+      const cached = localStorage.getItem('myorbit_cached_cash_snapshot');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const loans = useMemo(() => {
+    try {
+      const cached = localStorage.getItem('myorbit_cached_loans');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // ── Calculate metrics for details panel ─────────────────────────────────────
+  const todoMetrics = useMemo(() => {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const completedToday = todos.filter(t => {
+      if (t.status !== 'completed') return false;
+      const compDate = t.completedAt ? new Date(t.completedAt) : null;
+      return compDate && compDate >= startOfDay;
+    });
+
+    const active = todos.filter(t => t.status === 'in_progress' || t.status === 'hold');
+    const urgent = todos.filter(t => t.status !== 'completed' && t.priority === 'urgent');
+    
+    const overdue = todos.filter(t => {
+      if (t.status === 'completed') return false;
+      if (!t.dueDate) return false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const due = t.dueDate instanceof Date ? t.dueDate : (t.dueDate as any).toDate?.() || new Date(t.dueDate as any);
+      return due < new Date();
+    });
+
     return {
-      userInfo: {
-        name: `${data.firstName || user?.firstName || ''} ${data.lastName || user?.lastName || ''}`.trim() || 'User',
-        ageGroup: data.ageGroup?.value || 'Not specified',
-        gender: data.gender?.value || 'Not specified',
-      },
-      regionalContext: {
-        country: data.country?.value || 'Not specified',
-        city: data.city?.value || 'Not specified',
-      },
-      professionalProfile: {
-        professionType: data.professionType?.value || 'Not specified',
-        field: data.profession?.value || 'Not specified',
-        skills: data.skills?.value || [],
-        hobby: data.hobby?.value || 'Not specified',
-        education: data.education?.value || 'Not specified',
-      },
-      productivityStyle: {
-        workStyle: data.workStyle?.value || 'Not specified',
-        peakEnergyHours: data.peakHours?.value || [],
-        deadlinePreference: data.deadlineType?.value || 'Flexible',
-        activityTracking: data.activityTracking?.value || 'Allow',
-      },
-      socialPreferences: {
-        frequency: data.socialPreference?.value || 'Not specified',
-        preferredTime: data.preferredSocialTime?.value || 'Not specified',
-        hourRange: data.socialHourRange?.value || null,
-      },
-      silenceQuitHours: data.quitHours?.value ? `${data.quitHours.value[0]}:00 to ${data.quitHours.value[1]}:00` : 'Not specified',
-      aiInteraction: {
-        preferredTone: data.aiTone?.value || 'Friendly',
-        autoSuggestEnabled: data.autoSuggest?.value ?? true,
-        smartReschedulingEnabled: data.smartRescheduling?.value ?? true,
-      },
+      completedTodayCount: completedToday.length,
+      activeCount: active.length,
+      urgentCount: urgent.length,
+      overdueCount: overdue.length
     };
-  }, [onboardingData, user]);
+  }, [todos]);
 
-  // Journal context deleted
+  const scheduleMetrics = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todaySchedules = allSchedules.filter(s => {
+      if (s.status === 'cancelled') return false;
+      if (s.isFlexible) return true;
+      return s.date === todayStr;
+    });
+    return {
+      todayCount: todaySchedules.length
+    };
+  }, [allSchedules]);
 
-  // Todo status helpers
-  const isTodoLoading = todoContextStatus === 'fetching' || todoContextStatus === 'generating';
-  const todoStatusLabel =
-    todoContextStatus === 'fetching'
-      ? 'Fetching active tasks…'
-      : todoContextStatus === 'generating'
-      ? 'Generating AI summary…'
-      : todoContextStatus === 'saved'
-      ? 'Saved successfully'
-      : todoContextStatus === 'error'
-      ? 'Error occurred'
-      : null;
-  const todoGeneratedAtFormatted = todoContextData?.generatedAt
-    ? new Date(todoContextData.generatedAt).toLocaleString()
-    : null;
+  const financeMetrics = useMemo(() => {
+    const totalAmount = cashSnapshot?.totalAmount ?? 0;
+    const freezeAmount = cashSnapshot?.freezeAmount ?? 0;
+    const availableAmount = totalAmount - freezeAmount;
 
-  // Goal status helpers
-  const isGoalLoading = goalContextStatus === 'fetching' || goalContextStatus === 'generating';
-  const goalStatusLabel =
-    goalContextStatus === 'fetching'
-      ? 'Fetching goals & check-ins…'
-      : goalContextStatus === 'generating'
-      ? 'Analyzing goals and frequency…'
-      : goalContextStatus === 'saved'
-      ? 'Saved successfully'
-      : goalContextStatus === 'error'
-      ? 'Error occurred'
-      : null;
-  const goalGeneratedAtFormatted = goalContextData?.generatedAt
-    ? new Date(goalContextData.generatedAt).toLocaleString()
-    : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const borrowLoans = loans.filter((l: any) => !l.isSettled && l.type === 'borrow');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lendLoans = loans.filter((l: any) => !l.isSettled && l.type === 'lend');
 
-  // Finance status helpers
-  const isFinanceLoading = financeContextStatus === 'fetching' || financeContextStatus === 'generating';
-  const financeStatusLabel =
-    financeContextStatus === 'fetching'
-      ? 'Fetching cash, expenses & loans…'
-      : financeContextStatus === 'generating'
-      ? 'Analyzing financial liquidity…'
-      : financeContextStatus === 'saved'
-      ? 'Saved successfully'
-      : financeContextStatus === 'error'
-      ? 'Error occurred'
-      : null;
-  const financeGeneratedAtFormatted = financeContextData?.generatedAt
-    ? new Date(financeContextData.generatedAt).toLocaleString()
-    : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payback = borrowLoans.reduce((sum: number, l: any) => sum + (l.amount || 0), 0);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toReceive = lendLoans.reduce((sum: number, l: any) => sum + (l.amount || 0), 0);
 
-  // Consolidated status helpers
-  const isConsolidatedLoading = consolidatedContextStatus === 'fetching' || consolidatedContextStatus === 'generating';
-  const consolidatedStatusLabel =
-    consolidatedContextStatus === 'fetching'
-      ? 'Fetching all sub-contexts…'
-      : consolidatedContextStatus === 'generating'
-      ? 'Generating master consolidated context…'
-      : consolidatedContextStatus === 'saved'
-      ? 'Saved successfully'
-      : consolidatedContextStatus === 'error'
-      ? 'Error occurred'
-      : null;
-  const consolidatedGeneratedAtFormatted = consolidatedContextData?.generatedAt
-    ? new Date(consolidatedContextData.generatedAt).toLocaleString()
-    : null;
+    return {
+      totalAmount,
+      availableAmount,
+      payback,
+      toReceive
+    };
+  }, [cashSnapshot, loans]);
 
-  // Streak context deleted
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleCopy = () => {
+    if (!contextParagraph) return;
+    navigator.clipboard.writeText(contextParagraph);
+    setSnack({ open: true, message: 'Context paragraph copied to clipboard!', type: 'success' });
+  };
 
-  // Schedule status helpers
-  const isScheduleLoading = scheduleContextStatus === 'fetching' || scheduleContextStatus === 'generating';
-  const scheduleStatusLabel =
-    scheduleContextStatus === 'fetching'
-      ? 'Fetching schedules…'
-      : scheduleContextStatus === 'generating'
-      ? 'Analyzing daily schedules…'
-      : scheduleContextStatus === 'saved'
-      ? 'Saved successfully'
-      : scheduleContextStatus === 'error'
-      ? 'Error occurred'
-      : null;
-  const scheduleGeneratedAtFormatted = scheduleContextData?.generatedAt
-    ? new Date(scheduleContextData.generatedAt).toLocaleString()
-    : null;
+  const handleRecalculate = () => {
+    setRecalculating(true);
+    refreshTodos();
+    refreshSchedules();
+    
+    setTimeout(() => {
+      setRecalculating(false);
+      setSnack({ open: true, message: 'Triggered recalculation based on latest logs.', type: 'info' });
+    }, 1500);
+  };
 
   return (
     <Box
@@ -219,7 +166,7 @@ export default function UserContextPage() {
           py: 2,
         }}
       >
-        <Stack direction="row" justifyContent="space-between" alignItems="center" maxWidth={950} mx="auto">
+        <Stack direction="row" justifyContent="space-between" alignItems="center" maxWidth={1000} mx="auto">
           <Stack direction="row" alignItems="center" spacing={1}>
             <IconButton onClick={() => router.push('/user/dashboard')} sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>
               <ArrowBackIcon />
@@ -245,8 +192,8 @@ export default function UserContextPage() {
       </Box>
 
       {/* Content Area */}
-      <Box maxWidth={950} mx="auto" sx={{ px: { xs: 2, sm: 3 }, mt: 4 }}>
-        {/* Banner Nudge */}
+      <Box maxWidth={1000} mx="auto" sx={{ px: { xs: 2, sm: 3 }, mt: 4 }}>
+        {/* Nudge Banner */}
         <Alert
           icon={<AutoAwesomeIcon sx={{ color: '#6366f1' }} />}
           severity="info"
@@ -260,1725 +207,286 @@ export default function UserContextPage() {
           }}
         >
           <Typography variant="body2" sx={{ fontWeight: 650 }}>
-            This Context Hub displays the personalized data payload sent along with AI prompts. The AI Journal Context section below analyzes your recent journal entries to build a live behavioral snapshot — helping the AI understand your emotional state, focus, and habits for more personalized responses.
+            This Context Hub displays the centralized natural language profile summary cached locally. It is generated client-side from your profile, tasks, schedules, and finances, and shared automatically with the AI model for highly tailored responses without redundant database hits.
           </Typography>
         </Alert>
 
         <Grid container spacing={4}>
-          {/* Left Panel: Context Cards */}
+          {/* Left Panel: The Consolidated Context Paragraph */}
           <Grid size={{ xs: 12, md: 7 }}>
             <Stack spacing={3}>
-              <Typography variant="h6" fontWeight="800" sx={{ mb: -1 }}>
-                Active Context Profiles
+              <Typography variant="h6" fontWeight="800">
+                Consolidated AI Prompt Context
               </Typography>
 
-              {/* ── MASTER CONSOLIDATED PROFILE CARD ── */}
               <Card
                 sx={{
                   borderRadius: 4,
-                  bgcolor: isDark ? '#1e1b4b' : '#f5f3ff', // Deep indigo/violet theme
+                  bgcolor: isDark ? '#1e1b4b' : '#f5f3ff',
                   border: `2px solid ${isDark ? '#818cf8' : '#6366f1'}`,
                   boxShadow: isDark
-                    ? '0 0 25px rgba(129, 140, 248, 0.3)'
-                    : '0 6px 24px rgba(99, 102, 241, 0.15)',
+                    ? '0 0 25px rgba(129, 140, 248, 0.2)'
+                    : '0 6px 24px rgba(99, 102, 241, 0.12)',
                   position: 'relative',
                   overflow: 'hidden',
                 }}
               >
-                {/* Master profile accent bar */}
                 <Box
                   sx={{
                     position: 'absolute',
                     top: 0, left: 0, right: 0,
                     height: 4,
-                    background: 'linear-gradient(90deg, #6366f1, #3b82f6, #10b981, #f43f5e)',
+                    background: 'linear-gradient(90deg, #6366f1, #3b82f6, #10b981)',
                   }}
                 />
-                <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.5}>
+                
+                <CardContent sx={{ p: 4 }}>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
                     <Stack direction="row" alignItems="center" gap={1}>
-                      <PsychologyIcon sx={{ color: '#818cf8', fontSize: 24 }} />
-                      <Typography variant="subtitle1" fontWeight="900" sx={{ color: '#818cf8', fontSize: 18 }}>
-                        Master Behavioral Profile
+                      <AutoAwesomeIcon sx={{ color: '#818cf8' }} />
+                      <Typography variant="subtitle1" fontWeight="800" color="#818cf8">
+                        Active Natural Language Snapshot
                       </Typography>
-                      <Chip
-                        label="Consolidated Snapshot"
-                        size="small"
-                        sx={{
-                          fontSize: 10, height: 20, fontWeight: 700,
-                          bgcolor: isDark ? 'rgba(129,140,248,0.15)' : 'rgba(99,102,241,0.1)',
-                          color: '#818cf8', border: '1px solid #818cf8',
-                        }}
-                      />
                     </Stack>
-
-                    {/* Lock/Unlock toggle */}
-                    <Tooltip title={consolidatedContextLocked ? 'Locked: click to unlock' : 'Unlocked: click to lock'}>
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleConsolidatedContextLock(!consolidatedContextLocked)}
-                        sx={{
-                          color: consolidatedContextLocked ? '#f59e0b' : '#10b981',
-                          bgcolor: isDark
-                            ? consolidatedContextLocked ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)'
-                            : consolidatedContextLocked ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)',
-                          border: `1px solid ${consolidatedContextLocked ? '#f59e0b' : '#10b981'}`,
-                          '&:hover': { opacity: 0.85 },
-                        }}
-                      >
-                        {consolidatedContextLocked ? <LockIcon sx={{ fontSize: 16 }} /> : <LockOpenIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-
-                  {/* Lock status badge */}
-                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
                     <Chip
-                      icon={consolidatedContextLocked ? <LockIcon sx={{ fontSize: '14px !important' }} /> : <LockOpenIcon sx={{ fontSize: '14px !important' }} />}
-                      label={consolidatedContextLocked ? 'Locked — Re-fetch Blocked' : 'Unlocked — Will Refresh on Next Load'}
+                      icon={<LockOpenIcon sx={{ fontSize: '14px !important', color: '#10b981' }} />}
+                      label="Auto-Cached"
                       size="small"
                       sx={{
-                        fontSize: 10, fontWeight: 700,
-                        color: consolidatedContextLocked ? '#f59e0b' : '#10b981',
-                        bgcolor: consolidatedContextLocked
-                          ? isDark ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.08)'
-                          : isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)',
-                        border: `1px solid ${consolidatedContextLocked ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)'}`,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: '#10b981',
+                        bgcolor: isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.06)',
+                        border: '1px solid rgba(16,185,129,0.3)',
                       }}
                     />
                   </Stack>
 
-                  {/* Content */}
-                  {isConsolidatedLoading ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                      <CircularProgress size={32} sx={{ color: '#818cf8' }} />
-                      <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                        {consolidatedStatusLabel}
-                      </Typography>
-                    </Box>
-                  ) : consolidatedContextData?.summary ? (
-                    <Box>
+                  {contextParagraph ? (
+                    <Box sx={{ mt: 2 }}>
                       <Box
                         sx={{
-                          p: 2.5, borderRadius: 3,
+                          p: 3,
+                          borderRadius: 3,
                           bgcolor: isDark ? '#0f172a' : '#f8fafc',
                           border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                          mb: 2,
+                          mb: 3,
                         }}
                       >
-                        <pre
-                          style={{
-                            margin: 0,
-                            fontFamily: 'inherit',
-                            fontSize: '13.5px',
+                        <Typography
+                          variant="body1"
+                          sx={{
                             lineHeight: 1.8,
-                            color: isDark ? '#cbd5e1' : '#374151',
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word',
+                            fontWeight: 500,
+                            fontFamily: 'Outfit, Inter, sans-serif',
+                            color: isDark ? '#e2e8f0' : '#1e293b',
                           }}
                         >
-                          {consolidatedContextData.summary}
-                        </pre>
+                          {contextParagraph}
+                        </Typography>
                       </Box>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                        <Stack direction="row" gap={1} flexWrap="wrap">
-                          {consolidatedGeneratedAtFormatted && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`Generated: ${consolidatedGeneratedAtFormatted}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10 }}
-                            />
-                          )}
-                        </Stack>
+                      
+                      <Stack direction="row" gap={2} justifyContent="flex-end">
                         <Button
-                          size="small"
-                          startIcon={<RefreshIcon />}
-                          onClick={async () => {
-                            await toggleConsolidatedContextLock(false);
-                            await generateConsolidatedContext();
-                          }}
-                          disabled={isConsolidatedLoading}
+                          variant="outlined"
+                          startIcon={<ContentCopyIcon />}
+                          onClick={handleCopy}
                           sx={{
-                            textTransform: 'none', fontWeight: 700, fontSize: 12, borderRadius: 2,
-                            color: '#818cf8', border: '1px solid #818cf8', px: 1.5,
-                            '&:hover': { bgcolor: 'rgba(129,140,248,0.08)' },
+                            borderRadius: 3,
+                            textTransform: 'none',
+                            fontWeight: 700,
+                            borderColor: '#818cf8',
+                            color: '#818cf8',
                           }}
                         >
-                          Regenerate
+                          Copy Text
+                        </Button>
+                        <Button
+                          variant="contained"
+                          disabled={recalculating}
+                          onClick={handleRecalculate}
+                          sx={{
+                            borderRadius: 3,
+                            textTransform: 'none',
+                            fontWeight: 700,
+                            background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+                            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.25)',
+                          }}
+                        >
+                          {recalculating ? 'Syncing...' : 'Force Sync'}
                         </Button>
                       </Stack>
                     </Box>
                   ) : (
-                    <Box>
-                      {consolidatedContextStatus === 'error' ? (
-                        <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                          <ErrorOutlineIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                          <Typography variant="body2" color="error">
-                            Failed to generate consolidated profile. Please try again.
-                          </Typography>
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
-                          No consolidated profile generated yet. Click below to compile your profile data, journals, tasks, goals, and finances into a unified behavioral snapshot.
-                        </Typography>
-                      )}
-                      <Button
-                        variant="contained"
-                        startIcon={isConsolidatedLoading ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon />}
-                        onClick={generateConsolidatedContext}
-                        disabled={isConsolidatedLoading}
-                        sx={{
-                          textTransform: 'none', fontWeight: 700, borderRadius: 3,
-                          background: 'linear-gradient(135deg, #818cf8, #4f46e5)',
-                          boxShadow: '0 4px 12px rgba(129,140,248,0.35)',
-                          '&:hover': { background: 'linear-gradient(135deg, #6366f1, #4338ca)' },
-                        }}
-                      >
-                        Generate Consolidated Profile
-                      </Button>
-                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 4, fontStyle: 'italic', textAlign: 'center' }}>
+                      Context paragraph has not been cached yet. Try adding some tasks, schedules, or updating your profile to trigger calculations.
+                    </Typography>
                   )}
-                </CardContent>
-              </Card>
-
-              {/* AI Journal Context Deleted */}
-
-              {/* ── AI TODO CONTEXT CARD ── */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `2px solid ${isDark ? '#0891b2' : '#06b6d4'}`,
-                  boxShadow: isDark
-                    ? '0 0 20px rgba(6, 182, 212, 0.2)'
-                    : '0 4px 20px rgba(6, 182, 212, 0.1)',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Cyan accent bar */}
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 0, left: 0, right: 0,
-                    height: 3,
-                    background: 'linear-gradient(90deg, #06b6d4, #3b82f6, #8b5cf6)',
-                  }}
-                />
-                <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.5}>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <ChecklistIcon sx={{ color: '#06b6d4', fontSize: 22 }} />
-                      <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#06b6d4' }}>
-                        AI Task Context
-                      </Typography>
-                      {(todoContextData?.totalActiveCount != null || todoContextData?.totalCompletedCount != null) && (
-                        <>
-                          {todoContextData.totalCompletedCount > 0 && (
-                            <Chip
-                              label={`${todoContextData.totalCompletedCount} completed`}
-                              size="small"
-                              sx={{
-                                fontSize: 10, height: 20, fontWeight: 700,
-                                bgcolor: isDark ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.1)',
-                                color: '#10b981', border: '1px solid #10b981',
-                              }}
-                            />
-                          )}
-                          {todoContextData.totalActiveCount > 0 && (
-                            <Chip
-                              label={`${todoContextData.totalActiveCount} active`}
-                              size="small"
-                              sx={{
-                                fontSize: 10, height: 20, fontWeight: 700,
-                                bgcolor: isDark ? 'rgba(6,182,212,0.15)' : 'rgba(6,182,212,0.1)',
-                                color: '#06b6d4', border: '1px solid #06b6d4',
-                              }}
-                            />
-                          )}
-                        </>
-                      )}
-                    </Stack>
-
-                    {/* Lock/Unlock toggle */}
-                    <Tooltip title={todoContextLocked ? 'Locked: click to unlock' : 'Unlocked: click to lock'}>
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleTodoContextLock(!todoContextLocked)}
-                        sx={{
-                          color: todoContextLocked ? '#f59e0b' : '#10b981',
-                          bgcolor: isDark
-                            ? todoContextLocked ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)'
-                            : todoContextLocked ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)',
-                          border: `1px solid ${todoContextLocked ? '#f59e0b' : '#10b981'}`,
-                          '&:hover': { opacity: 0.85 },
-                        }}
-                      >
-                        {todoContextLocked ? <LockIcon sx={{ fontSize: 16 }} /> : <LockOpenIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-
-                  {/* Lock status badge */}
-                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
-                    <Chip
-                      icon={todoContextLocked ? <LockIcon sx={{ fontSize: '14px !important' }} /> : <LockOpenIcon sx={{ fontSize: '14px !important' }} />}
-                      label={todoContextLocked ? 'Locked — Re-fetch Blocked' : 'Unlocked — Will Refresh on Next Load'}
-                      size="small"
-                      sx={{
-                        fontSize: 10, fontWeight: 700,
-                        color: todoContextLocked ? '#f59e0b' : '#10b981',
-                        bgcolor: todoContextLocked
-                          ? isDark ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.08)'
-                          : isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)',
-                        border: `1px solid ${todoContextLocked ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)'}`,
-                      }}
-                    />
-                  </Stack>
-
-                  {/* Content */}
-                  {isTodoLoading ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                      <CircularProgress size={32} sx={{ color: '#06b6d4' }} />
-                      <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                        {todoStatusLabel}
-                      </Typography>
-                    </Box>
-                  ) : todoContextData?.summary ? (
-                    <Box>
-                      <Box
-                        sx={{
-                          p: 2.5, borderRadius: 3,
-                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                          mb: 2,
-                        }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{ lineHeight: 1.8, color: isDark ? '#cbd5e1' : '#374151', fontStyle: 'italic' }}
-                        >
-                          &ldquo;{todoContextData.summary}&rdquo;
-                        </Typography>
-                      </Box>
-                      {(todoContextData.sampledActive || todoContextData.sampledCompleted) && (
-                        <Box sx={{ mb: 2 }}>
-                          <Button
-                            size="small"
-                            onClick={() => setShowAnalysis(!showAnalysis)}
-                            sx={{
-                              textTransform: 'none',
-                              fontWeight: 700,
-                              fontSize: 12,
-                              color: '#06b6d4',
-                              mb: showAnalysis ? 1.5 : 0,
-                            }}
-                          >
-                            {showAnalysis ? 'Hide Manually Calculated Analysis' : 'Show Manually Calculated Analysis'}
-                          </Button>
-                          {showAnalysis && (
-                            <Stack spacing={2.5} sx={{ mt: 1 }}>
-                              {todoContextData.aggregateSummary && (
-                                <Box
-                                  sx={{
-                                    p: 2.5,
-                                    borderRadius: 3,
-                                    bgcolor: isDark ? 'rgba(6, 182, 212, 0.06)' : 'rgba(6, 182, 212, 0.03)',
-                                    border: `1px solid ${isDark ? '#0891b2' : '#22d3ee'}`,
-                                  }}
-                                >
-                                  <Typography
-                                    variant="subtitle2"
-                                    fontWeight="900"
-                                    sx={{
-                                      mb: 1,
-                                      color: isDark ? '#22d3ee' : '#0891b2',
-                                      textTransform: 'uppercase',
-                                      fontSize: 11,
-                                      letterSpacing: '0.5px'
-                                    }}
-                                  >
-                                    Comprehensive Trajectory & Trend Analysis
-                                  </Typography>
-                                  <Typography
-                                    variant="body2"
-                                    sx={{
-                                      lineHeight: 1.6,
-                                      mb: 2.5,
-                                      fontWeight: 550,
-                                      color: isDark ? '#cbd5e1' : '#334155'
-                                    }}
-                                  >
-                                    {todoContextData.aggregateSummary.trendStatement}
-                                  </Typography>
-                                  <Grid container spacing={1.5}>
-                                    <Grid size={{ xs: 6, sm: 3 }}>
-                                      <Box sx={{ textAlign: 'center', p: 1, borderRadius: 2, bgcolor: isDark ? '#0f172a' : '#f8fafc', border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}` }}>
-                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, fontSize: 10 }}>Avg Active Progress</Typography>
-                                        <Typography variant="subtitle1" fontWeight="800" color="primary">{todoContextData.aggregateSummary.averageProgress}%</Typography>
-                                      </Box>
-                                    </Grid>
-                                    <Grid size={{ xs: 6, sm: 3 }}>
-                                      <Box sx={{ textAlign: 'center', p: 1, borderRadius: 2, bgcolor: isDark ? '#0f172a' : '#f8fafc', border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}` }}>
-                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, fontSize: 10 }}>Task Completion Rate</Typography>
-                                        <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#10b981' }}>{todoContextData.aggregateSummary.completionRate}%</Typography>
-                                      </Box>
-                                    </Grid>
-                                    <Grid size={{ xs: 6, sm: 3 }}>
-                                      <Box sx={{ textAlign: 'center', p: 1, borderRadius: 2, bgcolor: isDark ? '#0f172a' : '#f8fafc', border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}` }}>
-                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, fontSize: 10 }}>Overdue / Behind</Typography>
-                                        <Typography
-                                          variant="subtitle1"
-                                          fontWeight="800"
-                                          sx={{
-                                            color: (todoContextData.aggregateSummary.paceDistribution.Overdue + todoContextData.aggregateSummary.paceDistribution.Behind) > 0 ? '#ef4444' : 'text.primary'
-                                          }}
-                                        >
-                                          {todoContextData.aggregateSummary.paceDistribution.Overdue + todoContextData.aggregateSummary.paceDistribution.Behind}
-                                        </Typography>
-                                      </Box>
-                                    </Grid>
-                                    <Grid size={{ xs: 6, sm: 3 }}>
-                                      <Box sx={{ textAlign: 'center', p: 1, borderRadius: 2, bgcolor: isDark ? '#0f172a' : '#f8fafc', border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}` }}>
-                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, fontSize: 10 }}>Ahead / On Track</Typography>
-                                        <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#10b981' }}>
-                                          {todoContextData.aggregateSummary.paceDistribution.Ahead + todoContextData.aggregateSummary.paceDistribution.OnTrack}
-                                        </Typography>
-                                      </Box>
-                                    </Grid>
-                                  </Grid>
-                                </Box>
-                              )}
-
-                              {todoContextData.sampledActive && todoContextData.sampledActive.length > 0 && (
-                                <Box>
-                                  <Typography variant="caption" fontWeight="800" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                                    ACTIVE TASKS METRICS
-                                  </Typography>
-                                  <Stack spacing={1}>
-                                    {todoContextData.sampledActive.map((task, idx) => (
-                                      <Box
-                                        key={idx}
-                                        sx={{
-                                          p: 1.5,
-                                          borderRadius: 2.5,
-                                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                                        }}
-                                      >
-                                        <Typography variant="body2" fontWeight="700" sx={{ mb: 1, color: isDark ? '#f1f5f9' : '#0f172a' }}>
-                                          {task.title}
-                                        </Typography>
-                                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                                          <Chip label={`Priority: ${task.priority}`} size="small" sx={{ fontSize: 9, height: 18, fontWeight: 600 }} />
-                                          <Chip
-                                            label={`Progress: ${task.progressPercent}% (${task.progressLabel})`}
-                                            size="small"
-                                            color={task.progressPercent === 100 ? 'success' : 'primary'}
-                                            sx={{ fontSize: 9, height: 18, fontWeight: 750 }}
-                                          />
-                                          {task.pace && (
-                                            <Chip
-                                              label={`Pace: ${task.pace}`}
-                                              size="small"
-                                              color={task.pace === 'Ahead' ? 'success' : task.pace === 'Overdue' ? 'error' : task.pace === 'Behind' ? 'warning' : 'default'}
-                                              sx={{ fontSize: 9, height: 18, fontWeight: 750 }}
-                                            />
-                                          )}
-                                          <Chip
-                                            label={`Rescheduling: ${task.rescheduleStatus}`}
-                                            size="small"
-                                            color={task.rescheduleStatus === 'Stable' ? 'default' : task.rescheduleStatus === 'Minor Slippage' ? 'warning' : 'error'}
-                                            sx={{ fontSize: 9, height: 18, fontWeight: 600 }}
-                                          />
-                                          {task.staleness && (
-                                            <Chip
-                                              label={`Staleness: ${task.staleness}`}
-                                              size="small"
-                                              color={task.staleness === 'Fresh' ? 'success' : task.staleness === 'Needs Review' ? 'error' : 'default'}
-                                              sx={{ fontSize: 9, height: 18, fontWeight: 750 }}
-                                            />
-                                          )}
-                                          <Chip label={`Days Passed: ${task.daysPassed}`} size="small" variant="outlined" sx={{ fontSize: 9, height: 18 }} />
-                                        </Stack>
-                                      </Box>
-                                    ))}
-                                  </Stack>
-                                </Box>
-                              )}
-
-                              {todoContextData.sampledCompleted && todoContextData.sampledCompleted.length > 0 && (
-                                <Box>
-                                  <Typography variant="caption" fontWeight="800" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                                    COMPLETED TASKS METRICS
-                                  </Typography>
-                                  <Stack spacing={1}>
-                                    {todoContextData.sampledCompleted.map((task, idx) => (
-                                      <Box
-                                        key={idx}
-                                        sx={{
-                                          p: 1.5,
-                                          borderRadius: 2.5,
-                                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                                        }}
-                                      >
-                                        <Typography variant="body2" fontWeight="700" sx={{ mb: 1, color: isDark ? '#f1f5f9' : '#0f172a' }}>
-                                          {task.title}
-                                        </Typography>
-                                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                                          <Chip label={`Completed: ${task.completedAt}`} size="small" color="success" sx={{ fontSize: 9, height: 18, fontWeight: 750 }} />
-                                          <Chip label={`Priority: ${task.priority}`} size="small" sx={{ fontSize: 9, height: 18 }} />
-                                          <Chip
-                                            label={`Rescheduling: ${task.rescheduleStatus}`}
-                                            size="small"
-                                            color={task.rescheduleStatus === 'Stable' ? 'default' : 'error'}
-                                            sx={{ fontSize: 9, height: 18, fontWeight: 600 }}
-                                          />
-                                        </Stack>
-                                      </Box>
-                                    ))}
-                                  </Stack>
-                                </Box>
-                              )}
-                            </Stack>
-                          )}
-                        </Box>
-                      )}
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                        <Stack direction="row" gap={1} flexWrap="wrap">
-                          {todoContextData.sampledCompletedCount > 0 && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`${todoContextData.sampledCompletedCount} of ${todoContextData.totalCompletedCount} completed sampled`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700 }}
-                            />
-                          )}
-                          {todoContextData.sampledActiveCount > 0 && (
-                            <Chip
-                              icon={<ChecklistIcon sx={{ fontSize: '14px !important' }} />}
-                              label={`${todoContextData.sampledActiveCount} of ${todoContextData.totalActiveCount} active sampled`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700 }}
-                            />
-                          )}
-                          {todoGeneratedAtFormatted && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`Generated: ${todoGeneratedAtFormatted}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10 }}
-                            />
-                          )}
-                        </Stack>
-                        <Button
-                          size="small"
-                          startIcon={<RefreshIcon />}
-                          onClick={async () => {
-                            await toggleTodoContextLock(false);
-                            await generateTodoContext();
-                          }}
-                          disabled={isTodoLoading}
-                          sx={{
-                            textTransform: 'none', fontWeight: 700, fontSize: 12, borderRadius: 2,
-                            color: '#06b6d4', border: '1px solid #06b6d4', px: 1.5,
-                            '&:hover': { bgcolor: 'rgba(6,182,212,0.08)' },
-                          }}
-                        >
-                          Regenerate
-                        </Button>
-                      </Stack>
-                    </Box>
-                  ) : (
-                    <Box>
-                      {todoContextStatus === 'error' ? (
-                        <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                          <ErrorOutlineIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                          <Typography variant="body2" color="error">
-                            Failed to generate task context. Please try again.
-                          </Typography>
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
-                          No task context generated yet. Click below to analyze your active tasks.
-                        </Typography>
-                      )}
-                      <Button
-                        variant="contained"
-                        startIcon={isTodoLoading ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon />}
-                        onClick={generateTodoContext}
-                        disabled={isTodoLoading}
-                        sx={{
-                          textTransform: 'none', fontWeight: 700, borderRadius: 3,
-                          background: 'linear-gradient(135deg, #06b6d4, #3b82f6)',
-                          boxShadow: '0 4px 12px rgba(6,182,212,0.35)',
-                          '&:hover': { background: 'linear-gradient(135deg, #0891b2, #2563eb)' },
-                        }}
-                      >
-                        Generate Task Context
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* AI Goal Context */}
-              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.5}>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <FlagIcon sx={{ color: '#ec4899', fontSize: 22 }} />
-                      <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#ec4899' }}>
-                        AI Goal Context
-                      </Typography>
-                      {(goalContextData?.totalActiveCount != null || goalContextData?.totalCompletedCount != null) && (
-                        <>
-                          {goalContextData.totalCompletedCount > 0 && (
-                            <Chip
-                              label={`${goalContextData.totalCompletedCount} completed`}
-                              size="small"
-                              sx={{
-                                fontSize: 10, height: 20, fontWeight: 700,
-                                bgcolor: isDark ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.1)',
-                                color: '#10b981', border: '1px solid #10b981',
-                              }}
-                            />
-                          )}
-                          {goalContextData.totalActiveCount > 0 && (
-                            <Chip
-                              label={`${goalContextData.totalActiveCount} active`}
-                              size="small"
-                              sx={{
-                                fontSize: 10, height: 20, fontWeight: 700,
-                                bgcolor: isDark ? 'rgba(236,72,153,0.15)' : 'rgba(236,72,153,0.1)',
-                                color: '#ec4899', border: '1px solid #ec4899',
-                              }}
-                            />
-                          )}
-                        </>
-                      )}
-                    </Stack>
-
-                    {/* Lock/Unlock toggle */}
-                    <Tooltip title={goalContextLocked ? 'Locked: click to unlock' : 'Unlocked: click to lock'}>
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleGoalContextLock(!goalContextLocked)}
-                        sx={{
-                          color: goalContextLocked ? '#f59e0b' : '#10b981',
-                          bgcolor: isDark
-                            ? goalContextLocked ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)'
-                            : goalContextLocked ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)',
-                          border: `1px solid ${goalContextLocked ? '#f59e0b' : '#10b981'}`,
-                          '&:hover': { opacity: 0.85 },
-                        }}
-                      >
-                        {goalContextLocked ? <LockIcon sx={{ fontSize: 16 }} /> : <LockOpenIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-
-                  {/* Lock status badge */}
-                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
-                    <Chip
-                      icon={goalContextLocked ? <LockIcon sx={{ fontSize: '14px !important' }} /> : <LockOpenIcon sx={{ fontSize: '14px !important' }} />}
-                      label={goalContextLocked ? 'Locked — Re-fetch Blocked' : 'Unlocked — Will Refresh on Next Load'}
-                      size="small"
-                      sx={{
-                        fontSize: 10, fontWeight: 700,
-                        color: goalContextLocked ? '#f59e0b' : '#10b981',
-                        bgcolor: goalContextLocked
-                          ? isDark ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.08)'
-                          : isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)',
-                        border: `1px solid ${goalContextLocked ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)'}`,
-                      }}
-                    />
-                  </Stack>
-
-                  {/* Content */}
-                  {isGoalLoading ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                      <CircularProgress size={32} sx={{ color: '#ec4899' }} />
-                      <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                        {goalStatusLabel}
-                      </Typography>
-                    </Box>
-                  ) : goalContextData?.summary ? (
-                    <Box>
-                      <Box
-                        sx={{
-                          p: 2.5, borderRadius: 3,
-                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                          mb: 2,
-                        }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{ lineHeight: 1.8, color: isDark ? '#cbd5e1' : '#374151', fontStyle: 'italic' }}
-                        >
-                          &ldquo;{goalContextData.summary}&rdquo;
-                        </Typography>
-                      </Box>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                        <Stack direction="row" gap={1} flexWrap="wrap">
-                          {goalContextData.sampledCompletedCount > 0 && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`${goalContextData.sampledCompletedCount} of ${goalContextData.totalCompletedCount} completed sampled`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700 }}
-                            />
-                          )}
-                          {goalContextData.sampledActiveCount > 0 && (
-                            <Chip
-                              icon={<FlagIcon sx={{ fontSize: '14px !important', color: '#ec4899 !important' }} />}
-                              label={`${goalContextData.sampledActiveCount} of ${goalContextData.totalActiveCount} active sampled`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700 }}
-                            />
-                          )}
-                          {goalContextData.checkInsLast30Days > 0 && (
-                            <Chip
-                              label={`${goalContextData.checkInsLast30Days} check-ins (30d)`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700 }}
-                            />
-                          )}
-                          {goalContextData.overallConsistency !== undefined && (
-                            <Chip
-                              label={`Consistency: ${goalContextData.overallConsistency}%`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700 }}
-                            />
-                          )}
-                          {goalGeneratedAtFormatted && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`Generated: ${goalGeneratedAtFormatted}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10 }}
-                            />
-                          )}
-                        </Stack>
-                        <Button
-                          size="small"
-                          startIcon={<RefreshIcon />}
-                          onClick={async () => {
-                            await toggleGoalContextLock(false);
-                            await generateGoalContext();
-                          }}
-                          disabled={isGoalLoading}
-                          sx={{
-                            textTransform: 'none', fontWeight: 700, fontSize: 12, borderRadius: 2,
-                            color: '#ec4899', border: '1px solid #ec4899', px: 1.5,
-                            '&:hover': { bgcolor: 'rgba(236,72,153,0.08)' },
-                          }}
-                        >
-                          Regenerate
-                        </Button>
-                      </Stack>
-                    </Box>
-                  ) : (
-                    <Box>
-                      {goalContextStatus === 'error' ? (
-                        <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                          <ErrorOutlineIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                          <Typography variant="body2" color="error">
-                            Failed to generate goals context. Please try again.
-                          </Typography>
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
-                          No goals context generated yet. Click below to analyze your goals & habits.
-                        </Typography>
-                      )}
-                      <Button
-                        variant="contained"
-                        startIcon={isGoalLoading ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon />}
-                        onClick={generateGoalContext}
-                        disabled={isGoalLoading}
-                        sx={{
-                          textTransform: 'none', fontWeight: 700, borderRadius: 3,
-                          background: 'linear-gradient(135deg, #ec4899, #f43f5e)',
-                          boxShadow: '0 4px 12px rgba(236,72,153,0.35)',
-                          '&:hover': { background: 'linear-gradient(135deg, #db2777, #e11d48)' },
-                        }}
-                      >
-                        Generate Goal Context
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* AI Finance Context */}
-              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.5}>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <AccountBalanceWalletIcon sx={{ color: '#10b981', fontSize: 22 }} />
-                      <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#10b981' }}>
-                        AI Finance Context
-                      </Typography>
-                      {financeContextData?.totalAmount != null && (
-                        <Chip
-                          label={`Total: PKR ${financeContextData.totalAmount.toLocaleString()}`}
-                          size="small"
-                          sx={{
-                            fontSize: 10, height: 20, fontWeight: 700,
-                            bgcolor: isDark ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.1)',
-                            color: '#10b981', border: '1px solid #10b981',
-                          }}
-                        />
-                      )}
-                    </Stack>
-
-                    {/* Lock/Unlock toggle */}
-                    <Tooltip title={financeContextLocked ? 'Locked: click to unlock' : 'Unlocked: click to lock'}>
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleFinanceContextLock(!financeContextLocked)}
-                        sx={{
-                          color: financeContextLocked ? '#f59e0b' : '#10b981',
-                          bgcolor: isDark
-                            ? financeContextLocked ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)'
-                            : financeContextLocked ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)',
-                          border: `1px solid ${financeContextLocked ? '#f59e0b' : '#10b981'}`,
-                          '&:hover': { opacity: 0.85 },
-                        }}
-                      >
-                        {financeContextLocked ? <LockIcon sx={{ fontSize: 16 }} /> : <LockOpenIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-
-                  {/* Lock status badge */}
-                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
-                    <Chip
-                      icon={financeContextLocked ? <LockIcon sx={{ fontSize: '14px !important' }} /> : <LockOpenIcon sx={{ fontSize: '14px !important' }} />}
-                      label={financeContextLocked ? 'Locked — Re-fetch Blocked' : 'Unlocked — Will Refresh on Next Load'}
-                      size="small"
-                      sx={{
-                        fontSize: 10, fontWeight: 700,
-                        color: financeContextLocked ? '#f59e0b' : '#10b981',
-                        bgcolor: financeContextLocked
-                          ? isDark ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.08)'
-                          : isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)',
-                        border: `1px solid ${financeContextLocked ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)'}`,
-                      }}
-                    />
-                  </Stack>
-
-                  {/* Content */}
-                  {isFinanceLoading ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                      <CircularProgress size={32} sx={{ color: '#10b981' }} />
-                      <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                        {financeStatusLabel}
-                      </Typography>
-                    </Box>
-                  ) : financeContextData?.summary ? (
-                    <Box>
-                      <Box
-                        sx={{
-                          p: 2.5, borderRadius: 3,
-                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                          mb: 2,
-                        }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{ lineHeight: 1.8, color: isDark ? '#cbd5e1' : '#374151', fontStyle: 'italic' }}
-                        >
-                          &ldquo;{financeContextData.summary}&rdquo;
-                        </Typography>
-                      </Box>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                        <Stack direction="row" gap={1} flexWrap="wrap">
-                          <Chip
-                            label={`Available: PKR ${financeContextData.availableAmount.toLocaleString()}`}
-                            size="small" variant="outlined"
-                            sx={{ fontSize: 10, fontWeight: 700 }}
-                          />
-                          {financeContextData.freezeAmount > 0 && (
-                            <Chip
-                              label={`Freezed: PKR ${financeContextData.freezeAmount.toLocaleString()}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700, borderColor: '#ef4444', color: '#ef4444' }}
-                            />
-                          )}
-                          {financeContextData.upcomingExpensesCount > 0 && (
-                            <Chip
-                              label={`Expenses: ${financeContextData.upcomingExpensesCount} (PKR ${financeContextData.upcomingExpensesTotal.toLocaleString()})`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700, borderColor: '#f59e0b', color: '#f59e0b' }}
-                            />
-                          )}
-                          {financeContextData.outstandingBorrowTotal > 0 && (
-                            <Chip
-                              label={`Owes: PKR ${financeContextData.outstandingBorrowTotal.toLocaleString()}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700, borderColor: '#e11d48', color: '#e11d48' }}
-                            />
-                          )}
-                          {financeContextData.outstandingLendTotal > 0 && (
-                            <Chip
-                              label={`Owed: PKR ${financeContextData.outstandingLendTotal.toLocaleString()}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10, fontWeight: 700, borderColor: '#0ea5e9', color: '#0ea5e9' }}
-                            />
-                          )}
-                          {financeGeneratedAtFormatted && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`Generated: ${financeGeneratedAtFormatted}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10 }}
-                            />
-                          )}
-                        </Stack>
-                        <Button
-                          size="small"
-                          startIcon={<RefreshIcon />}
-                          onClick={async () => {
-                            await toggleFinanceContextLock(false);
-                            await generateFinanceContext();
-                          }}
-                          disabled={isFinanceLoading}
-                          sx={{
-                            textTransform: 'none', fontWeight: 700, fontSize: 12, borderRadius: 2,
-                            color: '#10b981', border: '1px solid #10b981', px: 1.5,
-                            '&:hover': { bgcolor: 'rgba(16,185,129,0.08)' },
-                          }}
-                        >
-                          Regenerate
-                        </Button>
-                      </Stack>
-                    </Box>
-                  ) : (
-                    <Box>
-                      {financeContextStatus === 'error' ? (
-                        <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                          <ErrorOutlineIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                          <Typography variant="body2" color="error">
-                            Failed to generate finance context. Please try again.
-                          </Typography>
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
-                          No finance context generated yet. Click below to analyze your cash, expenses & loans.
-                        </Typography>
-                      )}
-                      <Button
-                        variant="contained"
-                        startIcon={isFinanceLoading ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon />}
-                        onClick={generateFinanceContext}
-                        disabled={isFinanceLoading}
-                        sx={{
-                          textTransform: 'none', fontWeight: 700, borderRadius: 3,
-                          background: 'linear-gradient(135deg, #10b981, #059669)',
-                          boxShadow: '0 4px 12px rgba(16,185,129,0.35)',
-                          '&:hover': { background: 'linear-gradient(135deg, #059669, #047857)' },
-                        }}
-                      >
-                        Generate Finance Context
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* AI Streak Context Deleted */}
-
-              {/* ── AI SCHEDULE CONTEXT CARD ── */}
-              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.5}>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <CalendarTodayIcon sx={{ color: '#fbbf24', fontSize: 22 }} />
-                      <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#fbbf24' }}>
-                        AI Schedule Context
-                      </Typography>
-                      {scheduleContextData?.totalCount != null && (
-                        <Chip
-                          label={`${scheduleContextData.totalCount} schedules`}
-                          size="small"
-                          sx={{
-                            fontSize: 10, height: 20, fontWeight: 700,
-                            bgcolor: isDark ? 'rgba(251,191,36,0.15)' : 'rgba(251,191,36,0.1)',
-                            color: '#fbbf24', border: '1px solid #fbbf24',
-                          }}
-                        />
-                      )}
-                    </Stack>
-
-                    {/* Lock/Unlock toggle */}
-                    <Tooltip title={scheduleContextLocked ? 'Locked: click to unlock' : 'Unlocked: click to lock'}>
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleScheduleContextLock(!scheduleContextLocked)}
-                        sx={{
-                          color: scheduleContextLocked ? '#f59e0b' : '#10b981',
-                          bgcolor: isDark
-                            ? scheduleContextLocked ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)'
-                            : scheduleContextLocked ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)',
-                          border: `1px solid ${scheduleContextLocked ? '#f59e0b' : '#10b981'}`,
-                          '&:hover': { opacity: 0.85 },
-                        }}
-                      >
-                        {scheduleContextLocked ? <LockIcon sx={{ fontSize: 16 }} /> : <LockOpenIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-
-                  {/* Lock status badge */}
-                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
-                    <Chip
-                      icon={scheduleContextLocked ? <LockIcon sx={{ fontSize: '14px !important' }} /> : <LockOpenIcon sx={{ fontSize: '14px !important' }} />}
-                      label={scheduleContextLocked ? 'Locked — Re-fetch Blocked' : 'Unlocked — Will Refresh on Next Load'}
-                      size="small"
-                      sx={{
-                        fontSize: 10, fontWeight: 700,
-                        color: scheduleContextLocked ? '#f59e0b' : '#10b981',
-                        bgcolor: scheduleContextLocked
-                          ? isDark ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.08)'
-                          : isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)',
-                        border: `1px solid ${scheduleContextLocked ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)'}`,
-                      }}
-                    />
-                  </Stack>
-
-                  {/* Content */}
-                  {isScheduleLoading ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                      <CircularProgress size={32} sx={{ color: '#fbbf24' }} />
-                      <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                        {scheduleStatusLabel}
-                      </Typography>
-                    </Box>
-                  ) : scheduleContextData?.summary ? (
-                    <Box>
-                      <Box
-                        sx={{
-                          p: 2.5, borderRadius: 3,
-                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                          mb: 2,
-                        }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{ lineHeight: 1.8, color: isDark ? '#cbd5e1' : '#374151', fontStyle: 'italic' }}
-                        >
-                          &ldquo;{scheduleContextData.summary}&rdquo;
-                        </Typography>
-                      </Box>
-                      {scheduleContextData.manualMetrics && (
-                        <Box sx={{ mb: 2 }}>
-                          <Button
-                            size="small"
-                            onClick={() => setShowScheduleAnalysis(!showScheduleAnalysis)}
-                            sx={{
-                              textTransform: 'none',
-                              fontWeight: 700,
-                              fontSize: 12,
-                              color: '#fbbf24',
-                              mb: showScheduleAnalysis ? 1.5 : 0,
-                            }}
-                          >
-                            {showScheduleAnalysis ? 'Hide Manually Calculated Analysis' : 'Show Manually Calculated Analysis'}
-                          </Button>
-                          {showScheduleAnalysis && (
-                            <Stack spacing={2.5} sx={{ mt: 1 }}>
-                              {/* Summary Stats */}
-                              <Box
-                                sx={{
-                                  p: 2.5,
-                                  borderRadius: 3,
-                                  bgcolor: isDark ? 'rgba(251, 191, 36, 0.06)' : 'rgba(251, 191, 36, 0.03)',
-                                  border: `1px solid ${isDark ? '#d97706' : '#fcd34d'}`,
-                                }}
-                              >
-                                <Typography variant="subtitle2" fontWeight="800" sx={{ mb: 1.5, color: isDark ? '#fbbf24' : '#b45309', fontSize: 11, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                                  Schedules Workload Overview (30 Days)
-                                </Typography>
-                                <Grid container spacing={2}>
-                                  <Grid size={{ xs: 6, sm: 4 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, fontSize: 10 }}>Avg Daily Count</Typography>
-                                    <Typography variant="subtitle1" fontWeight="800">{scheduleContextData.manualMetrics.dailyAverageCount} items/day</Typography>
-                                  </Grid>
-                                  <Grid size={{ xs: 6, sm: 4 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, fontSize: 10 }}>Avg Daily Duration</Typography>
-                                    <Typography variant="subtitle1" fontWeight="800">{scheduleContextData.manualMetrics.dailyAverageDuration} mins/day</Typography>
-                                  </Grid>
-                                  <Grid size={{ xs: 12, sm: 4 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, fontSize: 10 }}>Preferred TimeSpan</Typography>
-                                    <Typography variant="subtitle1" fontWeight="800" sx={{ color: '#fbbf24' }}>
-                                      {scheduleContextData.manualMetrics.preferredTimeSpan.preferredSpan}
-                                    </Typography>
-                                  </Grid>
-                                </Grid>
-                              </Box>
-
-                              {/* Weekly Breakdown */}
-                              <Box>
-                                <Typography variant="caption" fontWeight="800" color="text.secondary" sx={{ display: 'block', mb: 1, textTransform: 'uppercase', fontSize: 10 }}>
-                                  Weekly Workload Breakdown (Avg Daily load)
-                                </Typography>
-                                <Grid container spacing={1.5}>
-                                  {scheduleContextData.manualMetrics.weeklyBreakdown.map((week) => (
-                                    <Grid key={week.weekIndex} size={{ xs: 12, sm: 6 }}>
-                                      <Box
-                                        sx={{
-                                          p: 1.5,
-                                          borderRadius: 2.5,
-                                          bgcolor: isDark ? '#0f172a' : '#f8fafc',
-                                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                                        }}
-                                      >
-                                        <Typography variant="body2" fontWeight="800">
-                                          Week {week.weekIndex} ({week.startDate} to {week.endDate})
-                                        </Typography>
-                                        <Stack direction="row" spacing={0.5} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
-                                          <Chip label={`Count: ${week.avgScheduleCount}/day`} size="small" sx={{ fontSize: 9, height: 18 }} />
-                                          <Chip label={`Duration: ${week.avgDuration}m/day`} size="small" sx={{ fontSize: 9, height: 18 }} />
-                                          <Chip
-                                            label={`Load: ${week.loadLabel}`}
-                                            size="small"
-                                            color={week.loadLabel === 'Light' ? 'success' : week.loadLabel === 'Balanced' ? 'primary' : week.loadLabel === 'Busy' ? 'warning' : 'error'}
-                                            sx={{ fontSize: 9, height: 18, fontWeight: 750 }}
-                                          />
-                                        </Stack>
-                                      </Box>
-                                    </Grid>
-                                  ))}
-                                </Grid>
-                              </Box>
-
-                              {/* Time Bucket Counts */}
-                              <Box>
-                                <Typography variant="caption" fontWeight="800" color="text.secondary" sx={{ display: 'block', mb: 1, textTransform: 'uppercase', fontSize: 10 }}>
-                                  Preferred Hour Ranges Breakdown
-                                </Typography>
-                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                                  {Object.entries(scheduleContextData.manualMetrics.preferredTimeSpan.breakdown).map(([span, count]) => (
-                                    <Chip
-                                      key={span}
-                                      label={`${span}: ${count} schedule${count !== 1 ? 's' : ''}`}
-                                      size="small"
-                                      variant={scheduleContextData.manualMetrics!.preferredTimeSpan.preferredSpan === span ? 'filled' : 'outlined'}
-                                      color={scheduleContextData.manualMetrics!.preferredTimeSpan.preferredSpan === span ? 'warning' : 'default'}
-                                      sx={{ fontSize: 10, fontWeight: 600 }}
-                                    />
-                                  ))}
-                                </Stack>
-                              </Box>
-                            </Stack>
-                          )}
-                        </Box>
-                      )}
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                        <Stack direction="row" gap={1} flexWrap="wrap">
-                          <Chip
-                            label={`Avg Daily: ${scheduleContextData.averageDailySchedules} schedules`}
-                            size="small" variant="outlined"
-                            sx={{ fontSize: 10, fontWeight: 700 }}
-                          />
-                          <Chip
-                            label={`Flexible: ${scheduleContextData.flexibleCount}`}
-                            size="small" variant="outlined"
-                            sx={{ fontSize: 10, fontWeight: 700 }}
-                          />
-                          {scheduleGeneratedAtFormatted && (
-                            <Chip
-                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                              label={`Generated: ${scheduleGeneratedAtFormatted}`}
-                              size="small" variant="outlined"
-                              sx={{ fontSize: 10 }}
-                            />
-                          )}
-                        </Stack>
-                        <Button
-                          size="small"
-                          startIcon={<RefreshIcon />}
-                          onClick={async () => {
-                            await toggleScheduleContextLock(false);
-                            await generateScheduleContext();
-                          }}
-                          disabled={isScheduleLoading}
-                          sx={{
-                            textTransform: 'none', fontWeight: 700, fontSize: 12, borderRadius: 2,
-                            color: '#fbbf24', border: '1px solid #fbbf24', px: 1.5,
-                            '&:hover': { bgcolor: 'rgba(251,191,36,0.08)' },
-                          }}
-                        >
-                          Regenerate
-                        </Button>
-                      </Stack>
-                    </Box>
-                  ) : (
-                    <Box>
-                      {scheduleContextStatus === 'error' ? (
-                        <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                          <ErrorOutlineIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                          <Typography variant="body2" color="error">
-                            Failed to generate schedule context. Please try again.
-                          </Typography>
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
-                          No schedule context generated yet. Click below to analyze your schedules.
-                        </Typography>
-                      )}
-                      <Button
-                        variant="contained"
-                        startIcon={isScheduleLoading ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon />}
-                        onClick={generateScheduleContext}
-                        disabled={isScheduleLoading}
-                        sx={{
-                          textTransform: 'none', fontWeight: 700, borderRadius: 3,
-                          background: 'linear-gradient(135deg, #fbbf24, #d97706)',
-                          boxShadow: '0 4px 12px rgba(251,191,36,0.35)',
-                          '&:hover': { background: 'linear-gradient(135deg, #f59e0b, #b45309)' },
-                        }}
-                      >
-                        Generate Schedule Context
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Personal & Professional Profile */}
-              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="subtitle1" fontWeight="800" color="primary" gutterBottom>
-                    👤 Personal &amp; Professional
-                  </Typography>
-                  <Stack spacing={2} sx={{ mt: 1.5 }}>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">Full Name</Typography>
-                      <Typography variant="body2" fontWeight="600">{aiContextPayload.userInfo?.name || 'User'}</Typography>
-                    </Stack>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">Age &amp; Gender</Typography>
-                      <Typography variant="body2" fontWeight="600">{aiContextPayload.userInfo?.ageGroup || '—'} ({aiContextPayload.userInfo?.gender || '—'})</Typography>
-                    </Stack>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">Location</Typography>
-                      <Typography variant="body2" fontWeight="600">{aiContextPayload.regionalContext?.city || '—'}, {aiContextPayload.regionalContext?.country || '—'}</Typography>
-                    </Stack>
-                    <Divider />
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">Profession Type</Typography>
-                      <Typography variant="body2" fontWeight="600" sx={{ textTransform: 'capitalize' }}>{aiContextPayload.professionalProfile?.professionType || '—'}</Typography>
-                    </Stack>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">Field</Typography>
-                      <Typography variant="body2" fontWeight="600">{aiContextPayload.professionalProfile?.field || '—'}</Typography>
-                    </Stack>
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                      <Typography variant="body2" color="text.secondary">Skills</Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, justifyContent: 'flex-end', maxWidth: '70%' }}>
-                        {aiContextPayload.professionalProfile?.skills?.length > 0 ? (
-                          aiContextPayload.professionalProfile.skills.map((skill: string) => (
-                            <Chip key={skill} label={skill} size="small" variant="outlined" sx={{ borderRadius: 2 }} />
-                          ))
-                        ) : (
-                          <Typography variant="body2" fontWeight="600">—</Typography>
-                        )}
-                      </Box>
-                    </Stack>
-                  </Stack>
-                </CardContent>
-              </Card>
-
-              {/* Productivity & Schedule Styles */}
-              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="subtitle1" fontWeight="800" color="secondary" gutterBottom>
-                    ⚡ Productivity &amp; Habits
-                  </Typography>
-                  <Stack spacing={2} sx={{ mt: 1.5 }}>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">Work Style</Typography>
-                      <Typography variant="body2" fontWeight="600">{aiContextPayload.productivityStyle?.workStyle || '—'}</Typography>
-                    </Stack>
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                      <Typography variant="body2" color="text.secondary">Peak Hours</Typography>
-                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: '70%' }}>
-                        {aiContextPayload.productivityStyle?.peakEnergyHours?.length > 0 ? (
-                          aiContextPayload.productivityStyle.peakEnergyHours.map((hr: string) => (
-                            <Chip key={hr} label={hr} size="small" variant="outlined" sx={{ borderRadius: 2 }} />
-                          ))
-                        ) : (
-                          <Typography variant="body2" fontWeight="600">—</Typography>
-                        )}
-                      </Box>
-                    </Stack>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">Deadline Preferences</Typography>
-                      <Typography variant="body2" fontWeight="600">{aiContextPayload.productivityStyle?.deadlinePreference || '—'}</Typography>
-                    </Stack>
-                    <Divider />
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">AI Assistant Tone</Typography>
-                      <Typography variant="body2" fontWeight="600">{aiContextPayload.aiInteraction?.preferredTone || '—'}</Typography>
-                    </Stack>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">Quiet Sleep Hours</Typography>
-                      <Typography variant="body2" fontWeight="600">{aiContextPayload.silenceQuitHours || '—'}</Typography>
-                    </Stack>
-                  </Stack>
-                </CardContent>
-              </Card>
-
-              {/* Upcoming Context Features Banner */}
-              <Typography variant="h6" fontWeight="800" sx={{ pt: 1, mb: -1 }}>
-                Upcoming Context Integrations
-              </Typography>
-              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`, opacity: 0.85 }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="body2" color="text.secondary" paragraph>
-                    These modules will be fully integrated next to feed user metrics directly into your Orbit AI profile, allowing live, contextual analysis of your daily habits.
-                  </Typography>
-                  <Grid container spacing={2}>
-                    <Grid size={{ xs: 6 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5, borderRadius: 3, bgcolor: isDark ? '#334155' : 'grey.100' }}>
-                        <FlagIcon color="primary" />
-                        <Typography variant="caption" fontWeight="700">Active Goals &amp; Milestones</Typography>
-                      </Box>
-                    </Grid>
-                    <Grid size={{ xs: 6 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5, borderRadius: 3, bgcolor: isDark ? '#334155' : 'grey.100' }}>
-                        <AssignmentTurnedInIcon color="success" />
-                        <Typography variant="caption" fontWeight="700">Recently Completed Tasks</Typography>
-                      </Box>
-                    </Grid>
-                    <Grid size={{ xs: 6 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5, borderRadius: 3, bgcolor: isDark ? '#334155' : 'grey.100' }}>
-                        <CalendarTodayIcon color="warning" />
-                        <Typography variant="caption" fontWeight="700">Daily Events &amp; Schedules</Typography>
-                      </Box>
-                    </Grid>
-                    <Grid size={{ xs: 6 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5, borderRadius: 3, bgcolor: isDark ? '#334155' : 'grey.100' }}>
-                        <BookIcon color="secondary" />
-                        <Typography variant="caption" fontWeight="700">Journal Reflection Moods</Typography>
-                      </Box>
-                    </Grid>
-                  </Grid>
                 </CardContent>
               </Card>
             </Stack>
           </Grid>
 
-          {/* Right Panel: Structured JSON Viewer */}
+          {/* Right Panel: Data Inputs Breakdown */}
           <Grid size={{ xs: 12, md: 5 }}>
-            <Stack spacing={2} sx={{ position: { md: 'sticky' }, top: { md: 100 } }}>
+            <Stack spacing={3}>
               <Typography variant="h6" fontWeight="800">
-                AI Prompt JSON Payload
+                Context Signals Breakdown
               </Typography>
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#090d16' : '#1e293b',
-                  color: '#34d399',
-                  fontFamily: 'monospace',
-                  p: 3,
-                  boxShadow: 8,
-                  border: `1px solid ${isDark ? '#1e293b' : '#334155'}`,
-                  maxHeight: '75vh',
-                  overflowY: 'auto',
-                }}
-              >
-                 <pre style={{ margin: 0, fontSize: 12.5, whiteSpace: 'pre-wrap' }}>
-                   {JSON.stringify(
-                     {
-                       ...aiContextPayload,
-                       ...(todoContextData?.summary
-                         ? {
-                             taskContext: {
-                               summary: todoContextData.summary,
-                               totalCompletedTasks: todoContextData.totalCompletedCount,
-                               totalActiveTasks: todoContextData.totalActiveCount,
-                               sampledCompletedCount: todoContextData.sampledCompletedCount,
-                               sampledActiveCount: todoContextData.sampledActiveCount,
-                               generatedAt: todoContextData.generatedAt,
-                             },
-                           }
-                         : {}),
-                       ...(goalContextData?.summary
-                         ? {
-                             goalContext: {
-                               summary: goalContextData.summary,
-                               totalCompletedGoals: goalContextData.totalCompletedCount,
-                               totalActiveGoals: goalContextData.totalActiveCount,
-                               sampledCompletedCount: goalContextData.sampledCompletedCount,
-                               sampledActiveCount: goalContextData.sampledActiveCount,
-                               checkInsLast30Days: goalContextData.checkInsLast30Days,
-                               overallConsistency: goalContextData.overallConsistency,
-                               generatedAt: goalContextData.generatedAt,
-                             },
-                           }
-                         : {}),
-                       ...(financeContextData?.summary
-                         ? {
-                             financeContext: {
-                               summary: financeContextData.summary,
-                               availableAmount: financeContextData.availableAmount,
-                               freezeAmount: financeContextData.freezeAmount,
-                               totalAmount: financeContextData.totalAmount,
-                               upcomingExpensesCount: financeContextData.upcomingExpensesCount,
-                               upcomingExpensesTotal: financeContextData.upcomingExpensesTotal,
-                               outstandingBorrowTotal: financeContextData.outstandingBorrowTotal,
-                               outstandingLendTotal: financeContextData.outstandingLendTotal,
-                               generatedAt: financeContextData.generatedAt,
-                             },
-                           }
-                         : {}),
-                       ...(scheduleContextData?.summary
-                         ? {
-                             scheduleContext: {
-                               summary: scheduleContextData.summary,
-                               totalCount: scheduleContextData.totalCount,
-                               averageDailySchedules: scheduleContextData.averageDailySchedules,
-                               flexibleCount: scheduleContextData.flexibleCount,
-                               generatedAt: scheduleContextData.generatedAt,
-                             },
-                           }
-                         : {}),
-                       ...(consolidatedContextData?.summary
-                         ? {
-                             consolidatedContext: {
-                               summary: consolidatedContextData.summary,
-                               generatedAt: consolidatedContextData.generatedAt,
-                             },
-                           }
-                         : {}),
-                     },
-                     null,
-                     2
-                   )}
-                 </pre>
+
+              {/* Profile Card */}
+              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
+                    <PersonOutlineIcon sx={{ color: '#6366f1' }} />
+                    <Typography variant="subtitle2" fontWeight="800">
+                      User Identity & Onboarding
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Name:</Typography>
+                      <Typography variant="body2" fontWeight="700">
+                        {onboardingData?.firstName || user?.firstName || 'Not Set'} {onboardingData?.lastName || user?.lastName || ''}
+                      </Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Gender & Age:</Typography>
+                      <Typography variant="body2" fontWeight="700">
+                        {onboardingData?.gender?.value ? onboardingData.gender.value.toUpperCase() : 'Not Set'} • {onboardingData?.ageGroup?.value || 'Not Set'} y/o
+                      </Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Education:</Typography>
+                      <Typography variant="body2" fontWeight="700">{onboardingData?.education?.value || 'Not Set'}</Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Profession:</Typography>
+                      <Typography variant="body2" fontWeight="700">
+                        {onboardingData?.profession?.value || onboardingData?.professionType?.value || 'Not Set'}
+                      </Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Stack direction="row" gap={0.5} alignItems="center">
+                        <ContactPhoneIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                        <Typography variant="body2" color="text.secondary">Mobile:</Typography>
+                      </Stack>
+                      <Typography variant="body2" fontWeight="700">{onboardingData?.mobile?.value || 'Not Set'}</Typography>
+                    </Stack>
+                  </Stack>
+                </CardContent>
               </Card>
 
-
-
-              {/* Todo Context Lock Controls */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                  p: 2.5,
-                }}
-              >
-                <Typography variant="subtitle2" fontWeight="800" gutterBottom>
-                  📋 Task Context Lock Controls
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Manage re-fetch lock for todo context on both localStorage and Firestore.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <Button
-                    fullWidth
-                    variant={todoContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockIcon />}
-                    onClick={() => toggleTodoContextLock(true)}
-                    disabled={todoContextLocked}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      ...(todoContextLocked ? {} : { background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }),
-                    }}
-                  >
-                    Lock Re-fetch (Both)
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant={!todoContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockOpenIcon />}
-                    onClick={() => toggleTodoContextLock(false)}
-                    disabled={!todoContextLocked}
-                    size="small" color="success"
-                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5 }}
-                  >
-                    Unlock Re-fetch (Both)
-                  </Button>
-                  <Divider />
-                  <Button
-                    fullWidth variant="outlined"
-                    startIcon={<RefreshIcon />}
-                    onClick={async () => {
-                      await toggleTodoContextLock(false);
-                      await generateTodoContext();
-                    }}
-                    disabled={isTodoLoading}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      color: '#06b6d4', borderColor: '#06b6d4',
-                    }}
-                  >
-                    {isTodoLoading ? 'Generating…' : 'Force Regenerate Task Context'}
-                  </Button>
-                </Stack>
+              {/* Tasks Card */}
+              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
+                    <ChecklistIcon sx={{ color: '#06b6d4' }} />
+                    <Typography variant="subtitle2" fontWeight="800">
+                      Task Statistics
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Completed Today:</Typography>
+                      <Typography variant="body2" fontWeight="700" color="#10b981">{todoMetrics.completedTodayCount} tasks</Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">In Progress / Active:</Typography>
+                      <Typography variant="body2" fontWeight="700" color="#0284c7">{todoMetrics.activeCount} tasks</Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Overdue Tasks:</Typography>
+                      <Typography variant="body2" fontWeight="700" color={todoMetrics.overdueCount > 0 ? '#f43f5e' : 'inherit'}>
+                        {todoMetrics.overdueCount} tasks
+                      </Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Urgent Priority Flag:</Typography>
+                      <Typography variant="body2" fontWeight="700" color={todoMetrics.urgentCount > 0 ? '#f43f5e' : 'inherit'}>
+                        {todoMetrics.urgentCount} tasks
+                      </Typography>
+                    </Stack>
+                  </Stack>
+                </CardContent>
               </Card>
 
-              {/* Goal Context Lock Controls */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                  p: 2.5,
-                }}
-              >
-                <Typography variant="subtitle2" fontWeight="800" gutterBottom sx={{ color: '#ec4899' }}>
-                  🎯 Goal Context Lock Controls
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Manage re-fetch lock for goals context on both localStorage and Firestore.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <Button
-                    fullWidth
-                    variant={goalContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockIcon />}
-                    onClick={() => toggleGoalContextLock(true)}
-                    disabled={goalContextLocked}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      ...(goalContextLocked ? {} : { background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }),
-                    }}
-                  >
-                    Lock Re-fetch (Both)
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant={!goalContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockOpenIcon />}
-                    onClick={() => toggleGoalContextLock(false)}
-                    disabled={!goalContextLocked}
-                    size="small" color="success"
-                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5 }}
-                  >
-                    Unlock Re-fetch (Both)
-                  </Button>
-                  <Divider />
-                  <Button
-                    fullWidth variant="outlined"
-                    startIcon={<RefreshIcon />}
-                    onClick={async () => {
-                      await toggleGoalContextLock(false);
-                      await generateGoalContext();
-                    }}
-                    disabled={isGoalLoading}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      color: '#ec4899', borderColor: '#ec4899',
-                    }}
-                  >
-                    {isGoalLoading ? 'Generating…' : 'Force Regenerate Goal Context'}
-                  </Button>
-                </Stack>
+              {/* Schedules Card */}
+              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
+                    <CalendarTodayIcon sx={{ color: '#10b981' }} />
+                    <Typography variant="subtitle2" fontWeight="800">
+                      Schedule Statistics
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography variant="body2" color="text.secondary">Active Schedules Today:</Typography>
+                    <Typography variant="body2" fontWeight="700">{scheduleMetrics.todayCount} items</Typography>
+                  </Stack>
+                </CardContent>
               </Card>
 
-              {/* Finance Context Lock Controls */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                  p: 2.5,
-                }}
-              >
-                <Typography variant="subtitle2" fontWeight="800" gutterBottom sx={{ color: '#10b981' }}>
-                  💵 Finance Context Lock Controls
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Manage re-fetch lock for finance context on both localStorage and Firestore.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <Button
-                    fullWidth
-                    variant={financeContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockIcon />}
-                    onClick={() => toggleFinanceContextLock(true)}
-                    disabled={financeContextLocked}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      ...(financeContextLocked ? {} : { background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }),
-                    }}
-                  >
-                    Lock Re-fetch (Both)
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant={!financeContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockOpenIcon />}
-                    onClick={() => toggleFinanceContextLock(false)}
-                    disabled={!financeContextLocked}
-                    size="small" color="success"
-                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5 }}
-                  >
-                    Unlock Re-fetch (Both)
-                  </Button>
-                  <Divider />
-                  <Button
-                    fullWidth variant="outlined"
-                    startIcon={<RefreshIcon />}
-                    onClick={async () => {
-                      await toggleFinanceContextLock(false);
-                      await generateFinanceContext();
-                    }}
-                    disabled={isFinanceLoading}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      color: '#10b981', borderColor: '#10b981',
-                    }}
-                  >
-                    {isFinanceLoading ? 'Generating…' : 'Force Regenerate Finance Context'}
-                  </Button>
-                </Stack>
-              </Card>
-
-
-
-              {/* Schedule Context Lock Controls */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                  p: 2.5,
-                }}
-              >
-                <Typography variant="subtitle2" fontWeight="800" gutterBottom sx={{ color: '#fbbf24' }}>
-                  📅 Schedule Context Lock Controls
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Manage re-fetch lock for schedule context on both localStorage and Firestore.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <Button
-                    fullWidth
-                    variant={scheduleContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockIcon />}
-                    onClick={() => toggleScheduleContextLock(true)}
-                    disabled={scheduleContextLocked}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      ...(scheduleContextLocked ? {} : { background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }),
-                    }}
-                  >
-                    Lock Re-fetch (Both)
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant={!scheduleContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockOpenIcon />}
-                    onClick={() => toggleScheduleContextLock(false)}
-                    disabled={!scheduleContextLocked}
-                    size="small" color="success"
-                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5 }}
-                  >
-                    Unlock Re-fetch (Both)
-                  </Button>
-                  <Divider />
-                  <Button
-                    fullWidth variant="outlined"
-                    startIcon={<RefreshIcon />}
-                    onClick={async () => {
-                      await toggleScheduleContextLock(false);
-                      await generateScheduleContext();
-                    }}
-                    disabled={isScheduleLoading}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      color: '#fbbf24', borderColor: '#fbbf24',
-                    }}
-                  >
-                    {isScheduleLoading ? 'Generating…' : 'Force Regenerate Schedule Context'}
-                  </Button>
-                </Stack>
-              </Card>
-
-              {/* Consolidated Context Lock Controls */}
-              <Card
-                sx={{
-                  borderRadius: 4,
-                  bgcolor: isDark ? '#1e293b' : '#ffffff',
-                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                  p: 2.5,
-                }}
-              >
-                <Typography variant="subtitle2" fontWeight="800" gutterBottom sx={{ color: '#818cf8' }}>
-                  🧠 Master Profile Lock Controls
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Manage lock for the consolidated master profile context. When locked, it won&apos;t automatically refresh.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <Button
-                    fullWidth
-                    variant={consolidatedContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockIcon />}
-                    onClick={() => toggleConsolidatedContextLock(true)}
-                    disabled={consolidatedContextLocked}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      ...(consolidatedContextLocked ? {} : { background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }),
-                    }}
-                  >
-                    Lock Re-fetch (Both)
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant={!consolidatedContextLocked ? 'outlined' : 'contained'}
-                    startIcon={<LockOpenIcon />}
-                    onClick={() => toggleConsolidatedContextLock(false)}
-                    disabled={!consolidatedContextLocked}
-                    size="small" color="success"
-                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5 }}
-                  >
-                    Unlock Re-fetch (Both)
-                  </Button>
-                  <Divider />
-                  <Button
-                    fullWidth variant="outlined"
-                    startIcon={<RefreshIcon />}
-                    onClick={async () => {
-                      await toggleConsolidatedContextLock(false);
-                      await generateConsolidatedContext();
-                    }}
-                    disabled={isConsolidatedLoading}
-                    size="small"
-                    sx={{
-                      textTransform: 'none', fontWeight: 700, borderRadius: 2.5,
-                      color: '#818cf8', borderColor: '#818cf8',
-                    }}
-                  >
-                    {isConsolidatedLoading ? 'Generating…' : 'Force Regenerate Master Profile'}
-                  </Button>
-                </Stack>
+              {/* Finance Card */}
+              <Card sx={{ borderRadius: 4, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Stack direction="row" alignItems="center" gap={1} mb={2}>
+                    <AccountBalanceWalletIcon sx={{ color: '#f59e0b' }} />
+                    <Typography variant="subtitle2" fontWeight="800">
+                      Finance Liquidity & Debt
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Overall Amount:</Typography>
+                      <Typography variant="body2" fontWeight="700">PKR {financeMetrics.totalAmount.toLocaleString()}</Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Own Cash (Available):</Typography>
+                      <Typography variant="body2" fontWeight="700" color="#10b981">PKR {financeMetrics.availableAmount.toLocaleString()}</Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Payback (What you owe):</Typography>
+                      <Typography variant="body2" fontWeight="700" color={financeMetrics.payback > 0 ? '#f43f5e' : 'inherit'}>
+                        PKR {financeMetrics.payback.toLocaleString()}
+                      </Typography>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">Receivable (Owed to you):</Typography>
+                      <Typography variant="body2" fontWeight="700" color="#10b981">PKR {financeMetrics.toReceive.toLocaleString()}</Typography>
+                    </Stack>
+                  </Stack>
+                </CardContent>
               </Card>
             </Stack>
           </Grid>
         </Grid>
       </Box>
+
+      {/* Snackbar Alert Notifications */}
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack((prev) => ({ ...prev, open: false }))}
+      >
+        <Alert
+          onClose={() => setSnack((prev) => ({ ...prev, open: false }))}
+          severity={snack.type === 'success' ? 'success' : 'info'}
+          sx={{ width: '100%', borderRadius: 3 }}
+        >
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

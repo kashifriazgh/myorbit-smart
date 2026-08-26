@@ -8,7 +8,7 @@ import {
   useCallback,
 } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+import { userDb as db } from '@/app/lib/firebase';
 import { useAuth } from './userContext';
 import { InitialOnBoarding } from '@/app/lib/interface';
 
@@ -42,22 +42,35 @@ export function OnboardingProvider({
       return;
     }
 
+    // Try loading from localStorage cache first
+    const cached = localStorage.getItem('myorbit_cached_onboarding');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setOnboarding(parsed);
+        setLoading(false);
+        console.log('📦 Served onboarding data from local cache in OnboardingProvider');
+        return;
+      } catch (e) {
+        console.error('Error parsing cached onboarding in provider:', e);
+      }
+    }
+
     try {
-      // Use the new top-level 'initialOnboarding' collection
+      console.log('🔥 Fetching onboarding from userDb...');
       const ref = doc(db, 'initialOnboarding', user.uid);
       const snap = await getDoc(ref);
 
       if (snap.exists()) {
         const data = snap.data();
-        console.log('🔍 Raw Firestore onboarding data:', data);
-
-        // Data is now top-level in the document
-        setOnboarding({
+        const obData = {
           userId: user.uid,
           ...data,
-        } as InitialOnBoarding);
+        } as InitialOnBoarding;
+        setOnboarding(obData);
+        localStorage.setItem('myorbit_cached_onboarding', JSON.stringify(obData));
       } else {
-        console.warn('⚠️ No onboarding document found in initialOnboarding collection');
+        console.warn('⚠️ No onboarding document found in userDb initialOnboarding');
         setOnboarding(null);
       }
     } catch (err) {
@@ -72,20 +85,27 @@ export function OnboardingProvider({
 
     try {
       const ref = doc(db, 'initialOnboarding', user.uid);
-      // setDoc with merge: true handles both insert and update
-      await setDoc(ref, { 
-        ...data, 
+      const updatedData = {
+        ...data,
         userId: user.uid,
-        updatedAt: new Date() 
-      }, { merge: true });
+        updatedAt: new Date()
+      };
+
+      // 1. Write to Firestore
+      await setDoc(ref, updatedData, { merge: true });
       
-      // Refresh local state
-      await fetchOnboarding();
+      // 2. Update local React state and localStorage cache immediately (write-through)
+      const currentOnboarding = onboarding || {};
+      const newOnboardingObj = { ...currentOnboarding, ...updatedData } as InitialOnBoarding;
+      setOnboarding(newOnboardingObj);
+      localStorage.setItem('myorbit_cached_onboarding', JSON.stringify(newOnboardingObj));
+      
+      console.log('✅ Onboarding write-through cache updated');
     } catch (err) {
       console.error('❌ Error updating onboarding:', err);
       throw err;
     }
-  }, [user?.uid, fetchOnboarding]);
+  }, [user?.uid, onboarding]);
 
   useEffect(() => {
     console.log('🔍 Onboarding Context useEffect triggered with user.uid:', user?.uid);
@@ -105,6 +125,5 @@ export function OnboardingProvider({
     </OnboardingContext.Provider>
   );
 }
-
 
 export const useOnboarding = () => useContext(OnboardingContext);

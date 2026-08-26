@@ -202,9 +202,11 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
     setTimeout(() => setStep(0), 300);
   };
 
-  const canProceedStep0 = !(fromSource === 'bank' && !fromBankId) && !(fromSource === 'custom' && !fromCustomId);
+  const isFromLocked = snapshot.sourceOwnership?.[fromKey]?.isLocked;
+
+  const canProceedStep0 = !(fromSource === 'bank' && !fromBankId) && !(fromSource === 'custom' && !fromCustomId) && !isFromLocked;
   const canProceedStep1 = !(toSource === 'bank' && !toBankId) && !(toSource === 'custom' && !toCustomId);
-  const canSubmit = !!amount && amount > 0 && !isInsufficient && canProceedStep0 && canProceedStep1 && !(toHolder === 'new' && !newHolderName.trim());
+  const canSubmit = !!amount && amount > 0 && !isInsufficient && canProceedStep0 && canProceedStep1 && !(toHolder === 'new' && !newHolderName.trim()) && !isFromLocked;
 
   const fromLabel = `${SOURCE_ICONS[fromSource]} ${fromBankName || fromCustomName || SOURCE_LABELS[fromSource]}`;
   const toLabel = `${SOURCE_ICONS[toSource]} ${toBankName || toCustomName || SOURCE_LABELS[toSource]}`;
@@ -326,6 +328,15 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
                 <Typography variant="caption" color="text.secondary" fontWeight={700} display="block">AVAILABLE</Typography>
                 <Typography fontWeight={900} fontSize="1.5rem" color="#6366f1">{formatCurrency(activeFromBalance, 'PKR')}</Typography>
               </Box>
+
+              {/* Lock warning */}
+              {isFromLocked && (
+                <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'center' }}>
+                  <Typography variant="caption" color="error.main" fontWeight="bold">
+                    🔒 This source is locked. Unlock it in Account Breakdown to transfer funds.
+                  </Typography>
+                </Box>
+              )}
             </Stack>
           </DialogContent>
         )}

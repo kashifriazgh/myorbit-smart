@@ -111,7 +111,7 @@ export default function AppBarTop() {
         },
       }}
     >
-      {user?.role === 'master' && !isGuest && (
+      {user && !isGuest && (
         <MenuItem onClick={handleMenuClose}>
           <Link href="/user/dashboard" prefetch={false}>Dashboard</Link>
         </MenuItem>
@@ -126,7 +126,7 @@ export default function AppBarTop() {
           <Link href="/settings/push-notifications" prefetch={false}>Push Notification</Link>
         </MenuItem>
       )}
-      {user?.role === 'master' && !isGuest && <Divider />}
+      {user && !isGuest && <Divider />}
 
       {!loading && user
         ? [

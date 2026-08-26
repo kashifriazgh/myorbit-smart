@@ -21,6 +21,7 @@ import {
   Switch,
   FormControlLabel,
   Checkbox,
+  Fade,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -474,6 +475,8 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
+      TransitionComponent={Fade}
+      transitionDuration={400}
       PaperProps={{
         className: `rounded-[28px] overflow-hidden shadow-2xl border transition-all ${
           theme?.mode === 'dark'

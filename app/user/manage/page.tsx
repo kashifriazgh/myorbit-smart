@@ -34,7 +34,7 @@ import {
   Person as PersonIcon,
   Shield as ShieldIcon,
 } from '@mui/icons-material';
-import { auth, db } from '@/app/lib/firebase';
+import { userAuth as auth, userDb as db } from '@/app/lib/firebase';
 import {
   collection,
   query,

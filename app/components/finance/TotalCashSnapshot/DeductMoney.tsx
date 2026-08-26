@@ -312,11 +312,20 @@ export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, 
                 <Typography variant="caption" color="text.secondary" fontWeight={700}>
                   {selectedHolder === 'Unassigned' ? 'AVAILABLE BALANCE' : `${selectedHolder.toUpperCase()}'S BALANCE`}
                 </Typography>
-                <Typography variant="body2" fontWeight={900} color={isInsufficient ? 'error.main' : 'text.primary'}>
+                <Typography variant="body2" fontWeight="900" color={isInsufficient ? 'error.main' : 'text.primary'}>
                   {formatCurrency(activeBalance, 'PKR')}
                 </Typography>
               </Box>
             </Box>
+
+            {/* Lock warning */}
+            {snapshot.sourceOwnership?.[sourceKey]?.isLocked && (
+              <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="caption" color="error.main" fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  🔒 This source is locked. Unlock it in Account Breakdown to deduct funds.
+                </Typography>
+              </Box>
+            )}
 
             {/* Note */}
             <TextField
@@ -335,7 +344,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, 
             variant="contained" color="error"
             onClick={handleSaveClick}
             disabled={
-              saving || isInsufficient ||
+              saving || isInsufficient || !!snapshot.sourceOwnership?.[sourceKey]?.isLocked ||
               (source === 'bank' && !selectedBank) ||
               (source === 'custom' && !selectedCustomPaymentHead) ||
               !amount || amount <= 0

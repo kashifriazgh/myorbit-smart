@@ -22,28 +22,20 @@ import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useAuth } from '@/app/lib/context/userContext';
-import { db } from '@/app/lib/firebase';
+import { userDb as db } from '@/app/lib/firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 // Steps
 import NameStep from './steps/NameStep';
-import LocationStep from './steps/LocationStep';
 import ProfileDetailsStep from './steps/ProfileDetailsStep';
-import ProductivityStep from './steps/ProductivityStep';
-import NotificationStep from './steps/NotificationStep';
-import AIBehaviorStep from './steps/AIBehaviorStep';
-import PlanningStep from './steps/PlanningStep';
+import ProfessionStep from './steps/ProfessionStep';
 
 import { OnboardingData } from '@/app/lib/interface';
 
 const GROUPS = [
-  { id: 0, title: 'Name', component: NameStep },
-  { id: 1, title: 'Location', component: LocationStep },
-  { id: 2, title: 'Profile', component: ProfileDetailsStep },
-  { id: 3, title: 'Productivity', component: ProductivityStep },
-  { id: 4, title: 'Notifications', component: NotificationStep },
-  { id: 5, title: 'AI Assistant', component: AIBehaviorStep },
-  { id: 6, title: 'Planning', component: PlanningStep },
+  { id: 0, title: 'Name & Contact', component: NameStep },
+  { id: 1, title: 'Profile Details', component: ProfileDetailsStep },
+  { id: 2, title: 'Profession', component: ProfessionStep },
 ];
 
 interface InitialOnboardingProps {
@@ -137,43 +129,48 @@ export default function InitialOnboarding({
 
         // Logic to decide which step to show
         if (startStep === undefined) {
-          // Priority 1: Check localStorage first (explicitly check for 'true' vs 'false')
-          const localInt = localStorage.getItem('onboarding_first_interaction');
-          let hasInteracted = localInt === 'true';
+          const dismissUntilKey = `onboarding_dismissed_until_${user.uid}`;
+          const dismissUntil = localStorage.getItem(dismissUntilKey);
+          const isDismissed = dismissUntil && Date.now() < parseInt(dismissUntil);
 
-          // Priority 2: If not in local storage (null), check firebase data
-          if (localInt === null) {
-            hasInteracted = !!initialData.onBoardingFirstInteraction;
-          }
+          if (!isDismissed) {
+            // Priority 1: Check localStorage first (explicitly check for 'true' vs 'false')
+            const localInt = localStorage.getItem('onboarding_first_interaction');
+            let hasInteracted = localInt === 'true';
 
-          console.log('Onboarding Check:', {
-            localInt,
-            hasInteracted,
-            firstName: initialData.firstName,
-            onBoardingFirstInteraction: initialData.onBoardingFirstInteraction
-          });
+            // Priority 2: If not in local storage (null), check firebase data
+            if (localInt === null) {
+              hasInteracted = !!initialData.onBoardingFirstInteraction;
+            }
 
-          if (!initialData.firstName || !initialData.lastName) {
-            // Priority 3: Missing Name - ALWAYS show
-            setCurrentGroupIdx(0);
-            setOpen(true);
-          } else if (!hasInteracted) {
-            // Priority 4: Haven't interacted yet (or manual reset to 'false')
-            setCurrentGroupIdx(0);
-            setOpen(true);
-          } else if (fireData) {
-            // Priority 5: Resume uncompleted major fields
-            const firstUnfilledIdx = GROUPS.findIndex(group => {
-              if (group.id === 0) return false;
-              if (group.id === 1) return !initialData.country?.filled;
-              if (group.id === 2) return !initialData.ageGroup?.filled;
-              if (group.id === 3) return !initialData.workStyle?.filled;
-              return false;
+            console.log('Onboarding Check:', {
+              localInt,
+              hasInteracted,
+              firstName: initialData.firstName,
+              onBoardingFirstInteraction: initialData.onBoardingFirstInteraction
             });
 
-            if (firstUnfilledIdx !== -1) {
-              setCurrentGroupIdx(firstUnfilledIdx);
+            if (!initialData.firstName || !initialData.lastName) {
+              // Priority 3: Missing Name - ALWAYS show
+              setCurrentGroupIdx(0);
               setOpen(true);
+            } else if (!hasInteracted) {
+              // Priority 4: Haven't interacted yet (or manual reset to 'false')
+              setCurrentGroupIdx(0);
+              setOpen(true);
+            } else if (fireData) {
+              // Priority 5: Resume uncompleted major fields
+              const firstUnfilledIdx = GROUPS.findIndex(group => {
+                if (group.id === 0) return !initialData.firstName || !initialData.lastName || !initialData.mobile?.filled;
+                if (group.id === 1) return !initialData.ageGroup?.filled || !initialData.gender?.filled || !initialData.education?.filled;
+                if (group.id === 2) return !initialData.professionType?.filled || !initialData.profession?.filled;
+                return false;
+              });
+
+              if (firstUnfilledIdx !== -1) {
+                setCurrentGroupIdx(firstUnfilledIdx);
+                setOpen(true);
+              }
             }
           }
         }
@@ -223,10 +220,9 @@ export default function InitialOnboarding({
   const isStepValid = () => {
     const data = onboardingData;
     switch (currentGroupIdx) {
-      case 0: return !!(data.firstName?.trim() && data.lastName?.trim());
-      case 1: return !!(data.country?.value && data.city?.value && data.professionType?.value);
-      case 2: return !!(data.ageGroup?.value && data.gender?.value);
-      case 3: return !!(data.workStyle?.value && data.peakHours?.value?.length);
+      case 0: return !!(data.firstName?.trim() && data.lastName?.trim() && data.mobile?.value?.trim());
+      case 1: return !!(data.ageGroup?.value && data.gender?.value && data.education?.value);
+      case 2: return !!(data.professionType?.value && data.profession?.value);
       default: return true;
     }
   };
@@ -278,6 +274,22 @@ export default function InitialOnboarding({
     }, 400);
   };
 
+  const handleCloseCross = () => {
+    if (user) {
+      const dismissUntil = Date.now() + 60 * 60 * 1000; // 1 hour
+      localStorage.setItem(`onboarding_dismissed_until_${user.uid}`, dismissUntil.toString());
+    }
+    setOpen(false);
+  };
+
+  const handleAskMeLater = () => {
+    if (user) {
+      const dismissUntil = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+      localStorage.setItem(`onboarding_dismissed_until_${user.uid}`, dismissUntil.toString());
+    }
+    setOpen(false);
+  };
+
   const handleCTAAction = (accept: boolean) => {
     setDirection(1);
     setTransitioning(true);
@@ -286,6 +298,10 @@ export default function InitialOnboarding({
         setCurrentGroupIdx(prev => prev + 1);
         setShowCTA(false);
       } else {
+        if (user) {
+          const dismissUntil = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+          localStorage.setItem(`onboarding_dismissed_until_${user.uid}`, dismissUntil.toString());
+        }
         setOpen(false);
         setShowCTA(false);
       }
@@ -344,7 +360,7 @@ export default function InitialOnboarding({
       </AnimatePresence>
 
       <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end' }}>
-        <IconButton onClick={() => setOpen(false)}>
+        <IconButton onClick={handleCloseCross}>
           <CloseIcon />
         </IconButton>
       </Box>
@@ -375,7 +391,7 @@ export default function InitialOnboarding({
               </Box>
 
               <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center" sx={{ mt: 'auto' }}>
-                <Box>
+                <Stack direction="row" spacing={1} alignItems="center">
                   {currentGroupIdx > 0 && (
                     <Button
                       onClick={handleBack}
@@ -384,7 +400,15 @@ export default function InitialOnboarding({
                       Back
                     </Button>
                   )}
-                </Box>
+                  <Button
+                    variant="text"
+                    color="inherit"
+                    onClick={handleAskMeLater}
+                    sx={{ textTransform: 'none', color: 'text.secondary' }}
+                  >
+                    Ask me later
+                  </Button>
+                </Stack>
 
                 <Stack direction="row" spacing={1}>
                   <Button

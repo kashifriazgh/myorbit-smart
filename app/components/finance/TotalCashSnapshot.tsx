@@ -457,8 +457,13 @@ export default function TotalCashSnapshotComponent({
       }
       newFreeze -= amount;
       newTotal -= amount;
-    } else {
       const key = getSourceKey(source, bankName, customPaymentHeadName);
+      const isLocked = data.sourceOwnership?.[key]?.isLocked;
+      if (isLocked) {
+        alert(`This source is locked. Unlock it from the Account Breakdown settings to deduct funds.`);
+        setSaving(false);
+        return;
+      }
       let current = 0;
       if (source === 'bank' && bankName) {
         current = updatedSources.bank[bankName] ?? 0;
@@ -576,11 +581,17 @@ export default function TotalCashSnapshotComponent({
       const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
 
       const fromKey = getSourceKey(fromSource, fromBankName, fromCustomName);
+      const isFromLocked = data.sourceOwnership?.[fromKey]?.isLocked;
+      if (isFromLocked) {
+        alert(`Source is locked. Unlock it from the Account Breakdown settings to transfer funds.`);
+        setSaving(false);
+        return;
+      }
       const targetSource = toSource || fromSource;
       const targetBankName = toBankName || fromBankName;
       const targetCustomName = toCustomName || fromCustomName;
       const toKey = getSourceKey(targetSource, targetBankName, targetCustomName);
-
+ 
       let fromSourceBalance = 0;
       if (fromSource === 'bank' && fromBankName) {
         fromSourceBalance = updatedSources.bank[fromBankName] ?? 0;

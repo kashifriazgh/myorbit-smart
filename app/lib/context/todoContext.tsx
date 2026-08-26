@@ -245,17 +245,23 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 1. Show immediately in UI
     applyAndCache((prev) => [...prev, optimisticTodo]);
 
-    // 2. Write to Firebase
-    const docRef = await addDoc(collection(db, 'todos'), {
-      ...todoData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    try {
+      // 2. Write to Firebase
+      const docRef = await addDoc(collection(db, 'todos'), {
+        ...todoData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
-    // 3. Replace temp ID with real ID
-    applyAndCache((prev) => prev.map((t) => t.id === tempId ? { ...t, id: docRef.id } : t));
+      // 3. Replace temp ID with real ID
+      applyAndCache((prev) => prev.map((t) => t.id === tempId ? { ...t, id: docRef.id } : t));
 
-    return docRef.id;
+      return docRef.id;
+    } catch (e) {
+      // Rollback optimistic update
+      applyAndCache((prev) => prev.filter((t) => t.id !== tempId));
+      throw e;
+    }
   };
 
   const updateTodo = async (id: string, updates: Partial<Todo>) => {

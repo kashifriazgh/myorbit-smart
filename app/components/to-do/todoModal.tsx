@@ -14,7 +14,7 @@ import {
   useTheme,
   IconButton,
   Collapse,
-
+  Fade,
 } from '@mui/material';
 import {
 
@@ -46,7 +46,7 @@ import {
   createWhatsAppReminder,
   getUserWhatsAppConfig,
 } from '@/app/lib/utils/whatsapp-reminder';
-import { requestNotificationPermissionAndGetToken } from '@/app/lib/utils/fcm';
+import { registerNotificationDevice } from '@/app/lib/utils/fcm';
 import { isPremiumClient } from '@/app/lib/members';
 
 type Props = {
@@ -257,21 +257,17 @@ export default function ToDoModal({ open, onClose }: Props) {
 
     if (hasReminder && reminderDate && user) {
       try {
-        const clientId =
-          process.env.NEXT_PUBLIC_CLIENT_ID || `user_${user.uid}`;
         const config = getUserWhatsAppConfig(user.uid, whatsappPhone);
         config.itemType = 'todo';
         config.method = reminderMethod; // 'whatsapp' or 'push'
 
-        // For push reminders, ensure the FCM token is registered under the
-        // actual user.uid so the Node.js worker can find it at
-        // fcm-tokens/{clientId}/{user.uid}
+        // For push reminders, ensure the device is registered under the actual user.uid
         if (reminderMethod === 'push') {
           try {
-            await requestNotificationPermissionAndGetToken(clientId, user.uid);
+            await registerNotificationDevice(user.uid);
           } catch (tokenErr) {
             console.warn(
-              'Could not refresh FCM token before saving push reminder:',
+              'Could not register FCM device before saving push reminder:',
               tokenErr,
             );
           }
@@ -306,6 +302,8 @@ export default function ToDoModal({ open, onClose }: Props) {
       maxWidth="md"
       fullWidth
       fullScreen={isMobile}
+      TransitionComponent={Fade}
+      transitionDuration={400}
       PaperProps={{
         className:
           'rounded-[28px] overflow-hidden shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800',

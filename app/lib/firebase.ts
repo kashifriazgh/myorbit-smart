@@ -33,20 +33,15 @@ export { app };
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-const sharedRtdbConfig = {
-  apiKey: 'AIzaSyDZFNapAjmnS0TZIM1lK8wNA4PDgedVnRo',
-  authDomain: 'forms-389a6.firebaseapp.com',
-  databaseURL:
-    'https://forms-389a6-default-rtdb.asia-southeast1.firebasedatabase.app',
-  projectId: 'forms-389a6',
-  storageBucket: 'forms-389a6.firebasestorage.app',
-  messagingSenderId: '721032079467',
-  appId: '1:721032079467:web:b525c93448811b8bf4292e',
-};
+// Additional Centralized User Database
+import { userFirebaseConfig } from './firebaseUsersConfig';
 
-const sharedRtdbApp =
-  getApps().find((app) => app.name === 'shared-rtdb-app') ||
-  initializeApp(sharedRtdbConfig, 'shared-rtdb-app');
+const userApp =
+  getApps().find((app) => app.name === 'user-app') ||
+  initializeApp(userFirebaseConfig, 'user-app');
 
-export const database = getDatabase(sharedRtdbApp);
+export const userDb = getFirestore(userApp);
+export const userAuth = getAuth(userApp);
+
+export const database = getDatabase(userApp);
 // export const storage = getStorage(app)
