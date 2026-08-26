@@ -20,19 +20,14 @@ import {
   Collapse,
 } from '@mui/material';
 import {
-  CheckCircle,
-  RadioButtonUnchecked,
   Event,
-  CheckCircleOutline,
   PlayArrow,
   Pause,
   ExpandMore,
   ExpandLess,
   Add,
-  NotificationsActive as NotifyIcon,
-  Person as PersonIcon,
 } from '@mui/icons-material';
-import { Menu, MenuItem } from '@mui/material';
+import ReminderSendButton from '@/app/components/global/ReminderSendButton';
 import Link from 'next/link';
 import { useMemo, useState, useEffect } from 'react';
 import moment from 'moment';
@@ -59,52 +54,286 @@ const StyledBadge = styled(Badge)(({ theme }) => ({
   },
 }));
 
-// Checkmark component styled same as in todoDetailPage
-function Checkmark({
-  done,
-  onToggle,
-  size = 'md',
-  isDark,
+// Custom CheckIcon SVG for todo cards
+const CheckIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    style={{ width: '16px', height: '16px' }}
+    stroke="white"
+    strokeWidth="3"
+  >
+    <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const CARD_STYLE = {
+  border: 'border-slate-200/80 dark:border-slate-800/80',
+  bg: 'bg-slate-50/50 dark:bg-slate-900/15',
+  checkBorder: 'border-slate-300 dark:border-slate-700',
+  checkBorderHover: 'hover:border-indigo-400 dark:hover:border-indigo-500',
+  checkedBg: 'bg-indigo-500 dark:bg-indigo-600',
+};
+
+const TodoCardItem = ({
+  task,
+  theme,
+  completingId,
+  expanded,
+  toggleExpanded,
+  toggleWorkStarted,
+  handleReschedule,
+  toggleStepStatus,
+  markCompleted,
 }: {
-  done: boolean;
-  onToggle: () => void;
-  size?: 'sm' | 'md';
-  isDark: boolean;
-}) {
-  const base = size === 'sm' ? 'w-5 h-5 rounded-md' : 'w-6 h-6 rounded-lg';
+  task: Todo;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  theme: any;
+  completingId: string | null;
+  expanded: Set<string>;
+  toggleExpanded: (taskId?: string) => void;
+  toggleWorkStarted: (task: Todo) => void;
+  handleReschedule: (task: Todo) => void;
+  toggleStepStatus: (task: Todo, stepIndex: number) => void;
+  markCompleted: (task: Todo) => void;
+}) => {
+  const isDone = task.status === 'completed';
+  const cardStyle = CARD_STYLE;
+
   return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      aria-label={done ? 'Mark as not done' : 'Mark as done'}
-      className={`
-        flex-shrink-0 ${base} border-2 transition-all duration-200 flex items-center justify-center
-        focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1
-        ${
-          done
-            ? 'bg-indigo-500 border-indigo-500 shadow-sm shadow-indigo-200'
-            : isDark
-            ? 'border-slate-600 bg-slate-800 hover:border-indigo-400 hover:bg-slate-700'
-            : 'border-slate-300 bg-white hover:border-indigo-400 hover:bg-indigo-50'
-        }
-      `}
-    >
-      {done && (
-        <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 12 10" fill="none">
-          <path
-            d="M1 5l3.5 3.5L11 1"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+    <Box sx={{ width: '100%', mb: 1.5 }}>
+      <Box
+        className={`flex min-h-[68px] items-center gap-3 rounded-xl border ${cardStyle.border} ${cardStyle.bg} px-3 py-2.5`}
+        sx={{
+          transition: 'all 0.2s ease',
+          '&:hover': {
+            boxShadow: theme?.mode === 'dark' ? '0 4px 12px rgba(0,0,0,0.2)' : '0 4px 12px rgba(0,0,0,0.03)',
+          },
+        }}
+      >
+        {/* Checkbox */}
+        <button
+          type="button"
+          onClick={() => markCompleted(task)}
+          disabled={completingId === task.id}
+          aria-pressed={isDone}
+          aria-label={`Mark ${task.title} as done`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition ${
+            isDone
+              ? `${cardStyle.checkedBg} border-transparent`
+              : `${theme?.mode === 'dark' ? 'bg-slate-800' : 'bg-white'} ${cardStyle.checkBorder} ${cardStyle.checkBorderHover}`
+          }`}
+        >
+          {completingId === task.id ? (
+            <CircularProgress size={16} color="inherit" />
+          ) : (
+            isDone && <CheckIcon />
+          )}
+        </button>
+
+        {/* Content */}
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {task.workStarted && (
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: 'success.main',
+                  boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)',
+                  animation: 'pulse 1.2s infinite',
+                  '@keyframes pulse': {
+                    '0%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)' },
+                    '70%': { boxShadow: '0 0 0 6px rgba(34,197,94, 0)' },
+                    '100%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0)' },
+                  },
+                }}
+              />
+            )}
+            <Link href={`/to-do/${task.id}`} style={{ textDecoration: 'none', minWidth: 0 }}>
+              <Typography
+                variant="body2"
+                className={`font-semibold ${
+                  isDone
+                    ? 'text-slate-400 dark:text-slate-500 line-through'
+                    : theme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-800'
+                }`}
+                sx={{
+                  fontSize: '15px',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {task.title}
+              </Typography>
+            </Link>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+            {task.isFlexible ? (
+              <Chip
+                label="Flexible"
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: '9px',
+                  fontWeight: 850,
+                  borderColor: '#8b5cf6',
+                  color: '#8b5cf6',
+                  borderWidth: '1.5px',
+                  backgroundColor: 'transparent',
+                }}
+              />
+            ) : task.dueDate && (
+              <Chip
+                label={`Due: ${moment(task.dueDate).format('MMM D')}`}
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  backgroundColor: theme?.mode === 'dark' ? '#374151' : '#f3f4f6',
+                  color: theme?.mode === 'dark' ? '#d1d5db' : '#374151',
+                }}
+              />
+            )}
+            
+            <Chip
+              label={task.priority.toUpperCase()}
+              size="small"
+              sx={{
+                height: 18,
+                fontSize: '9px',
+                fontWeight: 800,
+                backgroundColor:
+                  task.priority === 'critical' ? '#ef4444'
+                  : task.priority === 'urgent' ? '#f59e0b'
+                  : '#10b981',
+                color: 'white',
+              }}
+            />
+
+            {task.assignee && (
+              <Chip
+                label={task.assignee}
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#eff6ff',
+                  color: theme?.mode === 'dark' ? '#38bdf8' : '#1d4ed8',
+                }}
+              />
+            )}
+          </Box>
+        </Box>
+
+        {/* Actions on the right */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, shrink: 0, ml: 'auto' }}>
+          {task.steps && task.steps.length > 0 && (
+            <IconButton
+              size="small"
+              onClick={() => toggleExpanded(task.id)}
+              sx={{
+                p: 0.5,
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                '&:hover': { color: '#6366f1' },
+              }}
+              title={expanded.has(task.id!) ? 'Hide steps' : 'Show steps'}
+            >
+              {expanded.has(task.id!) ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+            </IconButton>
+          )}
+
+          <IconButton
+            size="small"
+            onClick={() => toggleWorkStarted(task)}
+            sx={{
+              p: 0.5,
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+              '&:hover': { color: task.workStarted ? '#ef4444' : '#10b981' },
+            }}
+            title={task.workStarted ? 'Stop Work' : 'Work Start'}
+          >
+            {task.workStarted ? <Pause fontSize="small" /> : <PlayArrow fontSize="small" />}
+          </IconButton>
+
+          <IconButton
+            size="small"
+            onClick={() => handleReschedule(task)}
+            sx={{
+              p: 0.5,
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+              '&:hover': { color: '#f59e0b' },
+            }}
+            title="Reschedule"
+          >
+            <Event fontSize="small" />
+          </IconButton>
+
+          <ReminderSendButton
+            itemId={task.id!}
+            itemTitle={task.title}
+            itemType="task"
+            itemDetailUrl={`/to-do/${task.id}`}
+            buttonType="icon"
+            iconSize="small"
+            buttonSx={{
+              p: 0.5,
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+              '&:hover': { color: '#6366f1' },
+            }}
           />
-        </svg>
-      )}
-    </button>
+        </Box>
+      </Box>
+
+      {/* Steps (collapsible) */}
+      <Collapse in={expanded.has(task.id!)} timeout="auto" unmountOnExit>
+        <Box className="pl-6 pr-2 py-2 mt-1 space-y-1">
+          {task.steps?.map((step, idx) => {
+            const stepDone = step.status === 'completed';
+            return (
+              <Box key={idx} className="flex items-center gap-2 py-1">
+                <button
+                  type="button"
+                  onClick={() => toggleStepStatus(task, idx)}
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
+                    stepDone
+                      ? 'bg-green-500 border-transparent text-white'
+                      : `${theme?.mode === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'} hover:border-green-400`
+                  }`}
+                >
+                  {stepDone && (
+                    <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3" stroke="currentColor" strokeWidth="4">
+                      <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
+                <Typography
+                  variant="caption"
+                  className={`truncate ${
+                    stepDone
+                      ? 'text-slate-400 dark:text-slate-500 line-through'
+                      : theme?.mode === 'dark' ? 'text-slate-300' : 'text-slate-700'
+                  }`}
+                  sx={{ fontSize: '12px', fontWeight: 500 }}
+                >
+                  {step.text}
+                </Typography>
+              </Box>
+            );
+          })}
+        </Box>
+      </Collapse>
+    </Box>
   );
-}
+};
 
 interface QuickAddTaskRowProps {
   selectedDate: string;
@@ -300,9 +529,6 @@ const ImportantTasks = () => {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
   const [todoModalOpen, setTodoModalOpen] = useState(false);
-  const [notiMenuAnchorEl, setNotiMenuAnchorEl] = useState<null | HTMLElement>(null);
-  const [activeNotiTask, setActiveNotiTask] = useState<Todo | null>(null);
-  const [sendingNotiTaskId, setSendingNotiTaskId] = useState<string | null>(null);
 
   // Calculate daily progress percentage based on active & completed tasks of the selected date
   const progressPercent = useMemo(() => {
@@ -496,48 +722,6 @@ const ImportantTasks = () => {
       else next.add(taskId);
       return next;
     });
-  };
-
-  const handleOpenNotiMenu = (event: React.MouseEvent<HTMLElement>, task: Todo) => {
-    setNotiMenuAnchorEl(event.currentTarget);
-    setActiveNotiTask(task);
-  };
-
-  const handleCloseNotiMenu = () => {
-    setNotiMenuAnchorEl(null);
-    setActiveNotiTask(null);
-  };
-
-  const handleSendTaskNotification = async (targetUid: string | null) => {
-    if (!user || !activeNotiTask || !activeNotiTask.id) return;
-    const task = activeNotiTask;
-    handleCloseNotiMenu();
-    setSendingNotiTaskId(task.id);
-    try {
-      const { userAuth } = await import('@/app/lib/firebase');
-      const idToken = await userAuth.currentUser?.getIdToken(true);
-      if (!idToken) throw new Error('Could not retrieve authentication session token.');
-      const res = await fetch('/api/send-test-notification', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-        body: JSON.stringify({
-          targetUid,
-          title: targetUid
-            ? `Task Reminder from ${user.displayName || 'User'} 📋`
-            : `Task Reminder: ${task.title} 📋`,
-          bodyText: targetUid
-            ? `${user.displayName || 'User'} wants to remind you about: ${task.title}`
-            : `Don't forget: ${task.title}. Click to view in app!`,
-          appUrl: `/to-do/${task.id}`,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to dispatch notification.');
-    } catch (err) {
-      console.error('Task notification error:', err);
-    } finally {
-      setSendingNotiTaskId(null);
-    }
   };
 
   if (loading) {
@@ -812,369 +996,40 @@ const ImportantTasks = () => {
           </Box>
         ) : viewMode === 'quick' ? (
           <Stack spacing={1}>
-            {filteredTasks.slice(0, 8).map((task) => {
-              const isDone = task.status === 'completed';
-              return (
-                <Box
-                  key={task.id}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1.5,
-                    px: 1.5,
-                    py: 1,
-                    borderRadius: '10px',
-                    bgcolor: isDone
-                      ? (theme?.mode === 'dark' ? 'transparent' : '#fafafa')
-                      : (theme?.mode === 'dark' ? '#0f172a' : '#f8fafc'),
-                    border: `1px solid ${theme?.mode === 'dark' ? '#1e293b' : '#e2e8f0'}`,
-                    opacity: isDone ? 0.55 : 1,
-                    transition: 'opacity 0.25s ease',
-                    '&:hover': { opacity: 1, bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#f1f5f9' },
-                  }}
-                >
-                  <Checkmark
-                    done={isDone}
-                    onToggle={() => markCompleted(task)}
-                    isDark={theme?.mode === 'dark'}
-                    size="md"
-                  />
-
-                  <Link href={`/to-do/${task.id}`} style={{ textDecoration: 'none', flex: 1, minWidth: 0 }}>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: isDone ? 400 : 600,
-                        color: isDone
-                          ? (theme?.mode === 'dark' ? '#475569' : '#94a3b8')
-                          : (theme?.mode === 'dark' ? '#f1f5f9' : '#1e293b'),
-                        textDecoration: isDone ? 'line-through' : 'none',
-                        cursor: 'pointer',
-                        transition: 'color 0.15s',
-                        '&:hover': { color: '#6366f1' },
-                        fontSize: '0.95rem',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {task.title}
-                    </Typography>
-                  </Link>
-
-                  {!isDone && (
-                    <Box display="flex" alignItems="center" gap={0.75} flexShrink={0}>
-                      {task.isFlexible ? (
-                        <Typography variant="caption" sx={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.67rem' }}>
-                          Flexible
-                        </Typography>
-                      ) : task.dueDate ? (
-                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.67rem' }}>
-                          {moment(task.dueDate).format('MMM D')}
-                        </Typography>
-                      ) : null}
-                      <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor:
-                        task.priority === 'critical' ? 'error.main'
-                        : task.priority === 'urgent' ? 'warning.main'
-                        : 'success.main',
-                      }} />
-                    </Box>
-                  )}
-                </Box>
-              );
-            })}
+            {filteredTasks.slice(0, 8).map((task) => (
+              <TodoCardItem
+                key={task.id}
+                task={task}
+                theme={theme}
+                completingId={completingId}
+                expanded={expanded}
+                toggleExpanded={toggleExpanded}
+                toggleWorkStarted={toggleWorkStarted}
+                handleReschedule={handleReschedule}
+                toggleStepStatus={toggleStepStatus}
+                markCompleted={markCompleted}
+              />
+            ))}
           </Stack>
         ) : (
           <Stack spacing={2}>
             {filteredTasks.slice(0, 5).map((task) => (
               <Fade in key={task.id} timeout={300}>
-                <Card className="rounded-xl shadow-sm hover:shadow-md transition" sx={{ opacity: task.status === 'completed' ? 0.65 : 1 }}>
-                <CardContent>
-                  <Box className="flex justify-between items-start gap-2">
-                    <Box className="flex items-center gap-2">
-                      {task.workStarted && (
-                        <Box
-                          sx={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: '50%',
-                            bgcolor: 'success.main',
-                            boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)',
-                            animation: 'pulse 1.2s infinite',
-                            '@keyframes pulse': {
-                              '0%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)' },
-                              '70%': {
-                                boxShadow: '0 0 0 8px rgba(34,197,94, 0)',
-                              },
-                              '100%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0)' },
-                            },
-                          }}
-                        />
-                      )}
-                      <Link href={`/to-do/${task.id}`} style={{ textDecoration: 'none' }}>
-                        <Typography
-                          variant="subtitle1"
-                          fontWeight="medium"
-                          sx={{
-                            textDecoration: task.status === 'completed' ? 'line-through' : 'none',
-                            color: task.status === 'completed'
-                              ? (theme?.mode === 'dark' ? '#475569' : '#94a3b8')
-                              : 'inherit',
-                          }}
-                        >
-                          {task?.title}
-                        </Typography>
-                      </Link>
-                    </Box>
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      sx={{ display: { xs: 'none', sm: 'flex' } }}
-                    >
-                      <Tooltip
-                        title={
-                          expanded.has(task.id!) ? 'Hide steps' : 'Show steps'
-                        }
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() => toggleExpanded(task.id)}
-                        >
-                          {expanded.has(task.id!) ? (
-                            <ExpandLess fontSize="small" />
-                          ) : (
-                            <ExpandMore fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip
-                        title={task.workStarted ? 'Stop Work' : 'Work Start'}
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() => toggleWorkStarted(task)}
-                        >
-                          {task.workStarted ? (
-                            <Pause fontSize="small" />
-                          ) : (
-                            <PlayArrow fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Reschedule">
-                        <IconButton
-                          size="small"
-                          onClick={() => handleReschedule(task)}
-                        >
-                          <Event fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Send Reminder Notification">
-                        <IconButton
-                          size="small"
-                          disabled={sendingNotiTaskId === task.id}
-                          onClick={(e) => handleOpenNotiMenu(e, task)}
-                        >
-                          {sendingNotiTaskId === task.id ? (
-                            <CircularProgress size={18} />
-                          ) : (
-                            <NotifyIcon fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Mark as done">
-                        <IconButton
-                          size="small"
-                          disabled={completingId === task.id}
-                          onClick={() => markCompleted(task)}
-                        >
-                          {completingId === task.id ? (
-                            <CircularProgress size={18} />
-                          ) : (
-                            <CheckCircleOutline fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                    </Stack>
-                  </Box>
-
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    mb={1.5}
-                    mt={0.5}
-                    pl={1}
-                    flexWrap="wrap"
-                    alignItems="center"
-                  >
-                    {task.isFlexible ? (
-                      <Chip
-                        size="small"
-                        label="Flexible"
-                        icon={<Box sx={{ ml: 0.5, fontSize: '0.8rem' }}>✨</Box>}
-                        variant="outlined"
-                        sx={{ 
-                          borderColor: '#8b5cf6', 
-                          color: '#8b5cf6', 
-                          fontWeight: 900,
-                          borderWidth: '1.5px',
-                          '& .MuiChip-label': { px: 1 }
-                        }}
-                      />
-                    ) : (
-                      <Chip
-                        size="small"
-                        label={`Due: ${moment(task.dueDate).format('MMM D')}`}
-                        variant="outlined"
-                      />
-                    )}
-                    <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-                    <Chip
-                      size="small"
-                      label={task.priority.toUpperCase()}
-                      color={
-                        task.priority === 'critical'
-                          ? 'error'
-                          : task.priority === 'urgent'
-                            ? 'warning'
-                            : 'success'
-                      }
-                      variant={
-                        task.priority === 'routine' ? 'outlined' : 'filled'
-                      }
-                    />
-                    <Chip
-                      size="small"
-                      label={task.status.replace('_', ' ')}
-                      variant="outlined"
-                    />
-                    {/* Show overall task assignee for quick glance */}
-                    {task.assignee && (
-                      <Chip
-                        size="small"
-                        label={task.assignee}
-                        variant="outlined"
-                        sx={{ ml: 0.5, fontWeight: 600 }}
-                      />
-                    )}
-                  </Stack>
-
-                  {/* Mobile action bar (bottom) */}
-                  <Box
-                    mt={1}
-                    sx={{ display: { xs: 'flex', sm: 'none' } }}
-                    className="justify-end"
-                  >
-                    <Stack direction="row" spacing={1}>
-                      <Tooltip
-                        title={
-                          expanded.has(task.id!) ? 'Hide steps' : 'Show steps'
-                        }
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() => toggleExpanded(task.id)}
-                        >
-                          {expanded.has(task.id!) ? (
-                            <ExpandLess fontSize="small" />
-                          ) : (
-                            <ExpandMore fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip
-                        title={task.workStarted ? 'Stop Work' : 'Work Start'}
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() => toggleWorkStarted(task)}
-                        >
-                          {task.workStarted ? (
-                            <Pause fontSize="small" />
-                          ) : (
-                            <PlayArrow fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Reschedule">
-                        <IconButton
-                          size="small"
-                          onClick={() => handleReschedule(task)}
-                        >
-                          <Event fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Mark as done">
-                        <IconButton
-                          size="small"
-                          disabled={completingId === task.id}
-                          onClick={() => markCompleted(task)}
-                        >
-                          {completingId === task.id ? (
-                            <CircularProgress size={18} />
-                          ) : (
-                            <CheckCircleOutline fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                    </Stack>
-                  </Box>
-
-                  {/* Steps (collapsible) */}
-                  <Collapse
-                    in={expanded.has(task.id!)}
-                    timeout="auto"
-                    unmountOnExit
-                  >
-                    <Box className="pl-2 mt-1">
-                      {task.steps?.map((step, idx) => (
-                        <Box key={idx} className="flex items-start gap-2 my-1">
-                          <IconButton
-                            size="small"
-                            onClick={() => toggleStepStatus(task, idx)}
-                          >
-                            {step.status === 'completed' ? (
-                              <CheckCircle
-                                className="text-green-500"
-                                fontSize="small"
-                              />
-                            ) : (
-                              <RadioButtonUnchecked
-                                className="text-gray-400"
-                                fontSize="small"
-                              />
-                            )}
-                          </IconButton>
-                          <Typography
-                            variant="body2"
-                            className={
-                              step.status === 'completed'
-                                ? 'line-through text-gray-400'
-                                : ''
-                            }
-                          >
-                            {step.text}
-                          </Typography>
-                        </Box>
-                      ))}
-                      {!task.steps || task.steps.length === 0 ? (
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          className="pl-9"
-                        >
-                          No steps added
-                        </Typography>
-                      ) : null}
-                    </Box>
-                  </Collapse>
-                </CardContent>
-              </Card>
-            </Fade>
-          ))}
+                <Box>
+                  <TodoCardItem
+                    task={task}
+                    theme={theme}
+                    completingId={completingId}
+                    expanded={expanded}
+                    toggleExpanded={toggleExpanded}
+                    toggleWorkStarted={toggleWorkStarted}
+                    handleReschedule={handleReschedule}
+                    toggleStepStatus={toggleStepStatus}
+                    markCompleted={markCompleted}
+                  />
+                </Box>
+              </Fade>
+            ))}
           </Stack>
         )}
 
@@ -1293,41 +1148,6 @@ const ImportantTasks = () => {
 
         {/* Todo Modal */}
         <ToDoModal open={todoModalOpen} onClose={() => setTodoModalOpen(false)} />
-
-        {/* Notification share Menu */}
-        <Menu
-          anchorEl={notiMenuAnchorEl}
-          open={Boolean(notiMenuAnchorEl)}
-          onClose={handleCloseNotiMenu}
-          PaperProps={{
-            sx: {
-              bgcolor: theme?.mode === 'dark' ? '#1e293b' : '#ffffff',
-              color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a',
-              border: `1px solid ${theme?.mode === 'dark' ? '#334155' : '#e2e8f0'}`,
-              borderRadius: '12px',
-              minWidth: '200px',
-              py: 0.5,
-            }
-          }}
-        >
-          <Box sx={{ px: 2, py: 0.75, opacity: 0.6, fontSize: '0.65rem', fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Send Task Reminder
-          </Box>
-          <MenuItem onClick={() => handleSendTaskNotification(null)} sx={{ fontSize: '0.8rem', fontWeight: 600, py: 1 }}>
-            <PersonIcon sx={{ fontSize: '1rem', mr: 1 }} /> Send to Myself
-          </MenuItem>
-          {user?.sharedWith && user.sharedWith.length > 0 && [
-            <Divider key="task-noti-divider" sx={{ my: 0.5 }} />,
-            <Box key="task-noti-label" sx={{ px: 2, py: 0.75, opacity: 0.6, fontSize: '0.65rem', fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Shared Users
-            </Box>,
-            ...user.sharedWith.map((su) => (
-              <MenuItem key={su.uid} onClick={() => handleSendTaskNotification(su.uid)} sx={{ fontSize: '0.8rem', fontWeight: 600, py: 1 }}>
-                <PersonIcon sx={{ fontSize: '1rem', mr: 1 }} /> Send to {su.displayName}
-              </MenuItem>
-            ))
-          ]}
-        </Menu>
       </CardContent>
     </Card>
 

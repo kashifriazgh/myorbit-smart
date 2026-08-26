@@ -16,6 +16,7 @@ import {
   DialogActions,
 } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReminderSendButton from '@/app/components/global/ReminderSendButton';
 import PersonIcon from '@mui/icons-material/Person';
 import { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
@@ -888,6 +889,14 @@ export default function TodoDetailPage() {
         >
           AI Generate
         </Button>
+
+        <ReminderSendButton
+          itemId={todo.id!}
+          itemTitle={todo.title}
+          itemType="task"
+          itemDetailUrl={`/to-do/${todo.id}`}
+          buttonType="button"
+        />
 
         <IconButton
           onClick={() => setConfirmDelete({ type: 'todo' })}

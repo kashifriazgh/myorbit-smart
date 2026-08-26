@@ -284,7 +284,7 @@ export default function InitialOnboarding({
 
   const handleAskMeLater = () => {
     if (user) {
-      const dismissUntil = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+      const dismissUntil = Date.now() + 12 * 60 * 60 * 1000; // 12 hours
       localStorage.setItem(`onboarding_dismissed_until_${user.uid}`, dismissUntil.toString());
     }
     setOpen(false);
@@ -299,7 +299,7 @@ export default function InitialOnboarding({
         setShowCTA(false);
       } else {
         if (user) {
-          const dismissUntil = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+          const dismissUntil = Date.now() + 12 * 60 * 60 * 1000; // 12 hours
           localStorage.setItem(`onboarding_dismissed_until_${user.uid}`, dismissUntil.toString());
         }
         setOpen(false);

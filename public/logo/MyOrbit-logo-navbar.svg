@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="96" viewBox="0 0 420 96">
+  <title>MyOrbit logo</title>
+  <desc>Blue circular checkmark icon followed by MyOrbit wordmark</desc>
+
+  <!-- Icon -->
+  <g transform="translate(4,4)">
+    <!-- Open circular orbit/check shape -->
+    <path d="M62 10
+             A38 38 0 1 0 82 25"
+          fill="none"
+          stroke="#1677E8"
+          stroke-width="12"
+          stroke-linecap="round"/>
+    <!-- Check -->
+    <path d="M28 48 L43 62 L70 33"
+          fill="none"
+          stroke="#1677E8"
+          stroke-width="12"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="100" y="65"
+        font-family="Inter, Arial, Helvetica, sans-serif"
+        font-size="52"
+        font-weight="600"
+        letter-spacing="-2.2"
+        fill="#101827">MyOrbit</text>
+</svg>

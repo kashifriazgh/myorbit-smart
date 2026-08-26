@@ -18,7 +18,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import Link from 'next/link';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+import { userDb as db } from '@/app/lib/firebase';
 import { useEffect, useState } from 'react';
 
 export default function ManageDashboard() {
@@ -176,37 +176,39 @@ export default function ManageDashboard() {
       </Card>
 
       {/* Developer Diagnostics Settings */}
-      <Card
-        sx={{
-          mb: 4,
-          backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
-          color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-        }}
-      >
-        <CardContent>
-          <Typography variant="h6" gutterBottom fontWeight="700">
-            Developer Diagnostics
-          </Typography>
-          <Typography variant="body2" color="text.secondary" paragraph>
-            Toggle advanced monitoring controls for developer debugging and performance insights.
-          </Typography>
-          <Box display="flex" alignItems="center" justifyContent="space-between" mt={1}>
-            <Box>
-              <Typography variant="subtitle2" fontWeight="700">
-                Cache Control Panel Overlay
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Display the floating real-time cache sync status on the home page.
-              </Typography>
+      {user.role === 'master' && (
+        <Card
+          sx={{
+            mb: 4,
+            backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
+            color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
+          }}
+        >
+          <CardContent>
+            <Typography variant="h6" gutterBottom fontWeight="700">
+              Developer Diagnostics
+            </Typography>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Toggle advanced monitoring controls for developer debugging and performance insights.
+            </Typography>
+            <Box display="flex" alignItems="center" justifyContent="space-between" mt={1}>
+              <Box>
+                <Typography variant="subtitle2" fontWeight="700">
+                  Cache Control Panel Overlay
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Display the floating real-time cache sync status on the home page.
+                </Typography>
+              </Box>
+              <Switch
+                checked={showCacheViewer}
+                onChange={(e) => handleToggleCacheViewer(e.target.checked)}
+                color="primary"
+              />
             </Box>
-            <Switch
-              checked={showCacheViewer}
-              onChange={(e) => handleToggleCacheViewer(e.target.checked)}
-              color="primary"
-            />
-          </Box>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Dashboard Links */}
       <Grid container spacing={3}>
@@ -236,31 +238,6 @@ export default function ManageDashboard() {
             </Link>
           </Grid>
         )}
-
-        <Grid size={{ xs: 12, sm: 6 }}>
-          <Link href="/user/theme" passHref style={{ textDecoration: 'none' }}>
-            <Card
-              sx={{
-                p: 3,
-                height: '100%',
-                cursor: 'pointer',
-                transition: '0.2s',
-                backgroundColor: theme?.mode === 'dark' ? '#334155' : '#ffffff',
-                color: theme?.mode === 'dark' ? '#f1f5f9' : '#000000',
-                '&:hover': {
-                  boxShadow: 6,
-                  backgroundColor:
-                    theme?.mode === 'dark' ? '#475569' : 'grey.100',
-                },
-              }}
-            >
-              <Typography variant="h6" fontWeight="700">Theme Settings</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Customize app appearance
-              </Typography>
-            </Card>
-          </Link>
-        </Grid>
 
         <Grid size={{ xs: 12, sm: 6 }}>
           <Link href="/user/profile" passHref style={{ textDecoration: 'none' }}>

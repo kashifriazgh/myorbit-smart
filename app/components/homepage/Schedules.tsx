@@ -6,9 +6,6 @@ import {
   Box,
   Typography,
   IconButton,
-  Stepper,
-  Step,
-  StepLabel,
   Chip,
   Card,
   CardContent,
@@ -18,9 +15,7 @@ import {
   Snackbar,
   Badge,
   styled,
-  Menu,
-  MenuItem,
-  Divider,
+  Tooltip,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -28,15 +23,13 @@ import {
   AccessTime as TimeIcon,
   CalendarMonth as CalendarIcon,
   ArrowForward as ArrowIcon,
-  CheckCircle,
-  RadioButtonUnchecked,
-  Person as PersonIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { SchedulesProps } from '../../lib/interface';
 import SchedulesModal from './SchedulesModal';
 import { useSchedules } from '../../lib/context/SchedulesContext';
+import ReminderSendButton from '@/app/components/global/ReminderSendButton';
 
 // Custom Styled Badge
 const StyledBadge = styled(Badge)(({ theme }) => ({
@@ -48,40 +41,364 @@ const StyledBadge = styled(Badge)(({ theme }) => ({
   },
 }));
 
-// Custom Step Icon Component
-const CustomStepIcon: React.FC<{
-  completed?: boolean;
-  active?: boolean;
-  isTimePassed?: boolean;
-  children?: React.ReactNode;
-}> = ({ isTimePassed, children }) => {
-  const { theme } = useCustomTheme();
+// Custom SVGs for schedule cards
+const ClockIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    style={{ width: '14px', height: '14px' }}
+    stroke="currentColor"
+    strokeWidth="1.8"
+  >
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12L15 14" strokeLinecap="round" />
+  </svg>
+);
+
+const CheckIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    style={{ width: '16px', height: '16px' }}
+    stroke="white"
+    strokeWidth="3"
+  >
+    <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const CARD_STYLES = [
+  {
+    border: 'border-pink-200 dark:border-pink-900/30',
+    bg: 'bg-pink-50 dark:bg-pink-950/15',
+    checkBorder: 'border-pink-300 dark:border-pink-800',
+    checkBorderHover: 'hover:border-pink-400 dark:hover:border-pink-700',
+    checkedBg: 'bg-pink-400 dark:bg-pink-600',
+  },
+  {
+    border: 'border-amber-200 dark:border-amber-900/30',
+    bg: 'bg-amber-50 dark:bg-amber-950/15',
+    checkBorder: 'border-amber-300 dark:border-amber-800',
+    checkBorderHover: 'hover:border-amber-400 dark:hover:border-amber-700',
+    checkedBg: 'bg-amber-400 dark:bg-amber-600',
+  },
+  {
+    border: 'border-cyan-200 dark:border-cyan-900/30',
+    bg: 'bg-cyan-50 dark:bg-cyan-950/15',
+    checkBorder: 'border-cyan-300 dark:border-cyan-800',
+    checkBorderHover: 'hover:border-cyan-400 dark:hover:border-cyan-700',
+    checkedBg: 'bg-cyan-400 dark:bg-cyan-600',
+  },
+  {
+    border: 'border-indigo-200 dark:border-indigo-900/30',
+    bg: 'bg-indigo-50 dark:bg-indigo-950/15',
+    checkBorder: 'border-indigo-300 dark:border-indigo-800',
+    checkBorderHover: 'hover:border-indigo-400 dark:hover:border-indigo-700',
+    checkedBg: 'bg-indigo-400 dark:bg-indigo-600',
+  },
+  {
+    border: 'border-emerald-200 dark:border-emerald-900/30',
+    bg: 'bg-emerald-50 dark:bg-emerald-950/15',
+    checkBorder: 'border-emerald-300 dark:border-emerald-800',
+    checkBorderHover: 'hover:border-emerald-400 dark:hover:border-emerald-700',
+    checkedBg: 'bg-emerald-400 dark:bg-emerald-600',
+  },
+];
+
+const DayTimeline = ({
+  schedulesList,
+  theme,
+}: {
+  schedulesList: SchedulesProps[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  theme: any;
+}) => {
+  const isDark = theme?.mode === 'dark';
+  
+  const timedSchedules = schedulesList.filter(s => !s.isFlexible && s.startTime && s.endTime);
+  
+  const totalBusyMins = timedSchedules.reduce((acc, s) => {
+    const [sh, sm] = s.startTime.split(':').map(Number);
+    const [eh, em] = s.endTime.split(':').map(Number);
+    const duration = (eh * 60 + em) - (sh * 60 + sm);
+    return acc + Math.max(0, duration);
+  }, 0);
+  
+  const busyHours = (totalBusyMins / 60).toFixed(1);
 
   return (
-    <Box
-      sx={{
-        width: '24px',
-        height: '24px',
-        borderRadius: '50%',
-        backgroundColor: isTimePassed
-          ? theme?.mode === 'dark' ? '#3b82f6' : '#2563eb'
-          : 'transparent',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: isTimePassed
-          ? 'white'
-          : theme?.mode === 'dark' ? '#9ca3af' : '#6b7280',
-        fontSize: '12px',
-        fontWeight: 'bold',
-        border: `2px solid ${
-          isTimePassed
-            ? theme?.mode === 'dark' ? '#3b82f6' : '#2563eb'
-            : theme?.mode === 'dark' ? '#9ca3af' : '#6b7280'
-        }`,
+    <Box 
+      sx={{ 
+        px: 2, 
+        py: 1.5, 
+        mb: 3, 
+        bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', 
+        borderRadius: '16px', 
+        border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` 
       }}
     >
-      {children}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+        <Typography variant="caption" sx={{ fontSize: '11px', fontWeight: 700, color: isDark ? '#94a3b8' : '#64748b' }}>
+          📊 Busy/Free Timeline
+        </Typography>
+        <Typography variant="caption" sx={{ fontSize: '11px', fontWeight: 700, color: isDark ? '#fbbf24' : '#d97706' }}>
+          {totalBusyMins > 0 ? `${busyHours} hrs scheduled` : 'Free day'}
+        </Typography>
+      </Box>
+
+      {/* Timeline track container */}
+      <Box sx={{ position: 'relative', width: '100%', height: '10px', bgcolor: isDark ? '#1e293b' : '#e2e8f0', borderRadius: '5px', overflow: 'hidden', mb: 1 }}>
+        {/* Render busy slots */}
+        {timedSchedules.map((s, idx) => {
+          const [sh, sm] = s.startTime.split(':').map(Number);
+          const [eh, em] = s.endTime.split(':').map(Number);
+          const startMin = sh * 60 + sm;
+          const endMin = eh * 60 + em;
+          
+          const left = (startMin / 1440) * 100;
+          const width = ((endMin - startMin) / 1440) * 100;
+          
+          const cardStyle = CARD_STYLES[schedulesList.indexOf(s) % CARD_STYLES.length];
+          const bgClass = cardStyle.checkedBg;
+
+          return (
+            <Tooltip
+              key={s.id || idx}
+              title={`${s.title} (${sh % 12 || 12}:${String(sm).padStart(2, '0')} ${sh >= 12 ? 'PM' : 'AM'} - ${eh % 12 || 12}:${String(em).padStart(2, '0')} ${eh >= 12 ? 'PM' : 'AM'})`}
+              arrow
+            >
+              <Box
+                className={bgClass}
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  left: `${left}%`,
+                  width: `${width}%`,
+                  cursor: 'pointer',
+                  opacity: s.status === 'completed' ? 0.4 : 0.95,
+                  transition: 'opacity 0.2s',
+                  '&:hover': { opacity: 1 },
+                }}
+              />
+            </Tooltip>
+          );
+        })}
+      </Box>
+
+      {/* Hourly labels / tick marks below track */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', px: 0.5, position: 'relative', height: '14px' }}>
+        <Typography variant="caption" sx={{ fontSize: '9px', fontWeight: 600, color: isDark ? '#64748b' : '#94a3b8', position: 'absolute', left: '0%' }}>12 AM</Typography>
+        <Typography variant="caption" sx={{ fontSize: '9px', fontWeight: 600, color: isDark ? '#64748b' : '#94a3b8', position: 'absolute', left: '25%', transform: 'translateX(-50%)' }}>6 AM</Typography>
+        <Typography variant="caption" sx={{ fontSize: '9px', fontWeight: 600, color: isDark ? '#64748b' : '#94a3b8', position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>12 PM</Typography>
+        <Typography variant="caption" sx={{ fontSize: '9px', fontWeight: 600, color: isDark ? '#64748b' : '#94a3b8', position: 'absolute', left: '75%', transform: 'translateX(-50%)' }}>6 PM</Typography>
+        <Typography variant="caption" sx={{ fontSize: '9px', fontWeight: 600, color: isDark ? '#64748b' : '#94a3b8', position: 'absolute', right: '0%' }}>12 AM</Typography>
+      </Box>
+    </Box>
+  );
+};
+
+const groupSchedulesByHour = (schedulesList: SchedulesProps[]) => {
+  const groups: { [key: string]: SchedulesProps[] } = {};
+  
+  schedulesList.forEach((s) => {
+    if (s.isFlexible) {
+      const key = "Flexible";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(s);
+    } else {
+      const [hoursStr] = s.startTime.split(':');
+      const hour = parseInt(hoursStr);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour % 12 || 12;
+      const paddedHour = String(displayHour).padStart(2, '0');
+      const key = `${paddedHour}:00 ${ampm}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(s);
+    }
+  });
+  
+  return groups;
+};
+
+const sortHourSlots = (a: string, b: string) => {
+  if (a === 'Flexible') return 1;
+  if (b === 'Flexible') return -1;
+  
+  const [timeA, ampmA] = a.split(' ');
+  const [timeB, ampmB] = b.split(' ');
+  
+  let hourA = parseInt(timeA.split(':')[0]);
+  let hourB = parseInt(timeB.split(':')[0]);
+  
+  if (ampmA === 'PM' && hourA !== 12) hourA += 12;
+  if (ampmA === 'AM' && hourA === 12) hourA = 0;
+  
+  if (ampmB === 'PM' && hourB !== 12) hourB += 12;
+  if (ampmB === 'AM' && hourB === 12) hourB = 0;
+  
+  return hourA - hourB;
+};
+
+interface HourlySchedulesGroupedListProps {
+  items: SchedulesProps[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  theme: any;
+  getTimeRange: (startTime: string, endTime: string, isFlexible?: boolean) => string;
+  handleToggleStatus: (schedule: SchedulesProps) => void;
+  handleEditSchedule: (scheduleId: string) => void;
+  getPriorityColor: (priority: string) => string;
+}
+
+const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
+  items,
+  theme,
+  getTimeRange,
+  handleToggleStatus,
+  handleEditSchedule,
+  getPriorityColor,
+}) => {
+  const hourlyGroups = groupSchedulesByHour(items);
+  const sortedSlots = Object.keys(hourlyGroups).sort(sortHourSlots);
+
+  return (
+    <Box sx={{ width: '100%' }}>
+      {sortedSlots.map((slot) => (
+        <Box key={slot} sx={{ mb: 2.5 }}>
+          {/* Time slot header row */}
+          <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 2, pl: 1 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                fontSize: '12px',
+                fontWeight: 700,
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                flexShrink: 0,
+              }}
+            >
+              {slot}
+            </Typography>
+            <Box sx={{ height: '1px', flex: 1, bgcolor: theme?.mode === 'dark' ? '#334155' : '#e2e8f0' }} />
+          </Box>
+
+          {/* Cards for this slot */}
+          {hourlyGroups[slot].map((schedule) => {
+            const styleIndex = items.indexOf(schedule);
+            const cardStyle = CARD_STYLES[styleIndex % CARD_STYLES.length];
+            const done = schedule.status === 'completed';
+
+            return (
+              <Box
+                key={schedule.id}
+                className={`flex min-h-[68px] items-center gap-3 rounded-xl border ${cardStyle.border} ${cardStyle.bg} px-3 py-2 mb-2`}
+                sx={{
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    boxShadow: theme?.mode === 'dark' ? '0 4px 12px rgba(0,0,0,0.2)' : '0 4px 12px rgba(0,0,0,0.03)',
+                  },
+                }}
+              >
+                {/* Checkbox button */}
+                <button
+                  type="button"
+                  onClick={() => handleToggleStatus(schedule)}
+                  aria-pressed={done}
+                  aria-label={`Mark ${schedule.title} as done`}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                    done
+                      ? `${cardStyle.checkedBg} border-transparent`
+                      : `${theme?.mode === 'dark' ? 'bg-slate-800' : 'bg-white'} ${cardStyle.checkBorder} ${cardStyle.checkBorderHover}`
+                  }`}
+                >
+                  {done && <CheckIcon />}
+                </button>
+
+                {/* Content */}
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography
+                    variant="body2"
+                    className={`truncate font-semibold ${
+                      done
+                        ? 'text-slate-400 dark:text-slate-500 line-through'
+                        : theme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-800'
+                    }`}
+                    sx={{ fontSize: '15px' }}
+                  >
+                    {schedule.title}
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b' }}>
+                      <ClockIcon />
+                      <Typography variant="caption" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                        {getTimeRange(schedule.startTime, schedule.endTime, schedule.isFlexible)}
+                      </Typography>
+                    </Box>
+                    
+                    {schedule.isFlexible && (
+                      <Chip
+                        label="Flexible"
+                        size="small"
+                        sx={{
+                          height: 18,
+                          fontSize: '9px',
+                          fontWeight: 800,
+                          borderColor: '#8b5cf6',
+                          color: '#8b5cf6',
+                          borderWidth: '1.5px',
+                          backgroundColor: 'transparent',
+                        }}
+                      />
+                    )}
+                    {schedule.objective && (
+                      <Chip
+                        label={schedule.objective}
+                        size="small"
+                        sx={{
+                          height: 18,
+                          fontSize: '9px',
+                          fontWeight: 800,
+                          backgroundColor: getPriorityColor(schedule.priority || 'low'),
+                          color: 'white',
+                        }}
+                      />
+                    )}
+                  </Box>
+                </Box>
+
+                {/* Actions on the right */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, shrink: 0, ml: 'auto' }}>
+                  <ReminderSendButton
+                    itemId={schedule.id!}
+                    itemTitle={schedule.title}
+                    itemType="schedule"
+                    itemDetailUrl="/"
+                    buttonType="icon"
+                    iconSize="small"
+                    buttonSx={{
+                      p: 0.5,
+                      color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                      '&:hover': { color: '#6366f1' },
+                    }}
+                  />
+                  <IconButton
+                    size="small"
+                    onClick={() => handleEditSchedule(schedule.id!)}
+                    sx={{
+                      p: 0.5,
+                      color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                      '&:hover': { color: '#fbbf24' },
+                    }}
+                    title="Edit Schedule"
+                  >
+                    <EditIcon sx={{ fontSize: '1.05rem' }} />
+                  </IconButton>
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+      ))}
     </Box>
   );
 };
@@ -302,74 +619,6 @@ const Schedules: React.FC = () => {
     severity: 'success' | 'error' | 'info' | 'warning';
   }>({ open: false, message: '', severity: 'info' });
 
-  const [sendingNotificationId, setSendingNotificationId] = useState<string | null>(null);
-
-  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
-  const [activeMenuSchedule, setActiveMenuSchedule] = useState<SchedulesProps | null>(null);
-
-  const handleOpenShareMenu = (event: React.MouseEvent<HTMLElement>, schedule: SchedulesProps) => {
-    setMenuAnchorEl(event.currentTarget);
-    setActiveMenuSchedule(schedule);
-  };
-
-  const handleCloseShareMenu = () => {
-    setMenuAnchorEl(null);
-    setActiveMenuSchedule(null);
-  };
-
-  const handleSendNotificationToUser = async (targetUid: string | null) => {
-    if (!user || !activeMenuSchedule || !activeMenuSchedule.id) return;
-    const schedule = activeMenuSchedule;
-    handleCloseShareMenu();
-
-    setSendingNotificationId(schedule.id);
-    try {
-      const { userAuth } = await import('@/app/lib/firebase');
-      const idToken = await userAuth.currentUser?.getIdToken(true);
-      if (!idToken) {
-        throw new Error('Could not retrieve authentication session token.');
-      }
-
-      const res = await fetch('/api/send-test-notification', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          targetUid: targetUid, // Null will trigger sending to self
-          title: targetUid 
-            ? `Reminder from ${user.displayName || 'User'} ⏰`
-            : `Schedule Alert: ${schedule.title} 📅`,
-          bodyText: targetUid
-            ? `${user.displayName || 'User'} wants to remind you about: ${schedule.title}`
-            : `Scheduled at ${formatTime(schedule.startTime)}. Click to view in app!`,
-          appUrl: '/'
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to dispatch notification.');
-      }
-
-      setSnackbar({
-        open: true,
-        message: targetUid ? 'Reminder sent to shared user!' : 'Notification sent to yourself!',
-        severity: 'success'
-      });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Failed to send notification';
-      setSnackbar({
-        open: true,
-        message: msg,
-        severity: 'error'
-      });
-    } finally {
-      setSendingNotificationId(null);
-    }
-  };
-
   const isDark = theme?.mode === 'dark';
 
   // Generate 5 dates starting from today
@@ -480,11 +729,7 @@ const Schedules: React.FC = () => {
     }
   };
 
-  const isTimePassed = (startTime: string, date: string) => {
-    const now = new Date();
-    const scheduleDateTime = new Date(`${date}T${startTime}:00`);
-    return now > scheduleDateTime;
-  };
+
 
   const handleQuickAdd = (title: string, startTime: string) => {
     if (!user) return;
@@ -636,6 +881,7 @@ const Schedules: React.FC = () => {
         {viewMode === 'quick' && (
           <>
             <DateTabStrip />
+            <DayTimeline schedulesList={schedules} theme={theme} />
 
             <QuickAddScheduleRow
               selectedDate={selectedDate}
@@ -658,108 +904,15 @@ const Schedules: React.FC = () => {
                 </Typography>
               </Box>
             ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                {schedules.slice(0, 8).map((schedule) => {
-                  const done = schedule.status === 'completed';
-                  const passed = isTimePassed(schedule.startTime, schedule.date);
-                  return (
-                    <Box
-                      key={schedule.id}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1.5,
-                        px: 1.5,
-                        py: 0.9,
-                        borderRadius: '10px',
-                        bgcolor: done
-                          ? (isDark ? 'transparent' : '#fafafa')
-                          : (isDark ? '#0f172a' : '#fffbeb'),
-                        border: `1px solid ${
-                          done
-                            ? (isDark ? '#1e293b' : '#f1f5f9')
-                            : (isDark ? '#1e293b' : '#fde68a')
-                        }`,
-                        opacity: done ? 0.55 : 1,
-                        transition: 'all 0.2s ease',
-                        '&:hover': { opacity: 1, bgcolor: isDark ? '#1e293b' : '#fef3c7' },
-                      }}
-                    >
-                      <Box
-                        onClick={() => handleToggleStatus(schedule)}
-                        sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                      >
-                        {done
-                          ? <CheckCircle sx={{ fontSize: 22, color: '#22c55e' }} />
-                          : <RadioButtonUnchecked sx={{ fontSize: 22, color: passed ? '#3b82f6' : (isDark ? '#64748b' : '#94a3b8') }} />
-                        }
-                      </Box>
-
-                      {!schedule.isFlexible && (
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            fontWeight: 700,
-                            color: passed && !done ? '#3b82f6' : (isDark ? '#94a3b8' : '#64748b'),
-                            fontSize: '0.78rem',
-                            flexShrink: 0,
-                            minWidth: 64,
-                          }}
-                        >
-                          {formatTime(schedule.startTime)}
-                        </Typography>
-                      )}
-                      {schedule.isFlexible && (
-                        <Typography variant="caption" sx={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.78rem', flexShrink: 0 }}>
-                          Flexible
-                        </Typography>
-                      )}
-
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          flex: 1,
-                          fontWeight: done ? 400 : 600,
-                          color: done
-                            ? (isDark ? '#475569' : '#94a3b8')
-                            : (isDark ? '#f1f5f9' : '#1e293b'),
-                          textDecoration: done ? 'line-through' : 'none',
-                          fontSize: '0.92rem',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {schedule.title}
-                      </Typography>
-
-                      <IconButton
-                        size="small"
-                        disabled={sendingNotificationId === schedule.id}
-                        onClick={(e) => handleOpenShareMenu(e, schedule)}
-                        title="Send Notification / Share Reminder"
-                        sx={{ p: 0.3, flexShrink: 0, color: isDark ? '#475569' : '#94a3b8', '&:hover': { color: '#3b82f6' } }}
-                      >
-                        {sendingNotificationId === schedule.id ? (
-                          <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#3b82f6', borderRadius: '50%' }} />
-                        ) : (
-                          <PersonIcon sx={{ fontSize: '1rem' }} />
-                        )}
-                      </IconButton>
-
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEditSchedule(schedule.id!)}
-                        sx={{ p: 0.3, flexShrink: 0, color: isDark ? '#475569' : '#94a3b8', '&:hover': { color: '#f59e0b' } }}
-                      >
-                        <EditIcon sx={{ fontSize: '1rem' }} />
-                      </IconButton>
-                    </Box>
-                  );
-                })}
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                <HourlySchedulesGroupedList
+                  items={schedules.slice(0, 8)}
+                  theme={theme}
+                  getTimeRange={getTimeRange}
+                  handleToggleStatus={handleToggleStatus}
+                  handleEditSchedule={handleEditSchedule}
+                  getPriorityColor={getPriorityColor}
+                />
               </Box>
             )}
 
@@ -779,6 +932,7 @@ const Schedules: React.FC = () => {
         {viewMode === 'daily' && (
           <>
             <DateTabStrip />
+            <DayTimeline schedulesList={schedules} theme={theme} />
 
             <Box sx={{ maxHeight: '420px', overflowY: 'auto', pr: 1 }}>
               {isSaving && (
@@ -814,12 +968,10 @@ const Schedules: React.FC = () => {
                   schedules={schedules}
                   viewMode="daily"
                   theme={theme}
-                  isTimePassed={isTimePassed}
                   getTimeRange={getTimeRange}
                   getPriorityColor={getPriorityColor}
                   handleEditSchedule={handleEditSchedule}
-                  onOpenShareMenu={handleOpenShareMenu}
-                  sendingNotificationId={sendingNotificationId}
+                  handleToggleStatus={handleToggleStatus}
                 />
               )}
             </Box>
@@ -872,12 +1024,10 @@ const Schedules: React.FC = () => {
                   schedules={futureSchedules}
                   viewMode="future"
                   theme={theme}
-                  isTimePassed={isTimePassed}
                   getTimeRange={getTimeRange}
                   getPriorityColor={getPriorityColor}
                   handleEditSchedule={handleEditSchedule}
-                  onOpenShareMenu={handleOpenShareMenu}
-                  sendingNotificationId={sendingNotificationId}
+                  handleToggleStatus={handleToggleStatus}
                 />
               )}
             </Box>
@@ -920,47 +1070,7 @@ const Schedules: React.FC = () => {
         existingSchedules={schedules}
       />
 
-      <Menu
-        anchorEl={menuAnchorEl}
-        open={Boolean(menuAnchorEl)}
-        onClose={handleCloseShareMenu}
-        PaperProps={{
-          sx: {
-            bgcolor: isDark ? '#1e293b' : '#ffffff',
-            color: isDark ? '#f1f5f9' : '#0f172a',
-            border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-            borderRadius: '12px',
-            minWidth: '200px',
-            py: 0.5,
-          }
-        }}
-      >
-        <Box sx={{ px: 2, py: 0.75, opacity: 0.6, fontSize: '0.65rem', fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          Send Reminder
-        </Box>
-        <MenuItem 
-          onClick={() => handleSendNotificationToUser(null)}
-          sx={{ fontSize: '0.8rem', fontWeight: 600, py: 1 }}
-        >
-          👤 Send to Myself
-        </MenuItem>
-        
-        {user?.sharedWith && user.sharedWith.length > 0 && [
-          <Divider key="divider" sx={{ my: 0.5, borderColor: isDark ? '#334155' : '#e2e8f0' }} />,
-          <Box key="shared-label" sx={{ px: 2, py: 0.75, opacity: 0.6, fontSize: '0.65rem', fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Shared Users
-          </Box>,
-          ...user.sharedWith.map((sharedUser) => (
-            <MenuItem
-              key={sharedUser.uid}
-              onClick={() => handleSendNotificationToUser(sharedUser.uid)}
-              sx={{ fontSize: '0.8rem', fontWeight: 600, py: 1 }}
-            >
-              💬 Send to {sharedUser.displayName}
-            </MenuItem>
-          ))
-        ]}
-      </Menu>
+
 
       <Snackbar
         open={snackbar.open}
@@ -982,24 +1092,20 @@ interface ScheduleDetailListProps {
   viewMode: 'daily' | 'future';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   theme: any;
-  isTimePassed: (startTime: string, date: string) => boolean;
   getTimeRange: (startTime: string, endTime: string, isFlexible?: boolean) => string;
   getPriorityColor: (priority: string) => string;
   handleEditSchedule: (id: string) => void;
-  onOpenShareMenu: (event: React.MouseEvent<HTMLElement>, schedule: SchedulesProps) => void;
-  sendingNotificationId: string | null;
+  handleToggleStatus: (schedule: SchedulesProps) => void;
 }
 
 const ScheduleDetailList = ({
   schedules,
   viewMode,
   theme,
-  isTimePassed,
   getTimeRange,
   getPriorityColor,
   handleEditSchedule,
-  onOpenShareMenu,
-  sendingNotificationId,
+  handleToggleStatus,
 }: ScheduleDetailListProps) => {
   const groups: { [date: string]: SchedulesProps[] } = {};
   const todayStr = new Date().toISOString().split('T')[0];
@@ -1021,104 +1127,14 @@ const ScheduleDetailList = ({
               </Typography>
             </Box>
           )}
-          <Stepper
-            orientation="vertical"
-            sx={{
-              '& .MuiStepConnector-root': {
-                marginLeft: '11px',
-                '& .MuiStepConnector-line': {
-                  borderLeftWidth: '2px',
-                  borderLeftStyle: 'dashed',
-                  borderLeftColor: theme?.mode === 'dark' ? '#374151' : '#e5e7eb',
-                  minHeight: '20px',
-                },
-              },
-            }}
-          >
-            {items.map((schedule) => (
-              <Step key={schedule.id} active={true} completed={schedule.status === 'completed'}>
-                <StepLabel
-                  StepIconComponent={() => (
-                    <CustomStepIcon
-                      completed={schedule.status === 'completed'}
-                      active={true}
-                      isTimePassed={isTimePassed(schedule.startTime, schedule.date)}
-                    >
-                      {schedule.status === 'completed' ? '✓' : ''}
-                    </CustomStepIcon>
-                  )}
-                  sx={{ '& .MuiStepLabel-labelContainer': { paddingLeft: '8px' } }}
-                >
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: theme?.mode === 'dark' ? '#f1f5f9' : '#0f172a' }}>
-                        {schedule.title}
-                      </Typography>
-                      <IconButton
-                        size="small"
-                        disabled={sendingNotificationId === schedule.id}
-                        onClick={(e) => onOpenShareMenu(e, schedule)}
-                        title="Send Notification / Share Reminder"
-                        sx={{ padding: '2px', color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', '&:hover': { color: '#3b82f6' } }}
-                      >
-                        {sendingNotificationId === schedule.id ? (
-                          <Box className="animate-spin" sx={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: '#3b82f6', borderRadius: '50%' }} />
-                        ) : (
-                          <PersonIcon sx={{ fontSize: '0.9rem' }} />
-                        )}
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEditSchedule(schedule.id!)}
-                        sx={{ padding: '2px', color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', '&:hover': { color: '#fbbf24' } }}
-                      >
-                        <EditIcon sx={{ fontSize: '0.9rem' }} />
-                      </IconButton>
-                    </Box>
-
-                    <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mt={0.25}>
-                      <Typography variant="caption" sx={{ color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-                        <TimeIcon sx={{ fontSize: '0.8rem' }} />
-                        {getTimeRange(schedule.startTime, schedule.endTime, schedule.isFlexible)}
-                      </Typography>
-
-                      {schedule.isFlexible && (
-                        <>
-                          <Chip
-                            label="Flexible"
-                            size="small"
-                            variant="outlined"
-                            icon={<Box sx={{ ml: 0.5 }}>✨</Box>}
-                            sx={{ height: 20, fontSize: '0.65rem', fontWeight: 900, borderColor: '#8b5cf6', color: '#8b5cf6', borderWidth: '1.5px' }}
-                          />
-                          <Button
-                            size="small"
-                            variant="text"
-                            startIcon={<CalendarIcon sx={{ fontSize: 12 }} />}
-                            onClick={() => handleEditSchedule(schedule.id!)}
-                            sx={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'none', height: 20, py: 0, px: 0.5 }}
-                          >
-                            Add Specific Date
-                          </Button>
-                        </>
-                      )}
-                      {schedule.objective && (
-                        <Chip label={schedule.objective} size="small" sx={{ height: 20, fontSize: '0.7rem', backgroundColor: getPriorityColor(schedule.priority || 'low'), color: 'white' }} />
-                      )}
-                      {schedule.duration && (
-                        <Chip
-                          icon={<TimeIcon sx={{ fontSize: '0.7rem' }} />}
-                          label={`${schedule.duration}min`}
-                          size="small"
-                          sx={{ height: 20, fontSize: '0.7rem', backgroundColor: theme?.mode === 'dark' ? '#374151' : '#f3f4f6', color: theme?.mode === 'dark' ? '#d1d5db' : '#374151' }}
-                        />
-                      )}
-                    </Box>
-                  </Box>
-                </StepLabel>
-              </Step>
-            ))}
-          </Stepper>
+          <HourlySchedulesGroupedList
+            items={items}
+            theme={theme}
+            getTimeRange={getTimeRange}
+            handleToggleStatus={handleToggleStatus}
+            handleEditSchedule={handleEditSchedule}
+            getPriorityColor={getPriorityColor}
+          />
         </Box>
       ))}
     </Box>

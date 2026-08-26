@@ -21,16 +21,18 @@ export default function OnBoardingInitializer() {
     }
 
     // 1. First check localStorage for immediate skip (Performance optimization)
-    // Using the key 'onboarding_first_interaction' as requested
     const localStatus = localStorage.getItem('onboarding_first_interaction');
-    if (localStatus === 'true') {
+    const dismissUntilKey = `onboarding_dismissed_until_${user.uid}`;
+    const dismissUntil = localStorage.getItem(dismissUntilKey);
+    const isDismissed = dismissUntil && Date.now() < parseInt(dismissUntil);
+
+    if (localStatus === 'true' || isDismissed) {
       setShowOnboarding(false);
       setInitialized(true);
       return;
     }
 
     // 2. If not in localStorage or false, listen to Firebase (Debugger pattern)
-    // Using collection 'initialOnboarding' as requested
     const ref = doc(db, 'initialOnboarding', user.uid);
     const unsub = onSnapshot(ref, (snap) => {
       const data = snap.data();
@@ -38,16 +40,17 @@ export default function OnBoardingInitializer() {
       
       if (hasInteracted) {
         localStorage.setItem('onboarding_first_interaction', 'true');
-        // We don't force close here to avoid interrupting the flow 
-        // if the user is currently interacting with the modal.
       } else {
-        // Only open if they haven't interacted yet
-        setShowOnboarding(true);
+        // Only open if they haven't interacted yet AND it isn't currently dismissed locally
+        const currentDismiss = localStorage.getItem(`onboarding_dismissed_until_${user.uid}`);
+        const currentlyDismissed = currentDismiss && Date.now() < parseInt(currentDismiss);
+        if (!currentlyDismissed) {
+          setShowOnboarding(true);
+        }
       }
       setInitialized(true);
     }, (error) => {
       console.error("Error listening to onboarding status:", error);
-      // In case of error, we default to showing it if not already known
       setInitialized(true);
     });
 

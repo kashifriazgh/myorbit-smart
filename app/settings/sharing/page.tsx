@@ -358,19 +358,19 @@ export default function SharingPage() {
           <p className="text-xs text-slate-400 font-medium leading-relaxed mb-4">
             Enter another user&apos;s Share ID or unique Username to send them a sync invitation.
           </p>
-          <form onSubmit={handleSendRequest} className="flex gap-2">
+          <form onSubmit={handleSendRequest} className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               required
               value={inviteId}
               onChange={(e) => setInviteId(e.target.value)}
               placeholder="e.g. U-ABCD1234 or john_doe"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-bold tracking-wider placeholder:text-slate-650 focus:outline-none focus:border-sky-500/50"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-bold tracking-wider placeholder:text-slate-650 focus:outline-none focus:border-sky-500/50 w-full"
             />
             <button
               type="submit"
               disabled={loadingInvite || !inviteId.trim()}
-              className="flex items-center gap-2 bg-gradient-to-br from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wider px-5 py-3 rounded-xl transition-all disabled:opacity-50 disabled:pointer-events-none"
+              className="flex items-center justify-center gap-2 bg-gradient-to-br from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wider px-5 py-3 rounded-xl transition-all disabled:opacity-50 disabled:pointer-events-none w-full sm:w-auto flex-shrink-0"
             >
               {loadingInvite ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

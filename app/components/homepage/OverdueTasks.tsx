@@ -5,26 +5,25 @@ import {
   IconButton,
   Stack,
   Typography,
-  Tooltip,
   Skeleton,
-  useTheme as useMuiTheme,
   Modal,
   Button,
   Card,
   CardContent,
-  MobileStepper,
   CircularProgress,
   Fade,
   Chip,
   Divider,
+  Collapse,
 } from '@mui/material';
 import {
-  Done,
   Event,
-  KeyboardArrowLeft,
-  KeyboardArrowRight,
+  PlayArrow,
+  Pause,
+  ExpandMore,
+  ExpandLess,
 } from '@mui/icons-material';
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import moment from 'moment-timezone';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -36,6 +35,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { incrementTodoRescheduleCount } from '@/app/lib/utilts';
 import { useTodoContext } from '@/app/lib/context/todoContext';
+import ReminderSendButton from '@/app/components/global/ReminderSendButton';
 
 // Converts a Firestore Timestamp or plain Date to a JS Date
 function toPlainDate(v: Date | { toDate: () => Date } | null | undefined): Date | null {
@@ -44,23 +44,286 @@ function toPlainDate(v: Date | { toDate: () => Date } | null | undefined): Date 
   return v as Date;
 }
 
+// Custom CheckIcon SVG for todo cards
+const CheckIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    style={{ width: '16px', height: '16px' }}
+    stroke="white"
+    strokeWidth="3"
+  >
+    <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const CARD_STYLE = {
+  border: 'border-slate-200/80 dark:border-slate-800/80',
+  bg: 'bg-slate-50/50 dark:bg-slate-900/15',
+  checkBorder: 'border-slate-300 dark:border-slate-700',
+  checkBorderHover: 'hover:border-indigo-400 dark:hover:border-indigo-500',
+  checkedBg: 'bg-indigo-500 dark:bg-indigo-600',
+};
+
+const TodoCardItem = ({
+  task,
+  theme,
+  completingId,
+  expanded,
+  toggleExpanded,
+  toggleWorkStarted,
+  handleReschedule,
+  toggleStepStatus,
+  markCompleted,
+}: {
+  task: Todo;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  theme: any;
+  completingId: string | null;
+  expanded: Set<string>;
+  toggleExpanded: (taskId?: string) => void;
+  toggleWorkStarted: (task: Todo) => void;
+  handleReschedule: (task: Todo) => void;
+  toggleStepStatus: (task: Todo, stepIndex: number) => void;
+  markCompleted: (task: Todo) => void;
+}) => {
+  const isDone = task.status === 'completed';
+  const cardStyle = CARD_STYLE;
+
+  return (
+    <Box sx={{ width: '100%', mb: 1.5 }}>
+      <Box
+        className={`flex min-h-[68px] items-center gap-3 rounded-xl border ${cardStyle.border} ${cardStyle.bg} px-3 py-2.5`}
+        sx={{
+          transition: 'all 0.2s ease',
+          '&:hover': {
+            boxShadow: theme?.mode === 'dark' ? '0 4px 12px rgba(0,0,0,0.2)' : '0 4px 12px rgba(0,0,0,0.03)',
+          },
+        }}
+      >
+        {/* Checkbox */}
+        <button
+          type="button"
+          onClick={() => markCompleted(task)}
+          disabled={completingId === task.id}
+          aria-pressed={isDone}
+          aria-label={`Mark ${task.title} as done`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition ${
+            isDone
+              ? `${cardStyle.checkedBg} border-transparent`
+              : `${theme?.mode === 'dark' ? 'bg-slate-800' : 'bg-white'} ${cardStyle.checkBorder} ${cardStyle.checkBorderHover}`
+          }`}
+        >
+          {completingId === task.id ? (
+            <CircularProgress size={16} color="inherit" />
+          ) : (
+            isDone && <CheckIcon />
+          )}
+        </button>
+
+        {/* Content */}
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {task.workStarted && (
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: 'success.main',
+                  boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)',
+                  animation: 'pulse 1.2s infinite',
+                  '@keyframes pulse': {
+                    '0%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)' },
+                    '70%': { boxShadow: '0 0 0 6px rgba(34,197,94, 0)' },
+                    '100%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0)' },
+                  },
+                }}
+              />
+            )}
+            <Link href={`/to-do/${task.id}`} style={{ textDecoration: 'none', minWidth: 0 }}>
+              <Typography
+                variant="body2"
+                className={`font-semibold ${
+                  isDone
+                    ? 'text-slate-400 dark:text-slate-500 line-through'
+                    : theme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-800'
+                }`}
+                sx={{
+                  fontSize: '15px',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {task.title}
+              </Typography>
+            </Link>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+            {task.dueDate && (
+              <Chip
+                label={`Overdue: ${moment(task.dueDate).format('MMM D')}`}
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  backgroundColor: '#ef4444',
+                  color: 'white',
+                }}
+              />
+            )}
+            
+            <Chip
+              label={task.priority.toUpperCase()}
+              size="small"
+              sx={{
+                height: 18,
+                fontSize: '9px',
+                fontWeight: 800,
+                backgroundColor:
+                  task.priority === 'critical' ? '#ef4444'
+                  : task.priority === 'urgent' ? '#f59e0b'
+                  : '#10b981',
+                color: 'white',
+              }}
+            />
+
+            {task.assignee && (
+              <Chip
+                label={task.assignee}
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  backgroundColor: theme?.mode === 'dark' ? '#1e293b' : '#eff6ff',
+                  color: theme?.mode === 'dark' ? '#38bdf8' : '#1d4ed8',
+                }}
+              />
+            )}
+          </Box>
+        </Box>
+
+        {/* Actions on the right */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, shrink: 0, ml: 'auto' }}>
+          {task.steps && task.steps.length > 0 && (
+            <IconButton
+              size="small"
+              onClick={() => toggleExpanded(task.id)}
+              sx={{
+                p: 0.5,
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+                '&:hover': { color: '#6366f1' },
+              }}
+              title={expanded.has(task.id!) ? 'Hide steps' : 'Show steps'}
+            >
+              {expanded.has(task.id!) ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+            </IconButton>
+          )}
+
+          <IconButton
+            size="small"
+            onClick={() => toggleWorkStarted(task)}
+            sx={{
+              p: 0.5,
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+              '&:hover': { color: task.workStarted ? '#ef4444' : '#10b981' },
+            }}
+            title={task.workStarted ? 'Stop Work' : 'Work Start'}
+          >
+            {task.workStarted ? <Pause fontSize="small" /> : <PlayArrow fontSize="small" />}
+          </IconButton>
+
+          <IconButton
+            size="small"
+            onClick={() => handleReschedule(task)}
+            sx={{
+              p: 0.5,
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+              '&:hover': { color: '#f59e0b' },
+            }}
+            title="Reschedule"
+          >
+            <Event fontSize="small" />
+          </IconButton>
+
+          <ReminderSendButton
+            itemId={task.id!}
+            itemTitle={task.title}
+            itemType="task"
+            itemDetailUrl={`/to-do/${task.id}`}
+            buttonType="icon"
+            iconSize="small"
+            buttonSx={{
+              p: 0.5,
+              color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
+              '&:hover': { color: '#6366f1' },
+            }}
+          />
+        </Box>
+      </Box>
+
+      {/* Steps (collapsible) */}
+      <Collapse in={expanded.has(task.id!)} timeout="auto" unmountOnExit>
+        <Box className="pl-6 pr-2 py-2 mt-1 space-y-1">
+          {task.steps?.map((step, idx) => {
+            const stepDone = step.status === 'completed';
+            return (
+              <Box key={idx} className="flex items-center gap-2 py-1">
+                <button
+                  type="button"
+                  onClick={() => toggleStepStatus(task, idx)}
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
+                    stepDone
+                      ? 'bg-green-500 border-transparent text-white'
+                      : `${theme?.mode === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'} hover:border-green-400`
+                  }`}
+                >
+                  {stepDone && (
+                    <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3" stroke="currentColor" strokeWidth="4">
+                      <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
+                <Typography
+                  variant="caption"
+                  className={`truncate ${
+                    stepDone
+                      ? 'text-slate-400 dark:text-slate-500 line-through'
+                      : theme?.mode === 'dark' ? 'text-slate-300' : 'text-slate-700'
+                  }`}
+                  sx={{ fontSize: '12px', fontWeight: 500 }}
+                >
+                  {step.text}
+                </Typography>
+              </Box>
+            );
+          })}
+        </Box>
+      </Collapse>
+    </Box>
+  );
+};
+
 export default function OverdueTasks() {
   const { user } = useAuth();
   const customTheme = useCustomTheme();
   const theme = customTheme?.theme;
-  const muiTheme = useMuiTheme();
 
-  // ── Use TodoContext ────────────────────────────────────────────────────────
-  const { todos, loading, updateTodo } = useTodoContext();
+  const { todos, loading, updateTodo, updateStepStatus } = useTodoContext();
 
   const [completingId, setCompletingId] = useState<string | null>(null);
-  const [fadeOutId, setFadeOutId] = useState<string | null>(null);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleTask, setRescheduleTask] = useState<Todo | null>(null);
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
-
-  const [activeStep, setActiveStep] = useState(0);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Filter tasks from Context: overdue only
   const tasks = useMemo(() => {
@@ -85,40 +348,58 @@ export default function OverdueTasks() {
       .slice(0, 6);
   }, [todos, user]);
 
-  const maxSteps = Math.min(tasks.length, 6);
-
-  // Keep activeStep in bounds when task length decreases
-  useEffect(() => {
-    if (activeStep >= tasks.length && tasks.length > 0) {
-      setActiveStep(tasks.length - 1);
-    }
-  }, [tasks.length, activeStep]);
-
   const markCompleted = async (task: Todo) => {
     if (!task.id) return;
     setCompletingId(task.id);
 
     try {
-      // Use Context updateTodo: updates state + cache + firestore
       await updateTodo(task.id, {
         status: 'completed',
         progressPercent: 100,
         completedAt: new Date(),
       });
 
-      // Delete WhatsApp reminder if active
       await deleteTodoReminder(task.id).catch((e) => console.error(e));
-
-      // Trigger fade out animation
-      setFadeOutId(task.id);
-      setTimeout(() => {
-        setFadeOutId(null);
-      }, 400);
     } catch (err) {
       console.error('❌ Error updating task:', err);
     } finally {
       setCompletingId(null);
     }
+  };
+
+  const toggleWorkStarted = async (task: Todo) => {
+    if (!task.id) return;
+    try {
+      await updateTodo(task.id, {
+        workStarted: !task.workStarted,
+      });
+    } catch (err) {
+      console.error('Failed to toggle work start:', err);
+    }
+  };
+
+  const toggleStepStatus = async (task: Todo, stepIndex: number) => {
+    if (!task.id) return;
+
+    const currentStep = task.steps?.[stepIndex];
+    if (!currentStep) return;
+
+    const newStatus =
+      currentStep.status === 'completed' ? 'in_progress' : 'completed';
+    await updateStepStatus(task.id, stepIndex, newStatus);
+  };
+
+  const toggleExpanded = (taskId?: string) => {
+    if (!taskId) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
   };
 
   const handleReschedule = (task: Todo) => {
@@ -135,7 +416,6 @@ export default function OverdueTasks() {
       const oldDate = toPlainDate(rescheduleTask.dueDate);
       const isDateChanged = oldDate ? !moment(oldDate).isSame(newDueDate, 'day') : true;
 
-      // Use Context updateTodo: updates state + cache + firestore
       await updateTodo(rescheduleTask.id, {
         dueDate: Timestamp.fromDate(newDueDate),
       });
@@ -144,7 +424,6 @@ export default function OverdueTasks() {
         await incrementTodoRescheduleCount(rescheduleTask.id).catch((e) => console.error(e));
       }
 
-      // Reschedule WhatsApp reminder if active
       if (user) {
         await rescheduleTodoReminder(rescheduleTask.id, newDueDate, user.uid).catch((e) => console.error(e));
       }
@@ -157,8 +436,6 @@ export default function OverdueTasks() {
       setReschedulingLoading(false);
     }
   };
-
-  const activeTask = tasks[activeStep];
 
   return (
     <Card
@@ -181,279 +458,147 @@ export default function OverdueTasks() {
           </Typography>
         )}
 
-      {loading ? (
-        <Box className="p-2">
-          <Typography variant="subtitle1" fontWeight="bold" className="mb-3">
-            ⏰ Overdue Tasks
-          </Typography>
-
-          {/* Skeleton Card */}
-          <Card className="rounded-xl shadow-sm mb-2">
-            <CardContent>
-              <Box className="flex justify-between mb-2">
-                <Box>
-                  <Skeleton width={140} height={20} />
-                  <Skeleton width={100} height={16} sx={{ mt: 0.5 }} />
-                </Box>
-                <Skeleton width={60} height={20} />
+        {loading ? (
+          <Box className="p-2">
+            {[...Array(3)].map((_, idx) => (
+              <Box key={idx} mb={2}>
+                <Skeleton variant="rectangular" height={80} sx={{ borderRadius: 2 }} />
               </Box>
-
-              <Stack direction="row" spacing={1} mb={2}>
-                <Skeleton width={80} height={16} />
-                <Skeleton width={60} height={16} />
-              </Stack>
-
-              {/* Steps Skeleton */}
-              <Box>
-                {[...Array(3)].map((_, idx) => (
-                  <Box key={idx} className="flex items-center gap-2 my-1">
-                    <Skeleton variant="circular" width={24} height={24} />
-                    <Skeleton width="80%" height={16} />
-                  </Box>
-                ))}
-              </Box>
-            </CardContent>
-          </Card>
-        </Box>
-      ) : tasks.length > 0 ? (
-        <>
-          <Fade in={fadeOutId !== activeTask.id} timeout={400}>
-            <Card className="rounded-xl shadow-md transition mb-4">
-              <CardContent>
-                <Box className="flex justify-between items-start mb-2">
-                  <Link href={`/to-do/${activeTask.id}`} passHref>
-                    <Typography
-                      variant="subtitle1"
-                      fontWeight="bold"
-                      className="underline cursor-pointer"
-                      sx={{
-                        color:
-                          theme?.mode === 'dark'
-                            ? '#fca5a5'
-                            : muiTheme.palette.error.main,
-                      }}
-                    >
-                      {activeTask.title}
-                    </Typography>
-                  </Link>
-                  <Stack direction="row" spacing={1}>
-                    <Tooltip title="Reschedule">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleReschedule(activeTask)}
-                      >
-                        <Event sx={{ color: '#f59e0b' }} />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Mark as Done">
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={() => markCompleted(activeTask)}
-                          disabled={completingId === activeTask.id}
-                          sx={{
-                            color:
-                              completingId === activeTask.id
-                                ? 'gray'
-                                : theme?.mode === 'dark'
-                                  ? '#cbd5e1'
-                                  : 'gray',
-                          }}
-                        >
-                          {completingId === activeTask.id ? (
-                            <CircularProgress size={20} />
-                          ) : (
-                            <Done />
-                          )}
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Stack>
-                </Box>
-                
-                <Box className="flex flex-wrap gap-2 mt-1 text-xs">
-                  <Chip
-                    label={activeTask.status}
-                    size="small"
-                    sx={{ bgcolor: 'transparent', border: 'none', px: 0 }}
-                  />
-                  <Chip
-                    label={activeTask.priority}
-                    size="small"
-                    sx={{
-                      bgcolor: 'transparent',
-                      border: 'none',
-                      px: 0,
-                      textTransform: 'capitalize',
-                    }}
-                  />
-                  <Chip
-                    label={`Due: ${moment(activeTask.dueDate).format('MMM D')}`}
-                    size="small"
-                    variant="outlined"
-                  />
-                  {/* Show overall task assignee */}
-                  {activeTask.assignee && (
-                    <Chip
-                      size="small"
-                      label={activeTask.assignee}
-                      variant="outlined"
-                    />
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Fade>
-
-          <MobileStepper
-            variant="dots"
-            steps={maxSteps}
-            position="static"
-            activeStep={activeStep}
-            nextButton={
-              <Button
-                size="small"
-                onClick={() =>
-                  setActiveStep((p) => Math.min(p + 1, maxSteps - 1))
-                }
-                disabled={activeStep === maxSteps - 1}
-              >
-                Next{' '}
-                {muiTheme.direction === 'rtl' ? (
-                  <KeyboardArrowLeft />
-                ) : (
-                  <KeyboardArrowRight />
-                )}
-              </Button>
-            }
-            backButton={
-              <Button
-                size="small"
-                onClick={() => setActiveStep((p) => Math.max(p - 1, 0))}
-                disabled={activeStep === 0}
-              >
-                {muiTheme.direction === 'rtl' ? (
-                  <KeyboardArrowRight />
-                ) : (
-                  <KeyboardArrowLeft />
-                )}{' '}
-                Back
-              </Button>
-            }
-          />
-        </>
-      ) : (
-        !loading && (
-          <Typography variant="body2" color="text.secondary"></Typography>
-        )
-      )}
-
-      {/* Reschedule Modal */}
-      <Modal 
-        open={rescheduleOpen} 
-        onClose={() => setRescheduleOpen(false)}
-        closeAfterTransition
-      >
-        <Fade in={rescheduleOpen}>
-          <Box
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[420px] shadow-2xl overflow-hidden border outline-none 
-                       bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"
-            sx={{ p: 0 }}
-          >
-            {/* Header with soft gradient */}
-            <Box className="p-6 bg-gradient-to-br from-amber-400 to-orange-600 text-white">
-              <Typography variant="h6" className="font-extrabold">
-                Reschedule Task
-              </Typography>
-              <Typography variant="body2" className="opacity-90">
-                Give this overdue task a new deadline
-              </Typography>
-            </Box>
-
-            <Box className="p-6">
-              {/* Quick Select Options */}
-              <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
-                ✨ Quick Suggestions
-              </Typography>
-              <Box className="grid grid-cols-2 gap-3 mb-6">
-                {[
-                  { label: 'Tomorrow', sub: moment().add(1, 'day').format('ddd'), date: moment().add(1, 'day') },
-                  { 
-                    label: 'In 2 Days', 
-                    sub: moment().add(2, 'days').format('dddd'), 
-                    date: moment().add(2, 'days') 
-                  },
-                  { label: 'Next Week', sub: moment().add(1, 'week').format('MMM D'), date: moment().add(1, 'week') },
-                  { label: 'Next Monday', sub: moment().add(1, 'week').startOf('isoWeek').format('MMM D'), date: moment().add(1, 'week').startOf('isoWeek') }
-                ].map((option) => {
-                  const isSelected = newDueDate && moment(newDueDate).isSame(option.date, 'day');
-                  return (
-                    <Box
-                      key={option.label}
-                      onClick={() => setNewDueDate(option.date.toDate())}
-                      className={`p-3 rounded-2xl cursor-pointer text-center transition-all duration-200 border-2 
-                                ${isSelected 
-                                  ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-400' 
-                                  : 'bg-slate-50 dark:bg-slate-800/50 border-transparent hover:bg-slate-100 dark:hover:bg-slate-700'
-                                }`}
-                    >
-                      <Typography className={`text-sm font-bold ${isSelected ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}`}>
-                        {option.label}
-                      </Typography>
-                      <Typography className={`text-[10px] ${isSelected ? 'text-amber-600/70 dark:text-amber-400/70' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {option.sub}
-                      </Typography>
-                    </Box>
-                  );
-                })}
-              </Box>
-
-              <Divider className="my-6 border-slate-100 dark:border-slate-800">
-                <Chip label="OR" size="small" className="font-bold bg-transparent text-slate-400 text-[10px]" />
-              </Divider>
-
-              <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
-                📅 Custom Date
-              </Typography>
-              <Box className="relative">
-                <DatePicker
-                  selected={newDueDate}
-                  onChange={(date: Date | null) => setNewDueDate(date)}
-                  minDate={new Date()}
-                  dateFormat="MMMM d, yyyy"
-                  placeholderText="Select a date"
-                  className="w-full p-4 rounded-2xl border-2 border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 
-                             text-slate-900 dark:text-white font-semibold outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10 transition-all"
-                />
-              </Box>
-
-              <Stack direction="row" spacing={2} mt={4}>
-                <Button 
-                  fullWidth
-                  onClick={() => setRescheduleOpen(false)}
-                  className="rounded-2xl py-3 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 normal-case"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  fullWidth
-                  onClick={updateDueDate}
-                  variant="contained"
-                  disabled={!newDueDate || reschedulingLoading}
-                  className="rounded-2xl py-3 font-bold bg-gradient-to-r from-amber-500 to-orange-600 shadow-lg shadow-amber-500/30 normal-case
-                             hover:from-amber-600 hover:to-orange-700 disabled:from-slate-200 disabled:to-slate-200 dark:disabled:from-slate-800 dark:disabled:to-slate-800"
-                >
-                  {reschedulingLoading ? (
-                    <CircularProgress size={24} color="inherit" />
-                  ) : (
-                    'Reschedule Now'
-                  )}
-                </Button>
-              </Stack>
-            </Box>
+            ))}
           </Box>
-        </Fade>
-      </Modal>
+        ) : tasks.length > 0 ? (
+          <Stack spacing={1}>
+            {tasks.map((task) => (
+              <TodoCardItem
+                key={task.id}
+                task={task}
+                theme={theme}
+                completingId={completingId}
+                expanded={expanded}
+                toggleExpanded={toggleExpanded}
+                toggleWorkStarted={toggleWorkStarted}
+                handleReschedule={handleReschedule}
+                toggleStepStatus={toggleStepStatus}
+                markCompleted={markCompleted}
+              />
+            ))}
+          </Stack>
+        ) : (
+          !loading && (
+            <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={4} textAlign="center">
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                No overdue tasks. Great job! 🎉
+              </Typography>
+            </Box>
+          )
+        )}
+
+        {/* Reschedule Modal */}
+        <Modal 
+          open={rescheduleOpen} 
+          onClose={() => setRescheduleOpen(false)}
+          closeAfterTransition
+        >
+          <Fade in={rescheduleOpen}>
+            <Box
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[420px] shadow-2xl overflow-hidden border outline-none 
+                         bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"
+              sx={{ p: 0 }}
+            >
+              {/* Header with soft gradient */}
+              <Box className="p-6 bg-gradient-to-br from-amber-400 to-orange-600 text-white">
+                <Typography variant="h6" className="font-extrabold">
+                  Reschedule Task
+                </Typography>
+                <Typography variant="body2" className="opacity-90">
+                  Give this overdue task a new deadline
+                </Typography>
+              </Box>
+
+              <Box className="p-6">
+                {/* Quick Select Options */}
+                <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
+                  ✨ Quick Suggestions
+                </Typography>
+                <Box className="grid grid-cols-2 gap-3 mb-6">
+                  {[
+                    { label: 'Tomorrow', sub: moment().add(1, 'day').format('ddd'), date: moment().add(1, 'day') },
+                    { 
+                      label: 'In 2 Days', 
+                      sub: moment().add(2, 'days').format('dddd'), 
+                      date: moment().add(2, 'days') 
+                    },
+                    { label: 'Next Week', sub: moment().add(1, 'week').format('MMM D'), date: moment().add(1, 'week') },
+                    { label: 'Next Monday', sub: moment().add(1, 'week').startOf('isoWeek').format('MMM D'), date: moment().add(1, 'week').startOf('isoWeek') }
+                  ].map((option) => {
+                    const isSelected = newDueDate && moment(newDueDate).isSame(option.date, 'day');
+                    return (
+                      <Box
+                        key={option.label}
+                        onClick={() => setNewDueDate(option.date.toDate())}
+                        className={`p-3 rounded-2xl cursor-pointer text-center transition-all duration-200 border-2 
+                                  ${isSelected 
+                                    ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-400' 
+                                    : 'bg-slate-50 dark:bg-slate-800/50 border-transparent hover:bg-slate-100 dark:hover:bg-slate-700'
+                                  }`}
+                      >
+                        <Typography className={`text-sm font-bold ${isSelected ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                          {option.label}
+                        </Typography>
+                        <Typography className={`text-[10px] ${isSelected ? 'text-amber-600/70 dark:text-amber-400/70' : 'text-slate-500 dark:text-slate-400'}`}>
+                          {option.sub}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
+
+                <Divider className="my-6 border-slate-100 dark:border-slate-800">
+                  <Chip label="OR" size="small" className="font-bold bg-transparent text-slate-400 text-[10px]" />
+                </Divider>
+
+                <Typography className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
+                  📅 Custom Date
+                </Typography>
+                <Box className="relative">
+                  <DatePicker
+                    selected={newDueDate}
+                    onChange={(date: Date | null) => setNewDueDate(date)}
+                    minDate={new Date()}
+                    dateFormat="MMMM d, yyyy"
+                    placeholderText="Select a date"
+                    className="w-full p-4 rounded-2xl border-2 border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 
+                               text-slate-900 dark:text-white font-semibold outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10 transition-all"
+                  />
+                </Box>
+
+                <Stack direction="row" spacing={2} mt={4}>
+                  <Button 
+                    fullWidth
+                    onClick={() => setRescheduleOpen(false)}
+                    className="rounded-2xl py-3 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 normal-case"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    fullWidth
+                    onClick={updateDueDate}
+                    variant="contained"
+                    disabled={!newDueDate || reschedulingLoading}
+                    className="rounded-2xl py-3 font-bold bg-gradient-to-r from-amber-500 to-orange-600 shadow-lg shadow-amber-500/30 normal-case
+                               hover:from-amber-600 hover:to-orange-700 disabled:from-slate-200 disabled:to-slate-200 dark:disabled:from-slate-800 dark:disabled:to-slate-800"
+                  >
+                    {reschedulingLoading ? (
+                      <CircularProgress size={24} color="inherit" />
+                    ) : (
+                      'Reschedule Now'
+                    )}
+                  </Button>
+                </Stack>
+              </Box>
+            </Box>
+          </Fade>
+        </Modal>
       </CardContent>
     </Card>
   );

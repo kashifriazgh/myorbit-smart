@@ -58,8 +58,8 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
 
-  const [masterExists, setMasterExists] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
+  const [patienceNotice, setPatienceNotice] = useState(false);
 
   // 🔍 Check if master already exists
   useEffect(() => {
@@ -69,8 +69,7 @@ export default function SignupPage() {
           collection(db, 'users'),
           where('role', '==', 'master')
         );
-        const masterSnapshot = await getDocs(masterQuery);
-        setMasterExists(!masterSnapshot.empty);
+        await getDocs(masterQuery);
       } catch (err) {
         console.error(err);
         setError('Failed to check user status.');
@@ -89,11 +88,24 @@ export default function SignupPage() {
 
     setLoading(true);
     setError('');
+    setPatienceNotice(false);
+
+    const patienceTimer = setTimeout(() => {
+      setPatienceNotice(true);
+    }, 7000);
 
     try {
       console.log('🚀 [SIGNUP] Starting signup process for:', email);
-      console.log('🚀 [SIGNUP] 1. Calling createUserWithEmailAndPassword...');
       
+      // Strict database query double-check to confirm if any user already has 'master' role
+      const masterQuery = query(
+        collection(db, 'users'),
+        where('role', '==', 'master')
+      );
+      const masterSnapshot = await getDocs(masterQuery);
+      const strictMasterExists = !masterSnapshot.empty;
+
+      console.log('🚀 [SIGNUP] 1. Calling createUserWithEmailAndPassword...');
       const userCred = await createUserWithEmailAndPassword(
         auth,
         email,
@@ -105,7 +117,7 @@ export default function SignupPage() {
       let role: 'master' | 'editor' | 'viewer' = 'master';
       let status: 'active' | 'pending' = 'active';
 
-      if (masterExists) {
+      if (strictMasterExists) {
         role = 'editor';
         status = 'pending';
       }
@@ -182,6 +194,7 @@ export default function SignupPage() {
       }
     } finally {
       console.log('🚀 [SIGNUP] Finished handleSignup process.');
+      clearTimeout(patienceTimer);
       setLoading(false);
     }
   };
@@ -354,8 +367,21 @@ export default function SignupPage() {
                     }
                   }}
                 >
-                  {loading ? 'Creating Account...' : 'Sign Up'}
+                  {loading ? (
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <CircularProgress size={20} color="inherit" />
+                      <span>Creating Account...</span>
+                    </Box>
+                  ) : (
+                    'Sign Up'
+                  )}
                 </Button>
+
+                {patienceNotice && loading && (
+                  <Typography variant="body2" color="warning.main" align="center" sx={{ mb: 2, fontWeight: 600 }}>
+                    ⏳ It sometimes takes more time, please be patient...
+                  </Typography>
+                )}
               </form>
 
               <Divider sx={{ my: 3 }}>

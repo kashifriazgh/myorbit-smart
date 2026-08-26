@@ -2,11 +2,8 @@
 
 import Link from 'next/link';
 import PushIcon from '@mui/icons-material/Notifications';
-import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TuneIcon from '@mui/icons-material/Tune';
-import AccountIcon from '@mui/icons-material/AccountCircle';
-import SecurityIcon from '@mui/icons-material/Security';
 import PaletteIcon from '@mui/icons-material/Palette';
 import PeopleIcon from '@mui/icons-material/People';
 
@@ -23,14 +20,6 @@ const settingsSections = [
         badgeColor: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
       },
       {
-        href: '/settings/whatsapp',
-        icon: <WhatsAppIcon className="text-emerald-400" />,
-        title: 'WhatsApp Notifications',
-        description: 'Link your WhatsApp account for task reminders',
-        badge: 'WhatsApp',
-        badgeColor: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-      },
-      {
         href: '/settings/sharing',
         icon: <PeopleIcon className="text-sky-400" />,
         title: 'Device Sharing',
@@ -44,26 +33,10 @@ const settingsSections = [
     category: 'Preferences',
     items: [
       {
-        href: '/settings/appearance',
+        href: '/user/theme',
         icon: <PaletteIcon className="text-violet-400" />,
-        title: 'Appearance',
-        description: 'Customize theme, colors and display preferences',
-        badge: null,
-        badgeColor: '',
-      },
-      {
-        href: '/settings/account',
-        icon: <AccountIcon className="text-sky-400" />,
-        title: 'Account',
-        description: 'Manage your profile and personal information',
-        badge: null,
-        badgeColor: '',
-      },
-      {
-        href: '/settings/security',
-        icon: <SecurityIcon className="text-rose-400" />,
-        title: 'Security & Privacy',
-        description: 'Passwords, two-factor auth and privacy controls',
+        title: 'Theme Settings',
+        description: 'Customize app appearance and color mode',
         badge: null,
         badgeColor: '',
       },
