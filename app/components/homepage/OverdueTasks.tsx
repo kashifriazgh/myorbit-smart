@@ -260,6 +260,7 @@ const TodoCardItem = ({
             itemDetailUrl={`/to-do/${task.id}`}
             buttonType="icon"
             iconSize="small"
+            itemDateTime={task.dueDate ? toPlainDate(task.dueDate) : null}
             buttonSx={{
               p: 0.5,
               color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',

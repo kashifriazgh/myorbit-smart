@@ -19,7 +19,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReminderSendButton from '@/app/components/global/ReminderSendButton';
 import PersonIcon from '@mui/icons-material/Person';
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
 import { ToDoStep, Todo } from '@/app/lib/interface';
@@ -896,6 +896,7 @@ export default function TodoDetailPage() {
           itemType="task"
           itemDetailUrl={`/to-do/${todo.id}`}
           buttonType="button"
+          itemDateTime={todo.dueDate ? (todo.dueDate instanceof Timestamp ? todo.dueDate.toDate() : new Date(todo.dueDate)) : null}
         />
 
         <IconButton

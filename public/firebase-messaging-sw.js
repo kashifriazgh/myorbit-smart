@@ -25,6 +25,13 @@ self.addEventListener('push', (event) => {
   const n = payload.notification || {};
   const d = payload.data || {};
 
+  // If standard FCM notification block is present, the SDK's push handler will show it automatically.
+  // Skip manual registration.showNotification to prevent duplicates.
+  if (payload.notification) {
+    console.log('[SW] Notification block present. Skipping manual display to prevent duplication.');
+    return;
+  }
+
   const title = n.title || d.title || 'Orbit Reminder ⏰';
   const options = {
     body: n.body || d.body || 'You have a pending task reminder!',
@@ -39,8 +46,17 @@ self.addEventListener('push', (event) => {
     ]
   };
 
-  console.log('[SW] Showing notification:', title, options);
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      const hasFocusedClient = clientList.some((c) => c.focused);
+      if (hasFocusedClient) {
+        console.log('[SW] Active window client is focused. Skipping background notification to avoid duplicates.');
+        return;
+      }
+      console.log('[SW] Showing background notification:', title, options);
+      return self.registration.showNotification(title, options);
+    })
+  );
 });
 
 // ─── 2. NOTIFICATION CLICK HANDLER ───

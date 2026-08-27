@@ -375,6 +375,7 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
                     itemDetailUrl="/"
                     buttonType="icon"
                     iconSize="small"
+                    itemDateTime={schedule.date && schedule.startTime ? new Date(`${schedule.date}T${schedule.startTime}`) : null}
                     buttonSx={{
                       p: 0.5,
                       color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',

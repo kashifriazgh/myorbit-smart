@@ -161,10 +161,6 @@ export async function POST(req: NextRequest) {
       const payload = {
         message: {
           token: fid,
-          notification: {
-            title: customTitle || 'Test Notification 🔔',
-            body: customBody || 'Your device is successfully subscribed to MyOrbit Smart Push Alerts!',
-          },
           data: {
             title: customTitle || 'Test Notification 🔔',
             body: customBody || 'Your device is successfully subscribed to MyOrbit Smart Push Alerts!',

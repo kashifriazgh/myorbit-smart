@@ -186,12 +186,26 @@ export async function registerNotificationDevice(userId: string): Promise<void> 
     throw new Error('Firebase Messaging is not supported or could not be initialized.');
   }
 
-  // Register service worker manually with cache busting to bypass browser cache
+  // 1. Unregister all existing duplicate service workers containing firebase-messaging-sw.js to prevent multi-triggering
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const reg of regs) {
+      const scriptUrl = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+      if (scriptUrl.includes('firebase-messaging-sw.js')) {
+        console.log('FCM: Unregistering duplicate service worker:', scriptUrl);
+        await reg.unregister();
+      }
+    }
+  } catch (err) {
+    console.warn('FCM: Error cleaning up old service workers:', err);
+  }
+
+  // 2. Register single clean instance of service worker
   let registration: ServiceWorkerRegistration | undefined;
   try {
     console.log('FCM: Registering service worker manually...');
     registration = await navigator.serviceWorker.register(
-      '/firebase-messaging-sw.js?v=' + Date.now(),
+      '/firebase-messaging-sw.js',
       {
         scope: '/',
       }
