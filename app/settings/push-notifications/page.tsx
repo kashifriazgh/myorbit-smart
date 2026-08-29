@@ -9,7 +9,7 @@ import CheckIcon from '@mui/icons-material/CheckCircle';
 import InfoIcon from '@mui/icons-material/InfoOutlined';
 import DevicesIcon from '@mui/icons-material/DevicesOther';
 import DeleteIcon from '@mui/icons-material/PersonRemove';
-import { registerNotificationDevice, getCurrentFid } from '@/app/lib/utils/fcm';
+import { registerNotificationDevice, getCurrentFcmToken } from '@/app/lib/utils/fcm';
 import { useAuth } from '@/app/lib/context/userContext';
 import { userDb } from '@/app/lib/firebase';
 import { doc, deleteDoc, collection, getDocs, updateDoc, arrayRemove } from 'firebase/firestore';
@@ -63,13 +63,13 @@ export default function PushNotificationsPage() {
         setDiagnosticSwStatus('Not supported');
       }
 
-      getCurrentFid().then((fid) => {
+      getCurrentFcmToken().then((fid) => {
         if (fid) {
           setDiagnosticToken(`Available (${fid.slice(0, 5)}...${fid.slice(-5)})`);
-          console.log('[FCM] token obtained (FID):', fid);
+          console.log('[FCM] token obtained (FCM token):', fid);
         } else {
           setDiagnosticToken('Not Available');
-          console.log('[FCM] token obtained (FID): Not Available');
+          console.log('[FCM] token obtained (FCM token): Not Available');
         }
       }).catch((err) => {
         setDiagnosticToken('Error');
@@ -106,7 +106,7 @@ export default function PushNotificationsPage() {
               return;
             }
 
-            const fid = await getCurrentFid();
+            const fid = await getCurrentFcmToken();
             if (fid) {
               const { doc: fsDoc, getDoc } = await import('firebase/firestore');
               const deviceRef = fsDoc(userDb, 'users', user.uid, 'notificationDevices', fid);
@@ -201,7 +201,7 @@ export default function PushNotificationsPage() {
     if (!user) return;
     setUnsubscribing(true);
     try {
-      const fid = await getCurrentFid();
+      const fid = await getCurrentFcmToken();
       if (fid) {
         await deleteDoc(doc(userDb, 'users', user.uid, 'notificationDevices', fid));
         setDevices(prev => prev.filter(d => d.fid !== fid));
