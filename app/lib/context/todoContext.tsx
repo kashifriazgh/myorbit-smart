@@ -18,6 +18,7 @@ import {
   addDoc,
   deleteDoc,
   serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { Todo } from '@/app/lib/interface';
@@ -265,12 +266,30 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateTodo = async (id: string, updates: Partial<Todo>) => {
+    // Normalize dueDate to Date for local React state/cache consistency if it is present
+    const localUpdates = { ...updates };
+    if (localUpdates.dueDate !== undefined) {
+      localUpdates.dueDate = localUpdates.dueDate
+        ? (typeof (localUpdates.dueDate as { toDate?: () => Date }).toDate === 'function'
+            ? (localUpdates.dueDate as { toDate: () => Date }).toDate()
+            : new Date(localUpdates.dueDate as Date))
+        : null;
+    }
+
+    // Ensure Firestore updates have Timestamp for dueDate if it is present and not null
+    const firestoreUpdates = { ...updates };
+    if (firestoreUpdates.dueDate !== undefined && firestoreUpdates.dueDate !== null) {
+      if (!(firestoreUpdates.dueDate instanceof Timestamp)) {
+        firestoreUpdates.dueDate = Timestamp.fromDate(new Date(firestoreUpdates.dueDate as Date));
+      }
+    }
+
     // 1. Optimistic update
-    applyAndCache((prev) => prev.map((t) => t.id === id ? { ...t, ...updates, updatedAt: new Date() } : t));
+    applyAndCache((prev) => prev.map((t) => t.id === id ? { ...t, ...localUpdates, updatedAt: new Date() } : t));
 
     // 2. Write to Firebase
     try {
-      await updateDoc(doc(db, 'todos', id), { ...updates, updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, 'todos', id), { ...firestoreUpdates, updatedAt: serverTimestamp() });
     } catch (e) {
       console.error('[TodoCache] updateTodo failed:', e);
       invalidateTodosCache();

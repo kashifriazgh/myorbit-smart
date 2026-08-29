@@ -41,6 +41,7 @@ interface ReminderSendButtonProps {
   iconSize?: 'small' | 'medium' | 'large';
   buttonSx?: object;
   itemDateTime?: Date | string | null;
+  customItemTypeName?: string;
 }
 
 export default function ReminderSendButton({
@@ -52,6 +53,7 @@ export default function ReminderSendButton({
   iconSize = 'medium',
   buttonSx = {},
   itemDateTime = null,
+  customItemTypeName,
 }: ReminderSendButtonProps) {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
@@ -103,8 +105,10 @@ export default function ReminderSendButton({
         },
         body: JSON.stringify({
           targetUid,
-          title: `Reminder: ${itemType === 'task' ? 'Task' : 'Schedule'} Alert ⏰`,
-          bodyText: `${senderName} wants to remind you about: "${itemTitle}"`,
+          title: `Reminder: ${customItemTypeName || (itemType === 'task' ? 'Task' : 'Schedule')} Alert ⏰`,
+          bodyText: customItemTypeName
+            ? `${senderName} wants to remind you about the ${customItemTypeName.toLowerCase()}: "${itemTitle}"`
+            : `${senderName} wants to remind you about: "${itemTitle}"`,
           appUrl: itemDetailUrl,
         }),
       });
@@ -179,8 +183,10 @@ export default function ReminderSendButton({
       const promises = selectedRecipients.map(async (targetUid) => {
         const isSelf = targetUid === user.uid;
         const messageText = isSelf
-          ? `Reminder: "${itemTitle}"`
-          : `${senderName} set a scheduled reminder for: "${itemTitle}"`;
+          ? `Reminder: "${itemTitle}"${customItemTypeName ? ` (${customItemTypeName})` : ''}`
+          : customItemTypeName
+            ? `${senderName} wants to remind you about the ${customItemTypeName.toLowerCase()}: "${itemTitle}"`
+            : `${senderName} wants to remind you about: "${itemTitle}"`;
 
         // Fetch target user's active device tokens (FIDs) from Firestore once
         const deviceCol = collection(userDb, 'users', targetUid, 'notificationDevices');

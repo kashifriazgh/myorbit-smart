@@ -18,8 +18,6 @@ import {
 } from '@mui/material';
 import {
   Event,
-  PlayArrow,
-  Pause,
   ExpandMore,
   ExpandLess,
 } from '@mui/icons-material';
@@ -71,7 +69,6 @@ const TodoCardItem = ({
   completingId,
   expanded,
   toggleExpanded,
-  toggleWorkStarted,
   handleReschedule,
   toggleStepStatus,
   markCompleted,
@@ -82,7 +79,6 @@ const TodoCardItem = ({
   completingId: string | null;
   expanded: Set<string>;
   toggleExpanded: (taskId?: string) => void;
-  toggleWorkStarted: (task: Todo) => void;
   handleReschedule: (task: Todo) => void;
   toggleStepStatus: (task: Todo, stepIndex: number) => void;
   markCompleted: (task: Todo) => void;
@@ -124,23 +120,7 @@ const TodoCardItem = ({
         {/* Content */}
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {task.workStarted && (
-              <Box
-                sx={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  bgcolor: 'success.main',
-                  boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)',
-                  animation: 'pulse 1.2s infinite',
-                  '@keyframes pulse': {
-                    '0%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0.7)' },
-                    '70%': { boxShadow: '0 0 0 6px rgba(34,197,94, 0)' },
-                    '100%': { boxShadow: '0 0 0 0 rgba(34,197,94, 0)' },
-                  },
-                }}
-              />
-            )}
+
             <Link href={`/to-do/${task.id}`} style={{ textDecoration: 'none', minWidth: 0 }}>
               <Typography
                 variant="body2"
@@ -227,18 +207,7 @@ const TodoCardItem = ({
             </IconButton>
           )}
 
-          <IconButton
-            size="small"
-            onClick={() => toggleWorkStarted(task)}
-            sx={{
-              p: 0.5,
-              color: theme?.mode === 'dark' ? '#94a3b8' : '#64748b',
-              '&:hover': { color: task.workStarted ? '#ef4444' : '#10b981' },
-            }}
-            title={task.workStarted ? 'Stop Work' : 'Work Start'}
-          >
-            {task.workStarted ? <Pause fontSize="small" /> : <PlayArrow fontSize="small" />}
-          </IconButton>
+
 
           <IconButton
             size="small"
@@ -257,6 +226,7 @@ const TodoCardItem = ({
             itemId={task.id!}
             itemTitle={task.title}
             itemType="task"
+            customItemTypeName="Overdue task"
             itemDetailUrl={`/to-do/${task.id}`}
             buttonType="icon"
             iconSize="small"
@@ -368,16 +338,7 @@ export default function OverdueTasks() {
     }
   };
 
-  const toggleWorkStarted = async (task: Todo) => {
-    if (!task.id) return;
-    try {
-      await updateTodo(task.id, {
-        workStarted: !task.workStarted,
-      });
-    } catch (err) {
-      console.error('Failed to toggle work start:', err);
-    }
-  };
+
 
   const toggleStepStatus = async (task: Todo, stepIndex: number) => {
     if (!task.id) return;
@@ -477,7 +438,6 @@ export default function OverdueTasks() {
                 completingId={completingId}
                 expanded={expanded}
                 toggleExpanded={toggleExpanded}
-                toggleWorkStarted={toggleWorkStarted}
                 handleReschedule={handleReschedule}
                 toggleStepStatus={toggleStepStatus}
                 markCompleted={markCompleted}

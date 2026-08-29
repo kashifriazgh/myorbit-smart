@@ -503,6 +503,7 @@ const ImportantTasks = () => {
   const { todos, loading, updateStepStatus, addTodo, updateTodo } = useTodoContext();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
   const [viewMode, setViewMode] = useState<'quick' | 'detail'>('quick');
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -803,7 +804,7 @@ const ImportantTasks = () => {
       <CardContent sx={{ p: 2 }}>
         {/* Title row */}
         <Box mb={1.5}>
-          <Typography variant="subtitle1" fontWeight={700}>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ color: isDark ? '#f1f5f9' : '#0f172a' }}>
             🚀 On Going Plans
           </Typography>
         </Box>
@@ -897,23 +898,41 @@ const ImportantTasks = () => {
                       borderRadius: '12px',
                       cursor: 'pointer',
                       transition: 'all 0.3s ease-in-out',
-                      backgroundColor: isSelected ? '#bae6fd' : '#e0f2fe',
-                      border: `1px solid ${isSelected ? '#7dd3fc' : '#bae6fd'}`,
-                      boxShadow: isSelected ? 'inset 0 0 0 1px #38bdf8' : 'none',
+                      backgroundColor: isSelected
+                        ? (isDark ? '#0284c7' : '#bae6fd')
+                        : (isDark ? '#0f172a' : '#e0f2fe'),
+                      border: `1px solid ${
+                        isSelected
+                          ? (isDark ? '#38bdf8' : '#7dd3fc')
+                          : (isDark ? '#1e293b' : '#bae6fd')
+                      }`,
+                      boxShadow: isSelected ? `inset 0 0 0 1px ${isDark ? '#38bdf8' : '#38bdf8'}` : 'none',
                       '&:hover': {
-                        backgroundColor: isSelected ? '#7dd3fc' : '#bae6fd',
+                        backgroundColor: isSelected
+                          ? (isDark ? '#0369a1' : '#7dd3fc')
+                          : (isDark ? '#1e293b' : '#bae6fd'),
                       },
                     }}
                   >
                     <Typography
                       variant="body2"
-                      sx={{ fontWeight: 700, color: '#0c4a6e' }}
+                      sx={{
+                        fontWeight: 700,
+                        color: isSelected
+                          ? (isDark ? '#ffffff' : '#0c4a6e')
+                          : (isDark ? '#38bdf8' : '#0c4a6e'),
+                      }}
                     >
                       {dateInfo.date}
                     </Typography>
                     <Typography
                       variant="caption"
-                      sx={{ fontSize: '0.7rem', color: '#0369a1' }}
+                      sx={{
+                        fontSize: '0.7rem',
+                        color: isSelected
+                          ? (isDark ? '#e0f2fe' : '#0369a1')
+                          : (isDark ? '#0ea5e9' : '#0369a1'),
+                      }}
                     >
                       {dateInfo.day}
                     </Typography>

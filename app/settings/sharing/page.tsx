@@ -27,6 +27,18 @@ import {
 } from 'firebase/firestore';
 import { userDb } from '@/app/lib/firebase';
 
+interface SearchedUser {
+  uid: string;
+  shareId: string;
+  username: string;
+  displayName?: string;
+  firstName?: string;
+  lastName?: string;
+  email: string;
+  isConnected?: boolean;
+  isPending?: boolean;
+}
+
 interface Invitation {
   id: string;
   senderUid: string;
@@ -45,9 +57,12 @@ export default function SharingPage() {
   const [copied, setCopied] = useState(false);
   const [inviteId, setInviteId] = useState('');
   const [incomingRequests, setIncomingRequests] = useState<Invitation[]>([]);
-  const [loadingInvite, setLoadingInvite] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchedUser[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [invitingUids, setInvitingUids] = useState<string[]>([]);
 
   // 1. Listen for incoming pending sharing invitations in real-time
   useEffect(() => {
@@ -76,10 +91,10 @@ export default function SharingPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSendRequest = async (e: React.FormEvent) => {
+  const handleSearchUsers = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || isGuest) return;
-    
+
     const targetId = inviteId.trim();
     if (!targetId) return;
 
@@ -89,79 +104,128 @@ export default function SharingPage() {
     ) {
       setErrorMsg('You cannot send a sharing invitation to yourself.');
       setSuccessMsg('');
+      setSearchResults([]);
+      setHasSearched(false);
       return;
     }
 
-    setLoadingInvite(true);
+    setSearchLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    setHasSearched(true);
+    setSearchResults([]);
+
+    try {
+      // 1. Query by shareId (exact uppercase)
+      const qShareId = query(
+        collection(userDb, 'users'),
+        where('shareId', '==', targetId.toUpperCase())
+      );
+
+      // 2. Query by username prefix
+      const qUsername = query(
+        collection(userDb, 'users'),
+        where('username', '>=', targetId.toLowerCase()),
+        where('username', '<=', targetId.toLowerCase() + '\uf8ff')
+      );
+
+      const [snapShareId, snapUsername] = await Promise.all([
+        getDocs(qShareId),
+        getDocs(qUsername),
+      ]);
+
+      const resultsMap = new Map<string, SearchedUser>();
+
+      snapShareId.forEach((docSnap) => {
+        if (docSnap.id !== user.uid) {
+          resultsMap.set(docSnap.id, { uid: docSnap.id, ...docSnap.data() } as SearchedUser);
+        }
+      });
+
+      snapUsername.forEach((docSnap) => {
+        if (docSnap.id !== user.uid) {
+          resultsMap.set(docSnap.id, { uid: docSnap.id, ...docSnap.data() } as SearchedUser);
+        }
+      });
+
+      if (resultsMap.size === 0) {
+        setSearchResults([]);
+        return;
+      }
+
+      // 3. Fetch all pending invitations sent by user
+      const qInvites = query(
+        collection(userDb, 'invitations'),
+        where('senderUid', '==', user.uid),
+        where('status', '==', 'pending')
+      );
+      const snapInvites = await getDocs(qInvites);
+      const pendingReceiverUids = new Set<string>();
+      snapInvites.forEach((docSnap) => {
+        pendingReceiverUids.add(docSnap.data().receiverUid);
+      });
+
+      const list = Array.from(resultsMap.values()).map((u) => {
+        const isConnected = user.sharedWith?.some((s) => s.uid === u.uid) || false;
+        const isPending = pendingReceiverUids.has(u.uid);
+        return {
+          ...u,
+          isConnected,
+          isPending,
+        };
+      });
+
+      setSearchResults(list);
+    } catch (err) {
+      console.error('Search failed:', err);
+      setErrorMsg('Failed to search users. Please try again.');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSendInvitation = async (targetUser: SearchedUser) => {
+    if (!user || isGuest) return;
+
+    setInvitingUids((prev) => [...prev, targetUser.uid]);
     setErrorMsg('');
     setSuccessMsg('');
 
     try {
-      // Find the user by Share ID first
-      let q = query(collection(userDb, 'users'), where('shareId', '==', targetId.toUpperCase()));
-      let querySnap = await getDocs(q);
-
-      // If not found, try finding by Username
-      if (querySnap.empty) {
-        q = query(collection(userDb, 'users'), where('username', '==', targetId.toLowerCase()));
-        querySnap = await getDocs(q);
-      }
-
-      if (querySnap.empty) {
-        setErrorMsg(`No active user found with Share ID or Username matching "${targetId}".`);
-        setLoadingInvite(false);
-        return;
-      }
-
-      const targetDoc = querySnap.docs[0];
-      const targetData = targetDoc.data();
-      const targetUid = targetDoc.id;
-
-      // Check if already shared
-      const alreadyShared = user.sharedWith?.some(s => s.uid === targetUid);
+      // Double check if already shared
+      const alreadyShared = user.sharedWith?.some(s => s.uid === targetUser.uid);
       if (alreadyShared) {
-        setErrorMsg(`You are already sharing notifications with ${targetData.displayName || 'this user'}.`);
-        setLoadingInvite(false);
-        return;
-      }
-
-      // Check if an invitation is already pending
-      const qInviteCheck = query(
-        collection(userDb, 'invitations'),
-        where('senderUid', '==', user.uid),
-        where('receiverUid', '==', targetUid),
-        where('status', '==', 'pending')
-      );
-      const inviteCheckSnap = await getDocs(qInviteCheck);
-      if (!inviteCheckSnap.empty) {
-        setErrorMsg('An invitation request is already pending with this user.');
-        setLoadingInvite(false);
+        setErrorMsg(`You are already sharing notifications with ${targetUser.displayName || 'this user'}.`);
         return;
       }
 
       // Create the pending invitation doc
       await addDoc(collection(userDb, 'invitations'), {
         senderUid: user.uid,
-        senderName: user.displayName || 'User',
+        senderName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.displayName || 'User',
         senderShareId: user.shareId || '',
         senderUsername: user.username || user.email.split('@')[0],
-        receiverUid: targetUid,
-        receiverName: targetData.displayName || 'User',
-        receiverShareId: targetData.shareId || targetId.toUpperCase(),
-        receiverUsername: targetData.username || targetData.email.split('@')[0],
+        receiverUid: targetUser.uid,
+        receiverName: `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || targetUser.displayName || 'User',
+        receiverShareId: targetUser.shareId || '',
+        receiverUsername: targetUser.username || targetUser.email.split('@')[0],
         status: 'pending',
         createdAt: serverTimestamp(),
       });
 
-      const fullName = `${targetData.firstName || ''} ${targetData.lastName || ''}`.trim() || targetData.displayName || 'User';
-      const targetUsername = targetData.username || targetData.email.split('@')[0];
+      // Update searchResults state to mark this user as pending
+      setSearchResults((prev) =>
+        prev.map((u) => (u.uid === targetUser.uid ? { ...u, isPending: true } : u))
+      );
+
+      const fullName = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || targetUser.displayName || 'User';
+      const targetUsername = targetUser.username || targetUser.email.split('@')[0];
       setSuccessMsg(`Invitation request successfully sent to ${fullName} (@${targetUsername})!`);
-      setInviteId('');
     } catch (err) {
-      console.error('Failed to send sharing request:', err);
-      setErrorMsg('Failed to process sharing request. Please try again.');
+      console.error('Failed to send invitation:', err);
+      setErrorMsg('Failed to send sharing invitation. Please try again.');
     } finally {
-      setLoadingInvite(false);
+      setInvitingUids((prev) => prev.filter((id) => id !== targetUser.uid));
     }
   };
 
@@ -354,11 +418,11 @@ export default function SharingPage() {
 
         {/* Invite User Card */}
         <div className="p-6 rounded-[24px] border border-slate-800 bg-slate-900/40 backdrop-blur-md">
-          <h2 className="text-sm font-extrabold text-white mb-1.5">Add Shared Device Link</h2>
+          <h2 className="text-sm font-extrabold text-white mb-1.5">Search Users</h2>
           <p className="text-xs text-slate-400 font-medium leading-relaxed mb-4">
-            Enter another user&apos;s Share ID or unique Username to send them a sync invitation.
+            Search another user by Share ID or Username to send them a sharing invitation.
           </p>
-          <form onSubmit={handleSendRequest} className="flex flex-col sm:flex-row gap-2">
+          <form onSubmit={handleSearchUsers} className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               required
@@ -369,18 +433,93 @@ export default function SharingPage() {
             />
             <button
               type="submit"
-              disabled={loadingInvite || !inviteId.trim()}
+              disabled={searchLoading || !inviteId.trim()}
               className="flex items-center justify-center gap-2 bg-gradient-to-br from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wider px-5 py-3 rounded-xl transition-all disabled:opacity-50 disabled:pointer-events-none w-full sm:w-auto flex-shrink-0"
             >
-              {loadingInvite ? (
+              {searchLoading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <SendIcon className="text-[14px]" />
               )}
-              Invite
+              Search
             </button>
           </form>
         </div>
+
+        {/* Search Results Card */}
+        {hasSearched && (
+          <div className="p-6 rounded-[24px] border border-slate-800 bg-slate-900/40 backdrop-blur-md space-y-4">
+            <h2 className="text-sm font-extrabold text-white">Search Results</h2>
+            {searchLoading ? (
+              <div className="flex justify-center py-6">
+                <div className="w-6 h-6 border-2 border-sky-500/30 border-t-sky-500 rounded-full animate-spin" />
+              </div>
+            ) : searchResults.length === 0 ? (
+              <p className="text-xs text-slate-500 font-semibold py-2">
+                No active users found matching your search.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {searchResults.map((targetUser) => {
+                  const isInviting = invitingUids.includes(targetUser.uid);
+                  const isConnected = targetUser.isConnected;
+                  const isPending = targetUser.isPending;
+                  const targetFullName = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || targetUser.displayName || 'User';
+
+                  return (
+                    <div
+                      key={targetUser.uid}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-950/40 border border-slate-800/80 rounded-2xl transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs font-bold">
+                          {targetFullName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-white">
+                            {targetFullName}
+                          </p>
+                          {targetUser.username && (
+                            <p className="text-[10px] text-sky-400 font-semibold">
+                              @{targetUser.username}
+                            </p>
+                          )}
+                          <p className="text-[9px] text-slate-500 font-mono tracking-wider">
+                            ID: {targetUser.shareId}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        {isConnected ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
+                            <CheckIcon className="text-[12px]" /> Connected
+                          </span>
+                        ) : isPending ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2.5 py-1.5 rounded-lg border border-amber-500/20">
+                            <PendingIcon className="text-[12px]" /> Pending
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleSendInvitation(targetUser)}
+                            disabled={isInviting}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-[10px] font-extrabold uppercase tracking-wider px-3.5 py-1.75 rounded-lg transition-all disabled:opacity-50"
+                          >
+                            {isInviting ? (
+                              <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                              <SendIcon className="text-[10px]" />
+                            )}
+                            Send Invitation
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Incoming Pending Invites */}
         {incomingRequests.length > 0 && (

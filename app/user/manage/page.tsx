@@ -24,6 +24,9 @@ import {
   Card,
   CardContent,
   Tooltip,
+  Button,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -58,8 +61,10 @@ interface UserRecord {
 }
 
 export default function ManageUsersPage() {
-  const { theme } = useCustomTheme();
-  const isDark = theme?.mode === 'dark';
+  const { theme: customTheme } = useCustomTheme();
+  const isDark = customTheme?.mode === 'dark';
+  const muiTheme = useTheme();
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
   const router = useRouter();
 
   const [currentUser, setCurrentUser] = useState<UserRecord | null>(null);
@@ -278,7 +283,9 @@ export default function ManageUsersPage() {
             onChange={(_, val) => setActiveTab(val)}
             textColor="primary"
             indicatorColor="primary"
-            variant="fullWidth"
+            variant={isMobile ? 'scrollable' : 'fullWidth'}
+            scrollButtons={isMobile ? 'auto' : undefined}
+            allowScrollButtonsMobile={isMobile}
           >
             <Tab
               label={
@@ -329,174 +336,355 @@ export default function ManageUsersPage() {
             <CircularProgress />
           </Box>
         ) : (
-          <TableContainer
-            component={Paper}
-            sx={{
-              borderRadius: 4,
-              bgcolor: isDark ? '#1e293b' : '#ffffff',
-              border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-              boxShadow: 'none',
-              overflow: 'hidden',
-            }}
-          >
-            <Table>
-              <TableHead sx={{ bgcolor: isDark ? '#0f172a' : '#f1f5f9' }}>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 800 }}>User Details</TableCell>
-                  <TableCell sx={{ fontWeight: 800 }}>Role</TableCell>
-                  <TableCell sx={{ fontWeight: 800 }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 800 }}>Registered At</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 800, pr: 3 }}>
-                    Actions
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredUsers.length > 0 ? (
-                  filteredUsers.map((u) => {
-                    const regDate = u.createdAt?.toDate
-                      ? u.createdAt.toDate().toLocaleDateString()
-                      : 'Unknown';
+          <>
+            {/* Desktop Table View */}
+            <TableContainer
+              component={Paper}
+              sx={{
+                display: { xs: 'none', md: 'block' },
+                borderRadius: 4,
+                bgcolor: isDark ? '#1e293b' : '#ffffff',
+                border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                boxShadow: 'none',
+                overflow: 'hidden',
+              }}
+            >
+              <Table>
+                <TableHead sx={{ bgcolor: isDark ? '#0f172a' : '#f1f5f9' }}>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 800 }}>User Details</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Role</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Status</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Registered At</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 800, pr: 3 }}>
+                      Actions
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredUsers.length > 0 ? (
+                    filteredUsers.map((u) => {
+                      const regDate = u.createdAt?.toDate
+                        ? u.createdAt.toDate().toLocaleDateString()
+                        : 'Unknown';
 
-                    return (
-                      <TableRow key={u.uid} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                        <TableCell>
+                      return (
+                        <TableRow key={u.uid} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                          <TableCell>
+                            <Stack direction="row" alignItems="center" spacing={2}>
+                              <Avatar sx={{ bgcolor: isDark ? '#334155' : '#f1f5f9', color: isDark ? '#fff' : '#000' }}>
+                                <PersonIcon />
+                              </Avatar>
+                              <Box>
+                                <Typography variant="body2" fontWeight="700">
+                                  {u.firstName} {u.lastName}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {u.email}
+                                </Typography>
+                              </Box>
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={u.role.toUpperCase()}
+                              size="small"
+                              color={u.role === 'editor' ? 'primary' : 'default'}
+                              variant="outlined"
+                              sx={{ fontWeight: 'bold' }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={u.status ? u.status.toUpperCase() : 'UNKNOWN'}
+                              size="small"
+                              color={
+                                u.status === 'active'
+                                  ? 'success'
+                                  : u.status === 'pending'
+                                  ? 'warning'
+                                  : 'error'
+                              }
+                              sx={{ fontWeight: 'bold', color: '#fff' }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {regDate}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right" sx={{ pr: 3 }}>
+                            {actionLoading === u.uid || actionLoading === `${u.uid}-role` ? (
+                              <CircularProgress size={24} />
+                            ) : (
+                              <Stack direction="row" spacing={1} justifyContent="flex-end">
+                                {/* Pending Status Controls */}
+                                {u.status === 'pending' && (
+                                  <>
+                                    <Tooltip title="Approve Request">
+                                      <IconButton
+                                        color="success"
+                                        onClick={() => handleApprove(u.uid)}
+                                        disabled={actionLoading !== null}
+                                      >
+                                        <CheckCircleIcon />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Reject Request">
+                                      <IconButton
+                                        color="error"
+                                        onClick={() => handleReject(u.uid)}
+                                        disabled={actionLoading !== null}
+                                      >
+                                        <CancelIcon />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </>
+                                )}
+
+                                {/* Approved Status Controls */}
+                                {u.status === 'active' && (
+                                  <>
+                                    <Tooltip title="Change Role (Editor/Viewer)">
+                                      <IconButton
+                                        color="primary"
+                                        onClick={() => handleToggleRole(u.uid, u.role)}
+                                        disabled={actionLoading !== null}
+                                      >
+                                        <SwapHorizIcon />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Cancel Registration / Revoke Access">
+                                      <IconButton
+                                        color="error"
+                                        onClick={() => handleReject(u.uid)}
+                                        disabled={actionLoading !== null}
+                                      >
+                                        <CancelIcon />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </>
+                                )}
+
+                                {/* Rejected/Cancelled Status Controls */}
+                                {u.status === 'rejected' && (
+                                  <>
+                                    <Tooltip title="Re-Approve User">
+                                      <IconButton
+                                        color="success"
+                                        onClick={() => handleApprove(u.uid)}
+                                        disabled={actionLoading !== null}
+                                      >
+                                        <CheckCircleIcon />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Permanently Delete Record">
+                                      <IconButton
+                                        color="error"
+                                        onClick={() => handleDelete(u.uid)}
+                                        disabled={actionLoading !== null}
+                                      >
+                                        <DeleteIcon />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </>
+                                )}
+                              </Stack>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                        <Typography variant="body2" color="text.secondary">
+                          No users found in this section.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            {/* Mobile Card List View */}
+            <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+              {filteredUsers.length > 0 ? (
+                filteredUsers.map((u) => {
+                  const regDate = u.createdAt?.toDate
+                    ? u.createdAt.toDate().toLocaleDateString()
+                    : 'Unknown';
+
+                  return (
+                    <Card
+                      key={u.uid}
+                      sx={{
+                        mb: 2,
+                        borderRadius: 3,
+                        bgcolor: isDark ? '#1e293b' : '#ffffff',
+                        border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                        boxShadow: 'none',
+                      }}
+                    >
+                      <CardContent sx={{ p: 2.5 }}>
+                        <Stack spacing={2}>
+                          {/* User Details */}
                           <Stack direction="row" alignItems="center" spacing={2}>
                             <Avatar sx={{ bgcolor: isDark ? '#334155' : '#f1f5f9', color: isDark ? '#fff' : '#000' }}>
                               <PersonIcon />
                             </Avatar>
-                            <Box>
-                              <Typography variant="body2" fontWeight="700">
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                              <Typography variant="body2" fontWeight="855" noWrap>
                                 {u.firstName} {u.lastName}
                               </Typography>
-                              <Typography variant="caption" color="text.secondary">
+                              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
                                 {u.email}
                               </Typography>
                             </Box>
                           </Stack>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={u.role.toUpperCase()}
-                            size="small"
-                            color={u.role === 'editor' ? 'primary' : 'default'}
-                            variant="outlined"
-                            sx={{ fontWeight: 'bold' }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={u.status ? u.status.toUpperCase() : 'UNKNOWN'}
-                            size="small"
-                            color={
-                              u.status === 'active'
-                                ? 'success'
-                                : u.status === 'pending'
-                                ? 'warning'
-                                : 'error'
-                            }
-                            sx={{ fontWeight: 'bold', color: '#fff' }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="text.secondary">
-                            {regDate}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right" sx={{ pr: 3 }}>
-                          {actionLoading === u.uid ? (
-                            <CircularProgress size={24} />
-                          ) : (
-                            <Stack direction="row" spacing={1} justifyContent="flex-end">
-                              {/* Pending Status Controls */}
-                              {u.status === 'pending' && (
-                                <>
-                                  <Tooltip title="Approve Request">
-                                    <IconButton
+
+                          {/* Chips for Role & Status & Date */}
+                          <Stack direction="row" flexWrap="wrap" gap={1}>
+                            <Chip
+                              label={u.role.toUpperCase()}
+                              size="small"
+                              color={u.role === 'editor' ? 'primary' : 'default'}
+                              variant="outlined"
+                              sx={{ fontWeight: 'bold' }}
+                            />
+                            <Chip
+                              label={u.status ? u.status.toUpperCase() : 'UNKNOWN'}
+                              size="small"
+                              color={
+                                u.status === 'active'
+                                  ? 'success'
+                                  : u.status === 'pending'
+                                  ? 'warning'
+                                  : 'error'
+                              }
+                              sx={{ fontWeight: 'bold', color: '#fff' }}
+                            />
+                            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', ml: 'auto', fontWeight: 600 }}>
+                              Registered: {regDate}
+                            </Typography>
+                          </Stack>
+
+                          {/* Action Buttons */}
+                          <Box sx={{ borderTop: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`, pt: 1.5, display: 'flex', justifyContent: 'flex-end' }}>
+                            {actionLoading === u.uid || actionLoading === `${u.uid}-role` ? (
+                              <CircularProgress size={20} />
+                            ) : (
+                              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap justifyContent="flex-end">
+                                {/* Pending Status Controls */}
+                                {u.status === 'pending' && (
+                                  <>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
                                       color="success"
+                                      startIcon={<CheckCircleIcon />}
                                       onClick={() => handleApprove(u.uid)}
                                       disabled={actionLoading !== null}
+                                      sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
                                     >
-                                      <CheckCircleIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Reject Request">
-                                    <IconButton
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
                                       color="error"
+                                      startIcon={<CancelIcon />}
                                       onClick={() => handleReject(u.uid)}
                                       disabled={actionLoading !== null}
+                                      sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
                                     >
-                                      <CancelIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                </>
-                              )}
+                                      Reject
+                                    </Button>
+                                  </>
+                                )}
 
-                              {/* Approved Status Controls */}
-                              {u.status === 'active' && (
-                                <>
-                                  <Tooltip title="Change Role (Editor/Viewer)">
-                                    <IconButton
+                                {/* Approved Status Controls */}
+                                {u.status === 'active' && (
+                                  <>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
                                       color="primary"
+                                      startIcon={<SwapHorizIcon />}
                                       onClick={() => handleToggleRole(u.uid, u.role)}
                                       disabled={actionLoading !== null}
+                                      sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
                                     >
-                                      <SwapHorizIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Cancel Registration / Revoke Access">
-                                    <IconButton
+                                      Toggle Role
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
                                       color="error"
+                                      startIcon={<CancelIcon />}
                                       onClick={() => handleReject(u.uid)}
                                       disabled={actionLoading !== null}
+                                      sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
                                     >
-                                      <CancelIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                </>
-                              )}
+                                      Revoke
+                                    </Button>
+                                  </>
+                                )}
 
-                              {/* Rejected/Cancelled Status Controls */}
-                              {u.status === 'rejected' && (
-                                <>
-                                  <Tooltip title="Re-Approve User">
-                                    <IconButton
+                                {/* Rejected/Cancelled Status Controls */}
+                                {u.status === 'rejected' && (
+                                  <>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
                                       color="success"
+                                      startIcon={<CheckCircleIcon />}
                                       onClick={() => handleApprove(u.uid)}
                                       disabled={actionLoading !== null}
+                                      sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
                                     >
-                                      <CheckCircleIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Permanently Delete Record">
-                                    <IconButton
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
                                       color="error"
+                                      startIcon={<DeleteIcon />}
                                       onClick={() => handleDelete(u.uid)}
                                       disabled={actionLoading !== null}
+                                      sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
                                     >
-                                      <DeleteIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                </>
-                              )}
-                            </Stack>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        No users found in this section.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                                      Delete
+                                    </Button>
+                                  </>
+                                )}
+                              </Stack>
+                            )}
+                          </Box>
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              ) : (
+                <Card
+                  sx={{
+                    py: 6,
+                    borderRadius: 3,
+                    bgcolor: isDark ? '#1e293b' : '#ffffff',
+                    border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                    boxShadow: 'none',
+                    textAlign: 'center',
+                  }}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    No users found in this section.
+                  </Typography>
+                </Card>
+              )}
+            </Box>
+          </>
         )}
       </Box>
 

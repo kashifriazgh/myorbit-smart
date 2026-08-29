@@ -668,8 +668,8 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
   const getOverdueGoals = (): Goal[] => {
     const now = new Date();
     return goals.filter((goal) => {
-      const dueDate =
-        goal.dueDate instanceof Date ? goal.dueDate : goal.dueDate.toDate();
+      const dueDate = toDateSafe(goal.dueDate);
+      if (!dueDate) return false;
       return dueDate < now && goal.status !== 'Completed';
     });
   };

@@ -10,15 +10,10 @@ import {
   Box,
   Typography,
   Stack,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   IconButton,
   Collapse,
   useTheme,
   useMediaQuery,
-  Switch,
   FormControlLabel,
   Checkbox,
   Fade,
@@ -26,19 +21,10 @@ import {
 import {
   Close as CloseIcon,
   Delete as DeleteIcon,
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
-} from '@mui/icons-material';
-import CustomWheelTimePicker from '@/app/test/time-picker/TimePicker';
-import {
-  DateRange as CustomDateIcon,
-  WhatsApp as WhatsAppIcon,
-  NotificationsActive as PushIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../lib/context/userContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { SchedulesProps } from '../../lib/interface';
-import { isPremiumClient } from '../../lib/members';
 
 interface SchedulesModalProps {
   open: boolean;
@@ -65,7 +51,6 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
   const { theme } = useCustomTheme();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
-  const isPremium = isPremiumClient(process.env.NEXT_PUBLIC_CLIENT_ID);
 
   const [userHasEditedTimes, setUserHasEditedTimes] = useState(false);
 
@@ -139,34 +124,6 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
     });
   }, [formData.startTime, formData.endTime, formData.isFlexible, existingSchedules, schedule]);
 
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [customReminderDate, setCustomReminderDate] = useState<Date | null>(
-    null,
-  );
-  const [reminderMethod, setReminderMethod] = useState<'whatsapp' | 'push'>(
-    'whatsapp',
-  );
-  const [reminderActive] = useState(false); // setReminderActive removed to fix lint
-  const handleQuickReminderDate = (
-    type: 'tomorrow' | 'afterTomorrow' | 'endOfWeek',
-  ) => {
-    const date = new Date();
-    if (type === 'tomorrow') {
-      date.setDate(date.getDate() + 1);
-    } else if (type === 'afterTomorrow') {
-      date.setDate(date.getDate() + 2);
-    } else if (type === 'endOfWeek') {
-      const day = date.getDay();
-      const diff = day === 0 ? 7 : 7 - day;
-      date.setDate(date.getDate() + diff);
-    }
-    const current = customReminderDate ? new Date(customReminderDate) : new Date();
-    current.setFullYear(date.getFullYear());
-    current.setMonth(date.getMonth());
-    current.setDate(date.getDate());
-    setCustomReminderDate(current);
-  };
-
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -205,25 +162,6 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
     }
   };
 
-  const priorityOptions = [
-    { value: 'low', label: 'Low', color: '#4caf50' },
-    { value: 'medium', label: 'Medium', color: '#2196f3' },
-    { value: 'high', label: 'High', color: '#ff9800' },
-    { value: 'critical', label: 'Critical', color: '#f44336' },
-  ];
-
-  const reminderMethods = [
-    { value: 'notification', label: 'Notification' },
-    { value: 'whatsapp', label: 'WhatsApp' },
-    { value: 'email', label: 'Email' },
-  ];
-
-  const repeatOptions = [
-    { value: 'none', label: 'No Repeat' },
-    { value: 'daily', label: 'Daily' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'monthly', label: 'Monthly' },
-  ];
 
   const dynamicQuickTimes = useMemo(() => {
     const now = new Date();
@@ -282,33 +220,6 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           colorCode: schedule.colorCode,
           isFlexible: schedule.isFlexible || false,
         });
-        if (schedule.hasReminder && schedule.reminderDate) {
-          const reminderDate = schedule.reminderDate;
-          if (
-            typeof reminderDate === 'object' &&
-            reminderDate !== null &&
-            'toDate' in reminderDate &&
-            typeof (reminderDate as { toDate?: unknown }).toDate === 'function'
-          ) {
-            setCustomReminderDate(
-              (reminderDate as { toDate: () => Date }).toDate(),
-            );
-          } else {
-            setCustomReminderDate(
-              new Date(reminderDate as string | number | Date),
-            );
-          }
-        } else {
-          setCustomReminderDate(null);
-        }
-        // Restore reminder method from saved schedule
-        if (schedule.reminder?.method === 'push') {
-          setReminderMethod('push');
-        } else if (schedule.reminder?.method === 'whatsapp') {
-          setReminderMethod('whatsapp');
-        } else {
-          setReminderMethod('whatsapp');
-        }
       } else {
         const suggestion = suggestNextStartTime(existingSchedules);
         setFormData({
@@ -328,8 +239,6 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
           colorCode: '#E3F2FD',
           isFlexible: false,
         });
-        setCustomReminderDate(null);
-        setReminderMethod('whatsapp');
       }
     }
   }, [open, schedule, existingSchedules, suggestNextStartTime]);
@@ -405,31 +314,8 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
         .padStart(2, '0')}`;
     }
 
-    // Determine if we need an RTDB reminder entry
-    // Temporarily disabled
-    const isRtdbReminder = false;
-    // const isRtdbReminder =
-    //   reminderMethod === 'whatsapp' || reminderMethod === 'push';
-    let hasReminder = false;
-    let reminderDateVal: Date | null = null;
-
-    if (isRtdbReminder) {
-      hasReminder = true;
-      if (customReminderDate) {
-        reminderDateVal = customReminderDate;
-      } else if (selectedDate && startTime) {
-        const scheduleStart = new Date(`${selectedDate}T${startTime}`);
-        const beforeMinutes = formData.reminder?.before ?? 10;
-        reminderDateVal = new Date(
-          scheduleStart.getTime() - beforeMinutes * 60 * 1000,
-        );
-      }
-
-      // Safety check to avoid adding past dates to RTDB
-      if (reminderDateVal && reminderDateVal.getTime() <= Date.now()) {
-        reminderDateVal = new Date(Date.now() + 5 * 60000); // 5 mins buffer
-      }
-    }
+    const hasReminder = false;
+    const reminderDateVal: Date | null = null;
 
     const scheduleData: SchedulesProps = {
       ...(schedule?.id ? { id: schedule.id } : {}),
@@ -443,12 +329,12 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
       status: formData.status || 'pending',
       priority: formData.priority || 'medium',
       reminder: {
-        before: formData.reminder?.before ?? 10,
-        method: reminderMethod as SchedulesProps['reminder']['method'],
+        before: 10,
+        method: 'notification',
       },
       hasReminder,
       reminderDate: reminderDateVal,
-      repeat: formData.repeat || 'none',
+      repeat: 'none',
       autoGenerated: formData.autoGenerated || false,
       colorCode: formData.colorCode || '#E3F2FD',
       isFlexible: formData.isFlexible || false,
@@ -836,341 +722,31 @@ const SchedulesModal: React.FC<SchedulesModalProps> = ({
             />
           </Box>
 
-          {/* Reminder Section — WhatsApp or Push Notification */}
+          {/* Reminder Info Message Box */}
           <Box
-            className={`
-              p-4 rounded-[24px] border transition-all
-              ${theme?.mode === 'dark' ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}
-            `}
+
+            sx={{
+              p: 2,
+              borderRadius: '16px',
+              border: `1px dashed ${theme?.mode === 'dark' ? '#334155' : '#cbd5e1'}`,
+              bgcolor: theme?.mode === 'dark' ? 'rgba(30, 41, 59, 0.2)' : '#f8fafc',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+            }}
           >
-            <Box className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <Box className="min-w-0">
-                <Typography className="text-[11px] font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-[0.2em]">
-                  🔔 Reminder (Temporarily Disabled)
-                </Typography>
-                <Typography className="mt-1 text-[12px] text-slate-600 dark:text-slate-300 truncate">
-                  Reminders are temporarily disabled.
-                </Typography>
-              </Box>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={false}
-                    disabled={true}
-                    /*
-                    checked={isPremium && reminderActive}
-                    disabled={!isPremium}
-                    onChange={(e) => {
-                      if (!isPremium) return;
-                      const isChecked = e.target.checked;
-                      setReminderActive(isChecked);
-                      if (isChecked && !customReminderDate) {
-                        const d = new Date();
-                        d.setHours(d.getHours() + 1, 0, 0, 0);
-                        setCustomReminderDate(d);
-                      }
-                      if (!isChecked) {
-                        setCustomReminderDate(null);
-                      }
-                      handleInputChange('reminder', {
-                        before: formData.reminder?.before ?? 10,
-                        method: isChecked ? reminderMethod : 'notification',
-                      });
-                    }}
-                    */
-                    sx={{
-                      '& .MuiSwitch-switchBase.Mui-checked': {
-                        color: '#8b5cf6',
-                      },
-                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track':
-                      {
-                        backgroundColor: '#8b5cf6',
-                      },
-                    }}
-                  />
-                }
-                label=""
-                sx={{ mr: 0 }}
-              />
-            </Box>
-
-            {!isPremium && (
-              <Box className="mt-3 text-xs font-semibold text-red-500 dark:text-red-400">
-                ⚠️ WhatsApp/Push reminders are only available for premium members.
-              </Box>
-            )}
-
-            <Collapse in={reminderActive} timeout="auto">
-              <Box className="mt-4 space-y-4">
-                <Box className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: 'whatsapp', label: 'WhatsApp', icon: <WhatsAppIcon sx={{ fontSize: 15 }} /> },
-                    { value: 'push', label: 'Push', icon: <PushIcon sx={{ fontSize: 15 }} /> },
-                  ].map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => {
-                        setReminderMethod(option.value as 'whatsapp' | 'push');
-                        handleInputChange('reminder', {
-                          before: formData.reminder?.before ?? 10,
-                          method: option.value === 'whatsapp' ? 'whatsapp' : 'push',
-                        });
-                      }}
-                      className={`flex items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold transition-all ${reminderMethod === option.value
-                        ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-200'
-                        : 'border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:text-violet-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-violet-500 dark:hover:text-violet-100'
-                        }`}
-                    >
-                      {option.icon}
-                      {option.label}
-                    </button>
-                  ))}
-                </Box>
-
-                {/* Custom Synced Date-Time Control Center */}
-                <Box className="space-y-5 mt-4">
-                  {/* Date Picker Section */}
-                  <Box>
-                    <Box className="flex items-center justify-between mb-2.5 px-1">
-                      <Typography className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                        <CustomDateIcon style={{ fontSize: 13 }} />
-                        Select Reminder Date
-                      </Typography>
-                    </Box>
-                    <TextField
-                      type="date"
-                      value={customReminderDate ? `${customReminderDate.getFullYear()}-${String(customReminderDate.getMonth() + 1).padStart(2, '0')}-${String(customReminderDate.getDate()).padStart(2, '0')}` : ''}
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          const [y, m, d] = e.target.value.split('-').map(Number);
-                          const current = customReminderDate ? new Date(customReminderDate) : new Date();
-                          current.setFullYear(y);
-                          current.setMonth(m - 1);
-                          current.setDate(d);
-                          setCustomReminderDate(current);
-                        } else {
-                          setCustomReminderDate(null);
-                        }
-                      }}
-                      fullWidth
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: '16px',
-                          backgroundColor:
-                            theme?.mode === 'dark' ? '#1e3a8a20' : '#f0f7ff',
-                          '& fieldset': {
-                            borderColor: '#3b82f6',
-                            borderWidth: '2px',
-                          },
-                        },
-                        '& .MuiInputBase-input': {
-                          textAlign: 'center',
-                          fontWeight: 800,
-                          color: '#2563eb',
-                          fontSize: '1.1rem',
-                          letterSpacing: '1px',
-                        },
-                      }}
-                      helperText={
-                        customReminderDate && (
-                          <Typography
-                            variant="caption"
-                            className="text-slate-400 dark:text-slate-500 font-bold ml-1 uppercase tracking-wider"
-                          >
-                            {customReminderDate.toLocaleDateString('en-US', {
-                              weekday: 'long',
-                              month: 'long',
-                              day: 'numeric',
-                            })}
-                          </Typography>
-                        )
-                      }
-                    />
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      mt={2}
-                      className="overflow-x-auto pb-1 no-scrollbar flex-nowrap"
-                    >
-                      {[
-                        { label: 'Tomorrow', value: 'tomorrow' },
-                        { label: 'In 2 Days', value: 'afterTomorrow' },
-                        { label: 'Weekend', value: 'endOfWeek' },
-                      ].map((item) => (
-                        <Button
-                          key={item.value}
-                          variant="outlined"
-                          onClick={() => handleQuickReminderDate(item.value as 'tomorrow' | 'afterTomorrow' | 'endOfWeek')}
-                          className="rounded-full normal-case text-[12px] font-bold px-5 py-1.5 whitespace-nowrap border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-violet-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/10 transition-all"
-                        >
-                          {item.label}
-                        </Button>
-                      ))}
-                    </Stack>
-                  </Box>
-
-                  {/* Expandable Reusable Custom Wheel Picker */}
-                  {customReminderDate && (
-                    <Box className="mt-3">
-                      <CustomWheelTimePicker
-                        value={customReminderDate}
-                        isDark={theme?.mode === 'dark'}
-                        onChange={(nextDate) => {
-                          setCustomReminderDate(nextDate);
-                        }}
-                      />
-                    </Box>
-                  )}
-                </Box>
-
-                {reminderMethod === 'whatsapp' ? (
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={formData.reminder?.before === 10}
-                        onChange={(e) =>
-                          handleInputChange('reminder', {
-                            ...formData.reminder,
-                            before: e.target.checked ? 10 : 0,
-                          })
-                        }
-                        sx={{
-                          color: '#8b5cf6',
-                          '&.Mui-checked': {
-                            color: '#8b5cf6',
-                          },
-                        }}
-                      />
-                    }
-                    label={
-                      <Typography className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                        Reminded me 10 mins before
-                      </Typography>
-                    }
-                  />
-                ) : (
-                  <Box className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3 text-sm text-violet-700 dark:border-violet-700/30 dark:bg-violet-950/20 dark:text-violet-200">
-                    <Typography className="font-semibold">Push reminder</Typography>
-                    <Typography className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                      Sends a browser notification at the selected date/time. Enable push in{' '}
-                      <a
-                        href="/settings/push-notifications"
-                        target="_blank"
-                        className="underline font-semibold"
-                      >
-                        Settings
-                      </a>
-                      .
-                    </Typography>
-                  </Box>
-                )}
-
-                {reminderMethod === 'whatsapp' && (
-                  <Typography className="text-[10px] text-slate-500 dark:text-slate-400">
-                    Leave date/time empty to auto-send <strong>{formData.reminder?.before} minutes</strong> before start.
-                  </Typography>
-                )}
-              </Box>
-            </Collapse>
-          </Box>
-
-          {/* Advanced Section */}
-          <Box className="mb-4">
-            <Button
-              onClick={() => setAdvancedOpen(!advancedOpen)}
-              fullWidth
-              startIcon={advancedOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-              className="justify-start normal-case font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-xl py-2"
+            <Typography
+              variant="body2"
+              sx={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: theme?.mode === 'dark' ? '#94a3b8' : '#475569',
+                textAlign: 'center',
+                width: '100%',
+              }}
             >
-              {advancedOpen ? 'Hide' : 'More Options'} (Priority, Reminders)
-            </Button>
-
-            <Collapse in={advancedOpen} timeout="auto" unmountOnExit>
-              <Box className="pt-4 space-y-4">
-                <FormControl fullWidth>
-                  <InputLabel className="font-bold">Priority Level</InputLabel>
-                  <Select
-                    value={formData.priority}
-                    onChange={(e) =>
-                      handleInputChange('priority', e.target.value)
-                    }
-                    label="Priority Level"
-                    sx={{ borderRadius: '16px' }}
-                  >
-                    {priorityOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        <Box className="flex items-center gap-3">
-                          <Box
-                            className="w-3 h-3 rounded-full"
-                            sx={{ backgroundColor: option.color }}
-                          />
-                          <Typography className="font-semibold text-sm">
-                            {option.label}
-                          </Typography>
-                        </Box>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-
-                <Box className="grid grid-cols-2 gap-4">
-                  <TextField
-                    label="Reminder (mins before)"
-                    type="number"
-                    value={formData.reminder?.before}
-                    disabled={true}
-                    onChange={(e) =>
-                      handleInputChange('reminder', {
-                        ...formData.reminder,
-                        before: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    sx={{
-                      '& .MuiOutlinedInput-root': { borderRadius: '16px' },
-                    }}
-                  />
-                  <FormControl disabled={true}>
-                    <InputLabel>Alert Method</InputLabel>
-                    <Select
-                      value={formData.reminder?.method}
-                      onChange={(e) =>
-                        handleInputChange('reminder', {
-                          ...formData.reminder,
-                          method: e.target.value,
-                        })
-                      }
-                      label="Alert Method"
-                      sx={{ borderRadius: '16px' }}
-                    >
-                      {reminderMethods.map((m) => (
-                        <MenuItem key={m.value} value={m.value} disabled={m.value === 'email'}>
-                          {m.label}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Box>
-
-                <FormControl fullWidth>
-                  <InputLabel>Repeat Interval</InputLabel>
-                  <Select
-                    value={formData.repeat}
-                    onChange={(e) =>
-                      handleInputChange('repeat', e.target.value)
-                    }
-                    label="Repeat Interval"
-                    sx={{ borderRadius: '16px' }}
-                  >
-                    {repeatOptions.map((o) => (
-                      <MenuItem key={o.value} value={o.value}>
-                        {o.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Box>
-            </Collapse>
+              {"📢 You can set reminder for notification after creating the schedule by clicking 'Notification' icon."}
+            </Typography>
           </Box>
         </Box>
       </DialogContent>
