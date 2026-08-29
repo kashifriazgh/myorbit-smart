@@ -67,11 +67,29 @@ export const createSchedule = async (
         config.method = (scheduleData.reminder?.method as 'whatsapp' | 'push') || 'whatsapp';
 
         // For push reminders: ensure the device is registered under the real userId
-        if (config.method === 'push' && typeof window !== 'undefined') {
+        if (config.method === 'push') {
+          if (typeof window !== 'undefined') {
+            try {
+              await registerNotificationDevice(scheduleData.userId);
+            } catch (tokenErr) {
+              console.warn('Could not register FCM device before push reminder:', tokenErr);
+            }
+          }
+          
+          // Fetch active device tokens from Firestore to store in the reminder payload
           try {
-            await registerNotificationDevice(scheduleData.userId);
-          } catch (tokenErr) {
-            console.warn('Could not register FCM device before push reminder:', tokenErr);
+            const deviceCol = collection(db, 'users', scheduleData.userId, 'notificationDevices');
+            const deviceSnapshot = await getDocs(deviceCol);
+            const activeTokens: string[] = [];
+            deviceSnapshot.forEach((dDoc) => {
+              const dData = dDoc.data();
+              if (dData.enabled && dData.fid) {
+                activeTokens.push(dData.fid);
+              }
+            });
+            config.tokens = activeTokens;
+          } catch (tokenFetchErr) {
+            console.error('Failed to fetch device tokens for schedule reminder:', tokenFetchErr);
           }
         }
         
@@ -147,11 +165,29 @@ export const updateSchedule = async (
             config.method = resolvedMethod;
 
             // For push reminders: ensure the device is registered under the real userId
-            if (resolvedMethod === 'push' && typeof window !== 'undefined') {
+            if (resolvedMethod === 'push') {
+              if (typeof window !== 'undefined') {
+                try {
+                  await registerNotificationDevice(oldData.userId);
+                } catch (tokenErr) {
+                  console.warn('Could not register FCM device on schedule update:', tokenErr);
+                }
+              }
+
+              // Fetch active device tokens from Firestore to store in the reminder payload
               try {
-                await registerNotificationDevice(oldData.userId);
-              } catch (tokenErr) {
-                console.warn('Could not register FCM device on schedule update:', tokenErr);
+                const deviceCol = collection(db, 'users', oldData.userId, 'notificationDevices');
+                const deviceSnapshot = await getDocs(deviceCol);
+                const activeTokens: string[] = [];
+                deviceSnapshot.forEach((dDoc) => {
+                  const dData = dDoc.data();
+                  if (dData.enabled && dData.fid) {
+                    activeTokens.push(dData.fid);
+                  }
+                });
+                config.tokens = activeTokens;
+              } catch (tokenFetchErr) {
+                console.error('Failed to fetch device tokens for schedule update:', tokenFetchErr);
               }
             }
 

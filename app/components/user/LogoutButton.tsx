@@ -11,7 +11,7 @@ import Cookies from 'js-cookie';
 
 export default function LogoutButton() {
   const router = useRouter();
-  const { isGuest } = useAuth();
+  const { user, isGuest } = useAuth();
 
   const handleLogout = async () => {
     try {
@@ -21,6 +21,17 @@ export default function LogoutButton() {
         // Reload the page to reset the app state
         window.location.reload();
       } else {
+        // Disable FCM device token for this user before logging out
+        try {
+          const { getCurrentFid, removeFidFromDatabase } = await import('@/app/lib/utils/fcm');
+          const fid = await getCurrentFid();
+          if (fid && user) {
+            await removeFidFromDatabase(user.uid, fid);
+          }
+        } catch (fcmErr) {
+          console.warn('FCM token cleanup failed during logout:', fcmErr);
+        }
+
         // Firebase logout for authenticated users
         await signOut(auth);
         Cookies.remove('uid', { path: '/' });

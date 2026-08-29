@@ -158,14 +158,38 @@ export async function POST(req: NextRequest) {
       const fid = device.fid;
       const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
+      const title = customTitle || 'Test Notification 🔔';
+      const body = customBody || 'Your device is successfully subscribed to MyOrbit Smart Push Alerts!';
+      const appUrl = customAppUrl || '/settings/push-notifications';
+
       const payload = {
         message: {
           token: fid,
-          data: {
-            title: customTitle || 'Test Notification 🔔',
-            body: customBody || 'Your device is successfully subscribed to MyOrbit Smart Push Alerts!',
-            appUrl: customAppUrl || '/settings/push-notifications',
+          notification: {
+            title,
+            body,
           },
+          data: {
+            title,
+            body,
+            appUrl,
+          },
+          webpush: {
+            notification: {
+              title,
+              body,
+              icon: '/icons/icon-192x192.png',
+              badge: '/icons/icon-192x192.png',
+              requireInteraction: true,
+              actions: [
+                { action: 'view', title: '👁 View Details' },
+                { action: 'dismiss', title: 'Dismiss' }
+              ],
+              data: {
+                appUrl,
+              }
+            }
+          }
         },
       };
 
