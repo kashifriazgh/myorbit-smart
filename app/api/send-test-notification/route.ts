@@ -156,6 +156,7 @@ export async function POST(req: NextRequest) {
     const results = [];
     for (const device of activeDevices) {
       const fid = device.fid;
+      console.log(`[FCM] test notification target FID: ${fid} for user: ${finalTargetUid}`);
       const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
       const title = customTitle || 'Test Notification 🔔';

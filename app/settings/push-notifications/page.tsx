@@ -34,6 +34,49 @@ export default function PushNotificationsPage() {
   const [unsubscribing, setUnsubscribing] = useState(false);
   const [devices, setDevices] = useState<NotificationDevice[]>([]);
   const [removingUser, setRemovingUser] = useState<string | null>(null);
+  
+  // Diagnostic state variables
+  const [diagnosticPermission, setDiagnosticPermission] = useState<string>('Unknown');
+  const [diagnosticSwStatus, setDiagnosticSwStatus] = useState<string>('Checking...');
+  const [diagnosticToken, setDiagnosticToken] = useState<string>('Checking...');
+
+  // Diagnostics check and console logs
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const perm = 'Notification' in window ? Notification.permission : 'Not supported';
+      setDiagnosticPermission(perm);
+      console.log('[FCM] permission:', perm);
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          const hasSw = regs.some(reg => {
+            const scriptUrl = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+            return scriptUrl.includes('firebase-messaging-sw.js');
+          });
+          setDiagnosticSwStatus(hasSw ? 'Registered' : 'Not Registered');
+          console.log('[FCM] service worker registration count:', regs.length, 'has active message SW:', hasSw);
+        }).catch((err) => {
+          setDiagnosticSwStatus('Error checking SW');
+          console.error('[FCM] service worker registration check error:', err);
+        });
+      } else {
+        setDiagnosticSwStatus('Not supported');
+      }
+
+      getCurrentFid().then((fid) => {
+        if (fid) {
+          setDiagnosticToken(`Available (${fid.slice(0, 5)}...${fid.slice(-5)})`);
+          console.log('[FCM] token obtained (FID):', fid);
+        } else {
+          setDiagnosticToken('Not Available');
+          console.log('[FCM] token obtained (FID): Not Available');
+        }
+      }).catch((err) => {
+        setDiagnosticToken('Error');
+        console.error('[FCM] token obtained check error:', err);
+      });
+    }
+  }, [status]);
 
   // Initialize and check subscription status when auth and user are loaded
   useEffect(() => {
@@ -68,9 +111,25 @@ export default function PushNotificationsPage() {
               const { doc: fsDoc, getDoc } = await import('firebase/firestore');
               const deviceRef = fsDoc(userDb, 'users', user.uid, 'notificationDevices', fid);
               const snapshot = await getDoc(deviceRef);
-              if (snapshot.exists() && snapshot.data().enabled === true) {
+              
+              // Verify active service worker is actually registered on client side
+              let swActive = false;
+              if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+                try {
+                  const regs = await navigator.serviceWorker.getRegistrations();
+                  swActive = regs.some(reg => {
+                    const scriptUrl = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+                    return scriptUrl.includes('firebase-messaging-sw.js');
+                  });
+                } catch (swErr) {
+                  console.warn('[FCM] Error checking SW registrations in autoSync:', swErr);
+                }
+              }
+
+              if (snapshot.exists() && snapshot.data().enabled === true && swActive) {
                 setStatus('subscribed');
               } else {
+                console.log('[FCM] AutoSync: SW not active or Firestore registration missing/disabled. Running registration...');
                 await registerNotificationDevice(user.uid);
                 setStatus('subscribed');
               }
@@ -365,6 +424,41 @@ export default function PushNotificationsPage() {
                 <p className="text-red-400 text-xs font-semibold leading-relaxed">{errorMessage}</p>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Diagnostic Card */}
+        <div className="bg-slate-900/40 border border-slate-800/80 rounded-[24px] p-6 space-y-3">
+          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 flex items-center gap-2">
+            ⚙️ Diagnostic Console
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+            <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-center">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Notification Permission</span>
+              <span className={`text-xs font-black mt-1 ${
+                diagnosticPermission.toLowerCase() === 'granted' ? 'text-emerald-400' :
+                diagnosticPermission.toLowerCase() === 'denied' ? 'text-rose-400' : 'text-amber-400'
+              }`}>
+                {diagnosticPermission.toUpperCase()}
+              </span>
+            </div>
+            <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-center">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Service Worker</span>
+              <span className={`text-xs font-black mt-1 ${
+                diagnosticSwStatus.includes('Registered') && !diagnosticSwStatus.includes('Not') ? 'text-emerald-400' :
+                diagnosticSwStatus.includes('Error') || diagnosticSwStatus.includes('Not') ? 'text-rose-400' : 'text-amber-400'
+              }`}>
+                {diagnosticSwStatus.toUpperCase()}
+              </span>
+            </div>
+            <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-center">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">FCM Token</span>
+              <span className={`text-xs font-black mt-1 ${
+                diagnosticToken.includes('Available') ? 'text-emerald-400' : 'text-rose-400'
+              }`}>
+                {diagnosticToken}
+              </span>
+            </div>
           </div>
         </div>
 

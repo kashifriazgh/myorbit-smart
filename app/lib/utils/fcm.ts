@@ -142,6 +142,7 @@ export async function saveFidToDatabase(userId: string, fid: string): Promise<vo
       { merge: true }
     );
 
+    console.log(`[FCM] token saved in Firestore for user ${userId}, FID: ${fid}`);
     console.log(`FCM: Saved active registration in Firestore for user ${userId}, FID: ${fid}`);
   } catch (err) {
     console.error('FCM: Failed to save FID to Firestore:', err);
@@ -175,6 +176,7 @@ export async function registerNotificationDevice(userId: string): Promise<void> 
   if (typeof window === 'undefined') return;
 
   const permission = await Notification.requestPermission();
+  console.log('[FCM] permission status:', permission);
   if (permission !== 'granted') {
     throw new Error('Notification permission denied by user.');
   }
@@ -210,6 +212,7 @@ export async function registerNotificationDevice(userId: string): Promise<void> 
         scope: '/',
       }
     );
+    console.log('[FCM] service worker registration success:', registration);
     console.log('FCM: Service worker registered manually successfully:', registration);
   } catch (swErr) {
     console.error('FCM: Manual service worker registration failed:', swErr);
@@ -230,6 +233,7 @@ export async function registerNotificationDevice(userId: string): Promise<void> 
 
   // Manually guarantee the current FID is saved to Firestore
   const fid = await getCurrentFid();
+  console.log('[FCM] token obtained (FID):', fid);
   if (fid) {
     await saveFidToDatabase(userId, fid);
   }
