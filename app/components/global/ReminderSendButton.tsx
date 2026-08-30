@@ -138,7 +138,20 @@ export default function ReminderSendButton({
     }
   };
 
-  const parsedDateTime = itemDateTime ? new Date(itemDateTime) : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parseItemDateTime = (val: any): Date | null => {
+    if (!val) return null;
+    if (val instanceof Date) return val;
+    if (val && typeof val === 'object') {
+      if (typeof val.toDate === 'function') return val.toDate();
+      if (val.seconds !== undefined) return new Date(val.seconds * 1000);
+      if (val._seconds !== undefined) return new Date(val._seconds * 1000);
+    }
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const parsedDateTime = parseItemDateTime(itemDateTime);
   const isDateTimeValid = parsedDateTime && !isNaN(parsedDateTime.getTime());
 
   const calculateReminderDate = () => {
@@ -396,24 +409,6 @@ export default function ReminderSendButton({
             Set a scheduled push reminder for <strong>&quot;{itemTitle}&quot;</strong>.
           </Typography>
 
-          {/* Guidance / Help banner */}
-          <Box 
-            sx={{ 
-              p: 1.5, 
-              mb: 2.5, 
-              borderRadius: '12px', 
-              bgcolor: isDark ? '#1e293b' : '#f8fafc', 
-              border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` 
-            }}
-          >
-            <Typography variant="caption" sx={{ display: 'flex', gap: 1, fontWeight: 700, color: isDark ? '#94a3b8' : '#475569' }}>
-              💡 Predefined time slots selection
-            </Typography>
-            <Typography variant="caption" sx={{ display: 'block', mt: 0.5, opacity: 0.8, color: 'inherit', lineHeight: 1.4 }}>
-              Predefined slots schedule reminders relative to the current time or scheduled/due time. If a selected slot falls in the past, it automatically triggers in 2 minutes as a safe fallback.
-            </Typography>
-          </Box>
-
           {/* Time delay select */}
           <FormControl component="fieldset" fullWidth sx={{ mb: 2 }}>
             <FormLabel 
@@ -457,45 +452,55 @@ export default function ReminderSendButton({
                 </Typography>
               </Box>
 
-              {[
-                { label: 'At time', value: 'at_time' },
-                { label: '5 min before', value: '5_before' },
-                { label: '15 min before (default)', value: '15_before' },
-                { label: '30 min before', value: '30_before' },
-                { label: '1 hour before', value: '1h_before' },
-                { label: '1 day before', value: '1d_before' },
-              ].map((opt) => (
-                <FormControlLabel
-                  key={opt.value}
-                  value={opt.value}
-                  disabled={!isDateTimeValid}
-                  control={
-                    <Radio 
-                      size="small" 
-                      sx={{
-                        color: isDark ? '#475569' : '#cbd5e1',
-                        '&.Mui-checked': { color: '#6366f1' },
-                        '&.Mui-disabled': { color: isDark ? '#1e293b' : '#f1f5f9' }
-                      }}
-                    />
-                  }
-                  label={opt.label}
-                  sx={{
-                    m: 0,
-                    px: 1.5,
-                    py: 0.5,
-                    borderRadius: '12px',
-                    border: `1.5px solid ${selectedSlot === opt.value ? '#6366f1' : (isDark ? '#334155' : '#e2e8f0')}`,
-                    bgcolor: selectedSlot === opt.value ? (isDark ? 'rgba(99, 102, 241, 0.15)' : '#eff6ff') : 'transparent',
-                    opacity: isDateTimeValid ? 1 : 0.5,
-                    '& .MuiTypography-root': {
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      color: selectedSlot === opt.value ? '#6366f1' : 'inherit'
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 1.5,
+                  mt: 0.5,
+                  mb: 1.5,
+                }}
+              >
+                {[
+                  { label: 'At time', value: 'at_time' },
+                  { label: '5 min before', value: '5_before' },
+                  { label: '15 min before (default)', value: '15_before' },
+                  { label: '30 min before', value: '30_before' },
+                  { label: '1 hour before', value: '1h_before' },
+                  { label: '1 day before', value: '1d_before' },
+                ].map((opt) => (
+                  <FormControlLabel
+                    key={opt.value}
+                    value={opt.value}
+                    disabled={!isDateTimeValid}
+                    control={
+                      <Radio 
+                        size="small" 
+                        sx={{
+                          color: isDark ? '#475569' : '#cbd5e1',
+                          '&.Mui-checked': { color: '#6366f1' },
+                          '&.Mui-disabled': { color: isDark ? '#1e293b' : '#f1f5f9' }
+                        }}
+                      />
                     }
-                  }}
-                />
-              ))}
+                    label={opt.label}
+                    sx={{
+                      m: 0,
+                      px: 1.5,
+                      py: 0.5,
+                      borderRadius: '12px',
+                      border: `1.5px solid ${selectedSlot === opt.value ? '#6366f1' : (isDark ? '#334155' : '#e2e8f0')}`,
+                      bgcolor: selectedSlot === opt.value ? (isDark ? 'rgba(99, 102, 241, 0.15)' : '#eff6ff') : 'transparent',
+                      opacity: isDateTimeValid ? 1 : 0.5,
+                      '& .MuiTypography-root': {
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        color: selectedSlot === opt.value ? '#6366f1' : 'inherit'
+                      }
+                    }}
+                  />
+                ))}
+              </Box>
 
               {/* Custom option */}
               <Box sx={{ mt: 1, mb: 0.5 }}>

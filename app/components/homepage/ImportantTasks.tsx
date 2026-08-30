@@ -402,20 +402,18 @@ const TodoQuickRow = ({
         </Typography>
       </Box>
 
-      {/* Priority Badge */}
-      <Chip
-        label={task.priority.toUpperCase()}
-        size="small"
+      {/* Priority indicator circle */}
+      <Box
         sx={{
-          height: 18,
-          fontSize: '9px',
-          fontWeight: 800,
-          backgroundColor: isDone
-            ? (isDark ? '#334155' : '#e2e8f0')
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          flexShrink: 0,
+          bgcolor: isDone
+            ? (isDark ? '#475569' : '#cbd5e1')
             : (task.priority === 'critical' ? '#ef4444'
               : task.priority === 'urgent' ? '#f59e0b'
               : '#10b981'),
-          color: isDone ? (isDark ? '#94a3b8' : '#64748b') : 'white',
         }}
       />
 
@@ -651,8 +649,17 @@ const ImportantTasks = () => {
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [selectedQuickTask, setSelectedQuickTask] = useState<Todo | null>(null);
+  const [localTitle, setLocalTitle] = useState('');
+  const [customAssigneeInput, setCustomAssigneeInput] = useState('');
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
   const [todoModalOpen, setTodoModalOpen] = useState(false);
+
+  // Sync local title state when task is clicked/opened
+  useEffect(() => {
+    if (selectedQuickTask) {
+      setLocalTitle(selectedQuickTask.title);
+    }
+  }, [selectedQuickTask]);
 
   // Calculate daily progress percentage based on active & completed tasks of the selected date
   const progressPercent = useMemo(() => {
@@ -1330,20 +1337,33 @@ const ImportantTasks = () => {
                   </svg>
                 </IconButton>
               </Box>
-
+              
               {/* Body Content */}
               <Box className="p-6">
-                <Box className="rounded-2xl p-4 mb-5" sx={{ bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-                  <Typography
-                    variant="body1"
-                    className={`font-semibold ${
-                      selectedQuickTask?.status === 'completed'
-                        ? 'text-slate-400 dark:text-slate-500 line-through'
-                        : isDark ? 'text-slate-100' : 'text-slate-800'
-                    }`}
-                  >
-                    {selectedQuickTask?.title}
-                  </Typography>
+                <Box className="rounded-2xl p-3 mb-5" sx={{ bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                  <input
+                    type="text"
+                    value={localTitle}
+                    onChange={(e) => setLocalTitle(e.target.value)}
+                    onBlur={async () => {
+                      if (selectedQuickTask && localTitle.trim() !== '' && localTitle !== selectedQuickTask.title) {
+                        const updated = { ...selectedQuickTask, title: localTitle };
+                        setSelectedQuickTask(updated);
+                        await updateTodo(selectedQuickTask.id, { title: localTitle });
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '15px',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      color: isDark ? '#f1f5f9' : '#0f172a',
+                      textDecoration: selectedQuickTask?.status === 'completed' ? 'line-through' : 'none',
+                    }}
+                  />
                 </Box>
 
                 {/* Priority Row */}
@@ -1368,7 +1388,7 @@ const ImportantTasks = () => {
                 </Box>
 
                 {/* Status Row */}
-                <Box className="flex items-center justify-between mb-6">
+                <Box className="flex items-center justify-between mb-4">
                   <Typography variant="body2" className="text-slate-500 dark:text-slate-400 font-medium">
                     Status
                   </Typography>
@@ -1382,6 +1402,106 @@ const ImportantTasks = () => {
                   >
                     {selectedQuickTask?.status === 'completed' ? 'Completed' : 'Active'}
                   </Typography>
+                </Box>
+
+                {/* Assignee Selection */}
+                <Box className="mb-5">
+                  <Typography variant="body2" className="text-slate-500 dark:text-slate-400 font-medium mb-1.5">
+                    Assignee
+                  </Typography>
+                  <Box className="flex gap-2 items-center">
+                    <select
+                      value={selectedQuickTask?.assignee || ''}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        if (selectedQuickTask) {
+                          const updated = { ...selectedQuickTask, assignee: val };
+                          setSelectedQuickTask(updated);
+                          await updateTodo(selectedQuickTask.id, { assignee: val });
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '10px 14px',
+                        borderRadius: '12px',
+                        border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                        backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                        color: isDark ? '#f1f5f9' : '#0f172a',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      <option value={user?.displayName || 'Myself'}>{user?.displayName || 'Myself'} (You)</option>
+                      {user?.sharedWith?.map((su) => (
+                        <option key={su.uid} value={su.displayName}>
+                          {su.displayName}
+                        </option>
+                      ))}
+                      {selectedQuickTask?.assignee && 
+                       selectedQuickTask.assignee !== user?.displayName && 
+                       !user?.sharedWith?.some(su => su.displayName === selectedQuickTask.assignee) && (
+                        <option value={selectedQuickTask.assignee}>
+                          {selectedQuickTask.assignee} (Custom)
+                        </option>
+                      )}
+                    </select>
+                    
+                    <input
+                      type="text"
+                      placeholder="Or type custom name..."
+                      value={customAssigneeInput}
+                      onChange={(e) => setCustomAssigneeInput(e.target.value)}
+                      onBlur={async () => {
+                        if (selectedQuickTask && customAssigneeInput.trim() !== '') {
+                          const val = customAssigneeInput.trim();
+                          const updated = { ...selectedQuickTask, assignee: val };
+                          setSelectedQuickTask(updated);
+                          await updateTodo(selectedQuickTask.id, { assignee: val });
+                          setCustomAssigneeInput('');
+                        }
+                      }}
+                      style={{
+                        width: '140px',
+                        padding: '9px 12px',
+                        borderRadius: '12px',
+                        border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                        backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                        color: isDark ? '#f1f5f9' : '#0f172a',
+                        fontSize: '0.85rem',
+                        fontWeight: 500,
+                        outline: 'none',
+                      }}
+                    />
+                  </Box>
+                </Box>
+
+                {/* View Details Link */}
+                <Box className="mb-5">
+                  <Button
+                    onClick={() => {
+                      if (selectedQuickTask) {
+                        window.location.href = `/to-do/${selectedQuickTask.id}`;
+                      }
+                    }}
+                    variant="outlined"
+                    fullWidth
+                    sx={{
+                      borderRadius: '14px',
+                      py: 1.2,
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      borderColor: isDark ? '#334155' : '#e2e8f0',
+                      color: isDark ? '#cbd5e1' : '#475569',
+                      '&:hover': {
+                        borderColor: '#6366f1',
+                        color: '#6366f1',
+                      }
+                    }}
+                  >
+                    View Full Details →
+                  </Button>
                 </Box>
 
                 {/* Action Buttons */}

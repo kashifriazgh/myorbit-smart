@@ -727,12 +727,20 @@ const Schedules: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<SchedulesProps | null>(null);
   const [selectedQuickSchedule, setSelectedQuickSchedule] = useState<SchedulesProps | null>(null);
+  const [localScheduleTitle, setLocalScheduleTitle] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
     severity: 'success' | 'error' | 'info' | 'warning';
   }>({ open: false, message: '', severity: 'info' });
+
+  // Sync local title state when schedule details are opened
+  useEffect(() => {
+    if (selectedQuickSchedule) {
+      setLocalScheduleTitle(selectedQuickSchedule.title);
+    }
+  }, [selectedQuickSchedule]);
 
   const isDark = theme?.mode === 'dark';
 
@@ -1233,17 +1241,31 @@ const Schedules: React.FC = () => {
 
             {/* Body Content */}
             <Box className="p-6">
-              <Box className="rounded-2xl p-4 mb-5" sx={{ bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-                <Typography
-                  variant="body1"
-                  className={`font-semibold ${
-                    selectedQuickSchedule?.status === 'completed'
-                      ? 'text-slate-400 dark:text-slate-500 line-through'
-                      : isDark ? 'text-slate-100' : 'text-slate-800'
-                  }`}
-                >
-                  {selectedQuickSchedule?.title}
-                </Typography>
+              <Box className="rounded-2xl p-3 mb-5" sx={{ bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                <input
+                  type="text"
+                  value={localScheduleTitle}
+                  onChange={(e) => setLocalScheduleTitle(e.target.value)}
+                  onBlur={async () => {
+                    if (selectedQuickSchedule && localScheduleTitle.trim() !== '' && localScheduleTitle !== selectedQuickSchedule.title) {
+                      const updated = { ...selectedQuickSchedule, title: localScheduleTitle };
+                      setSelectedQuickSchedule(updated);
+                      await editSchedule(selectedQuickSchedule.id!, updated);
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    color: isDark ? '#f1f5f9' : '#0f172a',
+                    textDecoration: selectedQuickSchedule?.status === 'completed' ? 'line-through' : 'none',
+                    marginBottom: '4px',
+                  }}
+                />
                 <Typography
                   variant="caption"
                   sx={{ fontSize: '11px', color: isDark ? '#64748b' : '#94a3b8', mt: 0.5, display: 'block' }}
