@@ -42,8 +42,8 @@ type TaskPriority = 'routine' | 'urgent' | 'critical';
 import { useTodoContext } from '@/app/lib/context/todoContext';
 
 export default function ToDoModal({ open, onClose }: Props) {
-  const { user } = useAuth();
-  const { addTodo } = useTodoContext();
+  const { user, isGuest } = useAuth();
+  const { todos, addTodo } = useTodoContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -53,9 +53,65 @@ export default function ToDoModal({ open, onClose }: Props) {
   const [priority, setPriority] = useState<TaskPriority>('routine');
   const [privacy, setPrivacy] = useState<'private' | 'public'>('private');
   const [dueDate, setDueDate] = useState<Date | null>(new Date());
+  const [dueTime, setDueTime] = useState<string>('07:00');
   const [loading, setLoading] = useState(false);
   const [isImportant, setIsImportant] = useState(false);
   const [isFlexible, setIsFlexible] = useState(false);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parseDueDateToDate = (dueDateVal: any): Date | null => {
+    if (!dueDateVal) return null;
+    if (dueDateVal instanceof Date) return dueDateVal;
+    if (typeof dueDateVal === 'object') {
+      if (typeof dueDateVal.toDate === 'function') {
+        return dueDateVal.toDate();
+      }
+      if (dueDateVal.seconds !== undefined) {
+        return new Date(dueDateVal.seconds * 1000);
+      }
+    }
+    const d = new Date(dueDateVal);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  // Helper to find default time slots: 7 AM, 8 AM, etc. for same day tasks
+  const getDefaultTimeForDate = (selectedDate: Date) => {
+    const dateStr = selectedDate.toISOString().split('T')[0];
+    const sameDayTasks = todos.filter((t) => {
+      if (!t.dueDate) return false;
+      const tDate = parseDueDateToDate(t.dueDate);
+      if (!tDate) return false;
+      return tDate.toISOString().split('T')[0] === dateStr;
+    });
+
+    if (sameDayTasks.length === 0) {
+      return '07:00';
+    }
+
+    let maxHour = 6; // start before 7
+    sameDayTasks.forEach((t) => {
+      const tDate = parseDueDateToDate(t.dueDate);
+      if (tDate) {
+        const hour = tDate.getHours();
+        if (hour > maxHour) {
+          maxHour = hour;
+        }
+      }
+    });
+
+    const nextHour = maxHour + 1;
+    const displayHour = nextHour >= 24 ? 7 : nextHour;
+    return `${String(displayHour).padStart(2, '0')}:00`;
+  };
+
+  // Auto-calculate default due time when dueDate changes
+  useEffect(() => {
+    if (dueDate) {
+      const calculated = getDefaultTimeForDate(dueDate);
+      setDueTime(calculated);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dueDate, todos]);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -108,9 +164,24 @@ export default function ToDoModal({ open, onClose }: Props) {
   };
 
   const handleSave = async () => {
+    if (isGuest) {
+      alert('Guest users are not allowed to create tasks. Please sign up first.');
+      return;
+    }
     if (!title.trim()) return;
 
     setLoading(true);
+
+    let finalDueDate: Date | null = null;
+    if (!isFlexible && dueDate) {
+      finalDueDate = new Date(dueDate);
+      if (dueTime) {
+        const [hours, minutes] = dueTime.split(':').map(Number);
+        finalDueDate.setHours(hours, minutes, 0, 0);
+      } else {
+        finalDueDate.setHours(7, 0, 0, 0);
+      }
+    }
 
     const docData = {
       title: title.trim(),
@@ -127,7 +198,7 @@ export default function ToDoModal({ open, onClose }: Props) {
       sharedWith: [],
       assignee: assignee.trim() || null,
       startDate: Timestamp.fromDate(new Date()),
-      dueDate: isFlexible ? null : Timestamp.fromDate(dueDate || new Date()),
+      dueDate: isFlexible ? null : (finalDueDate ? Timestamp.fromDate(finalDueDate) : null),
       isFlexible,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -240,51 +311,90 @@ export default function ToDoModal({ open, onClose }: Props) {
           >
             <Collapse in={!isFlexible}>
               <Box className="w-full">
-                <TextField
-                  type="date"
-                  value={dueDate ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}` : ''}
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      const [y, m, d] = e.target.value.split('-').map(Number);
-                      setDueDate(new Date(y, m - 1, d));
-                    } else {
-                      setDueDate(null);
-                    }
-                  }}
-                  fullWidth
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: '16px',
-                      backgroundColor:
-                        theme.palette.mode === 'dark' ? '#1e3a8a20' : '#f0f7ff',
-                      '& fieldset': {
-                        borderColor: '#3b82f6',
-                        borderWidth: '2px',
-                      },
-                    },
-                    '& .MuiInputBase-input': {
-                      textAlign: 'center',
-                      fontWeight: 800,
-                      color: '#2563eb',
-                      fontSize: '1.1rem',
-                      letterSpacing: '1px',
-                    },
-                  }}
-                  helperText={
-                    dueDate && (
-                      <Typography
-                        variant="caption"
-                        className="text-slate-400 dark:text-slate-500 font-bold ml-1 uppercase tracking-wider"
-                      >
-                        {dueDate.toLocaleDateString('en-US', {
-                          weekday: 'long',
-                          month: 'long',
-                          day: 'numeric',
-                        })}
-                      </Typography>
-                    )
-                  }
-                />
+                <Box className="flex flex-col sm:flex-row gap-4 mb-4">
+                  <Box className="flex-1">
+                    <TextField
+                      type="date"
+                      value={dueDate ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}` : ''}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const [y, m, d] = e.target.value.split('-').map(Number);
+                          setDueDate(new Date(y, m - 1, d));
+                        } else {
+                          setDueDate(null);
+                        }
+                      }}
+                      fullWidth
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '16px',
+                          backgroundColor:
+                            theme.palette.mode === 'dark' ? '#1e3a8a20' : '#f0f7ff',
+                          '& fieldset': {
+                            borderColor: '#3b82f6',
+                            borderWidth: '2px',
+                          },
+                        },
+                        '& .MuiInputBase-input': {
+                          textAlign: 'center',
+                          fontWeight: 800,
+                          color: '#2563eb',
+                          fontSize: '1.1rem',
+                          letterSpacing: '1px',
+                        },
+                      }}
+                      helperText={
+                        dueDate && (
+                          <Typography
+                            variant="caption"
+                            className="text-slate-400 dark:text-slate-500 font-bold ml-1 uppercase tracking-wider"
+                          >
+                            {dueDate.toLocaleDateString('en-US', {
+                              weekday: 'long',
+                              month: 'long',
+                              day: 'numeric',
+                            })}
+                          </Typography>
+                        )
+                      }
+                    />
+                  </Box>
+
+                  <Box className="flex-1">
+                    <TextField
+                      type="time"
+                      value={dueTime}
+                      onChange={(e) => setDueTime(e.target.value)}
+                      fullWidth
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '16px',
+                          backgroundColor:
+                            theme.palette.mode === 'dark' ? '#1e3a8a20' : '#f0f7ff',
+                          '& fieldset': {
+                            borderColor: '#3b82f6',
+                            borderWidth: '2px',
+                          },
+                        },
+                        '& .MuiInputBase-input': {
+                          textAlign: 'center',
+                          fontWeight: 800,
+                          color: '#2563eb',
+                          fontSize: '1.1rem',
+                          letterSpacing: '1px',
+                        },
+                      }}
+                      helperText={
+                        <Typography
+                          variant="caption"
+                          className="text-slate-400 dark:text-slate-500 font-bold ml-1 uppercase tracking-wider"
+                        >
+                          🕒 Specific Target Time
+                        </Typography>
+                      }
+                    />
+                  </Box>
+                </Box>
                 <Stack
                   direction="row"
                   spacing={1}

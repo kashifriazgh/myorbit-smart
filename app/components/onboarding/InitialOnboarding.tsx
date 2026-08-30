@@ -66,7 +66,7 @@ export default function InitialOnboarding({
   onClose: externalOnClose,
   startStep
 }: InitialOnboardingProps) {
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -318,7 +318,7 @@ export default function InitialOnboarding({
     setOnboardingData(prev => ({ ...prev, ...val }));
   };
 
-  if (!user || loading) return null;
+  if (!user || isGuest || loading) return null;
 
   const CurrentStepComponent = GROUPS[currentGroupIdx].component;
   const isValid = isStepValid();

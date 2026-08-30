@@ -691,7 +691,7 @@ const QuickAddScheduleRow = ({ isDark, schedules, onAdd }: QuickAddScheduleRowPr
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 const Schedules: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const { theme } = useCustomTheme();
   const [viewMode, setViewMode] = useState<'quick' | 'daily' | 'future'>('quick');
   const [isLoaded, setIsLoaded] = useState(false);
@@ -801,14 +801,29 @@ const Schedules: React.FC = () => {
     return `${formatTime(startTime)} – ${formatTime(endTime)}`;
   };
 
-  const handleAddSchedule = () => { setEditingSchedule(null); setModalOpen(true); };
+  const handleAddSchedule = () => {
+    if (isGuest) {
+      setSnackbar({ open: true, message: 'Guest users are not allowed to create schedules. Please sign up first.', severity: 'warning' });
+      return;
+    }
+    setEditingSchedule(null);
+    setModalOpen(true);
+  };
 
   const handleEditSchedule = (scheduleId: string) => {
+    if (isGuest) {
+      setSnackbar({ open: true, message: 'Guest users are not allowed to edit schedules. Please sign up first.', severity: 'warning' });
+      return;
+    }
     const schedule = allSchedules.find(s => s.id === scheduleId);
     if (schedule) { setEditingSchedule(schedule); setModalOpen(true); }
   };
 
   const handleSaveSchedule = async (scheduleData: SchedulesProps) => {
+    if (isGuest) {
+      setSnackbar({ open: true, message: 'Guest users are not allowed to save schedules. Please sign up first.', severity: 'warning' });
+      return;
+    }
     setIsSaving(true);
     try {
       if (!scheduleData.title || !scheduleData.startTime) throw new Error('Title and start time are required');
@@ -828,6 +843,10 @@ const Schedules: React.FC = () => {
   };
 
   const handleDeleteSchedule = async (scheduleId: string) => {
+    if (isGuest) {
+      setSnackbar({ open: true, message: 'Guest users are not allowed to delete schedules. Please sign up first.', severity: 'warning' });
+      return;
+    }
     setIsSaving(true);
     try {
       await removeSchedule(scheduleId);
@@ -855,6 +874,10 @@ const Schedules: React.FC = () => {
 
 
   const handleQuickAdd = (title: string, startTime: string) => {
+    if (isGuest) {
+      setSnackbar({ open: true, message: 'Guest users are not allowed to create schedules. Please sign up first.', severity: 'warning' });
+      return;
+    }
     if (!user) return;
     const endHour = (parseInt(startTime.split(':')[0]) + 1) % 24;
     const endTime = `${String(endHour).padStart(2, '0')}:${startTime.split(':')[1]}`;
@@ -873,6 +896,10 @@ const Schedules: React.FC = () => {
   };
 
   const handleToggleStatus = async (schedule: SchedulesProps) => {
+    if (isGuest) {
+      setSnackbar({ open: true, message: 'Guest users are not allowed to modify schedules. Please sign up first.', severity: 'warning' });
+      return;
+    }
     if (!schedule.id) return;
     const newStatus = schedule.status === 'completed' ? 'pending' : 'completed';
     try {

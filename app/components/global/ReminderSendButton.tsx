@@ -29,8 +29,8 @@ import {
 import NotificationsIcon from '@mui/icons-material/NotificationsActive';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { collection, getDocs } from 'firebase/firestore';
-import { userDb } from '@/app/lib/firebase';
+import { collection, getDocs, doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { db, userDb } from '@/app/lib/firebase';
 
 interface ReminderSendButtonProps {
   itemId: string;
@@ -72,6 +72,19 @@ export default function ReminderSendButton({
   const [selectedSlot, setSelectedSlot] = useState<string>('15_before');
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
   const [customMinutes, setCustomMinutes] = useState<number>(45);
+  const [taskDueTime, setTaskDueTime] = useState<string>('07:00');
+
+  // Sync task due time state when target time changes
+  React.useEffect(() => {
+    if (itemType === 'task') {
+      const parsed = parseItemDateTime(itemDateTime);
+      if (parsed) {
+        const hours = String(parsed.getHours()).padStart(2, '0');
+        const minutes = String(parsed.getMinutes()).padStart(2, '0');
+        setTaskDueTime(`${hours}:${minutes}`);
+      }
+    }
+  }, [itemDateTime, itemType]);
 
   const handleOpenMenu = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
@@ -155,7 +168,13 @@ export default function ReminderSendButton({
   const isDateTimeValid = parsedDateTime && !isNaN(parsedDateTime.getTime());
 
   const calculateReminderDate = () => {
-    const baseDate = isDateTimeValid ? parsedDateTime! : new Date();
+    let baseDate = isDateTimeValid ? parsedDateTime! : new Date();
+    if (itemType === 'task' && taskDueTime) {
+      const newDate = new Date(baseDate);
+      const [hours, minutes] = taskDueTime.split(':').map(Number);
+      newDate.setHours(hours, minutes, 0, 0);
+      baseDate = newDate;
+    }
     
     switch (selectedSlot) {
       case '2_now':
@@ -187,6 +206,18 @@ export default function ReminderSendButton({
     try {
       const { createWhatsAppReminder } = await import('@/app/lib/utils/whatsapp-reminder');
       
+      // Update todo's dueDate with selected time in Firestore
+      if (itemType === 'task' && taskDueTime) {
+        const newDueDate = parsedDateTime ? new Date(parsedDateTime) : new Date();
+        const [hours, minutes] = taskDueTime.split(':').map(Number);
+        newDueDate.setHours(hours, minutes, 0, 0);
+        
+        const todoRef = doc(db, 'todos', _itemId);
+        await updateDoc(todoRef, {
+          dueDate: Timestamp.fromDate(newDueDate)
+        }).catch((err) => console.error('Failed to update task due date:', err));
+      }
+
       const computedDate = calculateReminderDate();
       // If calculated date is in the past, fall back to 2 minutes from now
       const reminderDate = computedDate.getTime() <= Date.now()
@@ -550,7 +581,25 @@ export default function ReminderSendButton({
               />
             </Box>
           )}
-
+          {itemType === 'task' && (
+            <Box sx={{ mb: 2.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: isDark ? '#94a3b8' : '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', mb: 1 }}>
+                🏁 Task due / work finishing time
+              </Typography>
+              <TextField
+                type="time"
+                fullWidth
+                size="small"
+                value={taskDueTime}
+                onChange={(e) => setTaskDueTime(e.target.value)}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '12px',
+                  },
+                }}
+              />
+            </Box>
+          )}
           {/* Time Preview Box */}
           <Box 
             sx={{ 

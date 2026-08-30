@@ -620,7 +620,7 @@ const QuickAddTaskRow = ({ selectedDate, isDark, onAdd }: QuickAddTaskRowProps) 
 
 const ImportantTasks = () => {
   const { todos, loading, updateStepStatus, addTodo, updateTodo, deleteTodo } = useTodoContext();
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
   const [viewMode, setViewMode] = useState<'quick' | 'detail'>('quick');
@@ -684,6 +684,10 @@ const ImportantTasks = () => {
   }, [todos, selectedDate]);
 
   const handleQuickAddTask = (title: string, dueDate: Date) => {
+    if (isGuest) {
+      alert('Guest users are not allowed to create tasks. Please sign up first.');
+      return;
+    }
     if (!user) return;
     const newTodo: Omit<Todo, 'id'> = {
       title,
@@ -1128,7 +1132,13 @@ const ImportantTasks = () => {
                 variant="contained"
                 size="large"
                 startIcon={<Add />}
-                onClick={() => setTodoModalOpen(true)}
+                onClick={() => {
+                  if (isGuest) {
+                    alert('Guest users are not allowed to create tasks. Please sign up first.');
+                    return;
+                  }
+                  setTodoModalOpen(true);
+                }}
                 sx={{
                   px: 4,
                   py: 1.5,
