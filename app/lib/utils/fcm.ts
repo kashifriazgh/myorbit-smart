@@ -7,9 +7,11 @@ import {
 import { getDatabase, Database } from 'firebase/database';
 import {
   getMessaging,
+  register,
+  onRegistered,
+  onUnregistered,
   onMessage,
   Messaging,
-  getToken,
 } from 'firebase/messaging';
 import { getInstallations, getId } from 'firebase/installations';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -19,6 +21,7 @@ let sharedApp: FirebaseApp | null = null;
 let sharedDb: Database | null = null;
 let sharedMessaging: Messaging | null = null;
 let foregroundHandlerSetup = false;
+let listenersSetup = false;
 
 type SharedFirebaseConfig = FirebaseOptions & { vapidKey: string };
 
@@ -106,22 +109,7 @@ export async function getCurrentFid(): Promise<string | null> {
   }
 }
 
-/**
- * Helper to fetch the current standard FCM Registration Token.
- */
-export async function getCurrentFcmToken(): Promise<string | null> {
-  if (typeof window === 'undefined') return null;
-  try {
-    const messaging = await getSharedMessaging();
-    if (!messaging) return null;
-    const config = await getSharedFirebaseConfig();
-    const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || config.vapidKey;
-    return await getToken(messaging, { vapidKey });
-  } catch (err) {
-    console.error('FCM: Failed to get FCM token:', err);
-    return null;
-  }
-}
+
 
 /**
  * Saves/updates the FID registration details in the centralized users Firestore database.
@@ -233,19 +221,44 @@ export async function registerNotificationDevice(userId: string): Promise<void> 
     throw new Error(`Service Worker registration failed: ${(swErr as Error).message}`);
   }
 
+  // Set up FID lifecycle listeners before calling register
+  setupFidLifecycleListeners(messaging, userId);
+
   const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || config.vapidKey;
   console.log('FCM: Registering app instance using VAPID Key:', vapidKey);
 
-  // Retrieve standard highly-compatible FCM Registration Token
-  const token = await getToken(messaging, {
+  // Call the modern FID-based register API
+  await register(messaging, {
     vapidKey,
     serviceWorkerRegistration: registration,
   });
 
-  console.log('[FCM] token obtained (FCM token):', token);
-  if (token) {
-    await saveFidToDatabase(userId, token);
+  // Manually guarantee the current FID is saved to Firestore
+  const fid = await getCurrentFid();
+  console.log('[FCM] token obtained (FID):', fid);
+  if (fid) {
+    await saveFidToDatabase(userId, fid);
   }
+}
+
+/**
+ * Registers the event listeners for FID lifecycle.
+ */
+function setupFidLifecycleListeners(messaging: Messaging, userId: string) {
+  if (listenersSetup) return;
+
+  onRegistered(messaging, (installationId) => {
+    console.log('[FCM] token saved: onRegistered callback fired. FID:', installationId);
+    saveFidToDatabase(userId, installationId);
+  });
+
+  onUnregistered(messaging, (installationId) => {
+    console.log('FCM: onUnregistered callback fired. FID:', installationId);
+    removeFidFromDatabase(userId, installationId);
+  });
+
+  listenersSetup = true;
+  console.log('FCM: FID lifecycle listeners registered.');
 }
 
 

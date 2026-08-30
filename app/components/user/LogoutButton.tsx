@@ -23,8 +23,8 @@ export default function LogoutButton() {
       } else {
         // Disable FCM device token for this user before logging out
         try {
-          const { getCurrentFcmToken, removeFidFromDatabase } = await import('@/app/lib/utils/fcm');
-          const fid = await getCurrentFcmToken();
+          const { getCurrentFid, removeFidFromDatabase } = await import('@/app/lib/utils/fcm');
+          const fid = await getCurrentFid();
           if (fid && user) {
             await removeFidFromDatabase(user.uid, fid);
           }
