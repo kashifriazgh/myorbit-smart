@@ -53,7 +53,7 @@ export default function ReminderSendButton({
   iconSize = 'medium',
   buttonSx = {},
   itemDateTime = null,
-  customItemTypeName,
+  customItemTypeName: _customItemTypeName,
 }: ReminderSendButtonProps) {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
@@ -97,6 +97,11 @@ export default function ReminderSendButton({
 
       const senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.displayName || 'User';
 
+      const isSelf = targetUid === user.uid;
+      const notificationMessage = isSelf
+        ? `${itemType === 'task' ? 'Task Reminder' : 'Schedule Reminder'} : ${itemTitle}`
+        : `${senderName} wants you to remind about ${itemType === 'task' ? 'task' : 'schedule'}: "${itemTitle}"`;
+
       const res = await fetch('/api/send-test-notification', {
         method: 'POST',
         headers: {
@@ -105,10 +110,8 @@ export default function ReminderSendButton({
         },
         body: JSON.stringify({
           targetUid,
-          title: `Reminder: ${customItemTypeName || (itemType === 'task' ? 'Task' : 'Schedule')} Alert ⏰`,
-          bodyText: customItemTypeName
-            ? `${senderName} wants to remind you about the ${customItemTypeName.toLowerCase()}: "${itemTitle}"`
-            : `${senderName} wants to remind you about: "${itemTitle}"`,
+          title: 'MyOrbit Reminder ⏰',
+          bodyText: notificationMessage,
           appUrl: itemDetailUrl,
         }),
       });
@@ -183,10 +186,8 @@ export default function ReminderSendButton({
       const promises = selectedRecipients.map(async (targetUid) => {
         const isSelf = targetUid === user.uid;
         const messageText = isSelf
-          ? `Reminder: "${itemTitle}"${customItemTypeName ? ` (${customItemTypeName})` : ''}`
-          : customItemTypeName
-            ? `${senderName} wants to remind you about the ${customItemTypeName.toLowerCase()}: "${itemTitle}"`
-            : `${senderName} wants to remind you about: "${itemTitle}"`;
+          ? `${itemType === 'task' ? 'Task Reminder' : 'Schedule Reminder'} : ${itemTitle}`
+          : `${senderName} wants you to remind about ${itemType === 'task' ? 'task' : 'schedule'}: "${itemTitle}"`;
 
         // Fetch target user's active device tokens (FIDs) from Firestore once
         const deviceCol = collection(userDb, 'users', targetUid, 'notificationDevices');
@@ -209,6 +210,7 @@ export default function ReminderSendButton({
           clientId: `user_${user.uid}`,
           itemType: (itemType === 'task' ? 'todo' : 'schedule') as 'todo' | 'schedule',
           customMessage: messageText,
+          notificationTitle: 'MyOrbit Reminder ⏰',
           method: 'push' as const,
           tokens: activeTokens,
         };

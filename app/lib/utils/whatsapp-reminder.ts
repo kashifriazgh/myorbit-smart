@@ -20,6 +20,7 @@ interface ReminderConfig {
   clientId: string; // Client instance / session identification (from env manually)
   itemType: 'todo' | 'schedule' | 'goal' | 'habit'; // What kind of item
   customMessage?: string; // Optional custom message template override
+  notificationTitle?: string; // Optional custom title override
   method?: 'whatsapp' | 'push'; // Reminder method choice
   tokens?: string[]; // Registered FCM device tokens
 }
@@ -92,6 +93,7 @@ export async function createWhatsAppReminder(
     firestoreProjectId: firestoreProjectId,
     method: config.method || 'whatsapp', // Store method: 'whatsapp' or 'push'
     tokens: config.tokens || null,
+    notificationTitle: config.notificationTitle || null,
 
     // Contact
     phone: config.phone,

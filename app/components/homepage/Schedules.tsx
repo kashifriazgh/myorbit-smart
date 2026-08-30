@@ -16,6 +16,8 @@ import {
   Badge,
   styled,
   Tooltip,
+  Modal,
+  Fade,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -248,6 +250,8 @@ interface HourlySchedulesGroupedListProps {
   handleToggleStatus: (schedule: SchedulesProps) => void;
   handleEditSchedule: (scheduleId: string) => void;
   getPriorityColor: (priority: string) => string;
+  viewMode?: 'quick' | 'daily' | 'future';
+  onOpen?: (schedule: SchedulesProps) => void;
 }
 
 const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
@@ -257,9 +261,12 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
   handleToggleStatus,
   handleEditSchedule,
   getPriorityColor,
+  viewMode = 'daily',
+  onOpen,
 }) => {
   const hourlyGroups = groupSchedulesByHour(items);
   const sortedSlots = Object.keys(hourlyGroups).sort(sortHourSlots);
+  const isDark = theme?.mode === 'dark';
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -286,6 +293,112 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
             const styleIndex = items.indexOf(schedule);
             const cardStyle = CARD_STYLES[styleIndex % CARD_STYLES.length];
             const done = schedule.status === 'completed';
+
+            if (viewMode === 'quick') {
+              return (
+                <Box
+                  key={schedule.id}
+                  onClick={() => onOpen && onOpen(schedule)}
+                  className="flex min-h-[52px] items-center gap-3 px-3 py-2 cursor-pointer transition-colors"
+                  sx={{
+                    borderBottom: `1px solid ${isDark ? '#1e293b' : '#f1f5f9'}`,
+                    '&:hover': {
+                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#f8fafc',
+                    },
+                  }}
+                >
+                  {/* Checkbox button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStatus(schedule);
+                    }}
+                    aria-pressed={done}
+                    aria-label={`Mark ${schedule.title} as done`}
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                      done
+                        ? `${cardStyle.checkedBg} border-transparent`
+                        : `${isDark ? 'bg-slate-800' : 'bg-white'} ${cardStyle.checkBorder} ${cardStyle.checkBorderHover}`
+                    }`}
+                  >
+                    {done && <CheckIcon />}
+                  </button>
+
+                  {/* Title & Subtime */}
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography
+                      variant="body2"
+                      className={`truncate font-medium ${
+                        done
+                          ? 'text-slate-400 dark:text-slate-500 line-through'
+                          : isDark ? 'text-slate-200' : 'text-slate-800'
+                      }`}
+                      sx={{ fontSize: '14px' }}
+                    >
+                      {schedule.title}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ fontSize: '10px', color: isDark ? '#64748b' : '#94a3b8', display: 'block' }}
+                    >
+                      {getTimeRange(schedule.startTime, schedule.endTime, schedule.isFlexible)}
+                    </Typography>
+                  </Box>
+
+                  {/* Priority Objective Badge */}
+                  {schedule.objective && (
+                    <Chip
+                      label={schedule.objective}
+                      size="small"
+                      sx={{
+                        height: 18,
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        backgroundColor: done
+                          ? (isDark ? '#334155' : '#e2e8f0')
+                          : getPriorityColor(schedule.priority || 'low'),
+                        color: done ? (isDark ? '#94a3b8' : '#64748b') : 'white',
+                      }}
+                    />
+                  )}
+
+                  {/* Reminder Send Button */}
+                  <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center' }}>
+                    <ReminderSendButton
+                      itemId={schedule.id!}
+                      itemTitle={schedule.title}
+                      itemType="schedule"
+                      itemDetailUrl="/"
+                      buttonType="icon"
+                      iconSize="small"
+                      itemDateTime={schedule.date && schedule.startTime ? new Date(`${schedule.date}T${schedule.startTime}`) : null}
+                      buttonSx={{
+                        p: 0.5,
+                        color: isDark ? '#64748b' : '#94a3b8',
+                        '&:hover': { color: '#6366f1' },
+                      }}
+                    />
+                  </Box>
+
+                  {/* Arrow Icon */}
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    style={{ width: '16px', height: '16px' }}
+                    className="shrink-0 text-slate-300 dark:text-slate-600"
+                  >
+                    <path
+                      d="M7.5 5L12.5 10L7.5 15"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </Box>
+              );
+            }
 
             return (
               <Box
@@ -613,6 +726,7 @@ const Schedules: React.FC = () => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<SchedulesProps | null>(null);
+  const [selectedQuickSchedule, setSelectedQuickSchedule] = useState<SchedulesProps | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
@@ -905,7 +1019,14 @@ const Schedules: React.FC = () => {
                 </Typography>
               </Box>
             ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <Box
+                sx={{
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                  bgcolor: isDark ? 'rgba(30, 41, 59, 0.2)' : '#ffffff',
+                }}
+              >
                 <HourlySchedulesGroupedList
                   items={schedules.slice(0, 8)}
                   theme={theme}
@@ -913,6 +1034,8 @@ const Schedules: React.FC = () => {
                   handleToggleStatus={handleToggleStatus}
                   handleEditSchedule={handleEditSchedule}
                   getPriorityColor={getPriorityColor}
+                  viewMode="quick"
+                  onOpen={setSelectedQuickSchedule}
                 />
               </Box>
             )}
@@ -1071,7 +1194,166 @@ const Schedules: React.FC = () => {
         existingSchedules={schedules}
       />
 
+      {/* Schedule Quick Details Modal */}
+      <Modal
+        open={Boolean(selectedQuickSchedule)}
+        onClose={() => setSelectedQuickSchedule(null)}
+        closeAfterTransition
+      >
+        <Fade in={Boolean(selectedQuickSchedule)}>
+          <Box
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[420px] shadow-2xl overflow-hidden border outline-none 
+                       bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"
+            sx={{ p: 0 }}
+          >
+            {/* Header with Close Button */}
+            <Box className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+              <Typography variant="h6" className="font-extrabold text-slate-800 dark:text-slate-100" sx={{ fontSize: '1.1rem' }}>
+                Schedule Details
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => setSelectedQuickSchedule(null)}
+                sx={{
+                  bgcolor: isDark ? '#1e293b' : '#f1f5f9',
+                  color: isDark ? '#94a3b8' : '#64748b',
+                  '&:hover': { bgcolor: isDark ? '#334155' : '#e2e8f0' }
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
+                  <path
+                    d="M6 6L18 18M18 6L6 18"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </IconButton>
+            </Box>
 
+            {/* Body Content */}
+            <Box className="p-6">
+              <Box className="rounded-2xl p-4 mb-5" sx={{ bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                <Typography
+                  variant="body1"
+                  className={`font-semibold ${
+                    selectedQuickSchedule?.status === 'completed'
+                      ? 'text-slate-400 dark:text-slate-500 line-through'
+                      : isDark ? 'text-slate-100' : 'text-slate-800'
+                  }`}
+                >
+                  {selectedQuickSchedule?.title}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ fontSize: '11px', color: isDark ? '#64748b' : '#94a3b8', mt: 0.5, display: 'block' }}
+                >
+                  {selectedQuickSchedule && getTimeRange(selectedQuickSchedule.startTime, selectedQuickSchedule.endTime, selectedQuickSchedule.isFlexible)}
+                </Typography>
+              </Box>
+
+              {/* Priority Objective Row */}
+              {selectedQuickSchedule?.objective && (
+                <Box className="flex items-center justify-between mb-4">
+                  <Typography variant="body2" className="text-slate-500 dark:text-slate-400 font-medium">
+                    Priority
+                  </Typography>
+                  <Chip
+                    label={selectedQuickSchedule.objective}
+                    size="small"
+                    sx={{
+                      fontWeight: 800,
+                      backgroundColor: selectedQuickSchedule.status === 'completed'
+                        ? (isDark ? '#334155' : '#e2e8f0')
+                        : getPriorityColor(selectedQuickSchedule.priority || 'low'),
+                      color: selectedQuickSchedule.status === 'completed' ? (isDark ? '#94a3b8' : '#64748b') : 'white',
+                    }}
+                  />
+                </Box>
+              )}
+
+              {/* Status Row */}
+              <Box className="flex items-center justify-between mb-6">
+                <Typography variant="body2" className="text-slate-500 dark:text-slate-400 font-medium">
+                  Status
+                </Typography>
+                <Typography
+                  variant="body2"
+                  className={`font-bold ${
+                    selectedQuickSchedule?.status === 'completed'
+                      ? 'text-emerald-500'
+                      : 'text-amber-500'
+                  }`}
+                >
+                  {selectedQuickSchedule?.status === 'completed' ? 'Completed' : 'Active'}
+                </Typography>
+              </Box>
+
+              {/* Action Buttons */}
+              <Box className="flex gap-3">
+                <Button
+                  onClick={async () => {
+                    if (selectedQuickSchedule) {
+                      const newStatus = (selectedQuickSchedule.status === 'completed' ? 'pending' : 'completed') as 'pending' | 'completed';
+                      const updatedSchedule = { ...selectedQuickSchedule, status: newStatus };
+                      setSelectedQuickSchedule(updatedSchedule);
+                      await handleToggleStatus(selectedQuickSchedule);
+                    }
+                  }}
+                  variant="contained"
+                  fullWidth
+                  sx={{
+                    borderRadius: '14px',
+                    py: 1.5,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    bgcolor: selectedQuickSchedule?.status === 'completed'
+                      ? (isDark ? '#334155' : '#f1f5f9')
+                      : '#f59e0b',
+                    color: selectedQuickSchedule?.status === 'completed'
+                      ? (isDark ? '#cbd5e1' : '#475569')
+                      : '#ffffff',
+                    '&:hover': {
+                      bgcolor: selectedQuickSchedule?.status === 'completed'
+                        ? (isDark ? '#4b5563' : '#e2e8f0')
+                        : '#d97706',
+                    }
+                  }}
+                >
+                  {selectedQuickSchedule?.status === 'completed' ? 'Mark Incomplete' : 'Complete Schedule'}
+                </Button>
+
+                <Button
+                  onClick={async () => {
+                    if (selectedQuickSchedule) {
+                      const targetId = selectedQuickSchedule.id!;
+                      setSelectedQuickSchedule(null);
+                      const { deleteScheduleReminder } = await import('@/app/lib/utils/whatsapp-reminder');
+                      await deleteScheduleReminder(targetId).catch((err) => console.error(err));
+                      await handleDeleteSchedule(targetId);
+                    }
+                  }}
+                  variant="contained"
+                  sx={{
+                    borderRadius: '14px',
+                    py: 1.5,
+                    px: 3,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    bgcolor: '#ef4444',
+                    color: '#ffffff',
+                    '&:hover': {
+                      bgcolor: '#dc2626',
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
+              </Box>
+            </Box>
+          </Box>
+        </Fade>
+      </Modal>
 
       <Snackbar
         open={snackbar.open}

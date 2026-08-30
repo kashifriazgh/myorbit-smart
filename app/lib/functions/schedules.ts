@@ -10,7 +10,7 @@ import {
   Timestamp,
   getDoc,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, userDb } from '../firebase';
 import { SchedulesProps } from '../interface';
 import {
   createWhatsAppReminder,
@@ -78,7 +78,7 @@ export const createSchedule = async (
           
           // Fetch active device tokens from Firestore to store in the reminder payload
           try {
-            const deviceCol = collection(db, 'users', scheduleData.userId, 'notificationDevices');
+            const deviceCol = collection(userDb, 'users', scheduleData.userId, 'notificationDevices');
             const deviceSnapshot = await getDocs(deviceCol);
             const activeTokens: string[] = [];
             deviceSnapshot.forEach((dDoc) => {
@@ -176,7 +176,7 @@ export const updateSchedule = async (
 
               // Fetch active device tokens from Firestore to store in the reminder payload
               try {
-                const deviceCol = collection(db, 'users', oldData.userId, 'notificationDevices');
+                const deviceCol = collection(userDb, 'users', oldData.userId, 'notificationDevices');
                 const deviceSnapshot = await getDocs(deviceCol);
                 const activeTokens: string[] = [];
                 deviceSnapshot.forEach((dDoc) => {

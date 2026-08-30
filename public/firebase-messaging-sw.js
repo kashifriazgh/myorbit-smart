@@ -28,10 +28,10 @@ self.addEventListener('push', (event) => {
   // If standard FCM notification block is present, the SDK's push handler will show it automatically.
   // Skip manual registration.showNotification to prevent duplicates.
   // Bypassing automatic SDK display and manual skipping to handle rendering manually on all platforms (reliable for mobile)
-  /* if (payload.notification) {
+  if (payload.notification) {
     console.log('[SW] Notification block present. Skipping manual display to prevent duplication.');
     return;
-  } */
+  }
 
   const title = n.title || d.title || 'Orbit Reminder ⏰';
   const options = {
@@ -87,7 +87,6 @@ self.addEventListener('notificationclick', (event) => {
 
 // ─── 3. FIREBASE COMPAT SDK (handles background message enrichment) ───
 // Commented out to prevent standard FCM background handler from intercepting pushes and failing on mobile.
-/*
 try {
   importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js');
   importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js');
@@ -125,7 +124,6 @@ if (typeof firebase !== 'undefined') {
 } else {
   console.warn('[SW] Firebase SDK unavailable ── raw push handler will cover all cases.');
 }
-*/
 
 // ─── 4. LIFECYCLE EVENTS ───
 self.addEventListener('install', (event) => {

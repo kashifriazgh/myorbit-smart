@@ -9,7 +9,7 @@ import CheckIcon from '@mui/icons-material/CheckCircle';
 import InfoIcon from '@mui/icons-material/InfoOutlined';
 import DevicesIcon from '@mui/icons-material/DevicesOther';
 import DeleteIcon from '@mui/icons-material/PersonRemove';
-import { registerNotificationDevice, getCurrentFid } from '@/app/lib/utils/fcm';
+import { registerNotificationDevice, getCurrentFcmToken } from '@/app/lib/utils/fcm';
 import { useAuth } from '@/app/lib/context/userContext';
 import { userDb } from '@/app/lib/firebase';
 import { doc, deleteDoc, collection, getDocs, updateDoc, arrayRemove } from 'firebase/firestore';
@@ -63,13 +63,13 @@ export default function PushNotificationsPage() {
         setDiagnosticSwStatus('Not supported');
       }
 
-      getCurrentFid().then((fid) => {
+      getCurrentFcmToken().then((fid) => {
         if (fid) {
           setDiagnosticToken(`Available (${fid.slice(0, 5)}...${fid.slice(-5)})`);
-          console.log('[FCM] token obtained (FID):', fid);
+          console.log('[FCM] token obtained (FCM token):', fid);
         } else {
           setDiagnosticToken('Not Available');
-          console.log('[FCM] token obtained (FID): Not Available');
+          console.log('[FCM] token obtained (FCM token): Not Available');
         }
       }).catch((err) => {
         setDiagnosticToken('Error');
@@ -106,7 +106,7 @@ export default function PushNotificationsPage() {
               return;
             }
 
-            const fid = await getCurrentFid();
+            const fid = await getCurrentFcmToken();
             if (fid) {
               const { doc: fsDoc, getDoc } = await import('firebase/firestore');
               const deviceRef = fsDoc(userDb, 'users', user.uid, 'notificationDevices', fid);
@@ -201,7 +201,7 @@ export default function PushNotificationsPage() {
     if (!user) return;
     setUnsubscribing(true);
     try {
-      const fid = await getCurrentFid();
+      const fid = await getCurrentFcmToken();
       if (fid) {
         await deleteDoc(doc(userDb, 'users', user.uid, 'notificationDevices', fid));
         setDevices(prev => prev.filter(d => d.fid !== fid));
@@ -279,18 +279,26 @@ export default function PushNotificationsPage() {
             <BackIcon className="text-[16px] group-hover:-translate-x-0.5 transition-transform" />
             Back to Settings
           </Link>
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-              <BellOnIcon className="text-amber-400 text-[26px]" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                <BellOnIcon className="text-amber-400 text-[26px]" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black bg-gradient-to-r from-amber-200 to-orange-300 bg-clip-text text-transparent tracking-tight">
+                  Push Notifications
+                </h1>
+                <p className="text-slate-400 text-sm mt-0.5 font-medium">
+                  Receive real-time browser alerts for tasks and schedules
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl font-black bg-gradient-to-r from-amber-200 to-orange-300 bg-clip-text text-transparent tracking-tight">
-                Push Notifications
-              </h1>
-              <p className="text-slate-400 text-sm mt-0.5 font-medium">
-                Receive real-time browser alerts for tasks and schedules
-              </p>
-            </div>
+            <Link
+              href="/settings/push-diagnostics"
+              className="inline-flex items-center justify-center px-4 py-2.5 bg-slate-900 border border-slate-800 text-slate-300 hover:text-white text-xs font-bold rounded-xl hover:bg-slate-850 transition-colors text-center"
+            >
+              ⚙️ Diagnostics Console
+            </Link>
           </div>
         </div>
       </div>

@@ -336,6 +336,127 @@ const TodoCardItem = ({
   );
 };
 
+const TodoQuickRow = ({
+  task,
+  theme,
+  completingId,
+  markCompleted,
+  onOpen,
+}: {
+  task: Todo;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  theme: any;
+  completingId: string | null;
+  markCompleted: (task: Todo) => void;
+  onOpen: (task: Todo) => void;
+}) => {
+  const isDone = task.status === 'completed';
+  const isDark = theme?.mode === 'dark';
+
+  return (
+    <Box
+      onClick={() => {
+        onOpen(task);
+      }}
+      className="flex min-h-[52px] items-center gap-3 px-3 py-2 cursor-pointer transition-colors"
+      sx={{
+        borderBottom: `1px solid ${isDark ? '#1e293b' : '#f1f5f9'}`,
+        '&:hover': {
+          bgcolor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#f8fafc',
+        },
+      }}
+    >
+      {/* Checkbox button */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          markCompleted(task);
+        }}
+        disabled={completingId === task.id}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
+          isDone
+            ? 'bg-indigo-500 border-transparent text-white'
+            : `${isDark ? 'bg-slate-800' : 'bg-white'} border-slate-300 dark:border-slate-700 hover:border-indigo-400`
+        }`}
+      >
+        {completingId === task.id ? (
+          <CircularProgress size={12} color="inherit" />
+        ) : (
+          isDone && <CheckIcon />
+        )}
+      </button>
+
+      {/* Title */}
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Typography
+          variant="body2"
+          className={`truncate font-medium ${
+            isDone
+              ? 'text-slate-400 dark:text-slate-500 line-through'
+              : isDark ? 'text-slate-200' : 'text-slate-800'
+          }`}
+          sx={{ fontSize: '14px' }}
+        >
+          {task.title}
+        </Typography>
+      </Box>
+
+      {/* Priority Badge */}
+      <Chip
+        label={task.priority.toUpperCase()}
+        size="small"
+        sx={{
+          height: 18,
+          fontSize: '9px',
+          fontWeight: 800,
+          backgroundColor: isDone
+            ? (isDark ? '#334155' : '#e2e8f0')
+            : (task.priority === 'critical' ? '#ef4444'
+              : task.priority === 'urgent' ? '#f59e0b'
+              : '#10b981'),
+          color: isDone ? (isDark ? '#94a3b8' : '#64748b') : 'white',
+        }}
+      />
+
+      {/* Reminder button */}
+      <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center' }}>
+        <ReminderSendButton
+          itemId={task.id!}
+          itemTitle={task.title}
+          itemType="task"
+          itemDetailUrl={`/to-do/${task.id}`}
+          buttonType="icon"
+          iconSize="small"
+          itemDateTime={task.dueDate ? (task.dueDate instanceof Timestamp ? task.dueDate.toDate() : new Date(task.dueDate)) : null}
+          buttonSx={{
+            p: 0.5,
+            color: isDark ? '#64748b' : '#94a3b8',
+            '&:hover': { color: '#6366f1' },
+          }}
+        />
+      </Box>
+
+      {/* Arrow icon */}
+      <svg
+        viewBox="0 0 20 20"
+        fill="none"
+        style={{ width: '16px', height: '16px' }}
+        className="shrink-0 text-slate-300 dark:text-slate-600"
+      >
+        <path
+          d="M7.5 5L12.5 10L7.5 15"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </Box>
+  );
+};
+
+
 interface QuickAddTaskRowProps {
   selectedDate: string;
   isDark: boolean;
@@ -500,7 +621,7 @@ const QuickAddTaskRow = ({ selectedDate, isDark, onAdd }: QuickAddTaskRowProps) 
 };
 
 const ImportantTasks = () => {
-  const { todos, loading, updateStepStatus, addTodo, updateTodo } = useTodoContext();
+  const { todos, loading, updateStepStatus, addTodo, updateTodo, deleteTodo } = useTodoContext();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
@@ -529,6 +650,7 @@ const ImportantTasks = () => {
   const [rescheduleTask, setRescheduleTask] = useState<Todo | null>(null);
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [selectedQuickTask, setSelectedQuickTask] = useState<Todo | null>(null);
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
   const [todoModalOpen, setTodoModalOpen] = useState(false);
 
@@ -1015,22 +1137,25 @@ const ImportantTasks = () => {
             )}
           </Box>
         ) : viewMode === 'quick' ? (
-          <Stack spacing={1}>
+          <Box
+            sx={{
+              borderRadius: '16px',
+              overflow: 'hidden',
+              border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+              bgcolor: isDark ? 'rgba(30, 41, 59, 0.2)' : '#ffffff',
+            }}
+          >
             {filteredTasks.slice(0, 8).map((task) => (
-              <TodoCardItem
+              <TodoQuickRow
                 key={task.id}
                 task={task}
                 theme={theme}
                 completingId={completingId}
-                expanded={expanded}
-                toggleExpanded={toggleExpanded}
-                toggleWorkStarted={toggleWorkStarted}
-                handleReschedule={handleReschedule}
-                toggleStepStatus={toggleStepStatus}
                 markCompleted={markCompleted}
+                onOpen={setSelectedQuickTask}
               />
             ))}
-          </Stack>
+          </Box>
         ) : (
           <Stack spacing={2}>
             {filteredTasks.slice(0, 5).map((task) => (
@@ -1168,6 +1293,161 @@ const ImportantTasks = () => {
 
         {/* Todo Modal */}
         <ToDoModal open={todoModalOpen} onClose={() => setTodoModalOpen(false)} />
+
+        {/* Todo Quick Details Modal */}
+        <Modal
+          open={Boolean(selectedQuickTask)}
+          onClose={() => setSelectedQuickTask(null)}
+          closeAfterTransition
+        >
+          <Fade in={Boolean(selectedQuickTask)}>
+            <Box
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[420px] shadow-2xl overflow-hidden border outline-none 
+                         bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"
+              sx={{ p: 0 }}
+            >
+              {/* Header with Close Button */}
+              <Box className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+                <Typography variant="h6" className="font-extrabold text-slate-800 dark:text-slate-100" sx={{ fontSize: '1.1rem' }}>
+                  Todo Details
+                </Typography>
+                <IconButton
+                  size="small"
+                  onClick={() => setSelectedQuickTask(null)}
+                  sx={{
+                    bgcolor: isDark ? '#1e293b' : '#f1f5f9',
+                    color: isDark ? '#94a3b8' : '#64748b',
+                    '&:hover': { bgcolor: isDark ? '#334155' : '#e2e8f0' }
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
+                    <path
+                      d="M6 6L18 18M18 6L6 18"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </IconButton>
+              </Box>
+
+              {/* Body Content */}
+              <Box className="p-6">
+                <Box className="rounded-2xl p-4 mb-5" sx={{ bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                  <Typography
+                    variant="body1"
+                    className={`font-semibold ${
+                      selectedQuickTask?.status === 'completed'
+                        ? 'text-slate-400 dark:text-slate-500 line-through'
+                        : isDark ? 'text-slate-100' : 'text-slate-800'
+                    }`}
+                  >
+                    {selectedQuickTask?.title}
+                  </Typography>
+                </Box>
+
+                {/* Priority Row */}
+                <Box className="flex items-center justify-between mb-4">
+                  <Typography variant="body2" className="text-slate-500 dark:text-slate-400 font-medium">
+                    Priority
+                  </Typography>
+                  {selectedQuickTask && (
+                    <Chip
+                      label={selectedQuickTask.priority.toUpperCase()}
+                      size="small"
+                      sx={{
+                        fontWeight: 800,
+                        backgroundColor:
+                          selectedQuickTask.priority === 'critical' ? '#ef4444'
+                          : selectedQuickTask.priority === 'urgent' ? '#f59e0b'
+                          : '#10b981',
+                        color: 'white',
+                      }}
+                    />
+                  )}
+                </Box>
+
+                {/* Status Row */}
+                <Box className="flex items-center justify-between mb-6">
+                  <Typography variant="body2" className="text-slate-500 dark:text-slate-400 font-medium">
+                    Status
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    className={`font-bold ${
+                      selectedQuickTask?.status === 'completed'
+                        ? 'text-emerald-500'
+                        : 'text-sky-500'
+                    }`}
+                  >
+                    {selectedQuickTask?.status === 'completed' ? 'Completed' : 'Active'}
+                  </Typography>
+                </Box>
+
+                {/* Action Buttons */}
+                <Box className="flex gap-3">
+                  <Button
+                    onClick={async () => {
+                      if (selectedQuickTask) {
+                        const updatedTask = { ...selectedQuickTask, status: (selectedQuickTask.status === 'completed' ? 'in_progress' : 'completed') as 'in_progress' | 'completed' };
+                        setSelectedQuickTask(updatedTask);
+                        await markCompleted(selectedQuickTask);
+                      }
+                    }}
+                    variant="contained"
+                    fullWidth
+                    sx={{
+                      borderRadius: '14px',
+                      py: 1.5,
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      bgcolor: selectedQuickTask?.status === 'completed'
+                        ? (isDark ? '#334155' : '#f1f5f9')
+                        : '#6366f1',
+                      color: selectedQuickTask?.status === 'completed'
+                        ? (isDark ? '#cbd5e1' : '#475569')
+                        : '#ffffff',
+                      '&:hover': {
+                        bgcolor: selectedQuickTask?.status === 'completed'
+                          ? (isDark ? '#4b5563' : '#e2e8f0')
+                          : '#4f46e5',
+                      }
+                    }}
+                  >
+                    {selectedQuickTask?.status === 'completed' ? 'Mark Incomplete' : 'Complete Todo'}
+                  </Button>
+
+                  <Button
+                    onClick={async () => {
+                      if (selectedQuickTask) {
+                        const targetId = selectedQuickTask.id!;
+                        setSelectedQuickTask(null);
+                        const { deleteTodoReminder } = await import('@/app/lib/utils/whatsapp-reminder');
+                        await deleteTodoReminder(targetId).catch((err) => console.error(err));
+                        await deleteTodo(targetId);
+                      }
+                    }}
+                    variant="contained"
+                    sx={{
+                      borderRadius: '14px',
+                      py: 1.5,
+                      px: 3,
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      bgcolor: '#ef4444',
+                      color: '#ffffff',
+                      '&:hover': {
+                        bgcolor: '#dc2626',
+                      }
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </Box>
+              </Box>
+            </Box>
+          </Fade>
+        </Modal>
       </CardContent>
     </Card>
 
