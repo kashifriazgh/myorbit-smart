@@ -15,6 +15,8 @@ import {
   TextField,
   Tooltip,
   Stack,
+  LinearProgress,
+  CircularProgress,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -25,12 +27,18 @@ import {
   Delete,
   AutoAwesome,
   Add as AddIcon,
+  CalendarMonth,
   CalendarToday as CalendarIcon,
   Checklist as TodoIcon,
   CheckCircle,
+  AccountBalanceWallet,
+  TrackChanges,
+  ArrowForward,
   RadioButtonUnchecked,
 } from '@mui/icons-material';
 
+import { doc, getDoc, updateDoc, addDoc, collection, Timestamp } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { useAuth } from '../../lib/context/userContext';
@@ -806,16 +814,34 @@ const GoalDetailInner: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [addMilestoneDialogOpen, setAddMilestoneDialogOpen] = useState(false);
-  const [milestoneFormStep, setMilestoneFormStep] = useState<1 | 2>(1);
+  const [milestoneFormStep, setMilestoneFormStep] = useState<1 | 2 | 3>(1);
+  const [milestoneType, setMilestoneType] = useState<'schedule' | 'todo' | 'finance_source' | 'manual'>('schedule');
+
+  // Form Fields per type
   const [newMilestoneTitle, setNewMilestoneTitle] = useState('');
-  const [newMilestoneTargetValue, setNewMilestoneTargetValue] = useState<
-    number | ''
-  >('');
-  const [newMilestoneWeight, setNewMilestoneWeight] = useState<number>(1);
-  const [newMilestoneEndDate, setNewMilestoneEndDate] = useState<Date | null>(
-    new Date(),
-  );
-  const [newMilestoneNotes, setNewMilestoneNotes] = useState('');
+  const [scheduleStartTime, setScheduleStartTime] = useState('09:00');
+  const [scheduleEndTime, setScheduleEndTime] = useState('10:00');
+  const [todoTime, setTodoTime] = useState('');
+  
+  // Frequency Options ("Show me")
+  const [frequencyMode, setFrequencyMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [selectedDaysOfWeek, setSelectedDaysOfWeek] = useState<number[]>([1, 3, 5]);
+  const [selectedDaysOfMonth, setSelectedDaysOfMonth] = useState<number[]>([1, 15]);
+
+  const [dateMode, setDateMode] = useState<'single' | 'multiple' | 'range'>('single');
+  const [selectedSingleDate, setSelectedSingleDate] = useState<Date | null>(new Date());
+  const [_selectedMultipleDates, setSelectedMultipleDates] = useState<string[]>([new Date().toISOString().split('T')[0]]);
+  const [selectedRangeStartDate, setSelectedRangeStartDate] = useState<Date | null>(new Date());
+  const [selectedRangeEndDate, setSelectedRangeEndDate] = useState<Date | null>(new Date(Date.now() + 7 * 86400000));
+  const [financeSourceName, setFinanceSourceName] = useState('');
+  const [manualTargetVal, setManualTargetVal] = useState<number | ''>('');
+
+  // Step 3 evaluation states
+  const [milestoneRole, setMilestoneRole] = useState<'contributive' | 'supportive'>('contributive');
+  const [milestoneContributionAmt, setMilestoneContributionAmt] = useState<number | ''>('');
+  const [aiEvaluating, setAiEvaluating] = useState(false);
+  const [aiReason, setAiReason] = useState<string | null>(null);
+
   const [savingMilestone, setSavingMilestone] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -918,7 +944,7 @@ const GoalDetailInner: React.FC = () => {
   const totalCnt = steps.length;
 
   // Calculate milestone date suggestions
-  const milestoneDateSuggestions = useMemo(() => {
+  const _milestoneDateSuggestions = useMemo(() => {
     return calculateMilestoneDateSuggestions(
       goal?.createdAt ? toPlainDate(goal.createdAt) : null,
       dueDateDate,
@@ -954,29 +980,223 @@ const GoalDetailInner: React.FC = () => {
   };
 
   const openAddMilestoneDialog = () => {
-    setNewMilestoneTitle('');
-    setNewMilestoneTargetValue('');
-    setNewMilestoneWeight(1);
-    setNewMilestoneEndDate(null);
-    setNewMilestoneNotes('');
     setMilestoneFormStep(1);
+    setMilestoneType('schedule');
+    setNewMilestoneTitle('');
+    setScheduleStartTime('09:00');
+    setScheduleEndTime('10:00');
+    setTodoTime('');
+    setFrequencyMode('daily');
+    setSelectedDaysOfWeek([1, 3, 5]);
+    setSelectedDaysOfMonth([1, 15]);
+    setDateMode('single');
+    setSelectedSingleDate(new Date());
+    setSelectedMultipleDates([new Date().toISOString().split('T')[0]]);
+    setSelectedRangeStartDate(new Date());
+    setSelectedRangeEndDate(new Date(Date.now() + 7 * 86400000));
+    setFinanceSourceName('');
+    setManualTargetVal('');
+    setMilestoneRole('contributive');
+    setMilestoneContributionAmt('');
+    setAiEvaluating(false);
+    setAiReason(null);
     setAddMilestoneDialogOpen(true);
   };
 
+  const handleStep2Next = async () => {
+    if (milestoneType === 'finance_source') {
+      handleCreateMilestone();
+      return;
+    }
+
+    setAiEvaluating(true);
+    setAiReason(null);
+    setMilestoneFormStep(3); // Transition immediately to Step 3 so the UI feels responsive!
+
+    const unitStr = goal.unit || goal.overallTargetUnit || 'units';
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      const res = await fetch('/api/goals/smart-nudge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          action: 'evaluate-milestone-contribution',
+          goalTitle: goal.title,
+          goalTarget: goal.overallTargetValue || 0,
+          goalUnit: unitStr,
+          milestoneTitle: newMilestoneTitle,
+          milestoneType,
+        }),
+      });
+      clearTimeout(timeoutId);
+
+      const data = await res.json().catch(() => ({}));
+      if (data.role === 'contributive' || data.role === 'supportive') {
+        setMilestoneRole(data.role);
+      } else {
+        setMilestoneRole('contributive');
+      }
+
+      if (typeof data.contributionAmount === 'number') {
+        setMilestoneContributionAmt(data.contributionAmount);
+      } else if (typeof manualTargetVal === 'number') {
+        setMilestoneContributionAmt(manualTargetVal);
+      } else {
+        setMilestoneContributionAmt(10);
+      }
+
+      if (data.reason) {
+        setAiReason(data.reason);
+      }
+    } catch (err) {
+      console.warn('AI evaluation warning or timeout, proceeding to step 3 manually:', err);
+      setMilestoneRole('contributive');
+      setMilestoneContributionAmt(typeof manualTargetVal === 'number' ? manualTargetVal : 10);
+    } finally {
+      clearTimeout(timeoutId);
+      setAiEvaluating(false);
+    }
+  };
+
   const handleCreateMilestone = async () => {
-    if (!goal?.id || !newMilestoneTitle.trim()) return;
+    if (!goal?.id) return;
+    if (milestoneType !== 'finance_source' && !newMilestoneTitle.trim()) return;
+    if (milestoneType === 'finance_source' && !financeSourceName.trim()) return;
+
     setSavingMilestone(true);
     try {
-      await addGoalStep(goal.id, {
-        title: newMilestoneTitle.trim(),
-        targetValue:
-          newMilestoneTargetValue === ''
-            ? undefined
-            : Number(newMilestoneTargetValue),
-        weight: newMilestoneWeight || 1,
-        endDate: newMilestoneEndDate || null,
-        description: newMilestoneNotes.trim() || undefined,
-      });
+      const contribAmt = milestoneRole === 'contributive' ? (typeof milestoneContributionAmt === 'number' ? milestoneContributionAmt : (typeof manualTargetVal === 'number' ? manualTargetVal : 0)) : 0;
+      const unitStr = goal.unit || goal.overallTargetUnit || 'units';
+
+      let effectiveDueDate = selectedSingleDate;
+      if (dateMode === 'range' && selectedRangeEndDate) {
+        effectiveDueDate = selectedRangeEndDate;
+      }
+
+      if (milestoneType === 'todo' && user) {
+        const freqDesc = frequencyMode === 'daily' ? 'Daily' : frequencyMode === 'weekly' ? `Weekly (${selectedDaysOfWeek.map(d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')})` : `Monthly (${selectedDaysOfMonth.join(', ')}th)`;
+
+        const todoId = await addTodo({
+          title: newMilestoneTitle.trim(),
+          status: 'in_progress',
+          priority: 'routine',
+          projectId: goal.projectId || '',
+          authorId: user.uid,
+          dueDate: effectiveDueDate || new Date(),
+          steps: [],
+          tags: [],
+          progressPercent: 0,
+          assignedUsers: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          linkedGoalId: goal.id,
+          goalTitle: goal.title,
+          goalRole: milestoneRole,
+          contributionAmount: contribAmt,
+          contributionUnit: unitStr,
+        });
+
+        await addGoalStep(goal.id, {
+          title: newMilestoneTitle.trim(),
+          targetValue: contribAmt,
+          role: milestoneRole,
+          contributionAmount: contribAmt,
+          contributionUnit: unitStr,
+          linkedType: 'todo',
+          linkedItemId: todoId,
+          endDate: effectiveDueDate || null,
+          description: `${freqDesc}${todoTime ? ` at ${todoTime}` : ''}`,
+        });
+      } else if (milestoneType === 'schedule' && user) {
+        const dateStr = effectiveDueDate ? effectiveDueDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+        const freqDesc = frequencyMode === 'daily' ? 'Daily' : frequencyMode === 'weekly' ? `Weekly (${selectedDaysOfWeek.map(d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')})` : `Monthly (${selectedDaysOfMonth.join(', ')}th)`;
+
+        const schedId = await addSchedule({
+          title: newMilestoneTitle.trim(),
+          date: dateStr,
+          startTime: scheduleStartTime || '09:00',
+          endTime: scheduleEndTime || '10:00',
+          projectId: goal.projectId || '',
+          userId: user.uid,
+          status: 'pending',
+          priority: 'medium',
+          linkedGoalId: goal.id,
+          goalTitle: goal.title,
+          goalRole: milestoneRole,
+          contributionAmount: contribAmt,
+          contributionUnit: unitStr,
+          frequencyMode,
+          selectedDaysOfWeek,
+          selectedDaysOfMonth,
+        });
+
+        await addGoalStep(goal.id, {
+          title: newMilestoneTitle.trim(),
+          targetValue: contribAmt,
+          role: milestoneRole,
+          contributionAmount: contribAmt,
+          contributionUnit: unitStr,
+          linkedType: 'schedule',
+          linkedItemId: schedId,
+          endDate: effectiveDueDate || null,
+          description: `${freqDesc} (${scheduleStartTime} - ${scheduleEndTime})`,
+        });
+      } else if (milestoneType === 'finance_source' && user) {
+        const srcName = financeSourceName.trim();
+
+        // 1. Add to customPaymentHeads collection so it appears in AddMoney modal
+        const headDoc = await addDoc(collection(db, 'customPaymentHeads'), {
+          userId: user.uid,
+          name: srcName,
+          goalId: goal.id,
+          goalTitle: goal.title,
+          createdAt: Timestamp.now(),
+        });
+
+        // 2. Initialize 0 balance entry in totalCashSnapshots
+        const snapshotRef = doc(db, 'totalCashSnapshots', user.uid);
+        const snap = await getDoc(snapshotRef);
+
+        if (snap.exists()) {
+          const data = snap.data();
+          const customSources = typeof data?.sources?.custom === 'object' ? { ...data.sources.custom } : {};
+          if (customSources[srcName] === undefined) {
+            customSources[srcName] = 0;
+            await updateDoc(snapshotRef, { 'sources.custom': customSources, updatedAt: new Date() });
+          }
+        }
+
+        await _updateGoal(goal.id, { linkedSourceId: srcName });
+
+        await addGoalStep(goal.id, {
+          title: `Source of Fund: ${srcName}`,
+          role: 'contributive',
+          contributionAmount: 0,
+          contributionUnit: 'PKR',
+          linkedType: 'finance_source',
+          linkedItemId: headDoc.id,
+          endDate: null,
+          description: `Linked Finance Source Wallet "${srcName}" (0 PKR initial balance)`,
+        });
+      } else {
+        // Manual step
+        await addGoalStep(goal.id, {
+          title: newMilestoneTitle.trim(),
+          targetValue: contribAmt,
+          role: milestoneRole,
+          contributionAmount: contribAmt,
+          contributionUnit: unitStr,
+          linkedType: 'manual',
+          weight: 1,
+          startDate: selectedRangeStartDate || null,
+          endDate: selectedRangeEndDate || selectedSingleDate || null,
+        });
+      }
+
       setAddMilestoneDialogOpen(false);
     } catch (e) {
       console.error('Failed to add milestone:', e);
@@ -1742,249 +1962,642 @@ const GoalDetailInner: React.FC = () => {
           onClose={() => setAddMilestoneDialogOpen(false)}
           fullWidth
           maxWidth="sm"
-          PaperProps={{ sx: { borderRadius: '22px', overflow: 'hidden' } }}
+          PaperProps={{
+            sx: {
+              borderRadius: '24px',
+              overflow: 'hidden',
+              bgcolor: isDark ? '#0f172a' : '#ffffff',
+              color: isDark ? '#f1f5f9' : '#0f172a',
+            },
+          }}
         >
-          <DialogTitle sx={{ fontWeight: 700, pb: 0.5 }}>
-            {milestoneFormStep === 1 ? 'Add milestone' : 'Add details'}
+          {/* Header */}
+          <DialogTitle sx={{ fontWeight: 800, pb: 1, pt: 3, px: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h6" sx={{ fontWeight: 850, fontSize: '1.2rem', color: isDark ? '#f8fafc' : '#0f172a' }}>
+              {milestoneFormStep === 1 && 'Choose Milestone Type'}
+              {milestoneFormStep === 2 && `Configure ${milestoneType === 'finance_source' ? 'Source of Fund' : milestoneType.charAt(0).toUpperCase() + milestoneType.slice(1)}`}
+              {milestoneFormStep === 3 && 'Evaluate Goal Contribution'}
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 800, px: 1.5, py: 0.5, borderRadius: '999px', bgcolor: isDark ? '#1e293b' : '#f1f5f9', color: isDark ? '#cbd5e1' : '#475569' }}>
+              Step {milestoneFormStep} of {milestoneType === 'finance_source' ? 2 : 3}
+            </Typography>
           </DialogTitle>
-          <DialogContent sx={{ pt: 2, px: 3 }}>
-            {milestoneFormStep === 1 ? (
-              <Box sx={{ pt: 1 }}>
-                <Typography sx={{ fontSize: '13px', fontWeight: 600, color: isDark ? '#94a3b8' : '#64748b', mb: 2 }}>
-                  What is the milestone checklist item?
-                </Typography>
-                <TextField
-                  value={newMilestoneTitle}
-                  onChange={(event) => setNewMilestoneTitle(event.target.value)}
-                  placeholder="E.g. Design first mockups"
-                  fullWidth
-                  autoFocus
-                  variant="standard"
-                  InputProps={{
-                    disableUnderline: true,
-                    style: { fontSize: 22, fontWeight: 700, paddingBottom: 8 },
-                  }}
-                  sx={{
-                    borderBottom: `2.5px solid ${typeColor}`,
-                    mb: 3,
-                  }}
-                />
-              </Box>
-            ) : (
-              <Box>
-                <TextField
-                  value={newMilestoneTitle}
-                  onChange={(event) => setNewMilestoneTitle(event.target.value)}
-                  label="Title"
-                  placeholder="E.g. Design first mockups"
-                  fullWidth
-                  sx={{ mb: 2 }}
-                />
-                <TextField
-                  value={newMilestoneTargetValue}
-                  onChange={(event) =>
-                    setNewMilestoneTargetValue(
-                      event.target.value === '' ? '' : Number(event.target.value),
-                    )
-                  }
-                  label="Target value (optional)"
-                  placeholder="E.g. 10"
-                  type="number"
-                  fullWidth
-                  sx={{ mb: 2 }}
-                />
-                <TextField
-                  value={newMilestoneWeight}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    setNewMilestoneWeight(
-                      Number.isNaN(value) ? 1 : Math.max(1, Math.min(10, value)),
-                    );
-                  }}
-                  label="Weight (1-10, default 1)"
-                  placeholder="1"
-                  type="number"
-                  inputProps={{ min: 1, max: 10 }}
-                  fullWidth
-                  sx={{ mb: 2 }}
-                />
 
-                {/* Date picker with suggestions */}
-                <Box sx={{ mb: 2 }}>
-                  <DatePicker
-                    label="Target date (optional)"
-                    value={newMilestoneEndDate}
-                    onChange={(newValue) =>
-                      setNewMilestoneEndDate(newValue as Date | null)
-                    }
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                        helperText:
-                          newMilestoneEndDate &&
-                          !Number.isNaN(newMilestoneEndDate.getTime())
-                            ? fmtDate(newMilestoneEndDate)
-                            : 'Choose a due date',
+          {(savingMilestone || aiEvaluating) && (
+            <LinearProgress color="primary" sx={{ height: 4, bgcolor: 'rgba(99, 102, 241, 0.15)' }} />
+          )}
+
+          <DialogContent sx={{ pt: 1, px: 3, pb: 3 }}>
+            {/* ── STEP 1: Vertical List of 4 Options ── */}
+            {milestoneFormStep === 1 && (
+              <Stack spacing={2} sx={{ pt: 1 }}>
+                {[
+                  {
+                    type: 'schedule',
+                    label: 'Schedule',
+                    desc: 'Time-based session, single date, multiple dates or range',
+                    icon: <CalendarMonth sx={{ fontSize: 26, color: '#fff' }} />,
+                    iconBg: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                    badgeCol: '#8b5cf6',
+                  },
+                  {
+                    type: 'todo',
+                    label: 'Todo',
+                    desc: 'Actionable checklist item with dates and optional time',
+                    icon: <CheckCircle sx={{ fontSize: 26, color: '#fff' }} />,
+                    iconBg: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+                    badgeCol: '#10b981',
+                  },
+                  {
+                    type: 'finance_source',
+                    label: 'Source of Fund',
+                    desc: 'Dedicated finance account/wallet with 0 balance',
+                    icon: <AccountBalanceWallet sx={{ fontSize: 26, color: '#fff' }} />,
+                    iconBg: 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)',
+                    badgeCol: '#f59e0b',
+                  },
+                  {
+                    type: 'manual',
+                    label: 'Manual',
+                    desc: 'Direct checkpoint with start/end dates & target value',
+                    icon: <TrackChanges sx={{ fontSize: 26, color: '#fff' }} />,
+                    iconBg: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                    badgeCol: '#3b82f6',
+                  },
+                ].map((item) => (
+                  <Box
+                    key={item.type}
+                    onClick={() => {
+                      setMilestoneType(item.type as 'schedule' | 'todo' | 'finance_source' | 'manual');
+                      setMilestoneFormStep(2);
+                    }}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2.5,
+                      p: 2.25,
+                      borderRadius: '18px',
+                      cursor: 'pointer',
+                      border: `1.5px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                      bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : '#ffffff',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        borderColor: item.badgeCol,
+                        boxShadow: isDark
+                          ? '0 8px 24px -6px rgba(0,0,0,0.4)'
+                          : '0 8px 24px -6px rgba(99, 102, 241, 0.12)',
+                        bgcolor: isDark ? 'rgba(30, 41, 59, 0.8)' : '#f8fafc',
                       },
                     }}
-                  />
-                </Box>
-
-                {/* Date suggestions */}
-                {milestoneDateSuggestions.length > 0 && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography
-                      sx={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        color: isDark ? '#94a3b8' : '#6b7280',
-                        letterSpacing: '0.05em',
-                        textTransform: 'uppercase',
-                        mb: 1,
-                      }}
-                    >
-                      Smart suggestions
-                    </Typography>
+                  >
                     <Box
                       sx={{
+                        width: 52,
+                        height: 52,
+                        borderRadius: '16px',
+                        background: item.iconBg,
                         display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: 0.75,
-                        maxHeight: '120px',
-                        overflowY: 'auto',
-                        pb: 0.5,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        boxShadow: `0 6px 16px ${item.badgeCol}35`,
                       }}
                     >
-                      {milestoneDateSuggestions.map((suggestion, idx) => {
-                        const isActive =
-                          newMilestoneEndDate &&
-                          new Date(newMilestoneEndDate).toDateString() ===
-                            suggestion.date.toDateString();
-                        return (
+                      {item.icon}
+                    </Box>
+
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography sx={{ fontWeight: 800, fontSize: '1.05rem', color: isDark ? '#f1f5f9' : '#0f172a', mb: 0.25 }}>
+                        {item.label}
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.82rem', color: mutedText, lineHeight: 1.4 }}>
+                        {item.desc}
+                      </Typography>
+                    </Box>
+
+                    <ArrowForward sx={{ color: isDark ? '#64748b' : '#94a3b8' }} />
+                  </Box>
+                ))}
+              </Stack>
+            )}
+
+            {/* ── STEP 2: Input Details per Type ── */}
+            {milestoneFormStep === 2 && (
+              <Stack spacing={2.5} sx={{ pt: 1 }}>
+                {/* 1. Schedule Form */}
+                {milestoneType === 'schedule' && (
+                  <>
+                    <TextField
+                      value={newMilestoneTitle}
+                      onChange={(e) => setNewMilestoneTitle(e.target.value)}
+                      label="Schedule Title"
+                      placeholder="e.g. Read 10 pages at 10 PM daily"
+                      fullWidth
+                      autoFocus
+                      required
+                    />
+
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                      <TextField
+                        type="time"
+                        label="Start Time (Optional)"
+                        value={scheduleStartTime}
+                        onChange={(e) => setScheduleStartTime(e.target.value)}
+                        fullWidth
+                        InputLabelProps={{ shrink: true }}
+                      />
+                      <TextField
+                        type="time"
+                        label="End Time (Optional)"
+                        value={scheduleEndTime}
+                        onChange={(e) => setScheduleEndTime(e.target.value)}
+                        fullWidth
+                        InputLabelProps={{ shrink: true }}
+                      />
+                    </Box>
+
+                    {/* ── Frequency Selection Section ("Show me") ── */}
+                    <Box sx={{ p: 2.5, borderRadius: '18px', border: `1.5px solid ${isDark ? '#334155' : '#e2e8f0'}`, bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : '#f8fafc' }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 800, color: isDark ? '#f1f5f9' : '#0f172a', mb: 0.5 }}>
+                        Show me
+                      </Typography>
+                      
+                      {/* 3 options in one line */}
+                      <Stack direction="row" spacing={1} sx={{ mb: frequencyMode === 'daily' ? 0 : 2, mt: 1 }}>
+                        {[
+                          { id: 'daily', label: 'Daily' },
+                          { id: 'weekly', label: 'Day of week' },
+                          { id: 'monthly', label: 'Day of month' },
+                        ].map((opt) => (
                           <Button
-                            key={idx}
+                            key={opt.id}
                             size="small"
-                            onClick={() => setNewMilestoneEndDate(suggestion.date)}
+                            onClick={() => setFrequencyMode(opt.id as 'daily' | 'weekly' | 'monthly')}
+                            variant={frequencyMode === opt.id ? 'contained' : 'outlined'}
                             sx={{
-                              fontSize: '11px',
-                              fontWeight: 600,
+                              flex: 1,
+                              borderRadius: '12px',
                               textTransform: 'none',
-                              px: 1.5,
-                              py: 0.75,
-                              borderRadius: '8px',
-                              border: `1.5px solid ${
-                                isActive
-                                  ? typeColor
-                                  : isDark
-                                    ? '#475569'
-                                    : '#cbd5e1'
-                              }`,
-                              backgroundColor: isActive
-                                ? isDark
-                                  ? `${typeColor}22`
-                                  : `${typeColor}12`
-                                : isDark
-                                  ? '#1e293b'
-                                  : '#f1f5f9',
-                              color: isActive
-                                ? typeColor
-                                : isDark
-                                  ? '#94a3b8'
-                                  : '#64748b',
-                              transition: 'all 0.15s ease',
+                              fontWeight: 800,
+                              fontSize: 11,
+                              py: 1,
+                              px: 0.75,
+                              lineHeight: 1.2,
+                              bgcolor: frequencyMode === opt.id ? '#8b5cf6' : 'transparent',
+                              borderColor: frequencyMode === opt.id ? '#8b5cf6' : isDark ? '#334155' : '#cbd5e1',
+                              color: frequencyMode === opt.id ? '#ffffff' : isDark ? '#cbd5e1' : '#475569',
+                              boxShadow: frequencyMode === opt.id ? '0 4px 12px rgba(139, 92, 246, 0.25)' : 'none',
                               '&:hover': {
-                                borderColor: typeColor,
-                                backgroundColor: isDark
-                                  ? `${typeColor}22`
-                                  : `${typeColor}12`,
-                                color: typeColor,
+                                borderColor: '#8b5cf6',
                               },
                             }}
                           >
-                            {suggestion.label}
+                            {opt.label}
                           </Button>
-                        );
-                      })}
+                        ))}
+                      </Stack>
+
+                      {/* Days of Week selector (Sun - Sat) */}
+                      {frequencyMode === 'weekly' && (
+                        <Box sx={{ pt: 0.5 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Select Days of Week:
+                          </Typography>
+                          <Stack direction="row" spacing={0.5} justifyContent="space-between">
+                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayName, idx) => {
+                              const isSelected = selectedDaysOfWeek.includes(idx);
+                              return (
+                                <Chip
+                                  key={dayName}
+                                  label={dayName}
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      if (selectedDaysOfWeek.length > 1) {
+                                        setSelectedDaysOfWeek(selectedDaysOfWeek.filter((d) => d !== idx));
+                                      }
+                                    } else {
+                                      setSelectedDaysOfWeek([...selectedDaysOfWeek, idx].sort());
+                                    }
+                                  }}
+                                  variant={isSelected ? 'filled' : 'outlined'}
+                                  sx={{
+                                    flex: 1,
+                                    fontWeight: 800,
+                                    fontSize: 11,
+                                    borderRadius: '8px',
+                                    bgcolor: isSelected ? '#8b5cf6' : 'transparent',
+                                    borderColor: isSelected ? '#8b5cf6' : isDark ? '#334155' : '#cbd5e1',
+                                    color: isSelected ? '#ffffff' : isDark ? '#94a3b8' : '#64748b',
+                                    cursor: 'pointer',
+                                  }}
+                                />
+                              );
+                            })}
+                          </Stack>
+                        </Box>
+                      )}
+
+                      {/* Days of Month selector (1 - 31) */}
+                      {frequencyMode === 'monthly' && (
+                        <Box sx={{ pt: 0.5 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Select Days of Month:
+                          </Typography>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.75, maxHeight: 150, overflowY: 'auto', p: 0.5 }}>
+                            {Array.from({ length: 31 }, (_, i) => i + 1).map((dayNum) => {
+                              const isSelected = selectedDaysOfMonth.includes(dayNum);
+                              return (
+                                <Chip
+                                  key={dayNum}
+                                  label={dayNum}
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      if (selectedDaysOfMonth.length > 1) {
+                                        setSelectedDaysOfMonth(selectedDaysOfMonth.filter((d) => d !== dayNum));
+                                      }
+                                    } else {
+                                      setSelectedDaysOfMonth([...selectedDaysOfMonth, dayNum].sort((a, b) => a - b));
+                                    }
+                                  }}
+                                  variant={isSelected ? 'filled' : 'outlined'}
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontSize: 11,
+                                    borderRadius: '8px',
+                                    bgcolor: isSelected ? '#8b5cf6' : 'transparent',
+                                    borderColor: isSelected ? '#8b5cf6' : isDark ? '#334155' : '#cbd5e1',
+                                    color: isSelected ? '#ffffff' : isDark ? '#94a3b8' : '#64748b',
+                                    cursor: 'pointer',
+                                  }}
+                                />
+                              );
+                            })}
+                          </Box>
+                        </Box>
+                      )}
                     </Box>
-                  </Box>
+                  </>
                 )}
 
-                <TextField
-                  value={newMilestoneNotes}
-                  onChange={(event) => setNewMilestoneNotes(event.target.value)}
-                  label="Notes (optional)"
-                  placeholder="Add helpful details or context"
-                  fullWidth
-                  multiline
-                  minRows={3}
-                />
-              </Box>
+                {/* 2. Todo Form */}
+                {milestoneType === 'todo' && (
+                  <>
+                    <TextField
+                      value={newMilestoneTitle}
+                      onChange={(e) => setNewMilestoneTitle(e.target.value)}
+                      label="Task Title"
+                      placeholder="e.g. Research laptop specs and brands"
+                      fullWidth
+                      autoFocus
+                      required
+                    />
+
+                    {/* ── Frequency Selection Section ("Show me") ── */}
+                    <Box sx={{ p: 2.5, borderRadius: '18px', border: `1.5px solid ${isDark ? '#334155' : '#e2e8f0'}`, bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : '#f8fafc' }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 800, color: isDark ? '#f1f5f9' : '#0f172a', mb: 0.5 }}>
+                        Show me
+                      </Typography>
+                      
+                      {/* 3 options in one line */}
+                      <Stack direction="row" spacing={1} sx={{ mb: frequencyMode === 'daily' ? 0 : 2, mt: 1 }}>
+                        {[
+                          { id: 'daily', label: 'Daily' },
+                          { id: 'weekly', label: 'Day of week' },
+                          { id: 'monthly', label: 'Day of month' },
+                        ].map((opt) => (
+                          <Button
+                            key={opt.id}
+                            size="small"
+                            onClick={() => setFrequencyMode(opt.id as 'daily' | 'weekly' | 'monthly')}
+                            variant={frequencyMode === opt.id ? 'contained' : 'outlined'}
+                            sx={{
+                              flex: 1,
+                              borderRadius: '12px',
+                              textTransform: 'none',
+                              fontWeight: 800,
+                              fontSize: 11,
+                              py: 1,
+                              px: 0.75,
+                              lineHeight: 1.2,
+                              bgcolor: frequencyMode === opt.id ? '#10b981' : 'transparent',
+                              borderColor: frequencyMode === opt.id ? '#10b981' : isDark ? '#334155' : '#cbd5e1',
+                              color: frequencyMode === opt.id ? '#ffffff' : isDark ? '#cbd5e1' : '#475569',
+                              boxShadow: frequencyMode === opt.id ? '0 4px 12px rgba(16, 185, 129, 0.25)' : 'none',
+                              '&:hover': {
+                                borderColor: '#10b981',
+                              },
+                            }}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </Stack>
+
+                      {/* Days of Week selector (Sun - Sat) */}
+                      {frequencyMode === 'weekly' && (
+                        <Box sx={{ pt: 0.5 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Select Days of Week:
+                          </Typography>
+                          <Stack direction="row" spacing={0.5} justifyContent="space-between">
+                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayName, idx) => {
+                              const isSelected = selectedDaysOfWeek.includes(idx);
+                              return (
+                                <Chip
+                                  key={dayName}
+                                  label={dayName}
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      if (selectedDaysOfWeek.length > 1) {
+                                        setSelectedDaysOfWeek(selectedDaysOfWeek.filter((d) => d !== idx));
+                                      }
+                                    } else {
+                                      setSelectedDaysOfWeek([...selectedDaysOfWeek, idx].sort());
+                                    }
+                                  }}
+                                  variant={isSelected ? 'filled' : 'outlined'}
+                                  sx={{
+                                    flex: 1,
+                                    fontWeight: 800,
+                                    fontSize: 11,
+                                    borderRadius: '8px',
+                                    bgcolor: isSelected ? '#10b981' : 'transparent',
+                                    borderColor: isSelected ? '#10b981' : isDark ? '#334155' : '#cbd5e1',
+                                    color: isSelected ? '#ffffff' : isDark ? '#94a3b8' : '#64748b',
+                                    cursor: 'pointer',
+                                  }}
+                                />
+                              );
+                            })}
+                          </Stack>
+                        </Box>
+                      )}
+
+                      {/* Days of Month selector (1 - 31) */}
+                      {frequencyMode === 'monthly' && (
+                        <Box sx={{ pt: 0.5 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Select Days of Month:
+                          </Typography>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.75, maxHeight: 150, overflowY: 'auto', p: 0.5 }}>
+                            {Array.from({ length: 31 }, (_, i) => i + 1).map((dayNum) => {
+                              const isSelected = selectedDaysOfMonth.includes(dayNum);
+                              return (
+                                <Chip
+                                  key={dayNum}
+                                  label={dayNum}
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      if (selectedDaysOfMonth.length > 1) {
+                                        setSelectedDaysOfMonth(selectedDaysOfMonth.filter((d) => d !== dayNum));
+                                      }
+                                    } else {
+                                      setSelectedDaysOfMonth([...selectedDaysOfMonth, dayNum].sort((a, b) => a - b));
+                                    }
+                                  }}
+                                  variant={isSelected ? 'filled' : 'outlined'}
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontSize: 11,
+                                    borderRadius: '8px',
+                                    bgcolor: isSelected ? '#10b981' : 'transparent',
+                                    borderColor: isSelected ? '#10b981' : isDark ? '#334155' : '#cbd5e1',
+                                    color: isSelected ? '#ffffff' : isDark ? '#94a3b8' : '#64748b',
+                                    cursor: 'pointer',
+                                  }}
+                                />
+                              );
+                            })}
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+
+                    <TextField
+                      type="time"
+                      label="Exact Time (Optional)"
+                      value={todoTime}
+                      onChange={(e) => setTodoTime(e.target.value)}
+                      fullWidth
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </>
+                )}
+
+                {/* 3. Source of Fund Form */}
+                {milestoneType === 'finance_source' && (
+                  <>
+                    <TextField
+                      value={financeSourceName}
+                      onChange={(e) => setFinanceSourceName(e.target.value)}
+                      label="Fund Wallet Name"
+                      placeholder="e.g. Laptop Savings Fund"
+                      fullWidth
+                      autoFocus
+                      required
+                    />
+
+                    <Box sx={{ p: 2.5, borderRadius: '16px', bgcolor: 'rgba(245, 158, 11, 0.12)', border: '1px dashed #f59e0b' }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 700, color: isDark ? '#fbbf24' : '#b45309', mb: 0.5 }}>
+                        💰 Initialized with 0 PKR Balance
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, color: isDark ? '#cbd5e1' : '#475569', lineHeight: 1.5 }}>
+                        This fund will be created in your Finance section. Adding savings to this source will automatically update this Goal&apos;s progress towards target!
+                      </Typography>
+                    </Box>
+                  </>
+                )}
+
+                {/* 4. Manual Form */}
+                {milestoneType === 'manual' && (
+                  <>
+                    <TextField
+                      value={newMilestoneTitle}
+                      onChange={(e) => setNewMilestoneTitle(e.target.value)}
+                      label="Milestone Title"
+                      placeholder="e.g. Complete literature review"
+                      fullWidth
+                      autoFocus
+                      required
+                    />
+
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                      <DatePicker
+                        label="Start Date"
+                        value={selectedRangeStartDate}
+                        onChange={(val) => setSelectedRangeStartDate(val)}
+                        slotProps={{ textField: { fullWidth: true } }}
+                      />
+                      <DatePicker
+                        label="End Date"
+                        value={selectedRangeEndDate}
+                        onChange={(val) => setSelectedRangeEndDate(val)}
+                        slotProps={{ textField: { fullWidth: true } }}
+                      />
+                    </Box>
+
+                    <TextField
+                      type="number"
+                      label={`Target Value (${goal.unit || goal.overallTargetUnit || 'units'})`}
+                      value={manualTargetVal}
+                      onChange={(e) => setManualTargetVal(e.target.value === '' ? '' : Number(e.target.value))}
+                      placeholder="e.g. 50"
+                      fullWidth
+                    />
+                  </>
+                )}
+              </Stack>
+            )}
+
+            {/* ── STEP 3: AI Evaluation / Contributive vs Supportive ── */}
+            {milestoneFormStep === 3 && (
+              <Stack spacing={2.5} sx={{ pt: 1 }}>
+                {aiEvaluating ? (
+                  <Box sx={{ py: 4, textAlign: 'center' }}>
+                    <Typography variant="body1" sx={{ fontWeight: 800, color: typeColor, mb: 1 }}>
+                      ✨ AI is evaluating contribution...
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: mutedText }}>
+                      Analyzing whether &quot;{newMilestoneTitle}&quot; directly alters numerical progress towards {goal.unit || goal.overallTargetUnit || 'units'}.
+                    </Typography>
+                  </Box>
+                ) : (
+                  <>
+                    {aiReason && (
+                      <Box sx={{ p: 2, borderRadius: '14px', bgcolor: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                        <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#6366f1' }}>
+                          💡 AI Analysis: {aiReason}
+                        </Typography>
+                      </Box>
+                    )}
+
+                    <Typography sx={{ fontSize: '11px', fontWeight: 800, color: mutedText, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Progress Role
+                    </Typography>
+                    <Stack direction="row" gap={1}>
+                      <Chip
+                        label="⚡ Contributive (Adds numerical progress)"
+                        onClick={() => setMilestoneRole('contributive')}
+                        variant={milestoneRole === 'contributive' ? 'filled' : 'outlined'}
+                        sx={{
+                          borderRadius: '10px',
+                          fontWeight: 800,
+                          fontSize: '11.5px',
+                          py: 2.2,
+                          borderColor: milestoneRole === 'contributive' ? '#10b981' : isDark ? '#334155' : '#e2e8f0',
+                          bgcolor: milestoneRole === 'contributive' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                          color: milestoneRole === 'contributive' ? '#10b981' : mutedText,
+                        }}
+                      />
+                      <Chip
+                        label="🤝 Supportive (Enabling)"
+                        onClick={() => setMilestoneRole('supportive')}
+                        variant={milestoneRole === 'supportive' ? 'filled' : 'outlined'}
+                        sx={{
+                          borderRadius: '10px',
+                          fontWeight: 800,
+                          fontSize: '11.5px',
+                          py: 2.2,
+                          borderColor: milestoneRole === 'supportive' ? '#3b82f6' : isDark ? '#334155' : '#e2e8f0',
+                          bgcolor: milestoneRole === 'supportive' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                          color: milestoneRole === 'supportive' ? '#3b82f6' : mutedText,
+                        }}
+                      />
+                    </Stack>
+
+                    {milestoneRole === 'contributive' && (
+                      <Box sx={{ p: 2.5, borderRadius: '16px', bgcolor: isDark ? '#1e293b' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                        <TextField
+                          label={`Contribution Amount (${goal.unit || goal.overallTargetUnit || 'units'})`}
+                          type="number"
+                          value={milestoneContributionAmt}
+                          onChange={(e) => setMilestoneContributionAmt(e.target.value === '' ? '' : Number(e.target.value))}
+                          fullWidth
+                          size="small"
+                          sx={{ mb: 1.5 }}
+                        />
+                        <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#10b981' }}>
+                          💡 By marking this done, goal progress will increase by {milestoneContributionAmt || 0} {goal.unit || goal.overallTargetUnit || 'units'}.
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {milestoneRole === 'supportive' && (
+                      <Box sx={{ p: 2.5, borderRadius: '16px', bgcolor: isDark ? '#1e293b' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                        <Typography sx={{ fontSize: 12.5, color: mutedText, fontStyle: 'italic' }}>
+                          🤝 Supportive item: Helps you complete the goal but will not alter numerical progress directly.
+                        </Typography>
+                      </Box>
+                    )}
+                  </>
+                )}
+              </Stack>
             )}
           </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2.5, pt: 0, gap: 1 }}>
-            {milestoneFormStep === 1 ? (
-              <>
-                <Button
-                  onClick={() => setAddMilestoneDialogOpen(false)}
-                  sx={{ textTransform: 'none', color: isDark ? '#94a3b8' : '#64748b' }}
-                >
-                  Cancel
-                </Button>
-                <Box sx={{ flexGrow: 1 }} />
-                <Button
-                  onClick={() => setMilestoneFormStep(2)}
-                  disabled={!newMilestoneTitle.trim()}
-                  sx={{
-                    textTransform: 'none',
-                    color: typeColor,
-                    fontWeight: 700,
-                    borderRadius: '10px',
-                    '&.Mui-disabled': { color: isDark ? '#475569' : '#cbd5e1' },
-                  }}
-                >
-                  Add More detail
-                </Button>
-                <Button
-                  onClick={handleCreateMilestone}
-                  disabled={!newMilestoneTitle.trim() || savingMilestone}
-                  variant="contained"
-                  sx={{
-                    textTransform: 'none',
-                    borderRadius: '10px',
-                    backgroundColor: typeColor,
-                    color: '#fff',
-                    fontWeight: 700,
-                    '&:hover': { backgroundColor: typeColor, opacity: 0.9 },
-                  }}
-                >
-                  {savingMilestone ? 'Saving…' : 'Save it'}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  onClick={() => setMilestoneFormStep(1)}
-                  sx={{ textTransform: 'none', color: isDark ? '#94a3b8' : '#64748b' }}
-                >
-                  Back
-                </Button>
-                <Box sx={{ flexGrow: 1 }} />
-                <Button
-                  onClick={handleCreateMilestone}
-                  disabled={!newMilestoneTitle.trim() || savingMilestone}
-                  variant="contained"
-                  sx={{
-                    textTransform: 'none',
-                    borderRadius: '10px',
-                    backgroundColor: typeColor,
-                    color: '#fff',
-                    fontWeight: 700,
-                    '&:hover': { backgroundColor: typeColor, opacity: 0.9 },
-                  }}
-                >
-                  {savingMilestone ? 'Creating…' : 'Create milestone'}
-                </Button>
-              </>
+
+          <DialogActions sx={{ px: 3, pb: 3, pt: 0, gap: 1 }}>
+            {milestoneFormStep > 1 && (
+              <Button
+                onClick={() => setMilestoneFormStep((prev) => (prev - 1) as 1 | 2)}
+                sx={{ textTransform: 'none', color: mutedText, fontWeight: 700 }}
+              >
+                Back
+              </Button>
+            )}
+            <Box sx={{ flexGrow: 1 }} />
+            <Button
+              onClick={() => setAddMilestoneDialogOpen(false)}
+              sx={{ textTransform: 'none', color: mutedText }}
+            >
+              Cancel
+            </Button>
+
+            {milestoneFormStep === 2 && (
+              <Button
+                onClick={handleStep2Next}
+                disabled={
+                  (milestoneType !== 'finance_source' && !newMilestoneTitle.trim()) ||
+                  (milestoneType === 'finance_source' && !financeSourceName.trim())
+                }
+                variant="contained"
+                sx={{
+                  textTransform: 'none',
+                  borderRadius: '12px',
+                  bgcolor: typeColor,
+                  fontWeight: 800,
+                  px: 4,
+                  '&:hover': { bgcolor: typeColor, opacity: 0.9 },
+                }}
+              >
+                {milestoneType === 'finance_source' ? 'Create Fund' : 'Next'}
+              </Button>
+            )}
+
+            {milestoneFormStep === 3 && (
+              <Button
+                onClick={handleCreateMilestone}
+                disabled={savingMilestone || aiEvaluating}
+                variant="contained"
+                sx={{
+                  textTransform: 'none',
+                  borderRadius: '12px',
+                  bgcolor: '#10b981',
+                  color: '#fff',
+                  fontWeight: 800,
+                  px: 4,
+                  '&:hover': { bgcolor: '#059669' },
+                }}
+              >
+                {savingMilestone ? (
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <CircularProgress size={18} color="inherit" />
+                    <span>Creating Milestone...</span>
+                  </Stack>
+                ) : (
+                  'Create Milestone'
+                )}
+              </Button>
             )}
           </DialogActions>
         </Dialog>

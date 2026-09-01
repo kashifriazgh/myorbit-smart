@@ -92,7 +92,7 @@ export default function MilestoneList({
   onStepsChange,
   onAddStep,
   onCreateTracker: _onCreateTracker,
-  onTriggerAISuggest,
+  onTriggerAISuggest: _onTriggerAISuggest,
   typeColor,
   smartNudge: _smartNudge,
 }: MilestoneListProps) {
@@ -145,20 +145,19 @@ export default function MilestoneList({
           </Typography>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="center" alignItems="center">
-            {onTriggerAISuggest && (
+            {onAddStep && (
               <Button
                 size="large"
                 variant="contained"
-                startIcon={<InfoOutlined />}
-                onClick={onTriggerAISuggest}
+                onClick={onAddStep}
                 sx={{
                   textTransform: 'none',
                   fontWeight: 800,
                   borderRadius: '14px',
                   py: 1.4,
-                  px: 4,
+                  px: 5,
                   width: { xs: '100%', sm: 'auto' },
-                  background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                  background: typeColor || 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
                   color: '#fff',
                   boxShadow: '0 4px 14px rgba(99, 102, 241, 0.3)',
                   transition: 'all 0.25s',
@@ -168,33 +167,7 @@ export default function MilestoneList({
                   }
                 }}
               >
-                Suggest with AI ✨
-              </Button>
-            )}
-
-            {onAddStep && (
-              <Button
-                size="large"
-                variant="outlined"
-                onClick={onAddStep}
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 750,
-                  borderRadius: '14px',
-                  py: 1.4,
-                  px: 4,
-                  width: { xs: '100%', sm: 'auto' },
-                  borderColor: isDark ? '#334155' : '#e2e8f0',
-                  color: isDark ? '#cbd5e1' : '#475569',
-                  background: isDark ? 'rgba(30, 41, 59, 0.2)' : 'transparent',
-                  '&:hover': {
-                    borderColor: '#6366f1',
-                    color: '#6366f1',
-                    background: 'rgba(99, 102, 241, 0.05)',
-                  }
-                }}
-              >
-                Add Manually
+                Add Your First Milestone
               </Button>
             )}
           </Stack>
@@ -274,6 +247,19 @@ export default function MilestoneList({
                     {step.title}
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                    {step.role && (
+                      <Chip
+                        label={step.role === 'contributive' ? '⚡ Contributive' : '🤝 Supportive'}
+                        size="small"
+                        sx={{
+                          background: step.role === 'contributive' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                          color: step.role === 'contributive' ? '#10b981' : '#3b82f6',
+                          height: 24,
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      />
+                    )}
                     <Chip
                       label={status.label}
                       size="small"
@@ -300,6 +286,30 @@ export default function MilestoneList({
                     )}
                   </Box>
                 </Box>
+                {step.role === 'contributive' && typeof step.contributionAmount === 'number' && step.contributionAmount > 0 && (
+                  <Typography
+                    sx={{
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      color: '#10b981',
+                      mt: '4px',
+                    }}
+                  >
+                    💡 By marking this step done, progress increases by {step.contributionAmount} {step.contributionUnit || 'units'}.
+                  </Typography>
+                )}
+                {step.role === 'supportive' && (
+                  <Typography
+                    sx={{
+                      fontSize: 11,
+                      color: isDark ? '#64748b' : '#6b7280',
+                      mt: '2px',
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    🤝 Supportive item: Helps reach the goal without altering numerical progress.
+                  </Typography>
+                )}
                 {step.description && (
                   <Typography
                     sx={{

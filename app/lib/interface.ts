@@ -138,6 +138,10 @@ export interface Todo {
   }[];
   // Linking to goals
   linkedGoalId?: string;
+  goalTitle?: string;
+  goalRole?: 'contributive' | 'supportive';
+  contributionAmount?: number;
+  contributionUnit?: string;
   rescheduleCounts?: number;
 }
 
@@ -315,6 +319,8 @@ export interface CustomPaymentHead {
   id?: string;
   userId: string;
   name: string;
+  goalId?: string;
+  goalTitle?: string;
   createdAt: Date | Timestamp;
 }
 
@@ -816,6 +822,13 @@ export interface SchedulesProps {
   tags?: string[];
   linkedTaskId?: string; // id from to-do tasks item (optional)
   linkedGoalId?: string | null; // id from goals item (optional) later on
+  goalTitle?: string;
+  goalRole?: 'contributive' | 'supportive';
+  contributionAmount?: number;
+  contributionUnit?: string;
+  frequencyMode?: 'daily' | 'weekly' | 'monthly';
+  selectedDaysOfWeek?: number[];
+  selectedDaysOfMonth?: number[];
   colorCode?: string; // for UI color coding, like "#E3F2FD"
   hasReminder?: boolean;
   reminderDate?: Timestamp | Date | string | number | null;
@@ -892,6 +905,11 @@ export interface GoalStep {
   linkedTodoIds?: string[];
   completionRecord?: StepCompletionRecord;
   closed?: boolean;
+  role?: 'contributive' | 'supportive';
+  contributionAmount?: number;
+  contributionUnit?: string;
+  linkedType?: 'todo' | 'schedule' | 'finance_source' | 'manual';
+  linkedItemId?: string;
 }
 
 export type GoalType =
@@ -970,6 +988,13 @@ export interface Goal {
   trackingMethod?: 'tracker' | 'milestones';
   goalFurnished?: boolean;
   clarifyingAnswer?: string;
+
+  // ── New Mandatory Architecture Properties ──
+  intent?: string; // e.g. 'save', 'learn', 'lose', 'gain', 'read', 'visit'
+  progressTrackingType?: 'accumulative' | 'opposes';
+  startingValue?: number;
+  timeFrame?: string;
+  linkedSourceId?: string; // custom payment head in Finance
 }
 
 export interface TrackerCheckIn {

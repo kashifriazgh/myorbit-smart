@@ -44,8 +44,15 @@ export const createSchedule = async (
 ): Promise<string> => {
   try {
     console.log('Creating schedule in Firebase:', scheduleData);
+    const cleanPayload: Record<string, unknown> = {};
+    Object.entries(scheduleData).forEach(([key, val]) => {
+      if (val !== undefined) {
+        cleanPayload[key] = val;
+      }
+    });
+
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-      ...scheduleData,
+      ...cleanPayload,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     });

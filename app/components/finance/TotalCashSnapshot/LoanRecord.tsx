@@ -777,7 +777,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                           <FormControl fullWidth size="small">
                             <InputLabel>Paid by (optional)</InputLabel>
                             <Select value={fromHolder} label="Paid by (optional)" onChange={(e) => setFromHolder(e.target.value)}>
-                              <MenuItem value="Unassigned">General / Self ({formatCurrency(fromAvailable - fromExistingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})</MenuItem>
+                              <MenuItem value="Unassigned">Self ({formatCurrency(fromAvailable - fromExistingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})</MenuItem>
                               {fromExistingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName} ({formatCurrency(h.amount, 'PKR')})</MenuItem>)}
                               <MenuItem value="new"><em>+ Add new person</em></MenuItem>
                             </Select>
@@ -878,7 +878,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                           <FormControl fullWidth size="small">
                             <InputLabel>For person (optional)</InputLabel>
                             <Select value={toHolder} label="For person (optional)" onChange={(e) => setToHolder(e.target.value)}>
-                              <MenuItem value="Unassigned">General / Self</MenuItem>
+                              <MenuItem value="Unassigned">Self</MenuItem>
                               {toExistingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName}</MenuItem>)}
                               <MenuItem value="new"><em>+ Add new person</em></MenuItem>
                             </Select>
@@ -931,7 +931,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                           <FormControl fullWidth size="small">
                             <InputLabel>Deduct from person (optional)</InputLabel>
                             <Select value={fromHolder} label="Deduct from person (optional)" onChange={(e) => setFromHolder(e.target.value)}>
-                              <MenuItem value="Unassigned">General / Self ({formatCurrency(fromAvailable - fromExistingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})</MenuItem>
+                              <MenuItem value="Unassigned">Self ({formatCurrency(fromAvailable - fromExistingHolders.reduce((s, h) => s + h.amount, 0), 'PKR')})</MenuItem>
                               {fromExistingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName} ({formatCurrency(h.amount, 'PKR')})</MenuItem>)}
                               <MenuItem value="new"><em>+ Add new person</em></MenuItem>
                             </Select>
@@ -1020,7 +1020,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                           <FormControl fullWidth size="small">
                             <InputLabel>For person (optional)</InputLabel>
                             <Select value={toHolder} label="For person (optional)" onChange={(e) => setToHolder(e.target.value)}>
-                              <MenuItem value="Unassigned">General / Self</MenuItem>
+                              <MenuItem value="Unassigned">Self</MenuItem>
                               {toExistingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName}</MenuItem>)}
                               <MenuItem value="new"><em>+ Add new person</em></MenuItem>
                             </Select>

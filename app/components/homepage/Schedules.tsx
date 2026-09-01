@@ -346,10 +346,10 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
                     </Typography>
                   </Box>
 
-                  {/* Priority Objective Badge */}
-                  {schedule.objective && (
+                  {/* Priority / Linked Goal Objective Badge */}
+                  {(schedule.goalTitle || schedule.linkedGoalId || schedule.objective) && (
                     <Chip
-                      label={schedule.objective}
+                      label={schedule.goalTitle ? `🎯 Goal: ${schedule.goalTitle}` : (schedule.linkedGoalId ? '🎯 Goal Linked' : schedule.objective)}
                       size="small"
                       sx={{
                         height: 18,
@@ -357,8 +357,10 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
                         fontWeight: 800,
                         backgroundColor: done
                           ? (isDark ? '#334155' : '#e2e8f0')
+                          : (schedule.goalTitle || schedule.linkedGoalId)
+                          ? '#8b5cf6'
                           : getPriorityColor(schedule.priority || 'low'),
-                        color: done ? (isDark ? '#94a3b8' : '#64748b') : 'white',
+                        color: 'white',
                       }}
                     />
                   )}
@@ -463,15 +465,17 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
                         }}
                       />
                     )}
-                    {schedule.objective && (
+                    {(schedule.goalTitle || schedule.linkedGoalId || schedule.objective) && (
                       <Chip
-                        label={schedule.objective}
+                        label={schedule.goalTitle ? `🎯 Goal: ${schedule.goalTitle}` : (schedule.linkedGoalId ? '🎯 Goal Linked' : schedule.objective)}
                         size="small"
                         sx={{
                           height: 18,
                           fontSize: '9px',
                           fontWeight: 800,
-                          backgroundColor: getPriorityColor(schedule.priority || 'low'),
+                          backgroundColor: (schedule.goalTitle || schedule.linkedGoalId)
+                            ? '#8b5cf6'
+                            : getPriorityColor(schedule.priority || 'low'),
                           color: 'white',
                         }}
                       />

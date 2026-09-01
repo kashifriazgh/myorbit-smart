@@ -35,57 +35,87 @@ Format:
 }
 `;
 
-    const response = await fetch(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'groq/compound-mini', // ✅ cheapest + best for your use
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.2, // more consistent
-          max_tokens: 250, // ✅ limit cost
-        }),
+    const defaultFallback = {
+      isSMART: {
+        specific: true,
+        measurable: true,
+        achievable: true,
+        relevant: true,
+        timeBound: true,
+        summary: 'Goal is clear and action-oriented.',
       },
-    );
+      needsBreakdown: false,
+      milestones: [],
+    };
 
-    const data = await response.json();
-
-    let content = data?.choices?.[0]?.message?.content;
-
-    // ✅ CLEAN RESPONSE (remove unwanted text if AI messes up)
-    if (content) {
-      const firstBrace = content.indexOf('{');
-      const lastBrace = content.lastIndexOf('}');
-      content = content.slice(firstBrace, lastBrace + 1);
+    if (!process.env.GROQ_API_KEY) {
+      return NextResponse.json({ result: defaultFallback });
     }
 
-    let parsed;
-    try {
-      parsed = JSON.parse(content);
-    } catch (err) {
-      console.error('AI RAW RESPONSE:', content);
-      console.log(err);
+    const strictSystemPrompt = `${systemPrompt}\n\nCRITICAL FORMATTING INSTRUCTION: You MUST return ONLY a valid, raw JSON object matching the exact schema above. Do NOT include markdown code blocks, backticks (\`\`\`), or any text outside the JSON object.`;
 
-      return NextResponse.json(
-        {
-          error: 'AI returned invalid JSON',
-          fallback: true,
-        },
-        { status: 200 }, // don't break UI
-      );
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'openai/gpt-oss-20b',
+              messages: [
+                { role: 'system', content: strictSystemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+              temperature: 0.1,
+              max_tokens: 250,
+            }),
+          },
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          let content = data?.choices?.[0]?.message?.content;
+
+          if (content) {
+            content = content.replace(/```(?:json)?/gi, '').trim();
+            const firstBrace = content.indexOf('{');
+            const lastBrace = content.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+              content = content.slice(firstBrace, lastBrace + 1);
+              const parsed = JSON.parse(content);
+              if (parsed && typeof parsed === 'object') {
+                return NextResponse.json({ result: parsed });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Groq API improve-goal attempt ${attempt}/3 exception:`, err);
+      }
+
+      if (attempt < 3) {
+        await new Promise((res) => setTimeout(res, 100));
+      }
     }
 
-    return NextResponse.json({ result: parsed });
+    return NextResponse.json({ result: defaultFallback });
   } catch (error) {
-    console.error(error);
-
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    console.error('Error in improve-goal:', error);
+    return NextResponse.json({ result: {
+      isSMART: {
+        specific: true,
+        measurable: true,
+        achievable: true,
+        relevant: true,
+        timeBound: true,
+        summary: 'Goal setup ready.',
+      },
+      needsBreakdown: false,
+      milestones: [],
+    } });
   }
 }

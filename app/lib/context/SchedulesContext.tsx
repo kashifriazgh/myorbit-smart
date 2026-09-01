@@ -24,6 +24,7 @@ import {
   invalidateSchedulesCache,
   clearSchedulesCache,
 } from '@/app/lib/utils/schedulesCache';
+import { useGoals } from './GoalsContext';
 
 export type SchedulesDataSource = 'firebase' | 'cache' | 'loading';
 
@@ -45,6 +46,7 @@ const SchedulesContext = createContext<SchedulesContextType | undefined>(undefin
 
 export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const { updateLinkedItemStatusInGoal } = useGoals();
   const [allSchedules, setAllSchedules] = useState<SchedulesProps[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState<SchedulesDataSource>('loading');
@@ -107,15 +109,6 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
     fetchAllFromFirebase(user.uid);
   }, [user, fetchAllFromFirebase]);
 
-  // Force re-fetch from Firebase
-  const refreshSchedules = useCallback(() => {
-    if (!user) return;
-    invalidateSchedulesCache();
-    setLoading(true);
-    setDataSource('loading');
-    fetchAllFromFirebase(user.uid);
-  }, [user, fetchAllFromFirebase]);
-
   // Shared state helper to atomically update React state + localStorage cache
   const applyAndCache = useCallback((updater: (prev: SchedulesProps[]) => SchedulesProps[]) => {
     setAllSchedules((prev) => {
@@ -124,6 +117,37 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
       return next;
     });
   }, [user]);
+
+  // Listen for external sync events from Goal milestone toggles
+  useEffect(() => {
+    const handleSync = (e: Event) => {
+      const customEv = e as CustomEvent<{ id: string; isDone: boolean }>;
+      if (customEv.detail) {
+        const { id, isDone } = customEv.detail;
+        applyAndCache((prev) =>
+          prev.map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  status: isDone ? 'completed' : 'pending',
+                }
+              : s,
+          ),
+        );
+      }
+    };
+    window.addEventListener('orbit_schedule_updated', handleSync);
+    return () => window.removeEventListener('orbit_schedule_updated', handleSync);
+  }, [applyAndCache]);
+
+  // Force re-fetch from Firebase
+  const refreshSchedules = useCallback(() => {
+    if (!user) return;
+    invalidateSchedulesCache();
+    setLoading(true);
+    setDataSource('loading');
+    fetchAllFromFirebase(user.uid);
+  }, [user, fetchAllFromFirebase]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Derived / Filtered state
@@ -134,8 +158,26 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
     const todayStr = new Date().toISOString().split('T')[0];
     return allSchedules
       .filter((s) => {
-        if (s.isFlexible && selectedDate === todayStr) return true;
-        return s.date === selectedDate;
+        if ((s.isFlexible || s.frequencyMode === 'daily') && selectedDate === todayStr) return true;
+        if (s.date === selectedDate) return true;
+
+        if (s.frequencyMode === 'weekly' && Array.isArray(s.selectedDaysOfWeek) && s.selectedDaysOfWeek.length > 0 && selectedDate) {
+          const selDateObj = new Date(selectedDate + 'T00:00:00');
+          if (!isNaN(selDateObj.getTime())) {
+            const dayIdx = selDateObj.getDay(); // 0 (Sun) - 6 (Sat)
+            if (s.selectedDaysOfWeek.includes(dayIdx)) return true;
+          }
+        }
+
+        if (s.frequencyMode === 'monthly' && Array.isArray(s.selectedDaysOfMonth) && s.selectedDaysOfMonth.length > 0 && selectedDate) {
+          const selDateObj = new Date(selectedDate + 'T00:00:00');
+          if (!isNaN(selDateObj.getTime())) {
+            const monthDay = selDateObj.getDate(); // 1-31
+            if (s.selectedDaysOfMonth.includes(monthDay)) return true;
+          }
+        }
+
+        return false;
       })
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
   }, [allSchedules, selectedDate]);
@@ -172,6 +214,8 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const editSchedule = async (scheduleId: string, updates: Partial<SchedulesProps>) => {
+    const existingSched = allSchedules.find((s) => s.id === scheduleId);
+
     // 1. Optimistic update
     applyAndCache((prev) =>
       prev.map((s) => s.id === scheduleId ? { ...s, ...updates } : s)
@@ -179,6 +223,11 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     try {
       await updateSchedule(scheduleId, updates);
+
+      if (updates.status && existingSched?.linkedGoalId) {
+        const isDone = updates.status === 'completed';
+        await updateLinkedItemStatusInGoal(existingSched.linkedGoalId, scheduleId, 'schedule', isDone);
+      }
     } catch (error) {
       console.error('[ScheduleCache] editSchedule failed:', error);
       invalidateSchedulesCache();
@@ -187,6 +236,13 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const removeSchedule = async (scheduleId: string) => {
+    const existingSched = allSchedules.find((s) => s.id === scheduleId);
+    if (existingSched?.linkedGoalId) {
+      const gTitle = existingSched.goalTitle ? ` "${existingSched.goalTitle}"` : '';
+      alert(`⚠️ This schedule is associated with Goal${gTitle}. Please delete or remove this milestone from the Goal detail page first.`);
+      return;
+    }
+
     // 1. Optimistic remove
     applyAndCache((prev) => prev.filter((s) => s.id !== scheduleId));
 

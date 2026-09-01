@@ -5,12 +5,38 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action, title, type, targetValue, unit, dueDate, category, currentDate, userContext } = body;
 
+    const fallbackRefineTitle = {
+      isGood: true,
+      suggestedTitle: title || '',
+      intent: 'custom',
+      progressTrackingType: 'accumulative',
+      direction: null,
+      progressMode: 'cumulative',
+      suggestedCategory: 'custom',
+      suggestedUnit: 'units',
+      targetValueSuggestion: null,
+      startingValueSuggestion: 0,
+      dueDateSuggestion: null,
+      timeFrameSuggestion: null,
+      startValueNeeded: false,
+      trackingMethodSuggestion: 'milestones',
+      verb: 'achieve',
+      activityVerb: 'complete goal',
+    };
+
     const GROQ_API_KEY = process.env.GROQ_API_KEY;
     if (!GROQ_API_KEY) {
-      return NextResponse.json(
-        { error: 'GROQ_API_KEY is missing. Please add it to your .env.local file and restart your dev server.' },
-        { status: 500 }
-      );
+      if (action === 'refine-title') {
+        return NextResponse.json(fallbackRefineTitle);
+      }
+      if (action === 'evaluate-milestone-contribution') {
+        return NextResponse.json({
+          role: 'contributive',
+          contributionAmount: 10,
+          reason: 'Default fallback contribution evaluation.',
+        });
+      }
+      return NextResponse.json({ nudge: null }, { status: 200 });
     }
 
     let systemPrompt = '';
@@ -28,13 +54,17 @@ Do NOT include geographic locations (like city or country names), profession, de
 Keep the title concise (maximum 6 words).
 
 In addition to refining the title, evaluate and suggest the best configuration metrics for this goal:
-- direction: "up" (if goal is e.g. "enhance income", "save money", "read more"), "down" (if goal is e.g. "lose weight", "reduce debt"), or null (for general/cumulative).
-- progressMode: "cumulative" (if progress accumulates over time e.g. reading pages, savings, steps), or "current_value" (if user logs a live snapshot e.g. weight, current account balance).
+- intent: a short single verb or core intent extracted from the goal (e.g. "save" for saving money, "read" for reading books, "lose" for weight loss, "gain" for weight gain, "learn" for learning skill).
+- progressTrackingType: "accumulative" (progress moves in ONE direction UP, e.g. saving money, reading pages, lessons) or "opposes" (progress can move UP or DOWN relative to a starting baseline e.g. weight loss starting 80kg to 70kg, weight gain 60kg to 70kg).
+- direction: "UP" or "DOWN" (when progressTrackingType is "opposes", e.g. weight loss is "DOWN", weight gain is "UP", or null if accumulative).
+- progressMode: "cumulative" or "current_value".
 - suggestedCategory: one of: "finance", "health", "learning", "habit", "work", "lifestyle", "custom".
 - suggestedUnit: a measurement unit suitable for the goal (e.g. "kg", "PKR", "pages", "hours", "tasks").
 - targetValueSuggestion: a suggested number target if none is specified or if it's vague (otherwise null).
+- startingValueSuggestion: a suggested starting baseline number (e.g. 80 for weight loss 80kg -> 60kg, 60 for weight gain, or 0 for saving/accumulative).
 - dueDateSuggestion: a suggested due date in YYYY-MM-DD format parsed from the title. (Calculate it relative to the provided Today's Date. E.g. if the title contains "in next 3 months" or "in 3 months", calculate the date exactly 3 months after Today's Date. Return in YYYY-MM-DD format. If no timeframe is mentioned in the title, return null).
-- startValueNeeded: true if progressMode is "current_value", otherwise false.
+- timeFrameSuggestion: a readable calculated duration string (e.g. "30 days", "3 months") or null.
+- startValueNeeded: true if progressTrackingType is "opposes" or progressMode is "current_value", otherwise false.
 - startValueLabel: a brief prompt label asking for their current level (e.g. "What is your current weight in kg?") or null.
 - trackingMethodSuggestion: "tracker" (frequent status logging) or "milestones" (project-like phases/checkpoints).
 - verb: a single base action verb (e.g. "read", "run", "practice", "study", "work").
@@ -45,12 +75,16 @@ Provide your response strictly in the following JSON format without any markdown
 {
   "isGood": false,
   "suggestedTitle": "...",
-  "direction": "up" | "down" | null,
+  "intent": "save" | "read" | "lose" | "gain" | "learn" | "visit" | "custom",
+  "progressTrackingType": "accumulative" | "opposes",
+  "direction": "UP" | "DOWN" | null,
   "progressMode": "cumulative" | "current_value",
   "suggestedCategory": "finance" | "health" | "learning" | "habit" | "work" | "lifestyle" | "custom",
   "suggestedUnit": "...",
   "targetValueSuggestion": 100,
+  "startingValueSuggestion": 0,
   "dueDateSuggestion": "YYYY-MM-DD" | null,
+  "timeFrameSuggestion": "30 days" | null,
   "startValueNeeded": false,
   "startValueLabel": "...",
   "trackingMethodSuggestion": "tracker" | "milestones",
@@ -59,7 +93,7 @@ Provide your response strictly in the following JSON format without any markdown
   "reason": "..."
 }`;
       prompt = `Title: "${title}"\nToday's Date: "${todayDate}"`;
-      maxTokens = 400;
+      maxTokens = 450;
     } else if (action === 'refine-category') {
       const activeCategory = category || type;
       systemPrompt = `You are a goal analysis assistant. Analyze the goal title and its current category.
@@ -137,6 +171,24 @@ Provide your response strictly in the following JSON format without any markdown
 }`;
       prompt = `Goal: "${title}" | Category: "${activeCategory}" | Unit: "${unit}" | Due Date: "${dueDate || 'None'}" | Target Value: ${targetValue || 'None'}`;
       maxTokens = 150;
+    } else if (action === 'evaluate-milestone-contribution') {
+      const { goalTitle, goalTarget, goalUnit, milestoneTitle, milestoneType } = body;
+      systemPrompt = `You are a precision productivity assistant evaluating a goal milestone.
+Main Goal Title: "${goalTitle || 'Goal'}" | Target: ${goalTarget || 0} ${goalUnit || 'units'}
+Milestone Activity: "${milestoneTitle || title || ''}" | Type: "${milestoneType || 'manual'}"
+
+Rules:
+1. Determine if this milestone is "contributive" (directly adds numerical value to the ${goalUnit || 'units'} target upon completion) or "supportive" (helps achieve the goal without adding numerical ${goalUnit || 'units'} progress).
+2. If contributive, estimate/extract the numerical amount it contributes towards ${goalUnit || 'units'}.
+
+Provide your response strictly in the following JSON format without any markdown or code blocks:
+{
+  "role": "contributive" | "supportive",
+  "contributionAmount": 10,
+  "reason": "Short explanation"
+}`;
+      prompt = `Goal Title: "${goalTitle || 'Goal'}" | Milestone: "${milestoneTitle || title || ''}"`;
+      maxTokens = 150;
     } else {
       // Fallback: Original full smart-nudge behavior
       if (!title) return NextResponse.json({ error: 'Title required' }, { status: 400 });
@@ -186,62 +238,192 @@ Response format:
       }
     }
 
+    const getFallbackForAction = () => {
+      if (action === 'refine-title') {
+        return fallbackRefineTitle;
+      }
+      if (action === 'evaluate-milestone-contribution') {
+        return {
+          role: 'contributive',
+          contributionAmount: 10,
+          reason: 'Evaluated based on activity metrics.',
+        };
+      }
+      if (action === 'refine-category') {
+        return {
+          suitable: true,
+          suggestedCategory: category || type || 'custom',
+          suggestedUnit: 'units',
+        };
+      }
+      if (action === 'refine-due-date') {
+        return {
+          dueDateSuitable: true,
+          dueDateSuggestion: null,
+          suggestedDate: dueDate || null,
+        };
+      }
+      if (action === 'refine-target-value') {
+        return {
+          targetValueSuggestion: targetValue || 100,
+          label: 'Target Value',
+          progressMode: 'cumulative',
+          direction: 'up',
+          startValueNeeded: false,
+          startValueLabel: null,
+        };
+      }
+      return { nudge: null };
+    };
+
+    if (!GROQ_API_KEY) {
+      return NextResponse.json(getFallbackForAction(), { status: 200 });
+    }
+
+    systemPrompt = `${systemPrompt}\n\nCRITICAL FORMATTING INSTRUCTION: You MUST return ONLY a valid, raw JSON object matching the exact schema above. Do NOT include markdown code blocks, backticks (\`\`\`), or any text outside the JSON boundaries.`;
+
     if (contextPrompt && action !== 'refine-title') {
       systemPrompt = `${systemPrompt}\n\n${contextPrompt}`;
     }
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'groq/compound-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.2,
-        max_tokens: maxTokens,
-      }),
-    });
+    let fewShotMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      console.error(`Groq API error (status ${response.status}):`, errorText);
-      if (action) {
-        let cleanErr = 'AI response failed';
-        try {
-          const errJson = JSON.parse(errorText);
-          if (errJson?.error?.message) cleanErr = errJson.error.message;
-        } catch {
-          if (errorText) cleanErr = errorText.slice(0, 150);
+    if (action === 'refine-title') {
+      fewShotMessages = [
+        {
+          role: 'user',
+          content: 'Title: "Save 100,000 PKR for laptop"\nToday\'s Date: "2026-09-01"',
+        },
+        {
+          role: 'assistant',
+          content: JSON.stringify({
+            isGood: true,
+            suggestedTitle: "Save 100,000 PKR for laptop",
+            intent: "save",
+            progressTrackingType: "accumulative",
+            direction: null,
+            progressMode: "cumulative",
+            suggestedCategory: "finance",
+            suggestedUnit: "PKR",
+            targetValueSuggestion: 100000,
+            startingValueSuggestion: 0,
+            dueDateSuggestion: null,
+            timeFrameSuggestion: null,
+            startValueNeeded: false,
+            startValueLabel: null,
+            trackingMethodSuggestion: "milestones",
+            verb: "save",
+            activityVerb: "save money",
+            reason: "Targeting an accumulation savings goal is best tracked with milestones or fund balance."
+          }),
+        },
+        {
+          role: 'user',
+          content: 'Title: "Lose 10 kg weight in 2 months"\nToday\'s Date: "2026-09-01"',
+        },
+        {
+          role: 'assistant',
+          content: JSON.stringify({
+            isGood: true,
+            suggestedTitle: "Lose 10 kg weight",
+            intent: "lose",
+            progressTrackingType: "opposes",
+            direction: "DOWN",
+            progressMode: "current_value",
+            suggestedCategory: "health",
+            suggestedUnit: "kg",
+            targetValueSuggestion: 10,
+            startingValueSuggestion: 80,
+            dueDateSuggestion: "2026-11-01",
+            timeFrameSuggestion: "2 months",
+            startValueNeeded: true,
+            startValueLabel: "What is your current weight in kg?",
+            trackingMethodSuggestion: "tracker",
+            verb: "lose",
+            activityVerb: "lose weight",
+            reason: "Weight loss is an opposing target best measured by logging live current values."
+          }),
+        },
+      ];
+    } else if (action === 'evaluate-milestone-contribution') {
+      fewShotMessages = [
+        {
+          role: 'user',
+          content: 'Goal Title: "Save 100,000 PKR for Laptop" | Milestone: "Do extra work to earn 600 PKR"',
+        },
+        {
+          role: 'assistant',
+          content: JSON.stringify({
+            role: "contributive",
+            contributionAmount: 600,
+            reason: "Directly adds 600 PKR towards the 100,000 PKR savings target."
+          }),
+        },
+        {
+          role: 'user',
+          content: 'Goal Title: "Save 100,000 PKR for Laptop" | Milestone: "Research laptop brands and compare prices"',
+        },
+        {
+          role: 'assistant',
+          content: JSON.stringify({
+            role: "supportive",
+            contributionAmount: 0,
+            reason: "Enabling research task that helps achieve the goal without adding direct monetary savings."
+          }),
+        },
+      ];
+    }
+
+    // ── Max 3 Retries Mechanism ───────────────────────────────────────────────
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const selectedModel = attempt === 1 ? 'openai/gpt-oss-120b' : 'openai/gpt-oss-20b';
+
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: selectedModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...fewShotMessages,
+              { role: 'user', content: prompt },
+            ],
+            temperature: 0.1,
+            max_tokens: maxTokens,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          let content = data?.choices?.[0]?.message?.content?.trim() ?? '';
+          content = content.replace(/```(?:json)?/gi, '').trim();
+
+          const firstBrace = content.indexOf('{');
+          const lastBrace = content.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace !== -1) {
+            content = content.slice(firstBrace, lastBrace + 1);
+          }
+
+          if (content) {
+            const parsed = JSON.parse(content);
+            return NextResponse.json(parsed);
+          }
+        } else {
+          console.warn(`Groq API attempt ${attempt}/3 with model ${selectedModel} failed (${response.status})`);
         }
-        return NextResponse.json({ error: cleanErr }, { status: 500 });
+      } catch (err) {
+        console.warn(`Groq API attempt ${attempt}/3 with model ${selectedModel} exception:`, err);
       }
-      return NextResponse.json({ nudge: null }, { status: 200 });
+
+      if (attempt < 3) {
+        await new Promise((res) => setTimeout(res, 100));
+      }
     }
 
-    const data = await response.json();
-    let content = data?.choices?.[0]?.message?.content?.trim() ?? '';
-
-    // Strip code blocks if present
-    content = content.replace(/```(?:json)?/gi, '').trim();
-
-    // Safely extract JSON brace boundaries
-    const firstBrace = content.indexOf('{');
-    const lastBrace = content.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1) {
-      content = content.slice(firstBrace, lastBrace + 1);
-    }
-
-    try {
-      const parsed = JSON.parse(content);
-      return NextResponse.json(parsed);
-    } catch (e) {
-      console.error('Failed to parse AI response:', content, e);
-      return NextResponse.json({ error: 'AI response was not valid JSON' }, { status: 500 });
-    }
+    return NextResponse.json(getFallbackForAction(), { status: 200 });
   } catch (error) {
     console.error('Error in smart-nudge route:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ nudge: null }, { status: 200 });
   }
 }

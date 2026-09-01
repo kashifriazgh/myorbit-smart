@@ -20,6 +20,11 @@ import {
   Tooltip,
   Fade,
   Avatar,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Collapse,
 } from '@mui/material';
 import { useEffect, useState, useCallback } from 'react';
 import {
@@ -27,6 +32,8 @@ import {
   TransactionSource,
   TotalCashSnapshot,
   CashTransaction,
+  Bank,
+  CustomPaymentHead,
 } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
@@ -84,6 +91,10 @@ export default function LoanRecordsPage() {
   const [selectedLoan, setSelectedLoan] = useState<LoanRecord | null>(null);
   const [updateAmount, setUpdateAmount] = useState<string>('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
+  const [selectedSource, setSelectedSource] = useState<string>('in_hand');
+  const [selectedHolder, setSelectedHolder] = useState<string>('Unassigned');
 
   const fetchLoans = useCallback(async () => {
     if (!user) return;
@@ -175,6 +186,24 @@ export default function LoanRecordsPage() {
     };
 
     fetchSnapshot();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchBanks = async () => {
+      const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
+      const snap = await getDocs(q);
+      const fetched: Bank[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Bank, 'id'>) }));
+      setBanks(fetched);
+    };
+    const fetchCustom = async () => {
+      const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
+      const snap = await getDocs(q);
+      const heads: CustomPaymentHead[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomPaymentHead, 'id'>) }));
+      setCustomPaymentHeads(heads);
+    };
+    fetchBanks();
+    fetchCustom();
   }, [user]);
 
   const handleAddMoney = async (
@@ -278,29 +307,356 @@ export default function LoanRecordsPage() {
     }
   };
 
+  const handleOpenProgressDialog = async (loan: LoanRecord) => {
+    setSelectedLoan(loan);
+    setUpdateAmount(loan.paidAmount ? loan.paidAmount.toString() : '0');
+
+    // Determine default source
+    let defaultSource = 'in_hand';
+    let defaultHolder = 'Unassigned';
+
+    const loanData = (loan as unknown) as Record<string, string>;
+    let fromSrc = loanData.fromSource;
+    let toSrc = loanData.toSource;
+    let fromSrcBankId = loanData.fromSourceBankId;
+    let toSrcBankId = loanData.toSourceBankId;
+    let fromSrcCustomId = loanData.fromSourceCustomId;
+    let toSrcCustomId = loanData.toSourceCustomId;
+    let fromSrcHolder = loanData.fromSourceHolder;
+    let toSrcHolder = loanData.toSourceHolder;
+
+    // For older loans, fetch from transaction history
+    if (!fromSrc && !toSrc) {
+      try {
+        const q = query(
+          collection(db, 'cashTransactions'),
+          where('referenceId', '==', loan.id)
+        );
+        const snap = await getDocs(q);
+        const txns = snap.docs.map(doc => doc.data());
+
+        if (loan.type === 'borrow') {
+          // Borrow loan means we received money: type === 'add'
+          const addTxn = txns.find(t => t.type === 'add');
+          if (addTxn) {
+            toSrc = addTxn.source;
+            toSrcBankId = addTxn.bankId;
+            toSrcCustomId = addTxn.customPaymentHeadId;
+            toSrcHolder = addTxn.holderName;
+          }
+        } else if (loan.type === 'lend') {
+          // Lend loan means we paid money out: type === 'deduct'
+          const deductTxn = txns.find(t => t.type === 'deduct');
+          if (deductTxn) {
+            fromSrc = deductTxn.source;
+            fromSrcBankId = deductTxn.bankId;
+            fromSrcCustomId = deductTxn.customPaymentHeadId;
+            fromSrcHolder = deductTxn.holderName;
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching old transactions:', err);
+      }
+    }
+
+    if (loan.type === 'lend') {
+      if (fromSrc && fromSrc !== 'outside') {
+        if (fromSrc === 'bank') {
+          const bank = banks.find((b) => b.id === fromSrcBankId || b.name === fromSrc);
+          if (bank) defaultSource = `bank:${bank.name}`;
+        } else if (fromSrc === 'custom') {
+          const custom = customPaymentHeads.find((c) => c.id === fromSrcCustomId || c.name === fromSrc);
+          if (custom) defaultSource = `custom:${custom.name}`;
+        } else {
+          defaultSource = fromSrc;
+        }
+      }
+      if (fromSrcHolder) {
+        defaultHolder = fromSrcHolder;
+      }
+    } else if (loan.type === 'borrow') {
+      if (toSrc && toSrc !== 'outside' && toSrc !== 'immediate_expended') {
+        if (toSrc === 'bank') {
+          const bank = banks.find((b) => b.id === toSrcBankId || b.name === toSrc);
+          if (bank) defaultSource = `bank:${bank.name}`;
+        } else if (toSrc === 'custom') {
+          const custom = customPaymentHeads.find((c) => c.id === toSrcCustomId || c.name === toSrc);
+          if (custom) defaultSource = `custom:${custom.name}`;
+        } else {
+          defaultSource = toSrc;
+        }
+      }
+      if (toSrcHolder) {
+        defaultHolder = toSrcHolder;
+      }
+    }
+
+    setSelectedSource(defaultSource);
+    setSelectedHolder(defaultHolder);
+    setProgressDialogOpen(true);
+  };
+
   const handleUpdateProgress = async () => {
-    if (!selectedLoan?.id || !updateAmount) return;
+    alert("Update Progress button clicked! Selected Loan ID: " + selectedLoan?.id + ", Amount entered: " + updateAmount);
+    if (!selectedLoan?.id || !updateAmount || !user) {
+      alert("Missing required fields. loanId: " + selectedLoan?.id + ", amount: " + updateAmount + ", user: " + !!user);
+      return;
+    }
+    const paidValue = parseFloat(updateAmount);
+    if (isNaN(paidValue) || paidValue < 0) {
+      alert("Invalid paid value entered: " + updateAmount);
+      return;
+    }
+
     setActionLoading(true);
     try {
-      const paidValue = parseFloat(updateAmount);
       const isSettled = paidValue >= selectedLoan.amount;
+      const delta = paidValue - (selectedLoan.paidAmount || 0);
 
+      alert("Computed delta: " + delta + ", isSettled: " + isSettled);
+
+      if (delta !== 0) {
+        alert("Fetching cash snapshot for user: " + user.uid);
+        const docRef = doc(db, 'totalCashSnapshots', user.uid);
+        const docSnap = await getDoc(docRef);
+        alert("Snapshot fetched. Document exists: " + docSnap.exists());
+        
+        const snapshotData = docSnap.exists()
+          ? (docSnap.data() as TotalCashSnapshot)
+          : {
+              userId: user.uid,
+              sources: { in_hand: 0, bank: {}, easypaisa: 0, jazzcash: 0, other: 0, custom: {} },
+              heldBy: {},
+              totalAmount: 0,
+              freezeAmount: 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            };
+
+        const snapshotSources = snapshotData.sources || { in_hand: 0, bank: {}, easypaisa: 0, jazzcash: 0, other: 0, custom: {} };
+
+        const normalizedBank = typeof snapshotSources.bank === 'number'
+          ? { Default: snapshotSources.bank }
+          : snapshotSources.bank || {};
+
+        const normalizedCustom = typeof snapshotSources.custom === 'number'
+          ? { Default: snapshotSources.custom }
+          : snapshotSources.custom || {};
+
+        const updatedSources: TotalCashSnapshot['sources'] = {
+          in_hand: snapshotSources.in_hand ?? 0,
+          bank: normalizedBank,
+          easypaisa: snapshotSources.easypaisa ?? 0,
+          jazzcash: snapshotSources.jazzcash ?? 0,
+          other: snapshotSources.other ?? 0,
+          custom: normalizedCustom,
+        };
+
+        const updatedHeldBy = snapshotData.heldBy ? { ...snapshotData.heldBy } : {};
+        let newTotal = snapshotData.totalAmount ?? 0;
+
+        const [sourceType, subName] = selectedSource.split(':');
+        const sourceKey = sourceType === 'bank' ? `bank:${subName}` : sourceType === 'custom' ? `custom:${subName}` : sourceType;
+        const holderToSave = selectedHolder === 'Unassigned' ? null : selectedHolder;
+
+        alert("Modifying balances for account type: " + sourceType + ", sub-account: " + subName);
+
+        if (selectedLoan.type === 'borrow') {
+          if (sourceType === 'bank' && subName) {
+            updatedSources.bank[subName] = (updatedSources.bank[subName] ?? 0) - delta;
+          } else if (sourceType === 'custom' && subName) {
+            updatedSources.custom[subName] = (updatedSources.custom[subName] ?? 0) - delta;
+          } else {
+            (updatedSources[sourceType] as number) = ((updatedSources[sourceType] as number) ?? 0) - delta;
+          }
+          newTotal -= delta;
+
+          if (holderToSave) {
+            const holders = [...(updatedHeldBy[sourceKey] || [])];
+            const idx = holders.findIndex((h) => h.holderName === holderToSave);
+            if (idx > -1) {
+              holders[idx] = {
+                ...holders[idx],
+                amount: Math.max(0, holders[idx].amount - delta),
+              };
+              updatedHeldBy[sourceKey] = holders;
+            }
+          }
+        } else if (selectedLoan.type === 'lend') {
+          if (sourceType === 'bank' && subName) {
+            updatedSources.bank[subName] = (updatedSources.bank[subName] ?? 0) + delta;
+          } else if (sourceType === 'custom' && subName) {
+            updatedSources.custom[subName] = (updatedSources.custom[subName] ?? 0) + delta;
+          } else {
+            (updatedSources[sourceType] as number) = ((updatedSources[sourceType] as number) ?? 0) + delta;
+          }
+          newTotal += delta;
+
+          if (holderToSave) {
+            const holders = [...(updatedHeldBy[sourceKey] || [])];
+            const idx = holders.findIndex((h) => h.holderName === holderToSave);
+            if (idx > -1) {
+              holders[idx] = {
+                ...holders[idx],
+                amount: Math.max(0, holders[idx].amount + delta),
+              };
+            } else {
+              holders.push({ holderName: holderToSave, amount: delta });
+            }
+            updatedHeldBy[sourceKey] = holders;
+          }
+        }
+
+        const updatedSnapshot: TotalCashSnapshot = {
+          ...snapshotData,
+          sources: updatedSources,
+          heldBy: updatedHeldBy,
+          totalAmount: newTotal,
+        };
+
+        alert("Saving updated cash snapshot document...");
+        await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+        setSnapshot(updatedSnapshot);
+        alert("Cash snapshot saved successfully.");
+
+        const bankId = sourceType === 'bank' ? (banks.find(b => b.name === subName)?.id || null) : null;
+        const customHeadId = sourceType === 'custom' ? (customPaymentHeads.find(c => c.name === subName)?.id || null) : null;
+
+        const txnType = delta > 0
+          ? (selectedLoan.type === 'borrow' ? 'deduct' : 'add')
+          : (selectedLoan.type === 'borrow' ? 'add' : 'deduct');
+
+        const absDelta = Math.abs(delta);
+
+        let txnNote = '';
+        if (selectedLoan.type === 'borrow') {
+          txnNote = delta > 0
+            ? `Loan Repayment to ${selectedLoan.counterparty}`
+            : `Loan Repayment Revision to ${selectedLoan.counterparty}`;
+        } else {
+          txnNote = delta > 0
+            ? `Loan Recovery from ${selectedLoan.counterparty}`
+            : `Loan Recovery Revision from ${selectedLoan.counterparty}`;
+        }
+
+        alert("Adding cash transaction audit record...");
+        await addDoc(collection(db, 'cashTransactions'), {
+          userId: user.uid,
+          amount: absDelta,
+          type: txnType,
+          source: sourceType,
+          category: 'loan',
+          note: txnNote,
+          referenceId: selectedLoan.id,
+          holderName: holderToSave || null,
+          ...(sourceType === 'bank' ? { bankId: bankId || null, BankName: subName || null } : {}),
+          ...(sourceType === 'custom' ? { customPaymentHeadId: customHeadId || null, customPaymentHeadName: subName || null } : {}),
+          createdAt: serverTimestamp(),
+        });
+        alert("Audit record added successfully.");
+      }
+
+      alert("Updating loan record status...");
       await updateDoc(doc(db, 'loans', selectedLoan.id), {
         paidAmount: paidValue,
         isSettled,
         updatedAt: new Date(),
       });
+      alert("Loan record updated successfully.");
 
       setProgressDialogOpen(false);
       setSelectedLoan(null);
       setUpdateAmount('');
       fetchLoans();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error updating progress:', err);
+      alert('Error updating progress: ' + (err as Error).message);
     } finally {
       setActionLoading(false);
     }
   };
+
+  // Source options for settlement selection
+  const sourceOptions: { value: string; label: string }[] = [];
+  sourceOptions.push({ value: 'in_hand', label: '💵 Cash in Hand' });
+  sourceOptions.push({ value: 'easypaisa', label: '📱 EasyPaisa' });
+  sourceOptions.push({ value: 'jazzcash', label: '📱 JazzCash' });
+  sourceOptions.push({ value: 'other', label: '💼 Other' });
+
+  if (snapshot?.sources?.bank) {
+    Object.keys(snapshot.sources.bank).forEach((bName) => {
+      sourceOptions.push({ value: `bank:${bName}`, label: `🏦 Bank: ${bName}` });
+    });
+  }
+
+  if (snapshot?.sources?.custom) {
+    Object.keys(snapshot.sources.custom).forEach((cName) => {
+      sourceOptions.push({ value: `custom:${cName}`, label: `🗂️ Wallet: ${cName}` });
+    });
+  }
+
+  // Get current selected source's holders
+  const [sourceType, subName] = selectedSource.split(':');
+  const sourceKey = sourceType === 'bank' ? `bank:${subName}` : sourceType === 'custom' ? `custom:${subName}` : sourceType;
+  const currentHolders = snapshot?.heldBy?.[sourceKey] || [];
+
+  // Validation logic
+  const getValidationError = () => {
+    if (!selectedLoan || !updateAmount) return null;
+    const paidValue = parseFloat(updateAmount);
+    if (isNaN(paidValue) || paidValue < 0) return "Please enter a valid amount.";
+    const delta = paidValue - (selectedLoan.paidAmount || 0);
+    if (delta === 0) return null;
+
+    // Check lock
+    const isLocked = snapshot?.sourceOwnership?.[sourceKey]?.isLocked;
+    if (isLocked) {
+      return "The selected source is locked. Unlock it in Account Breakdown to use it.";
+    }
+
+    // Get available balance
+    let available = 0;
+    if (sourceType === 'bank' && subName) {
+      available = snapshot.sources.bank?.[subName] ?? 0;
+    } else if (sourceType === 'custom' && subName) {
+      available = snapshot.sources.custom?.[subName] ?? 0;
+    } else if (sourceType !== 'bank' && sourceType !== 'custom') {
+      available = (snapshot.sources[sourceType] as number) ?? 0;
+    }
+
+    // Determine deduction amount
+    let deductAmt = 0;
+    if (selectedLoan.type === 'borrow' && delta > 0) {
+      deductAmt = delta;
+    } else if (selectedLoan.type === 'lend' && delta < 0) {
+      deductAmt = Math.abs(delta);
+    }
+
+    if (deductAmt > 0) {
+      const holders = snapshot.heldBy?.[sourceKey] || [];
+      if (holders.length > 0) {
+        if (selectedHolder && selectedHolder !== 'Unassigned') {
+          const holderAmt = holders.find(h => h.holderName === selectedHolder)?.amount || 0;
+          if (deductAmt > holderAmt) {
+            return `Insufficient balance for holder ${selectedHolder} (Available: ₨${holderAmt.toLocaleString()})`;
+          }
+        } else {
+          const holdersSum = holders.reduce((s, h) => s + h.amount, 0);
+          const unassigned = available - holdersSum;
+          if (deductAmt > unassigned) {
+            return `Insufficient unassigned balance (Available: ₨${unassigned.toLocaleString()})`;
+          }
+        }
+      } else {
+        if (deductAmt > available) {
+          return `Insufficient balance in ${selectedSource.replace('bank:', 'Bank (').replace('custom:', 'Wallet (') + (selectedSource.includes(':') ? ')' : '')} (Available: ₨${available.toLocaleString()})`;
+        }
+      }
+    }
+    return null;
+  };
+
+  const validationError = getValidationError();
 
   if (authLoading) {
     return (
@@ -679,9 +1035,7 @@ export default function LoanRecordsPage() {
                           <Tooltip title="Update Progress / Settle">
                             <IconButton
                               onClick={() => {
-                                setSelectedLoan(loan);
-                                setUpdateAmount(loan.amount.toString());
-                                setProgressDialogOpen(true);
+                                handleOpenProgressDialog(loan);
                               }}
                               sx={{
                                 bgcolor: isDark ? '#1e293b' : '#ffffff',
@@ -874,8 +1228,65 @@ export default function LoanRecordsPage() {
               autoFocus
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
             />
+
+            {/* Source Selection */}
+            <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+              <InputLabel>Source Account</InputLabel>
+              <Select
+                value={selectedSource}
+                label="Source Account"
+                disabled={actionLoading}
+                onChange={(e) => {
+                  setSelectedSource(e.target.value);
+                  setSelectedHolder('Unassigned');
+                }}
+              >
+                {sourceOptions.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* Holder Selection (conditional) */}
+            {currentHolders.length > 0 && (
+              <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                <InputLabel>Assign to Holder</InputLabel>
+                <Select
+                  value={selectedHolder}
+                  label="Assign to Holder"
+                  disabled={actionLoading}
+                  onChange={(e) => setSelectedHolder(e.target.value)}
+                >
+                  <MenuItem value="Unassigned">Self</MenuItem>
+                  {currentHolders.map((h) => (
+                    <MenuItem key={h.holderName} value={h.holderName}>
+                      {h.holderName} (₨{h.amount.toLocaleString()})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {/* Validation Error Banner */}
+            <Collapse in={!!validationError}>
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: 2,
+                  bgcolor: 'rgba(239, 68, 68, 0.08)',
+                  border: '1.5px solid rgba(239, 68, 68, 0.25)',
+                }}
+              >
+                <Typography color="error" variant="caption" fontWeight="bold">
+                  ⚠️ {validationError}
+                </Typography>
+              </Box>
+            </Collapse>
+
             {selectedLoan &&
-              parseFloat(updateAmount) >= selectedLoan.amount && (
+              parseFloat(updateAmount) >= selectedLoan.amount && !validationError && (
                 <Chip
                   label="This will mark the loan as Settled"
                   color="success"
@@ -897,7 +1308,10 @@ export default function LoanRecordsPage() {
             variant="contained"
             onClick={handleUpdateProgress}
             disabled={
-              actionLoading || !updateAmount || isNaN(parseFloat(updateAmount))
+              actionLoading ||
+              !updateAmount ||
+              isNaN(parseFloat(updateAmount)) ||
+              !!validationError
             }
             sx={{
               borderRadius: 3,

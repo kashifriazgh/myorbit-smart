@@ -290,7 +290,7 @@ export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, 
                 <InputLabel>Deduct from person (optional)</InputLabel>
                 <Select value={selectedHolder} onChange={(e) => setSelectedHolder(e.target.value)} label="Deduct from person (optional)">
                   <MenuItem value="Unassigned">
-                    General / Self ({formatCurrency(balance - holdersSum, 'PKR')})
+                    Self ({formatCurrency(balance - holdersSum, 'PKR')})
                   </MenuItem>
                   {existingHolders.map((h) => (
                     <MenuItem key={h.holderName} value={h.holderName}>

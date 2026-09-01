@@ -22,6 +22,9 @@ import {
 import { db } from '../firebase';
 import { useAuth } from './userContext';
 import { loadGoalsCache, saveGoalsCache, clearGoalsCache } from '../utils/goalsCache';
+import { deleteSchedule, updateSchedule } from '../functions/schedules';
+import { invalidateTodosCache } from '../utils/todosCache';
+import { invalidateSchedulesCache } from '../utils/schedulesCache';
 
 interface GoalsContextType {
   goals: Goal[];
@@ -41,6 +44,12 @@ interface GoalsContextType {
       finalValue?: number;
       finalNote?: string;
     },
+  ) => Promise<void>;
+  updateLinkedItemStatusInGoal: (
+    linkedGoalId: string,
+    linkedItemId: string,
+    linkedType: 'schedule' | 'todo' | 'finance_source',
+    isCompleted: boolean,
   ) => Promise<void>;
   addGoalStep: (goalId: string, step: Partial<GoalStep>) => Promise<void>;
   updateGoalStep: (
@@ -73,9 +82,11 @@ export const useGoals = () => {
   return context;
 };
 
-export const calculateGoalProgress = (goal: Goal): number => {
-  if (goal.progressMode === 'current_value') {
-    const start = goal.startValue ?? 0;
+export const calculateGoalProgress = (goal: Goal, extraContributedValue: number = 0): number => {
+  const isOpposes = goal.progressTrackingType === 'opposes' || goal.progressMode === 'current_value';
+
+  if (isOpposes) {
+    const start = typeof goal.startingValue === 'number' ? goal.startingValue : (goal.startValue ?? 0);
     const target = goal.overallTargetValue ?? 0;
     if (start === target) return 0;
 
@@ -98,15 +109,43 @@ export const calculateGoalProgress = (goal: Goal): number => {
       }
     }
 
+    const dirStr = String(goal.direction || '').toLowerCase();
     let pct = 0;
-    if (goal.direction === 'down') {
+    if (dirStr === 'down') {
       pct = Math.round(((start - latestValue) / (start - target)) * 100);
     } else {
       pct = Math.round(((latestValue - start) / (target - start)) * 100);
     }
     return Math.max(0, Math.min(100, pct));
   } else {
-    // Cumulative or default mode
+    // ── Accumulative Mode ──
+    const targetVal = goal.overallTargetValue ?? 0;
+    const steps = goal.steps || [];
+
+    if (targetVal > 0) {
+      const completedContributedSum = steps.reduce((sum, s) => {
+        if (s.status === GoalStepStatus.COMPLETED) {
+          const isContributive = s.role === 'contributive' || s.role === undefined;
+          if (isContributive) {
+            const amt = typeof s.contributionAmount === 'number' && s.contributionAmount > 0
+              ? s.contributionAmount
+              : (typeof s.targetValue === 'number' && s.targetValue > 0 ? s.targetValue : 0);
+            return sum + amt;
+          }
+        }
+        return sum;
+      }, extraContributedValue);
+
+      const rawPct = (completedContributedSum / targetVal) * 100;
+      let pct = 0;
+      if (rawPct > 0 && rawPct < 1) {
+        pct = Number(rawPct.toFixed(1));
+      } else {
+        pct = Math.round(rawPct);
+      }
+      return Math.max(0, Math.min(100, pct));
+    }
+
     if (goal.trackerEnabled && goal.tracker) {
       const hasUnit = !!goal.tracker.unit;
       const doneCheckIns = goal.tracker.checkIns.filter((c) => c.completed);
@@ -116,8 +155,7 @@ export const calculateGoalProgress = (goal: Goal): number => {
       const denominator = hasUnit ? goal.tracker.totalTarget : goal.tracker.totalCheckIns;
       return denominator > 0 ? Math.min(100, Math.round((actualTotal / denominator) * 100)) : 0;
     } else {
-      // Milestones cumulative: weighted progress
-      const steps = goal.steps || [];
+      // Fallback: Milestones cumulative weighted progress when overallTargetValue is 0
       const completedWeight = steps.reduce((acc, step) => {
         return (
           acc + (step.status === GoalStepStatus.COMPLETED ? (step.weight ?? 1) : 0)
@@ -259,6 +297,11 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         checkIns: stepData.checkIns,
         linkedTodoIds: stepData.linkedTodoIds,
         completionRecord: stepData.completionRecord,
+        role: stepData.role,
+        contributionAmount: stepData.contributionAmount,
+        contributionUnit: stepData.contributionUnit,
+        linkedType: stepData.linkedType,
+        linkedItemId: stepData.linkedItemId,
       };
 
       const updatedSteps = [...(goal.steps || []), newStep];
@@ -602,6 +645,40 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         status: deriveStatusFromProgress(progress),
         completedAt: progress === 100 ? Timestamp.fromDate(new Date()) : null,
       });
+
+      // Synchronize status back to linked Todo or Schedule
+      const targetStep = (goal.steps || []).find((s) => s.id === stepId);
+      if (targetStep && targetStep.linkedItemId) {
+        const isDone = status === GoalStepStatus.COMPLETED;
+        if (targetStep.linkedType === 'todo') {
+          await updateDoc(doc(db, 'todos', targetStep.linkedItemId), {
+            status: isDone ? 'completed' : 'in_progress',
+            done: isDone,
+            progressPercent: isDone ? 100 : 0,
+            updatedAt: new Date(),
+          }).catch((e) => console.warn('Failed to sync todo status:', e));
+          invalidateTodosCache();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('orbit_todo_updated', {
+                detail: { id: targetStep.linkedItemId, isDone },
+              }),
+            );
+          }
+        } else if (targetStep.linkedType === 'schedule') {
+          await updateSchedule(targetStep.linkedItemId, {
+            status: isDone ? 'completed' : 'pending',
+          }).catch((e) => console.warn('Failed to sync schedule status:', e));
+          invalidateSchedulesCache();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('orbit_schedule_updated', {
+                detail: { id: targetStep.linkedItemId, isDone },
+              }),
+            );
+          }
+        }
+      }
     } catch (err) {
       console.error('Error updating step status:', err);
       throw err;
@@ -634,6 +711,46 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
+  const updateLinkedItemStatusInGoal = async (
+    linkedGoalId: string,
+    linkedItemId: string,
+    linkedType: 'schedule' | 'todo' | 'finance_source',
+    isCompleted: boolean,
+  ): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === linkedGoalId);
+      if (!goal) return;
+
+      const targetStep = (goal.steps || []).find(
+        (s) => s.linkedItemId === linkedItemId || (s.linkedType === linkedType && s.linkedItemId === linkedItemId)
+      );
+
+      if (!targetStep) return;
+
+      const newStatus = isCompleted ? GoalStepStatus.COMPLETED : GoalStepStatus.IN_PROGRESS;
+      if (targetStep.status === newStatus) return;
+
+      const updatedSteps = goal.steps.map((step) => {
+        if (step.id !== targetStep.id) return step;
+        return {
+          ...step,
+          status: newStatus,
+        };
+      });
+
+      const progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
+
+      await updateGoal(linkedGoalId, {
+        steps: updatedSteps,
+        progress,
+        status: deriveStatusFromProgress(progress),
+        completedAt: progress === 100 ? Timestamp.fromDate(new Date()) : null,
+      });
+    } catch (err) {
+      console.warn('Failed to sync linked item status to goal:', err);
+    }
+  };
+
   const deleteGoalStep = async (
     goalId: string,
     stepId: string,
@@ -641,6 +758,15 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     try {
       const goal = goals.find((g) => g.id === goalId);
       if (!goal) throw new Error('Goal not found');
+
+      const targetStep = (goal.steps || []).find((step) => step.id === stepId);
+      if (targetStep && targetStep.linkedItemId) {
+        if (targetStep.linkedType === 'schedule') {
+          await deleteSchedule(targetStep.linkedItemId).catch((e) => console.warn('Failed to delete linked schedule:', e));
+        } else if (targetStep.linkedType === 'todo') {
+          await deleteDoc(doc(db, 'todos', targetStep.linkedItemId)).catch((e) => console.warn('Failed to delete linked todo:', e));
+        }
+      }
 
       const updatedSteps = goal.steps.filter((step) => step.id !== stepId);
       const progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
@@ -724,6 +850,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     deleteGoal,
     updateGoalProgress,
     updateStepStatus,
+    updateLinkedItemStatusInGoal,
     updateGoalStep,
     deleteGoalStep,
     addGoalStep,

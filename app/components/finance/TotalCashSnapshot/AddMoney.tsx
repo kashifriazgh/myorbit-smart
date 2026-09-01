@@ -15,8 +15,9 @@ import {
   Fade,
   Box,
   InputAdornment,
+  ListSubheader,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { TransactionSource, Bank, CustomPaymentHead, TotalCashSnapshot } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
@@ -28,6 +29,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useGoals } from '@/app/lib/context/GoalsContext';
 import {
   Close as CloseIcon,
   Add as AddIcon,
@@ -64,7 +66,7 @@ const SOURCE_ICONS: Record<string, string> = {
   easypaisa: '📱',
   jazzcash: '📱',
   other: '💼',
-  custom: '🗂️',
+  custom: '🎯',
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -73,13 +75,14 @@ const SOURCE_LABELS: Record<string, string> = {
   easypaisa: 'EasyPaisa',
   jazzcash: 'JazzCash',
   other: 'Other',
-  custom: 'Custom Wallet',
+  custom: 'Custom & Goal Wallets',
 };
 
 const SOURCE_OPTIONS: TransactionSource[] = ['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other', 'custom'];
 
 export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExternalClose }: Props) {
   const { user } = useAuth();
+  const { goals, updateLinkedItemStatusInGoal } = useGoals();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
@@ -109,24 +112,65 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
   const [newCustomPaymentHeadName, setNewCustomPaymentHeadName] = useState('');
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !showModal) return;
     const fetchBanks = async () => {
       const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
       setBanks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Bank, 'id'>) })));
     };
     fetchBanks();
-  }, [user]);
+  }, [user, showModal]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !showModal) return;
     const fetchCustom = async () => {
       const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
       setCustomPaymentHeads(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomPaymentHead, 'id'>) })));
     };
     fetchCustom();
-  }, [user]);
+  }, [user, showModal]);
+
+  // Dynamically merge Goal Sources of Fund into custom payment heads
+  const allCustomHeads = useMemo(() => {
+    const list: CustomPaymentHead[] = [...customPaymentHeads];
+    const existingNames = new Set(list.map((h) => h.name.toLowerCase()));
+
+    (goals || []).forEach((g) => {
+      (g.steps || []).forEach((s) => {
+        if (s.linkedType === 'finance_source' && s.title) {
+          const cleanName = s.title.replace(/^Source of Fund:\s*/i, '').replace(/^Finance Fund:\s*/i, '').trim();
+          if (cleanName && !existingNames.has(cleanName.toLowerCase())) {
+            list.push({
+              id: s.linkedItemId || `goal_src_${g.id}_${cleanName}`,
+              userId: user?.uid || '',
+              name: cleanName,
+              goalId: g.id,
+              goalTitle: g.title,
+              createdAt: new Date(),
+            });
+            existingNames.add(cleanName.toLowerCase());
+          }
+        }
+      });
+      if (g.linkedSourceId && !existingNames.has(g.linkedSourceId.toLowerCase())) {
+        list.push({
+          id: `goal_src_${g.id}`,
+          userId: user?.uid || '',
+          name: g.linkedSourceId,
+          goalId: g.id,
+          goalTitle: g.title,
+          createdAt: new Date(),
+        });
+        existingNames.add(g.linkedSourceId.toLowerCase());
+      }
+    });
+
+    return list;
+  }, [customPaymentHeads, goals, user?.uid]);
+
+  const goalHeads = useMemo(() => allCustomHeads.filter((h) => !!h.goalTitle || !!h.goalId), [allCustomHeads]);
+  const otherHeads = useMemo(() => allCustomHeads.filter((h) => !h.goalTitle && !h.goalId), [allCustomHeads]);
 
   const handleAddBank = async () => {
     if (!user || !newBankName.trim()) return;
@@ -165,8 +209,14 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
     }
     if (newMode === 'custom') {
       customPaymentHeadId = selectedCustomPaymentHead;
-      customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+      const foundHead = allCustomHeads.find((c) => c.id === selectedCustomPaymentHead || c.name === selectedCustomPaymentHead);
+      customPaymentHeadName = foundHead?.name || selectedCustomPaymentHead;
       if (!customPaymentHeadId || !customPaymentHeadName) return;
+
+      // Sync status to linked goal if applicable
+      if (foundHead?.goalId) {
+        await updateLinkedItemStatusInGoal(foundHead.goalId, foundHead.id!, 'finance_source', true);
+      }
     }
 
     const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
@@ -185,7 +235,7 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
   };
 
   const bankName = banks.find((b) => b.id === selectedBank)?.name;
-  const customPaymentHeadName = customPaymentHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
+  const customPaymentHeadName = allCustomHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
   const sourceKey = getSourceKey(newMode, bankName, customPaymentHeadName);
   const existingHolders = snapshot?.heldBy?.[sourceKey] || [];
 
@@ -313,7 +363,27 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
                     label="Select Custom Wallet"
                     startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
                     <MenuItem value=""><em>— Select or add new —</em></MenuItem>
-                    {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                    {goalHeads.length > 0 && [
+                      <ListSubheader key="hdr-goal" sx={{ fontWeight: 800, color: '#f59e0b', bgcolor: isDark ? '#1e293b' : '#fff', lineHeight: '32px' }}>
+                        🎯 Goal Sources of Fund
+                      </ListSubheader>,
+                      ...goalHeads.map((h) => (
+                        <MenuItem key={h.id} value={h.id}>
+                          🎯 {h.name} {h.goalTitle ? `(Goal: ${h.goalTitle})` : ''}
+                        </MenuItem>
+                      )),
+                    ]}
+
+                    {otherHeads.length > 0 && [
+                      <ListSubheader key="hdr-other" sx={{ fontWeight: 800, color: 'text.secondary', bgcolor: isDark ? '#1e293b' : '#fff', lineHeight: '32px' }}>
+                        🗂️ Custom Wallets
+                      </ListSubheader>,
+                      ...otherHeads.map((h) => (
+                        <MenuItem key={h.id} value={h.id}>
+                          {h.name}
+                        </MenuItem>
+                      )),
+                    ]}
                   </Select>
                 </FormControl>
                 {!selectedCustomPaymentHead && (
@@ -337,7 +407,7 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
                 <FormControl fullWidth size="small">
                   <InputLabel>For person</InputLabel>
                   <Select value={selectedHolder} onChange={(e) => setSelectedHolder(e.target.value)} label="For person">
-                    <MenuItem value="Unassigned">General / Self</MenuItem>
+                    <MenuItem value="Unassigned">Self</MenuItem>
                     {existingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName}</MenuItem>)}
                     <MenuItem value="new"><em>+ Add new person</em></MenuItem>
                   </Select>

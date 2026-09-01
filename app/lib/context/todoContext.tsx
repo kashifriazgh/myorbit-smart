@@ -23,6 +23,7 @@ import {
 import { db } from '@/app/lib/firebase';
 import { Todo } from '@/app/lib/interface';
 import { useAuth } from './userContext';
+import { useGoals } from './GoalsContext';
 import {
   loadTodosCache,
   saveTodosCache,
@@ -69,6 +70,7 @@ export const useTodoContext = () => {
 
 export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const { updateLinkedItemStatusInGoal } = useGoals();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState<TodoDataSource>('loading');
@@ -151,6 +153,44 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchFromFirebase(user.uid);
   }, [user, fetchFromFirebase]);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Shared helper: update state and persist to cache atomically
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const applyAndCache = useCallback((updater: (prev: Todo[]) => Todo[]) => {
+    setTodos((prev) => {
+      const next = updater(prev);
+      // Persist updated list to cache immediately (no 'needsRefresh' flag set)
+      if (user) saveTodosCache(next, user.uid);
+      return next;
+    });
+  }, [user]);
+
+  // Listen for external sync events from Goal milestone toggles
+  useEffect(() => {
+    const handleSync = (e: Event) => {
+      const customEv = e as CustomEvent<{ id: string; isDone: boolean }>;
+      if (customEv.detail) {
+        const { id, isDone } = customEv.detail;
+        applyAndCache((prev) =>
+          prev.map((t) =>
+            t.id === id
+              ? {
+                  ...t,
+                  status: isDone ? 'completed' : 'in_progress',
+                  done: isDone,
+                  progressPercent: isDone ? 100 : 0,
+                  updatedAt: new Date(),
+                }
+              : t,
+          ),
+        );
+      }
+    };
+    window.addEventListener('orbit_todo_updated', handleSync);
+    return () => window.removeEventListener('orbit_todo_updated', handleSync);
+  }, [applyAndCache]);
+
   // ── Public refresh (force re-fetch) ──────────────────────────────────────
   const refreshTodos = useCallback(() => {
     if (!user) return;
@@ -164,19 +204,6 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const invalidateCache = useCallback(() => {
     invalidateTodosCache();
   }, []);
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Shared helper: update state and persist to cache atomically
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const applyAndCache = useCallback((updater: (prev: Todo[]) => Todo[]) => {
-    setTodos((prev) => {
-      const next = updater(prev);
-      // Persist updated list to cache immediately (no 'needsRefresh' flag set)
-      if (user) saveTodosCache(next, user.uid);
-      return next;
-    });
-  }, [user]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Mutation helpers
@@ -247,9 +274,17 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     applyAndCache((prev) => [...prev, optimisticTodo]);
 
     try {
-      // 2. Write to Firebase
+      // 2. Clean payload to strip undefined fields for Firestore
+      const cleanPayload: Record<string, unknown> = {};
+      Object.entries(todoData).forEach(([key, val]) => {
+        if (val !== undefined) {
+          cleanPayload[key] = val;
+        }
+      });
+
+      // Write to Firebase
       const docRef = await addDoc(collection(db, 'todos'), {
-        ...todoData,
+        ...cleanPayload,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -266,6 +301,8 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateTodo = async (id: string, updates: Partial<Todo>) => {
+    const existingTodo = todos.find((t) => t.id === id);
+
     // Normalize dueDate to Date for local React state/cache consistency if it is present
     const localUpdates = { ...updates };
     if (localUpdates.dueDate !== undefined) {
@@ -290,6 +327,11 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 2. Write to Firebase
     try {
       await updateDoc(doc(db, 'todos', id), { ...firestoreUpdates, updatedAt: serverTimestamp() });
+
+      if (updates.status && existingTodo?.linkedGoalId) {
+        const isDone = updates.status === 'completed';
+        await updateLinkedItemStatusInGoal(existingTodo.linkedGoalId, id, 'todo', isDone);
+      }
     } catch (e) {
       console.error('[TodoCache] updateTodo failed:', e);
       invalidateTodosCache();
@@ -297,6 +339,13 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteTodo = async (id: string) => {
+    const existingTodo = todos.find((t) => t.id === id);
+    if (existingTodo?.linkedGoalId) {
+      const gTitle = existingTodo.goalTitle ? ` "${existingTodo.goalTitle}"` : '';
+      alert(`⚠️ This todo task is associated with Goal${gTitle}. Please delete or remove this milestone from the Goal detail page first.`);
+      return;
+    }
+
     // 1. Optimistic remove
     applyAndCache((prev) => prev.filter((t) => t.id !== id));
 

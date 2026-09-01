@@ -317,7 +317,7 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
                 <FormControl fullWidth size="small">
                   <InputLabel>Transfer from person (optional)</InputLabel>
                   <Select value={fromHolder} onChange={(e) => setFromHolder(e.target.value)} label="Transfer from person (optional)">
-                    <MenuItem value="Unassigned">General / Self ({formatCurrency(fromUnassignedBalance, 'PKR')})</MenuItem>
+                    <MenuItem value="Unassigned">Self ({formatCurrency(fromUnassignedBalance, 'PKR')})</MenuItem>
                     {fromHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName} ({formatCurrency(h.amount, 'PKR')})</MenuItem>)}
                   </Select>
                 </FormControl>
@@ -395,7 +395,7 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
               <FormControl fullWidth size="small">
                 <InputLabel>For person (optional)</InputLabel>
                 <Select value={toHolder} onChange={(e) => setToHolder(e.target.value)} label="For person (optional)">
-                  <MenuItem value="Unassigned">General / Self</MenuItem>
+                  <MenuItem value="Unassigned">Self</MenuItem>
                   {toHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName} ({formatCurrency(h.amount, 'PKR')})</MenuItem>)}
                   <MenuItem value="new"><em>+ Add new person</em></MenuItem>
                 </Select>

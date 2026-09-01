@@ -25,8 +25,8 @@ export default function ClientThemeProvider({
     <UserProvider>
       <OnboardingProvider>
         <CustomThemeProvider>
-          <TodoProvider>
-            <GoalsProvider>
+          <GoalsProvider>
+            <TodoProvider>
               <SchedulesProvider>
                 <ProjectsProvider>
                   <CssBaseline />
@@ -35,8 +35,8 @@ export default function ClientThemeProvider({
                   {children}
                 </ProjectsProvider>
               </SchedulesProvider>
-            </GoalsProvider>
-          </TodoProvider>
+            </TodoProvider>
+          </GoalsProvider>
         </CustomThemeProvider>
       </OnboardingProvider>
     </UserProvider>

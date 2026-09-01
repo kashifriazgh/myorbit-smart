@@ -140,16 +140,27 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
   const [overallTargetUnit, setOverallTargetUnit] = useState(
     goal?.overallTargetUnit || DEFAULT_UNIT['custom']
   );
-  const [startValue, setStartValue] = useState<number | ''>(goal?.startValue || '');
+  const [startValue, setStartValue] = useState<number | ''>(
+    typeof goal?.startValue === 'number' ? goal.startValue : (goal?.startingValue || '')
+  );
   const [progressMode, setProgressMode] = useState<'cumulative' | 'current_value'>(
     goal?.progressMode || 'cumulative'
   );
   const [direction, setDirection] = useState<'up' | 'down' | null>(goal?.direction || null);
 
+  // ── New Mandatory Architecture Properties ──
+  const [intent, setIntent] = useState<string>(goal?.intent || '');
+  const [progressTrackingType, setProgressTrackingType] = useState<'accumulative' | 'opposes'>(
+    goal?.progressTrackingType || 'accumulative'
+  );
+  const [opposesDirection, setOpposesDirection] = useState<'UP' | 'DOWN' | null>(
+    goal?.direction === 'up' ? 'UP' : goal?.direction === 'down' ? 'DOWN' : (goal?.direction as 'UP' | 'DOWN' | null) || null
+  );
+
   // AI-suggested helper properties
   const [aiVerb, setAiVerb] = useState(goal?.aiVerb || '');
   const [aiActivityVerb, setAiActivityVerb] = useState(goal?.aiActivityVerb || '');
-  const [aiSuggestedUnit, setAiSuggestedUnit] = useState(goal?.aiSuggestedUnit || '');
+  const [_aiSuggestedUnit, setAiSuggestedUnit] = useState(goal?.aiSuggestedUnit || '');
   const [trackingMethod, setTrackingMethod] = useState<'tracker' | 'milestones'>(
     goal?.trackingMethod || 'milestones'
   );
@@ -205,51 +216,66 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error('Refinement request failed');
-      }
-
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       console.log('AI Title Evaluation Payload:', data);
 
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      // Pre-populate AI suggestions
-      if (data.suggestedTitle) {
-        setTitle(data.suggestedTitle);
-      }
-      if (data.direction) {
-        setDirection(data.direction);
-      }
-      if (data.progressMode) {
-        setProgressMode(data.progressMode);
-      }
-      if (data.suggestedCategory && TYPE_COLORS[data.suggestedCategory as GoalType]) {
-        setType(data.suggestedCategory as GoalType);
-      }
-      if (data.suggestedUnit) {
-        setOverallTargetUnit(data.suggestedUnit);
-        setAiSuggestedUnit(data.suggestedUnit);
-      }
-      if (data.targetValueSuggestion) {
-        setOverallTargetValue(Number(data.targetValueSuggestion));
-      }
-      if (data.dueDateSuggestion) {
-        setDueDate(new Date(data.dueDateSuggestion + 'T00:00:00'));
-      }
-      if (data.startValueLabel) {
-        setAiStartValueLabel(data.startValueLabel);
-      }
-      if (data.trackingMethodSuggestion) {
-        setTrackingMethod(data.trackingMethodSuggestion);
-      }
-      if (data.verb) {
-        setAiVerb(data.verb);
-      }
-      if (data.activityVerb) {
-        setAiActivityVerb(data.activityVerb);
+      if (!res.ok || data.error) {
+        console.warn('AI evaluation warning:', data?.error || res.statusText);
+        setAiError(data?.error || 'AI setup unavailable. Please specify target & category manually.');
+      } else {
+        // Pre-populate AI suggestions
+        if (data.suggestedTitle) {
+          setTitle(data.suggestedTitle);
+        }
+        if (data.intent) {
+          setIntent(data.intent);
+        }
+        if (data.progressTrackingType) {
+          setProgressTrackingType(data.progressTrackingType);
+          if (data.progressTrackingType === 'opposes') {
+            setProgressMode('current_value');
+          }
+        }
+        if (data.direction) {
+          const dir = String(data.direction).toUpperCase();
+          if (dir === 'UP' || dir === 'DOWN') {
+            setOpposesDirection(dir as 'UP' | 'DOWN');
+            setDirection(dir === 'UP' ? 'up' : 'down');
+          } else {
+            setDirection(data.direction);
+          }
+        }
+        if (data.startingValueSuggestion !== undefined && data.startingValueSuggestion !== null) {
+          setStartValue(Number(data.startingValueSuggestion));
+        }
+        if (data.progressMode) {
+          setProgressMode(data.progressMode);
+        }
+        if (data.suggestedCategory && TYPE_COLORS[data.suggestedCategory as GoalType]) {
+          setType(data.suggestedCategory as GoalType);
+        }
+        if (data.suggestedUnit) {
+          setOverallTargetUnit(data.suggestedUnit);
+          setAiSuggestedUnit(data.suggestedUnit);
+        }
+        if (data.targetValueSuggestion) {
+          setOverallTargetValue(Number(data.targetValueSuggestion));
+        }
+        if (data.dueDateSuggestion) {
+          setDueDate(new Date(data.dueDateSuggestion + 'T00:00:00'));
+        }
+        if (data.startValueLabel) {
+          setAiStartValueLabel(data.startValueLabel);
+        }
+        if (data.trackingMethodSuggestion) {
+          setTrackingMethod(data.trackingMethodSuggestion);
+        }
+        if (data.verb) {
+          setAiVerb(data.verb);
+        }
+        if (data.activityVerb) {
+          setAiActivityVerb(data.activityVerb);
+        }
       }
 
       // Transition to Step 2
@@ -292,30 +318,53 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
     setAiLoading(true);
     try {
       const nowTs = new Date();
-      let calculatedDirection = direction;
+      const numStart = typeof startValue === 'number' ? startValue : 0;
+      const numTarget = typeof overallTargetValue === 'number' ? overallTargetValue : 0;
 
-      // Ensure proper direction evaluation for current value snapshots
-      if (progressMode === 'current_value') {
-        const start = typeof startValue === 'number' ? startValue : 0;
-        const target = typeof overallTargetValue === 'number' ? overallTargetValue : 0;
-        calculatedDirection = target < start ? 'down' : 'up';
+      let calculatedDirection: 'up' | 'down' | null = direction;
+      const finalTrackingType = progressTrackingType;
+
+      if (finalTrackingType === 'opposes') {
+        if (opposesDirection === 'DOWN' || numTarget < numStart) {
+          calculatedDirection = 'down';
+        } else {
+          calculatedDirection = 'up';
+        }
+      } else {
+        calculatedDirection = null;
       }
+
+      // Calculate timeFrame string
+      let timeFrameStr = '30 days';
+      if (dueDate) {
+        const diffDays = Math.max(1, Math.ceil((dueDate.getTime() - nowTs.getTime()) / (1000 * 60 * 60 * 24)));
+        timeFrameStr = diffDays >= 60 ? `${Math.round(diffDays / 30)} months` : `${diffDays} days`;
+      }
+
+      // Evaluated mandatory fields with clean fallbacks
+      const evaluatedIntent = intent || aiVerb || 'achieve';
+      const evaluatedUnit = overallTargetUnit || DEFAULT_UNIT[type] || 'units';
 
       const goalData: Goal = {
         title: title.trim(),
         description: description.trim() || undefined,
         type,
         priority,
+        unit: evaluatedUnit,
         dueDate: dueDate ? Timestamp.fromDate(dueDate) : undefined,
-        overallTargetValue: typeof overallTargetValue === 'number' ? overallTargetValue : undefined,
-        overallTargetUnit: overallTargetUnit || undefined,
-        progressMode,
+        overallTargetValue: numTarget,
+        overallTargetUnit: evaluatedUnit,
+        progressMode: finalTrackingType === 'opposes' ? 'current_value' : progressMode,
         direction: calculatedDirection,
-        startValue: progressMode === 'current_value' ? (typeof startValue === 'number' ? startValue : null) : null,
+        startValue: numStart,
+        startingValue: numStart,
+        intent: evaluatedIntent,
+        progressTrackingType: finalTrackingType,
+        timeFrame: timeFrameStr,
         trackingMethod,
-        aiVerb: aiVerb || undefined,
+        aiVerb: aiVerb || evaluatedIntent,
         aiActivityVerb: aiActivityVerb || undefined,
-        aiSuggestedUnit: aiSuggestedUnit || undefined,
+        aiSuggestedUnit: evaluatedUnit,
         goalFurnished: true, // Flag as furnished so page context knows it is setup
         progress: goal?.progress || 0,
         status: goal?.status || 'Not Started',

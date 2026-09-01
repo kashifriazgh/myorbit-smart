@@ -78,7 +78,7 @@ Write the 2-sentence goal snapshot now.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'groq/compound-mini',
+        model: 'openai/gpt-oss-20b',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
