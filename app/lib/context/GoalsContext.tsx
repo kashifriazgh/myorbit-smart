@@ -17,6 +17,7 @@ import {
   query,
   where,
   onSnapshot,
+  getDoc,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -765,6 +766,23 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
           await deleteSchedule(targetStep.linkedItemId).catch((e) => console.warn('Failed to delete linked schedule:', e));
         } else if (targetStep.linkedType === 'todo') {
           await deleteDoc(doc(db, 'todos', targetStep.linkedItemId)).catch((e) => console.warn('Failed to delete linked todo:', e));
+        } else if (targetStep.linkedType === 'finance_source') {
+          if (targetStep.linkedItemId) {
+            await deleteDoc(doc(db, 'customPaymentHeads', targetStep.linkedItemId)).catch((e) => console.warn('Failed to delete custom payment head doc:', e));
+          }
+          if (user) {
+            const snapshotRef = doc(db, 'totalCashSnapshots', user.uid);
+            const snap = await getDoc(snapshotRef);
+            if (snap.exists()) {
+              const data = snap.data();
+              const customSources = typeof data?.sources?.custom === 'object' ? { ...data.sources.custom } : {};
+              const srcName = targetStep.title.replace(/^Source of Fund:\s*/i, '').replace(/^Finance Fund:\s*/i, '').trim();
+              if (customSources[srcName] !== undefined) {
+                delete customSources[srcName];
+                await updateDoc(snapshotRef, { 'sources.custom': customSources, updatedAt: new Date() });
+              }
+            }
+          }
         }
       }
 

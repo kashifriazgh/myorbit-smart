@@ -889,6 +889,7 @@ export interface GoalStep {
   order: number;
   status: GoalStepStatus;
   targetValue?: number;
+  targetAmount?: number;
   actualValue?: number;
   unit?: string;
   startDate?: Date | Timestamp;
@@ -910,6 +911,10 @@ export interface GoalStep {
   contributionUnit?: string;
   linkedType?: 'todo' | 'schedule' | 'finance_source' | 'manual';
   linkedItemId?: string;
+  progressMode?: 'binary' | 'progressive';
+  direction?: 'up' | 'down';
+  lastCompletedAt?: string;
+  completionHistory?: string[];
 }
 
 export type GoalType =

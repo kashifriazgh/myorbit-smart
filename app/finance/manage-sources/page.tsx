@@ -37,6 +37,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import Link from 'next/link';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { useGoals } from '@/app/lib/context/GoalsContext';
 import { db } from '@/app/lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, addDoc, collection, Timestamp } from 'firebase/firestore';
 import { TotalCashSnapshot } from '@/app/lib/interface';
@@ -44,6 +45,7 @@ import { formatCurrency } from '@/app/lib/utilts';
 
 export default function ManageSourcesPage() {
   const { user } = useAuth();
+  const { goals } = useGoals();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
   
@@ -86,6 +88,28 @@ export default function ManageSourcesPage() {
 
   const handleDeleteSource = async () => {
     if (!deletingId || !snapshot || !user) return;
+
+    // Protection check: Check if custom source is linked to a Goal
+    if (deletingId.type === 'custom') {
+      const srcNameClean = deletingId.name.trim().toLowerCase();
+      const linkedGoal = (goals || []).find((g) => {
+        if (g.linkedSourceId && g.linkedSourceId.trim().toLowerCase() === srcNameClean) return true;
+        return (g.steps || []).some((s) => {
+          if (s.linkedType === 'finance_source' && s.title) {
+            const name = s.title.replace(/^Source of Fund:\s*/i, '').replace(/^Finance Fund:\s*/i, '').trim().toLowerCase();
+            return name === srcNameClean;
+          }
+          return false;
+        });
+      });
+
+      if (linkedGoal) {
+        alert(`⚠️ Cannot delete source "${deletingId.name}". It is associated with Goal "${linkedGoal.title}". Please delete or remove the Source of Fund milestone from the Goal detail page first.`);
+        setDeletingId(null);
+        return;
+      }
+    }
+
     setProcessing(true);
 
     try {

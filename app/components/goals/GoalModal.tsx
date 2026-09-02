@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +43,7 @@ interface GoalModalProps {
   open: boolean;
   onClose: () => void;
   goal?: Goal; // Optional, only passed when editing
+  defaultType?: GoalType;
 }
 
 const TYPE_COLORS: Record<GoalType, string> = {
@@ -115,7 +116,76 @@ const toPlainDate = (val: unknown): Date | null => {
   return null;
 };
 
-export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
+const EXAMPLE_GOALS = [
+  'Save PKR 100,000 to buy laptop',
+  'Read 12 books on leadership & growth',
+  'Earn PKR 50,000 from freelance work',
+  'Lose 5 kg weight in 2 months',
+  'Learn Next.js 14 & build 3 fullstack apps',
+];
+
+function TypewriterExamples({ isDark }: { isDark: boolean }) {
+  const [exampleIndex, setExampleIndex] = useState(0);
+  const [currentText, setCurrentText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    const fullText = EXAMPLE_GOALS[exampleIndex];
+    const typingSpeed = isDeleting ? 35 : 75;
+
+    const timer = setTimeout(() => {
+      if (!isDeleting) {
+        setCurrentText(fullText.substring(0, currentText.length + 1));
+        if (currentText.length === fullText.length) {
+          setTimeout(() => setIsDeleting(true), 2200);
+        }
+      } else {
+        setCurrentText(fullText.substring(0, currentText.length - 1));
+        if (currentText.length === 0) {
+          setIsDeleting(false);
+          setExampleIndex((prev) => (prev + 1) % EXAMPLE_GOALS.length);
+        }
+      }
+    }, typingSpeed);
+
+    return () => clearTimeout(timer);
+  }, [currentText, isDeleting, exampleIndex]);
+
+  const textColor = isDark ? '#38bdf8' : '#0284c7';
+
+  return (
+    <Box sx={{ minHeight: '32px', display: 'flex', alignItems: 'center' }}>
+      <Typography
+        sx={{
+          fontSize: '1.15rem',
+          fontWeight: 800,
+          color: textColor,
+          lineHeight: 1.3,
+        }}
+      >
+        &ldquo;{currentText}&rdquo;
+        <Box
+          component="span"
+          sx={{
+            display: 'inline-block',
+            width: '2px',
+            height: '1.1em',
+            bgcolor: textColor,
+            ml: '3px',
+            verticalAlign: 'middle',
+            animation: 'blinkCaret 1s infinite',
+            '@keyframes blinkCaret': {
+              '0%, 100%': { opacity: 1 },
+              '50%': { opacity: 0 },
+            },
+          }}
+        />
+      </Typography>
+    </Box>
+  );
+}
+
+export default function GoalModal({ open, onClose, goal, defaultType: _defaultType = 'finance' }: GoalModalProps) {
   const { addGoal, updateGoal } = useGoals();
   const router = useRouter();
   const { user } = useAuth();
@@ -479,11 +549,10 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
                     </Typography>
 
                     <TextField
-                      autoFocus
                       fullWidth
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g. Lose 10kg or Save PKR 50k"
+                      placeholder="Enter your goal title..."
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           borderRadius: '14px',
@@ -495,6 +564,22 @@ export default function GoalModal({ open, onClose, goal }: GoalModalProps) {
                         },
                       }}
                     />
+
+                    {/* Dynamic Typewriter Examples */}
+                    <Box
+                      sx={{
+                        mt: 2,
+                        p: 2,
+                        borderRadius: '14px',
+                        bgcolor: isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(2, 132, 199, 0.06)',
+                        border: `1px dashed ${isDark ? 'rgba(56, 189, 248, 0.3)' : 'rgba(2, 132, 199, 0.3)'}`,
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 11, fontWeight: 800, color: isDark ? '#38bdf8' : '#0284c7', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5 }}>
+                        💡 Inspiration Examples
+                      </Typography>
+                      <TypewriterExamples isDark={isDark} />
+                    </Box>
                   </Box>
                 )}
 

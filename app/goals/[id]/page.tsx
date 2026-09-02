@@ -35,6 +35,7 @@ import {
   TrackChanges,
   ArrowForward,
   RadioButtonUnchecked,
+  TrendingUp,
 } from '@mui/icons-material';
 
 import { doc, getDoc, updateDoc, addDoc, collection, Timestamp } from 'firebase/firestore';
@@ -51,6 +52,7 @@ import MilestoneDetailSheet from '../../components/goals/MilestoneDetailSheet';
 import AISuggestMilestonesModal from '../../components/goals/AISuggestMilestonesModal';
 import CreateTrackerModal from '../../components/goals/CreateTrackerModal';
 import TrackerView from '../../components/goals/TrackerView';
+import AddMoney from '../../components/finance/TotalCashSnapshot/AddMoney';
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -825,6 +827,9 @@ const GoalDetailInner: React.FC = () => {
   
   // Frequency Options ("Show me")
   const [frequencyMode, setFrequencyMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [dailyDuration, setDailyDuration] = useState<'15_days' | '1_month' | '2_months' | '3_months'>('1_month');
+  const [weekScope, setWeekScope] = useState<'every_week' | 'this_week'>('every_week');
+  const [monthScope, setMonthScope] = useState<'every_month' | 'this_month'>('every_month');
   const [selectedDaysOfWeek, setSelectedDaysOfWeek] = useState<number[]>([1, 3, 5]);
   const [selectedDaysOfMonth, setSelectedDaysOfMonth] = useState<number[]>([1, 15]);
 
@@ -834,7 +839,14 @@ const GoalDetailInner: React.FC = () => {
   const [selectedRangeStartDate, setSelectedRangeStartDate] = useState<Date | null>(new Date());
   const [selectedRangeEndDate, setSelectedRangeEndDate] = useState<Date | null>(new Date(Date.now() + 7 * 86400000));
   const [financeSourceName, setFinanceSourceName] = useState('');
+  const [financeSourceTargetVal, setFinanceSourceTargetVal] = useState<number | ''>('');
   const [manualTargetVal, setManualTargetVal] = useState<number | ''>('');
+  const [manualProgressMode, setManualProgressMode] = useState<'binary' | 'progressive'>('binary');
+  const [manualDirection, setManualDirection] = useState<'up' | 'down'>('up');
+  const [manualUnit, setManualUnit] = useState<string>('');
+  const [manualCurrentVal, setManualCurrentVal] = useState<number | ''>('');
+  const [manualSubStep, setManualSubStep] = useState<number>(1);
+  const [manualDurationChoice, setManualDurationChoice] = useState<'15_days' | '1_month' | '2_months' | '3_months' | 'custom'>('1_month');
 
   // Step 3 evaluation states
   const [milestoneRole, setMilestoneRole] = useState<'contributive' | 'supportive'>('contributive');
@@ -848,6 +860,7 @@ const GoalDetailInner: React.FC = () => {
   const [firstView, setFirstView] = useState(false);
   const [aiSuggestOpen, setAiSuggestOpen] = useState(false);
   const [trackerModalOpen, setTrackerModalOpen] = useState(false);
+  const [addMoneyOpen, setAddMoneyOpen] = useState(false);
 
   // States for adding linked Task
   const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
@@ -987,6 +1000,7 @@ const GoalDetailInner: React.FC = () => {
     setScheduleEndTime('10:00');
     setTodoTime('');
     setFrequencyMode('daily');
+    setDailyDuration('1_month');
     setSelectedDaysOfWeek([1, 3, 5]);
     setSelectedDaysOfMonth([1, 15]);
     setDateMode('single');
@@ -995,7 +1009,14 @@ const GoalDetailInner: React.FC = () => {
     setSelectedRangeStartDate(new Date());
     setSelectedRangeEndDate(new Date(Date.now() + 7 * 86400000));
     setFinanceSourceName('');
+    setFinanceSourceTargetVal('');
     setManualTargetVal('');
+    setManualProgressMode('binary');
+    setManualDirection('up');
+    setManualUnit('');
+    setManualCurrentVal('');
+    setManualSubStep(1);
+    setManualDurationChoice('1_month');
     setMilestoneRole('contributive');
     setMilestoneContributionAmt('');
     setAiEvaluating(false);
@@ -1073,7 +1094,14 @@ const GoalDetailInner: React.FC = () => {
       const unitStr = goal.unit || goal.overallTargetUnit || 'units';
 
       let effectiveDueDate = selectedSingleDate;
-      if (dateMode === 'range' && selectedRangeEndDate) {
+      if (frequencyMode === 'daily') {
+        let days = 30;
+        if (dailyDuration === '15_days') days = 15;
+        else if (dailyDuration === '1_month') days = 30;
+        else if (dailyDuration === '2_months') days = 60;
+        else if (dailyDuration === '3_months') days = 90;
+        effectiveDueDate = new Date(Date.now() + days * 86400000);
+      } else if (dateMode === 'range' && selectedRangeEndDate) {
         effectiveDueDate = selectedRangeEndDate;
       }
 
@@ -1172,11 +1200,15 @@ const GoalDetailInner: React.FC = () => {
 
         await _updateGoal(goal.id, { linkedSourceId: srcName });
 
+        const calcTargetAmt = typeof financeSourceTargetVal === 'number' ? financeSourceTargetVal : (goal.overallTargetValue || 0);
+
         await addGoalStep(goal.id, {
           title: `Source of Fund: ${srcName}`,
           role: 'contributive',
-          contributionAmount: 0,
+          contributionAmount: calcTargetAmt,
           contributionUnit: 'PKR',
+          targetAmount: calcTargetAmt > 0 ? calcTargetAmt : undefined,
+          targetValue: calcTargetAmt > 0 ? calcTargetAmt : undefined,
           linkedType: 'finance_source',
           linkedItemId: headDoc.id,
           endDate: null,
@@ -1184,16 +1216,35 @@ const GoalDetailInner: React.FC = () => {
         });
       } else {
         // Manual step
+        const targetValNum = typeof manualTargetVal === 'number' ? manualTargetVal : contribAmt;
+        const currentValNum = typeof manualCurrentVal === 'number' ? manualCurrentVal : 0;
+        const unitStrVal = manualUnit.trim() || unitStr;
+
+        let calcEndDate = selectedRangeEndDate || selectedSingleDate || null;
+        if (manualDurationChoice === '15_days') {
+          calcEndDate = new Date(Date.now() + 15 * 86400000);
+        } else if (manualDurationChoice === '1_month') {
+          calcEndDate = new Date(Date.now() + 30 * 86400000);
+        } else if (manualDurationChoice === '2_months') {
+          calcEndDate = new Date(Date.now() + 60 * 86400000);
+        } else if (manualDurationChoice === '3_months') {
+          calcEndDate = new Date(Date.now() + 90 * 86400000);
+        }
+
         await addGoalStep(goal.id, {
           title: newMilestoneTitle.trim(),
-          targetValue: contribAmt,
+          targetValue: targetValNum,
+          actualValue: currentValNum,
+          progressMode: manualProgressMode,
+          direction: manualDirection,
+          unit: unitStrVal,
           role: milestoneRole,
           contributionAmount: contribAmt,
-          contributionUnit: unitStr,
+          contributionUnit: unitStrVal,
           linkedType: 'manual',
           weight: 1,
           startDate: selectedRangeStartDate || null,
-          endDate: selectedRangeEndDate || selectedSingleDate || null,
+          endDate: calcEndDate,
         });
       }
 
@@ -1517,6 +1568,7 @@ const GoalDetailInner: React.FC = () => {
           <MilestoneList
             goalId={goal.id!}
             steps={steps}
+            goalTargetValue={goal.overallTargetValue}
             onStepsChange={() => {
               /* Firestore snapshot updates automatically */
             }}
@@ -1527,9 +1579,46 @@ const GoalDetailInner: React.FC = () => {
             onAddStep={openAddMilestoneDialog}
             onTriggerAISuggest={() => setAiSuggestOpen(true)}
             onCreateTracker={() => setTrackerModalOpen(true)}
+            onOpenAddMoney={() => setAddMoneyOpen(true)}
             typeColor={typeColor}
           />
         )}
+
+        <AddMoney
+          externalOpen={addMoneyOpen}
+          onExternalClose={() => setAddMoneyOpen(false)}
+          saving={false}
+          onSave={async (amount, source, isFreezed, bankId, bankName, customPaymentHeadId, customPaymentHeadName, note, holderName) => {
+            if (!user) return;
+            const txn = {
+              userId: user.uid,
+              amount,
+              type: isFreezed ? 'freeze_transfer' : 'add',
+              source: isFreezed ? 'other' : source,
+              category: 'manual',
+              note: note || `Goal Milestone Addition: ${goal.title}`,
+              createdAt: Timestamp.now(),
+              holderName: holderName || null,
+              bankId,
+              BankName: bankName,
+              customPaymentHeadId,
+              customPaymentHeadName,
+            };
+            await addDoc(collection(db, 'cashTransactions'), txn);
+
+            const snapRef = doc(db, 'totalCashSnapshots', user.uid);
+            const snap = await getDoc(snapRef);
+            if (snap.exists()) {
+              const data = snap.data();
+              const customSources = typeof data?.sources?.custom === 'object' ? { ...data.sources.custom } : {};
+              if (customPaymentHeadName) {
+                customSources[customPaymentHeadName] = (customSources[customPaymentHeadName] || 0) + amount;
+                await updateDoc(snapRef, { 'sources.custom': customSources, updatedAt: new Date() });
+              }
+            }
+            setAddMoneyOpen(false);
+          }}
+        />
 
         {/* Details grid */}
         <Box sx={{ mt: 1.5, mb: 2.5 }}>
@@ -1974,12 +2063,12 @@ const GoalDetailInner: React.FC = () => {
           {/* Header */}
           <DialogTitle sx={{ fontWeight: 800, pb: 1, pt: 3, px: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="h6" sx={{ fontWeight: 850, fontSize: '1.2rem', color: isDark ? '#f8fafc' : '#0f172a' }}>
-              {milestoneFormStep === 1 && 'Choose Milestone Type'}
+              {milestoneFormStep === 1 && 'Milestone type'}
               {milestoneFormStep === 2 && `Configure ${milestoneType === 'finance_source' ? 'Source of Fund' : milestoneType.charAt(0).toUpperCase() + milestoneType.slice(1)}`}
               {milestoneFormStep === 3 && 'Evaluate Goal Contribution'}
             </Typography>
             <Typography variant="caption" sx={{ fontWeight: 800, px: 1.5, py: 0.5, borderRadius: '999px', bgcolor: isDark ? '#1e293b' : '#f1f5f9', color: isDark ? '#cbd5e1' : '#475569' }}>
-              Step {milestoneFormStep} of {milestoneType === 'finance_source' ? 2 : 3}
+              {milestoneFormStep}/{milestoneType === 'finance_source' ? 2 : 3}
             </Typography>
           </DialogTitle>
 
@@ -1995,7 +2084,7 @@ const GoalDetailInner: React.FC = () => {
                   {
                     type: 'schedule',
                     label: 'Schedule',
-                    desc: 'Time-based session, single date, multiple dates or range',
+                    desc: 'Sync with Your Schedule Section',
                     icon: <CalendarMonth sx={{ fontSize: 26, color: '#fff' }} />,
                     iconBg: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
                     badgeCol: '#8b5cf6',
@@ -2003,7 +2092,7 @@ const GoalDetailInner: React.FC = () => {
                   {
                     type: 'todo',
                     label: 'Todo',
-                    desc: 'Actionable checklist item with dates and optional time',
+                    desc: 'Sync with Todos',
                     icon: <CheckCircle sx={{ fontSize: 26, color: '#fff' }} />,
                     iconBg: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
                     badgeCol: '#10b981',
@@ -2011,7 +2100,7 @@ const GoalDetailInner: React.FC = () => {
                   {
                     type: 'finance_source',
                     label: 'Source of Fund',
-                    desc: 'Dedicated finance account/wallet with 0 balance',
+                    desc: 'Custom Source / Wallet',
                     icon: <AccountBalanceWallet sx={{ fontSize: 26, color: '#fff' }} />,
                     iconBg: 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)',
                     badgeCol: '#f59e0b',
@@ -2019,7 +2108,7 @@ const GoalDetailInner: React.FC = () => {
                   {
                     type: 'manual',
                     label: 'Manual',
-                    desc: 'Direct checkpoint with start/end dates & target value',
+                    desc: 'Write the milestone manually',
                     icon: <TrackChanges sx={{ fontSize: 26, color: '#fff' }} />,
                     iconBg: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
                     badgeCol: '#3b82f6',
@@ -2158,13 +2247,73 @@ const GoalDetailInner: React.FC = () => {
                         ))}
                       </Stack>
 
+                      {/* Daily Duration selector (15 days, 1 month, 2 months, 3 months) */}
+                      {frequencyMode === 'daily' && (
+                        <Box sx={{ pt: 1 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Show daily for:
+                          </Typography>
+                          <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ gap: 1 }}>
+                            {[
+                              { id: '15_days', label: '15 days' },
+                              { id: '1_month', label: '1 month' },
+                              { id: '2_months', label: '2 months' },
+                              { id: '3_months', label: '3 months' },
+                            ].map((dur) => (
+                              <Chip
+                                key={dur.id}
+                                label={dur.label}
+                                onClick={() => setDailyDuration(dur.id as '15_days' | '1_month' | '2_months' | '3_months')}
+                                variant={dailyDuration === dur.id ? 'filled' : 'outlined'}
+                                sx={{
+                                  flex: 1,
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  borderRadius: '8px',
+                                  bgcolor: dailyDuration === dur.id ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                                  borderColor: dailyDuration === dur.id ? '#8b5cf6' : isDark ? '#334155' : '#cbd5e1',
+                                  color: dailyDuration === dur.id ? (isDark ? '#ddd6fe' : '#6d28d9') : mutedText,
+                                  cursor: 'pointer',
+                                }}
+                              />
+                            ))}
+                          </Stack>
+                        </Box>
+                      )}
+
                       {/* Days of Week selector (Sun - Sat) */}
                       {frequencyMode === 'weekly' && (
-                        <Box sx={{ pt: 0.5 }}>
+                        <Box sx={{ pt: 1 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Recurrence Scope:
+                          </Typography>
+                          <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+                            {[
+                              { id: 'every_week', label: 'Every week' },
+                              { id: 'this_week', label: 'Only this week' },
+                            ].map((opt) => (
+                              <Chip
+                                key={opt.id}
+                                label={opt.label}
+                                onClick={() => setWeekScope(opt.id as 'every_week' | 'this_week')}
+                                variant={weekScope === opt.id ? 'filled' : 'outlined'}
+                                sx={{
+                                  flex: 1,
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  borderRadius: '8px',
+                                  bgcolor: weekScope === opt.id ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                                  borderColor: weekScope === opt.id ? '#8b5cf6' : isDark ? '#334155' : '#cbd5e1',
+                                  color: weekScope === opt.id ? (isDark ? '#ddd6fe' : '#6d28d9') : mutedText,
+                                }}
+                              />
+                            ))}
+                          </Stack>
+
                           <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                             Select Days of Week:
                           </Typography>
-                          <Stack direction="row" spacing={0.5} justifyContent="space-between">
+                          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.5 }}>
                             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayName, idx) => {
                               const isSelected = selectedDaysOfWeek.includes(idx);
                               return (
@@ -2182,9 +2331,9 @@ const GoalDetailInner: React.FC = () => {
                                   }}
                                   variant={isSelected ? 'filled' : 'outlined'}
                                   sx={{
-                                    flex: 1,
                                     fontWeight: 800,
-                                    fontSize: 11,
+                                    fontSize: 10.5,
+                                    px: 0,
                                     borderRadius: '8px',
                                     bgcolor: isSelected ? '#8b5cf6' : 'transparent',
                                     borderColor: isSelected ? '#8b5cf6' : isDark ? '#334155' : '#cbd5e1',
@@ -2194,18 +2343,51 @@ const GoalDetailInner: React.FC = () => {
                                 />
                               );
                             })}
-                          </Stack>
+                          </Box>
                         </Box>
                       )}
 
-                      {/* Days of Month selector (1 - 31) */}
+                      {/* Days of Month selector (1 - 30/31) */}
                       {frequencyMode === 'monthly' && (
-                        <Box sx={{ pt: 0.5 }}>
+                        <Box sx={{ pt: 1 }}>
                           <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            Select Days of Month:
+                            Recurrence Scope:
+                          </Typography>
+                          <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+                            {[
+                              { id: 'every_month', label: 'Every month' },
+                              { id: 'this_month', label: 'Only this month' },
+                            ].map((opt) => (
+                              <Chip
+                                key={opt.id}
+                                label={opt.label}
+                                onClick={() => setMonthScope(opt.id as 'every_month' | 'this_month')}
+                                variant={monthScope === opt.id ? 'filled' : 'outlined'}
+                                sx={{
+                                  flex: 1,
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  borderRadius: '8px',
+                                  bgcolor: monthScope === opt.id ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                                  borderColor: monthScope === opt.id ? '#8b5cf6' : isDark ? '#334155' : '#cbd5e1',
+                                  color: monthScope === opt.id ? (isDark ? '#ddd6fe' : '#6d28d9') : mutedText,
+                                }}
+                              />
+                            ))}
+                          </Stack>
+
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Select Days of Month ({monthScope === 'every_month' ? '1 to 30' : '1 to max days'}):
                           </Typography>
                           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.75, maxHeight: 150, overflowY: 'auto', p: 0.5 }}>
-                            {Array.from({ length: 31 }, (_, i) => i + 1).map((dayNum) => {
+                            {Array.from(
+                              {
+                                length: monthScope === 'every_month'
+                                  ? 30
+                                  : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate(),
+                              },
+                              (_, i) => i + 1,
+                            ).map((dayNum) => {
                               const isSelected = selectedDaysOfMonth.includes(dayNum);
                               return (
                                 <Chip
@@ -2294,13 +2476,73 @@ const GoalDetailInner: React.FC = () => {
                         ))}
                       </Stack>
 
+                      {/* Daily Duration selector (15 days, 1 month, 2 months, 3 months) */}
+                      {frequencyMode === 'daily' && (
+                        <Box sx={{ pt: 1 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Show daily for:
+                          </Typography>
+                          <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ gap: 1 }}>
+                            {[
+                              { id: '15_days', label: '15 days' },
+                              { id: '1_month', label: '1 month' },
+                              { id: '2_months', label: '2 months' },
+                              { id: '3_months', label: '3 months' },
+                            ].map((dur) => (
+                              <Chip
+                                key={dur.id}
+                                label={dur.label}
+                                onClick={() => setDailyDuration(dur.id as '15_days' | '1_month' | '2_months' | '3_months')}
+                                variant={dailyDuration === dur.id ? 'filled' : 'outlined'}
+                                sx={{
+                                  flex: 1,
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  borderRadius: '8px',
+                                  bgcolor: dailyDuration === dur.id ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                                  borderColor: dailyDuration === dur.id ? '#10b981' : isDark ? '#334155' : '#cbd5e1',
+                                  color: dailyDuration === dur.id ? (isDark ? '#a7f3d0' : '#047857') : mutedText,
+                                  cursor: 'pointer',
+                                }}
+                              />
+                            ))}
+                          </Stack>
+                        </Box>
+                      )}
+
                       {/* Days of Week selector (Sun - Sat) */}
                       {frequencyMode === 'weekly' && (
-                        <Box sx={{ pt: 0.5 }}>
+                        <Box sx={{ pt: 1 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Recurrence Scope:
+                          </Typography>
+                          <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+                            {[
+                              { id: 'every_week', label: 'Every week' },
+                              { id: 'this_week', label: 'Only this week' },
+                            ].map((opt) => (
+                              <Chip
+                                key={opt.id}
+                                label={opt.label}
+                                onClick={() => setWeekScope(opt.id as 'every_week' | 'this_week')}
+                                variant={weekScope === opt.id ? 'filled' : 'outlined'}
+                                sx={{
+                                  flex: 1,
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  borderRadius: '8px',
+                                  bgcolor: weekScope === opt.id ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                                  borderColor: weekScope === opt.id ? '#10b981' : isDark ? '#334155' : '#cbd5e1',
+                                  color: weekScope === opt.id ? (isDark ? '#a7f3d0' : '#047857') : mutedText,
+                                }}
+                              />
+                            ))}
+                          </Stack>
+
                           <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                             Select Days of Week:
                           </Typography>
-                          <Stack direction="row" spacing={0.5} justifyContent="space-between">
+                          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.5 }}>
                             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayName, idx) => {
                               const isSelected = selectedDaysOfWeek.includes(idx);
                               return (
@@ -2318,9 +2560,9 @@ const GoalDetailInner: React.FC = () => {
                                   }}
                                   variant={isSelected ? 'filled' : 'outlined'}
                                   sx={{
-                                    flex: 1,
                                     fontWeight: 800,
-                                    fontSize: 11,
+                                    fontSize: 10.5,
+                                    px: 0,
                                     borderRadius: '8px',
                                     bgcolor: isSelected ? '#10b981' : 'transparent',
                                     borderColor: isSelected ? '#10b981' : isDark ? '#334155' : '#cbd5e1',
@@ -2330,18 +2572,51 @@ const GoalDetailInner: React.FC = () => {
                                 />
                               );
                             })}
-                          </Stack>
+                          </Box>
                         </Box>
                       )}
 
-                      {/* Days of Month selector (1 - 31) */}
+                      {/* Days of Month selector (1 - 30/31) */}
                       {frequencyMode === 'monthly' && (
-                        <Box sx={{ pt: 0.5 }}>
+                        <Box sx={{ pt: 1 }}>
                           <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            Select Days of Month:
+                            Recurrence Scope:
+                          </Typography>
+                          <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+                            {[
+                              { id: 'every_month', label: 'Every month' },
+                              { id: 'this_month', label: 'Only this month' },
+                            ].map((opt) => (
+                              <Chip
+                                key={opt.id}
+                                label={opt.label}
+                                onClick={() => setMonthScope(opt.id as 'every_month' | 'this_month')}
+                                variant={monthScope === opt.id ? 'filled' : 'outlined'}
+                                sx={{
+                                  flex: 1,
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  borderRadius: '8px',
+                                  bgcolor: monthScope === opt.id ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                                  borderColor: monthScope === opt.id ? '#10b981' : isDark ? '#334155' : '#cbd5e1',
+                                  color: monthScope === opt.id ? (isDark ? '#a7f3d0' : '#047857') : mutedText,
+                                }}
+                              />
+                            ))}
+                          </Stack>
+
+                          <Typography sx={{ fontSize: 11, fontWeight: 750, color: mutedText, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Select Days of Month ({monthScope === 'every_month' ? '1 to 30' : '1 to max days'}):
                           </Typography>
                           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.75, maxHeight: 150, overflowY: 'auto', p: 0.5 }}>
-                            {Array.from({ length: 31 }, (_, i) => i + 1).map((dayNum) => {
+                            {Array.from(
+                              {
+                                length: monthScope === 'every_month'
+                                  ? 30
+                                  : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate(),
+                              },
+                              (_, i) => i + 1,
+                            ).map((dayNum) => {
                               const isSelected = selectedDaysOfMonth.includes(dayNum);
                               return (
                                 <Chip
@@ -2409,43 +2684,362 @@ const GoalDetailInner: React.FC = () => {
                   </>
                 )}
 
-                {/* 4. Manual Form */}
+                {/* 4. Manual Form - Guided Conversational Wizard */}
                 {milestoneType === 'manual' && (
-                  <>
-                    <TextField
-                      value={newMilestoneTitle}
-                      onChange={(e) => setNewMilestoneTitle(e.target.value)}
-                      label="Milestone Title"
-                      placeholder="e.g. Complete literature review"
-                      fullWidth
-                      autoFocus
-                      required
-                    />
+                  <Stack spacing={2.5}>
+                    {/* Micro Step indicator / Back button */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Typography sx={{ fontSize: 11, fontWeight: 800, color: typeColor, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Manual Milestone · Step {manualSubStep} of {manualProgressMode === 'progressive' ? 4 : 3}
+                      </Typography>
 
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                      <DatePicker
-                        label="Start Date"
-                        value={selectedRangeStartDate}
-                        onChange={(val) => setSelectedRangeStartDate(val)}
-                        slotProps={{ textField: { fullWidth: true } }}
-                      />
-                      <DatePicker
-                        label="End Date"
-                        value={selectedRangeEndDate}
-                        onChange={(val) => setSelectedRangeEndDate(val)}
-                        slotProps={{ textField: { fullWidth: true } }}
-                      />
+                      {manualSubStep > 1 && (
+                        <Button
+                          size="small"
+                          onClick={() => setManualSubStep((prev) => prev - 1)}
+                          sx={{ textTransform: 'none', fontSize: 11, fontWeight: 700, color: mutedText }}
+                        >
+                          ← Previous
+                        </Button>
+                      )}
                     </Box>
 
-                    <TextField
-                      type="number"
-                      label={`Target Value (${goal.unit || goal.overallTargetUnit || 'units'})`}
-                      value={manualTargetVal}
-                      onChange={(e) => setManualTargetVal(e.target.value === '' ? '' : Number(e.target.value))}
-                      placeholder="e.g. 50"
-                      fullWidth
-                    />
-                  </>
+                    {/* Sub-step 1: Title */}
+                    {manualSubStep === 1 && (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Typography sx={{ fontSize: 15, fontWeight: 800, color: isDark ? '#f1f5f9' : '#0f172a' }}>
+                          What is the title of this milestone?
+                        </Typography>
+
+                        <TextField
+                          value={newMilestoneTitle}
+                          onChange={(e) => setNewMilestoneTitle(e.target.value)}
+                          label="Milestone Title"
+                          placeholder="e.g. Read 20 books this year"
+                          fullWidth
+                          autoFocus
+                          required
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newMilestoneTitle.trim()) {
+                              e.preventDefault();
+                              setManualSubStep(2);
+                            }
+                          }}
+                        />
+
+                        <Button
+                          disabled={!newMilestoneTitle.trim()}
+                          onClick={() => setManualSubStep(2)}
+                          variant="contained"
+                          endIcon={<ArrowForward />}
+                          sx={{
+                            alignSelf: 'flex-end',
+                            borderRadius: '12px',
+                            px: 3,
+                            py: 1,
+                            fontWeight: 800,
+                            bgcolor: typeColor,
+                            color: '#fff',
+                            textTransform: 'none',
+                            '&:hover': { bgcolor: typeColor, opacity: 0.9 },
+                          }}
+                        >
+                          Continue
+                        </Button>
+                      </Box>
+                    )}
+
+                    {/* Sub-step 2: Progress Mode Card Selection */}
+                    {manualSubStep === 2 && (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Typography sx={{ fontSize: 15, fontWeight: 800, color: isDark ? '#f1f5f9' : '#0f172a' }}>
+                          How do you want to track progress on this milestone?
+                        </Typography>
+
+                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                          {/* Option 1 — Progressive */}
+                          <Box
+                            onClick={() => {
+                              setManualProgressMode('progressive');
+                              setManualSubStep(3);
+                            }}
+                            sx={{
+                              p: 2.5,
+                              borderRadius: '18px',
+                              border: `2px solid ${
+                                manualProgressMode === 'progressive'
+                                  ? '#14b8a6'
+                                  : isDark
+                                  ? '#334155'
+                                  : '#e2e8f0'
+                              }`,
+                              bgcolor:
+                                manualProgressMode === 'progressive'
+                                  ? isDark
+                                    ? 'rgba(20, 184, 166, 0.15)'
+                                    : '#ccfbf1'
+                                  : isDark
+                                  ? 'rgba(30, 41, 59, 0.4)'
+                                  : '#ffffff',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 1,
+                              '&:hover': {
+                                borderColor: '#14b8a6',
+                                transform: 'translateY(-2px)',
+                              },
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <Box
+                                sx={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: '12px',
+                                  bgcolor: 'rgba(20, 184, 166, 0.15)',
+                                  color: '#14b8a6',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <TrendingUp sx={{ fontSize: 22 }} />
+                              </Box>
+                              {manualProgressMode === 'progressive' && (
+                                <CheckCircle sx={{ fontSize: 22, color: '#14b8a6' }} />
+                              )}
+                            </Box>
+
+                            <Typography sx={{ fontSize: 14, fontWeight: 800, color: isDark ? '#f1f5f9' : '#0f172a' }}>
+                              Add progress over the time
+                            </Typography>
+
+                            <Typography sx={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', lineHeight: 1.4 }}>
+                              Continue make progress until you reach your target
+                            </Typography>
+                          </Box>
+
+                          {/* Option 2 — Fixed */}
+                          <Box
+                            onClick={() => {
+                              setManualProgressMode('binary');
+                              setManualSubStep(3);
+                            }}
+                            sx={{
+                              p: 2.5,
+                              borderRadius: '18px',
+                              border: `2px solid ${
+                                manualProgressMode === 'binary'
+                                  ? '#10b981'
+                                  : isDark
+                                  ? '#334155'
+                                  : '#e2e8f0'
+                              }`,
+                              bgcolor:
+                                manualProgressMode === 'binary'
+                                  ? isDark
+                                    ? 'rgba(16, 185, 129, 0.15)'
+                                    : '#d1fae5'
+                                  : isDark
+                                  ? 'rgba(30, 41, 59, 0.4)'
+                                  : '#ffffff',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 1,
+                              '&:hover': {
+                                borderColor: '#10b981',
+                                transform: 'translateY(-2px)',
+                              },
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <Box
+                                sx={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: '12px',
+                                  bgcolor: 'rgba(16, 185, 129, 0.15)',
+                                  color: '#10b981',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <CheckCircle sx={{ fontSize: 22 }} />
+                              </Box>
+                              {manualProgressMode === 'binary' && (
+                                <CheckCircle sx={{ fontSize: 22, color: '#10b981' }} />
+                              )}
+                            </Box>
+
+                            <Typography sx={{ fontSize: 14, fontWeight: 800, color: isDark ? '#f1f5f9' : '#0f172a' }}>
+                              Track with a checkmark
+                            </Typography>
+
+                            <Typography sx={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', lineHeight: 1.4 }}>
+                              Just mark it done when it&apos;s finished.
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Box>
+                    )}
+
+                    {/* Sub-step 3 (Progressive): Target Input */}
+                    {manualSubStep === 3 && manualProgressMode === 'progressive' && (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Typography sx={{ fontSize: 15, fontWeight: 800, color: isDark ? '#f1f5f9' : '#0f172a' }}>
+                          What is your target for {goal.unit || goal.overallTargetUnit || 'this milestone'}?
+                        </Typography>
+
+                        <Box sx={{ p: 2.5, borderRadius: '18px', border: `1.5px solid ${isDark ? '#334155' : '#e2e8f0'}`, bgcolor: isDark ? 'rgba(15, 23, 42, 0.6)' : '#f8fafc' }}>
+                          <Stack spacing={2}>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+                              <TextField
+                                type="number"
+                                label="Your Target"
+                                value={manualTargetVal}
+                                onChange={(e) => setManualTargetVal(e.target.value === '' ? '' : Number(e.target.value))}
+                                placeholder="e.g. 20"
+                                fullWidth
+                                autoFocus
+                                required
+                              />
+                              <TextField
+                                label="Unit (e.g. books, kg, hrs)"
+                                value={manualUnit || goal.unit || goal.overallTargetUnit || ''}
+                                onChange={(e) => setManualUnit(e.target.value)}
+                                placeholder="e.g. books"
+                                fullWidth
+                              />
+                            </Box>
+
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+                              <TextField
+                                type="number"
+                                label="Initial Starting Value"
+                                value={manualCurrentVal}
+                                onChange={(e) => setManualCurrentVal(e.target.value === '' ? '' : Number(e.target.value))}
+                                placeholder="e.g. 0"
+                                fullWidth
+                              />
+                              <TextField
+                                select
+                                label="Direction"
+                                value={manualDirection}
+                                onChange={(e) => setManualDirection(e.target.value as 'up' | 'down')}
+                                fullWidth
+                                SelectProps={{ native: true }}
+                              >
+                                <option value="up">📈 Climb up to target</option>
+                                <option value="down">📉 Reduce down to target</option>
+                              </TextField>
+                            </Box>
+                          </Stack>
+                        </Box>
+
+                        <Button
+                          disabled={!manualTargetVal || Number(manualTargetVal) <= 0}
+                          onClick={() => setManualSubStep(4)}
+                          variant="contained"
+                          endIcon={<ArrowForward />}
+                          sx={{
+                            alignSelf: 'flex-end',
+                            borderRadius: '12px',
+                            px: 3,
+                            py: 1,
+                            fontWeight: 800,
+                            bgcolor: '#14b8a6',
+                            color: '#fff',
+                            textTransform: 'none',
+                            '&:hover': { bgcolor: '#0d9488' },
+                          }}
+                        >
+                          Continue to Timeframe
+                        </Button>
+                      </Box>
+                    )}
+
+                    {/* Sub-step 3 (Fixed) or Sub-step 4 (Progressive): Timeframe / Duration Choice */}
+                    {((manualSubStep === 3 && manualProgressMode === 'binary') || (manualSubStep === 4 && manualProgressMode === 'progressive')) && (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Typography sx={{ fontSize: 15, fontWeight: 800, color: isDark ? '#f1f5f9' : '#0f172a' }}>
+                          {manualProgressMode === 'progressive'
+                            ? `In how much time do you want to get this target of ${manualTargetVal || ''} ${manualUnit || goal.unit || goal.overallTargetUnit || 'units'}?`
+                            : `In how much time do you want to finish "${newMilestoneTitle}"?`}
+                        </Typography>
+
+                        <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ gap: 1 }}>
+                          {[
+                            { id: '15_days', label: '15 days' },
+                            { id: '1_month', label: '1 month' },
+                            { id: '2_months', label: '2 months' },
+                            { id: '3_months', label: '3 months' },
+                            { id: 'custom', label: 'Custom Date' },
+                          ].map((dur) => (
+                            <Chip
+                              key={dur.id}
+                              label={dur.label}
+                              onClick={() => setManualDurationChoice(dur.id as '15_days' | '1_month' | '2_months' | '3_months' | 'custom')}
+                              variant={manualDurationChoice === dur.id ? 'filled' : 'outlined'}
+                              sx={{
+                                flex: 1,
+                                fontWeight: 800,
+                                fontSize: 12,
+                                py: 2.2,
+                                borderRadius: '12px',
+                                bgcolor:
+                                  manualDurationChoice === dur.id
+                                    ? manualProgressMode === 'progressive'
+                                      ? 'rgba(20, 184, 166, 0.2)'
+                                      : 'rgba(16, 185, 129, 0.2)'
+                                    : 'transparent',
+                                borderColor:
+                                  manualDurationChoice === dur.id
+                                    ? manualProgressMode === 'progressive'
+                                      ? '#14b8a6'
+                                      : '#10b981'
+                                    : isDark
+                                    ? '#334155'
+                                    : '#cbd5e1',
+                                color:
+                                  manualDurationChoice === dur.id
+                                    ? manualProgressMode === 'progressive'
+                                      ? isDark
+                                        ? '#99f6e4'
+                                        : '#0d9488'
+                                      : isDark
+                                      ? '#a7f3d0'
+                                      : '#047857'
+                                    : mutedText,
+                                cursor: 'pointer',
+                              }}
+                            />
+                          ))}
+                        </Stack>
+
+                        {manualDurationChoice === 'custom' && (
+                          <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
+                            <DatePicker
+                              label="Start Date (Optional)"
+                              value={selectedRangeStartDate}
+                              onChange={(val) => setSelectedRangeStartDate(val)}
+                              slotProps={{ textField: { fullWidth: true } }}
+                            />
+                            <DatePicker
+                              label="End Date"
+                              value={selectedRangeEndDate}
+                              onChange={(val) => setSelectedRangeEndDate(val)}
+                              slotProps={{ textField: { fullWidth: true } }}
+                            />
+                          </Box>
+                        )}
+                      </Box>
+                    )}
+                  </Stack>
                 )}
               </Stack>
             )}
