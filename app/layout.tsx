@@ -2,12 +2,14 @@ import type { Metadata } from 'next';
 import { Inter, Roboto, Noto_Nastaliq_Urdu } from 'next/font/google';
 import './globals.css';
 
+import { Suspense } from 'react';
 import ClientThemeProvider from './components/global/ClientThemeProvider';
 import Navbar from './components/global/Navbar';
 import EmotionRegistry from './emotionRegistry';
 import AppBarTop from './components/global/AppBarTop';
 import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingInitializer';
 import FcmForegroundHandler from './components/global/FcmForegroundHandler';
+import TopNavigationLoader from './components/global/TopNavigationLoader';
 
 
 // Google Fonts
@@ -67,6 +69,9 @@ export default function RootLayout({
       >
         <EmotionRegistry>
           <ClientThemeProvider>
+            <Suspense fallback={null}>
+              <TopNavigationLoader />
+            </Suspense>
             <div className="flex min-h-screen flex-col  ">
               <OnBoardingInitializer />
               {/* FCM foreground notification handler — shows push notifications when app is focused */}

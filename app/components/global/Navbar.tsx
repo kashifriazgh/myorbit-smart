@@ -101,7 +101,6 @@ export default function BottomNav() {
           icon={item.icon}
           component={Link}
           href={user ? item.path : '#'}
-          prefetch={false}
           disabled={!user}
           sx={
             item.label === 'Home'

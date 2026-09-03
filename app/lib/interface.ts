@@ -994,12 +994,16 @@ export interface Goal {
   goalFurnished?: boolean;
   clarifyingAnswer?: string;
 
-  // ── New Mandatory Architecture Properties ──
   intent?: string; // e.g. 'save', 'learn', 'lose', 'gain', 'read', 'visit'
   progressTrackingType?: 'accumulative' | 'opposes';
   startingValue?: number;
   timeFrame?: string;
   linkedSourceId?: string; // custom payment head in Finance
+
+  subcategory?: string; // e.g. 'Saving', 'Fitness', 'Travel', 'Reading', 'Build Habit', 'Career'
+  measurementType?: 'qty' | 'duration' | 'frequency' | 'completion_percentage' | 'duration_of_consistency';
+  recommendedMilestoneType?: 'schedule' | 'todo' | 'finance_source' | 'manual';
+  aiMilestoneReason?: string;
 }
 
 export interface TrackerCheckIn {

@@ -10,16 +10,12 @@ import { Close, AutoAwesome, ArrowBack } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Goal } from '../../lib/interface';
 import { useAuth } from '@/app/lib/context/userContext';
+import { GOAL_CATEGORIES_CONFIG } from '@/app/lib/config/goalCategoriesConfig';
 
-const CATEGORY_UNITS: Record<string, string[]> = {
-  finance: ['PKR', 'USD', 'EUR', '%', 'transactions', 'items'],
-  health: ['kg', 'lbs', 'steps', 'minutes', 'hours', 'days', '%'],
-  learning: ['minutes', 'hours', 'lessons', 'chapters', 'pages', 'courses'],
-  habit: ['days', 'times', 'streak', 'weeks'],
-  work: ['tasks', 'hours', 'projects', '%', 'clients'],
-  lifestyle: ['days', 'sessions', 'events', 'activities', 'hours'],
-  custom: ['sessions', 'tasks', 'hours'],
-};
+const CATEGORY_UNITS: Record<string, string[]> = Object.keys(GOAL_CATEGORIES_CONFIG).reduce((acc, catKey) => {
+  acc[catKey] = GOAL_CATEGORIES_CONFIG[catKey].allUnits;
+  return acc;
+}, {} as Record<string, string[]>);
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;

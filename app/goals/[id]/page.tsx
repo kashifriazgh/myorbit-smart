@@ -17,6 +17,8 @@ import {
   Stack,
   LinearProgress,
   CircularProgress,
+  Skeleton,
+  Divider,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -808,9 +810,31 @@ const GoalDetailInner: React.FC = () => {
   const { user } = useAuth();
   const { todos, addTodo, updateTodo } = useTodoContext();
   const { allSchedules, addSchedule } = useSchedules();
-  const { goals, deleteGoal, addGoalStep, updateGoal: _updateGoal, saveGoalTracker, removeGoalTracker, addTrackerCheckIn, loading: _goalsLoading } = useGoals();
+  const { goals, deleteGoal, addGoalStep, updateGoal: _updateGoal, saveGoalTracker, removeGoalTracker, addTrackerCheckIn, loading: goalsLoading } = useGoals();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
+
+  const [directGoal, setDirectGoal] = useState<Goal | null>(null);
+  const [fetchingDirect, setFetchingDirect] = useState(false);
+
+  const goal = useMemo(() => {
+    return goals.find((g) => g.id === params.id) || directGoal;
+  }, [goals, params.id, directGoal]);
+
+  useEffect(() => {
+    const goalId = params?.id;
+    if (!goal && !goalsLoading && goalId && typeof goalId === 'string') {
+      setFetchingDirect(true);
+      getDoc(doc(db, 'goals', goalId))
+        .then((snap) => {
+          if (snap.exists()) {
+            setDirectGoal({ id: snap.id, ...snap.data() } as Goal);
+          }
+        })
+        .catch((err) => console.error('Error fetching single goal from DB:', err))
+        .finally(() => setFetchingDirect(false));
+    }
+  }, [goal, goalsLoading, params?.id]);
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -880,8 +904,6 @@ const GoalDetailInner: React.FC = () => {
   const [newEventEndTime, setNewEventEndTime] = useState('10:00');
   const [addingEvent, setAddingEvent] = useState(false);
 
-  const goal = goals.find((g) => g.id === params.id);
-
   useEffect(() => {
     if (goal?.id) {
       const key = `goal_viewed_${goal.id}`;
@@ -891,6 +913,70 @@ const GoalDetailInner: React.FC = () => {
       }
     }
   }, [goal]);
+
+  const [recommendedType, setRecommendedType] = useState<'schedule' | 'todo' | 'finance_source' | 'manual' | null>(
+    goal?.recommendedMilestoneType || null
+  );
+  const [recommendedReason, setRecommendedReason] = useState<string>(
+    goal?.aiMilestoneReason || ''
+  );
+
+  useEffect(() => {
+    if (!goal?.id) return;
+
+    const cacheKey = `recommended_milestone_${goal.id}`;
+    const cachedType = localStorage.getItem(cacheKey);
+
+    if (cachedType && (cachedType === 'schedule' || cachedType === 'todo' || cachedType === 'finance_source' || cachedType === 'manual')) {
+      setRecommendedType(cachedType as 'schedule' | 'todo' | 'finance_source' | 'manual');
+      if (goal.aiMilestoneReason) {
+        setRecommendedReason(goal.aiMilestoneReason);
+      }
+      return;
+    }
+
+    if (goal.recommendedMilestoneType) {
+      setRecommendedType(goal.recommendedMilestoneType);
+      if (goal.aiMilestoneReason) {
+        setRecommendedReason(goal.aiMilestoneReason);
+      }
+      localStorage.setItem(cacheKey, goal.recommendedMilestoneType);
+      return;
+    }
+
+    // Fetch recommendation from AI
+    fetch('/api/goals/smart-nudge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'recommend-milestone-type',
+        title: goal.title,
+        type: goal.type,
+        category: goal.type,
+        subcategory: goal.subcategory,
+        unit: goal.overallTargetUnit || goal.unit,
+        measurementType: goal.measurementType,
+        targetValue: goal.overallTargetValue,
+        dueDate: goal.dueDate ? toPlainDate(goal.dueDate)?.toISOString().split('T')[0] : null,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.recommendedMilestoneType) {
+          const recType = data.recommendedMilestoneType as 'schedule' | 'todo' | 'finance_source' | 'manual';
+          const reasonStr = data.reason || `Recommended for your ${goal.type} goal metrics.`;
+          setRecommendedType(recType);
+          setRecommendedReason(reasonStr);
+          localStorage.setItem(cacheKey, recType);
+
+          _updateGoal(goal.id!, {
+            recommendedMilestoneType: recType,
+            aiMilestoneReason: reasonStr,
+          }).catch((err) => console.warn('Failed to update goal recommendation in DB:', err));
+        }
+      })
+      .catch((err) => console.error('Error fetching milestone recommendation:', err));
+  }, [goal?.id, goal?.recommendedMilestoneType, goal?.aiMilestoneReason, goal?.title, goal?.type, goal?.subcategory, goal?.overallTargetUnit, goal?.unit, goal?.measurementType, goal?.overallTargetValue, goal?.dueDate, _updateGoal]);
 
   const meta = useMemo(() => getTypeMeta(goal?.type), [goal]);
   const typeColor = meta.color;
@@ -965,16 +1051,107 @@ const GoalDetailInner: React.FC = () => {
     );
   }, [goal?.createdAt, dueDateDate, steps]);
 
+  if (goalsLoading || fetchingDirect) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          background: isDark ? '#0f172a' : '#f8fafc',
+          p: { xs: 2, sm: 4 },
+        }}
+      >
+        <Box sx={{ maxWidth: '1000px', mx: 'auto' }}>
+          {/* Back Header Skeleton */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+            <Skeleton variant="circular" width={36} height={36} />
+            <Skeleton variant="rectangular" width={100} height={24} sx={{ borderRadius: 1 }} />
+          </Box>
+
+          {/* Banner Hero Card Skeleton */}
+          <Box
+            sx={{
+              p: 3,
+              borderRadius: '24px',
+              background: isDark ? '#1e293b' : '#ffffff',
+              border: isDark ? '1px solid #334155' : '1px solid #e2e8f0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              mb: 3,
+            }}
+          >
+            <Box sx={{ flex: 1, pr: 2 }}>
+              <Skeleton variant="rectangular" width={110} height={24} sx={{ borderRadius: 4, mb: 1.5 }} />
+              <Skeleton variant="text" width="65%" height={36} sx={{ mb: 1 }} />
+              <Skeleton variant="text" width="40%" height={20} />
+            </Box>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+              <Skeleton variant="circular" width={90} height={90} />
+            </Box>
+          </Box>
+
+          {/* Stat Strip Skeleton */}
+          <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
+            {[...Array(3)].map((_, i) => (
+              <Box
+                key={i}
+                sx={{
+                  flex: 1,
+                  p: 2,
+                  borderRadius: '16px',
+                  background: isDark ? '#1e293b' : '#ffffff',
+                  border: isDark ? '1px solid #334155' : '1px solid #e2e8f0',
+                }}
+              >
+                <Skeleton variant="text" width="50%" height={16} sx={{ mb: 1 }} />
+                <Skeleton variant="text" width="80%" height={28} />
+              </Box>
+            ))}
+          </Box>
+
+          {/* Loading Indicator Spinner & Feedback Text */}
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              py: 6,
+              gap: 2,
+            }}
+          >
+            <CircularProgress size={36} sx={{ color: '#3b82f6' }} />
+            <Typography
+              sx={{
+                fontSize: 14,
+                fontWeight: 500,
+                color: isDark ? '#94a3b8' : '#64748b',
+              }}
+            >
+              Fetching goal content from database...
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
   if (!goal) {
     return (
       <Box
         display="flex"
+        flexDirection="column"
         justifyContent="center"
         alignItems="center"
         minHeight="100vh"
-        sx={{ background: isDark ? '#0f172a' : '#f8fafc' }}
+        sx={{ background: isDark ? '#0f172a' : '#f8fafc', gap: 2 }}
       >
-        <Typography>Goal not found</Typography>
+        <Typography variant="h6" sx={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+          Goal not found
+        </Typography>
+        <Button variant="contained" onClick={() => router.push('/goals')} sx={{ borderRadius: 2 }}>
+          Return to Goals
+        </Button>
       </Box>
     );
   }
@@ -993,8 +1170,9 @@ const GoalDetailInner: React.FC = () => {
   };
 
   const openAddMilestoneDialog = () => {
+    const recType = recommendedType || (goal?.type === 'finance' ? 'finance_source' : 'schedule');
     setMilestoneFormStep(1);
-    setMilestoneType('schedule');
+    setMilestoneType(recType);
     setNewMilestoneTitle('');
     setScheduleStartTime('09:00');
     setScheduleEndTime('10:00');
@@ -2077,99 +2255,181 @@ const GoalDetailInner: React.FC = () => {
           )}
 
           <DialogContent sx={{ pt: 1, px: 3, pb: 3 }}>
-            {/* ── STEP 1: Vertical List of 4 Options ── */}
-            {milestoneFormStep === 1 && (
-              <Stack spacing={2} sx={{ pt: 1 }}>
-                {[
-                  {
-                    type: 'schedule',
-                    label: 'Schedule',
-                    desc: 'Sync with Your Schedule Section',
-                    icon: <CalendarMonth sx={{ fontSize: 26, color: '#fff' }} />,
-                    iconBg: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-                    badgeCol: '#8b5cf6',
-                  },
-                  {
-                    type: 'todo',
-                    label: 'Todo',
-                    desc: 'Sync with Todos',
-                    icon: <CheckCircle sx={{ fontSize: 26, color: '#fff' }} />,
-                    iconBg: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
-                    badgeCol: '#10b981',
-                  },
-                  {
-                    type: 'finance_source',
-                    label: 'Source of Fund',
-                    desc: 'Custom Source / Wallet',
-                    icon: <AccountBalanceWallet sx={{ fontSize: 26, color: '#fff' }} />,
-                    iconBg: 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)',
-                    badgeCol: '#f59e0b',
-                  },
-                  {
-                    type: 'manual',
-                    label: 'Manual',
-                    desc: 'Write the milestone manually',
-                    icon: <TrackChanges sx={{ fontSize: 26, color: '#fff' }} />,
-                    iconBg: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                    badgeCol: '#3b82f6',
-                  },
-                ].map((item) => (
+            {/* ── STEP 1: AI Recommended Top Banner & Split Options ── */}
+            {milestoneFormStep === 1 && (() => {
+              const options = [
+                {
+                  type: 'schedule' as const,
+                  label: 'Schedule',
+                  desc: 'Sync with Your Schedule Section',
+                  icon: <CalendarMonth sx={{ fontSize: 24, color: '#fff' }} />,
+                  iconBg: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                  badgeCol: '#8b5cf6',
+                },
+                {
+                  type: 'todo' as const,
+                  label: 'To-Do',
+                  desc: 'Sync with Tasks & Checklists',
+                  icon: <CheckCircle sx={{ fontSize: 24, color: '#fff' }} />,
+                  iconBg: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+                  badgeCol: '#10b981',
+                },
+                {
+                  type: 'finance_source' as const,
+                  label: 'Source of Fund',
+                  desc: 'Custom Source / Wallet',
+                  icon: <AccountBalanceWallet sx={{ fontSize: 24, color: '#fff' }} />,
+                  iconBg: 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)',
+                  badgeCol: '#f59e0b',
+                },
+                {
+                  type: 'manual' as const,
+                  label: 'Manual',
+                  desc: 'Write the milestone manually',
+                  icon: <TrackChanges sx={{ fontSize: 24, color: '#fff' }} />,
+                  iconBg: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                  badgeCol: '#3b82f6',
+                },
+              ];
+
+              const targetRecType = recommendedType || (goal?.type === 'finance' ? 'finance_source' : 'schedule');
+              const topOption = options.find((o) => o.type === targetRecType) || options[0];
+              const restOptions = options.filter((o) => o.type !== topOption.type);
+
+              const renderOptionCard = (item: typeof options[0], isRecommended: boolean = false) => (
+                <Box
+                  key={item.type}
+                  onClick={() => {
+                    setMilestoneType(item.type);
+                    setMilestoneFormStep(2);
+                  }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    p: 2,
+                    borderRadius: '18px',
+                    cursor: 'pointer',
+                    border: `1.5px solid ${isRecommended ? item.badgeCol : isDark ? '#334155' : '#e2e8f0'}`,
+                    bgcolor: isRecommended
+                      ? (isDark ? `${item.badgeCol}15` : `${item.badgeCol}0d`)
+                      : (isDark ? 'rgba(30, 41, 59, 0.4)' : '#ffffff'),
+                    boxShadow: isRecommended ? `0 4px 14px ${item.badgeCol}20` : 'none',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    position: 'relative',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      borderColor: item.badgeCol,
+                      boxShadow: `0 8px 24px -6px ${item.badgeCol}30`,
+                      bgcolor: isDark ? 'rgba(30, 41, 59, 0.8)' : '#f8fafc',
+                    },
+                  }}
+                >
                   <Box
-                    key={item.type}
-                    onClick={() => {
-                      setMilestoneType(item.type as 'schedule' | 'todo' | 'finance_source' | 'manual');
-                      setMilestoneFormStep(2);
-                    }}
                     sx={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: '14px',
+                      background: item.iconBg,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 2.5,
-                      p: 2.25,
-                      borderRadius: '18px',
-                      cursor: 'pointer',
-                      border: `1.5px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                      bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : '#ffffff',
-                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        borderColor: item.badgeCol,
-                        boxShadow: isDark
-                          ? '0 8px 24px -6px rgba(0,0,0,0.4)'
-                          : '0 8px 24px -6px rgba(99, 102, 241, 0.12)',
-                        bgcolor: isDark ? 'rgba(30, 41, 59, 0.8)' : '#f8fafc',
-                      },
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      boxShadow: `0 4px 12px ${item.badgeCol}30`,
+                    }}
+                  >
+                    {item.icon}
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: '1rem', color: isDark ? '#f1f5f9' : '#0f172a' }}>
+                      {item.label}
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.8rem', color: isDark ? '#94a3b8' : '#64748b', lineHeight: 1.3 }}>
+                      {item.desc}
+                    </Typography>
+                  </Box>
+                  {isRecommended ? (
+                    <Chip
+                      label="RECOMMENDED"
+                      size="small"
+                      sx={{
+                        fontSize: 9,
+                        fontWeight: 900,
+                        letterSpacing: '0.05em',
+                        bgcolor: item.badgeCol,
+                        color: '#fff',
+                        height: 22,
+                        borderRadius: '6px',
+                      }}
+                    />
+                  ) : (
+                    <ArrowForward sx={{ color: isDark ? '#64748b' : '#94a3b8', fontSize: 18 }} />
+                  )}
+                </Box>
+              );
+
+              return (
+                <Stack spacing={1.75} sx={{ pt: 1 }}>
+                  {/* Top AI Recommendation Banner */}
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: '16px',
+                      bgcolor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)',
+                      border: '1px solid rgba(99, 102, 241, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
                     }}
                   >
                     <Box
                       sx={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: '16px',
-                        background: item.iconBg,
+                        width: 36,
+                        height: 36,
+                        borderRadius: '12px',
+                        bgcolor: '#6366f1',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         flexShrink: 0,
-                        boxShadow: `0 6px 16px ${item.badgeCol}35`,
                       }}
                     >
-                      {item.icon}
+                      <AutoAwesome sx={{ color: '#fff', fontSize: 18 }} />
                     </Box>
-
                     <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography sx={{ fontWeight: 800, fontSize: '1.05rem', color: isDark ? '#f1f5f9' : '#0f172a', mb: 0.25 }}>
-                        {item.label}
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: isDark ? '#f8fafc' : '#0f172a', lineHeight: 1.3 }}>
+                        For your goal type, <strong style={{ color: '#6366f1' }}>{topOption.label}</strong> is recommended for you
                       </Typography>
-                      <Typography sx={{ fontSize: '0.82rem', color: mutedText, lineHeight: 1.4 }}>
-                        {item.desc}
-                      </Typography>
+                      {recommendedReason && (
+                        <Typography sx={{ fontSize: 11, color: isDark ? '#94a3b8' : '#64748b', mt: 0.25 }}>
+                          {recommendedReason}
+                        </Typography>
+                      )}
                     </Box>
-
-                    <ArrowForward sx={{ color: isDark ? '#64748b' : '#94a3b8' }} />
                   </Box>
-                ))}
-              </Stack>
-            )}
+
+                  {/* Position #1: Recommended Milestone Option */}
+                  {renderOptionCard(topOption, true)}
+
+                  {/* Split Divider */}
+                  <Divider sx={{ my: 0.5, borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+                    <Chip
+                      label="Other Milestone Types"
+                      size="small"
+                      sx={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        bgcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        color: isDark ? '#94a3b8' : '#64748b',
+                      }}
+                    />
+                  </Divider>
+
+                  {/* Remaining Milestone Options */}
+                  {restOptions.map((opt) => renderOptionCard(opt, false))}
+                </Stack>
+              );
+            })()}
 
             {/* ── STEP 2: Input Details per Type ── */}
             {milestoneFormStep === 2 && (

@@ -22,15 +22,9 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import {
   Close,
-  TrendingUp,
-  FitnessCenter,
-  School,
-  Psychology,
-  Category,
-  WorkOutline,
-  SelfImprovement,
   ArrowBack,
   AutoAwesome as MagicIcon,
+  CheckCircle,
 } from '@mui/icons-material';
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useAuth } from '../../lib/context/userContext';
@@ -39,47 +33,23 @@ import { Goal, GoalType, GoalPriority } from '../../lib/interface';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Timestamp } from 'firebase/firestore';
 
+import {
+  GOAL_CATEGORIES_CONFIG,
+  getCategoryConfig,
+  getSubcategories,
+  getSubcategoryUnits,
+  getAllUnitsForCategory,
+  getMeasurementType,
+  MEASUREMENT_TYPE_META,
+  MeasurementType,
+} from '../../lib/config/goalCategoriesConfig';
+
 interface GoalModalProps {
   open: boolean;
   onClose: () => void;
   goal?: Goal; // Optional, only passed when editing
   defaultType?: GoalType;
 }
-
-const TYPE_COLORS: Record<GoalType, string> = {
-  finance: '#10B981',
-  health: '#F59E0B',
-  learning: '#3B82F6',
-  habit: '#8B5CF6',
-  work: '#0ea5e9',
-  lifestyle: '#F472B6',
-  custom: '#6B7280',
-};
-
-const GOAL_TYPES: { value: GoalType; label: string; icon: React.ReactNode }[] = [
-  { value: 'finance',   label: 'Finance',   icon: <TrendingUp fontSize="small" /> },
-  { value: 'health',    label: 'Health',    icon: <FitnessCenter fontSize="small" /> },
-  { value: 'learning',  label: 'Learning',  icon: <School fontSize="small" /> },
-  { value: 'habit',     label: 'Habit',     icon: <Psychology fontSize="small" /> },
-  { value: 'work',      label: 'Work',      icon: <WorkOutline fontSize="small" /> },
-  { value: 'lifestyle', label: 'Lifestyle', icon: <SelfImprovement fontSize="small" /> },
-  { value: 'custom',    label: 'Custom',    icon: <Category fontSize="small" /> },
-];
-
-const CATEGORY_UNITS: Record<GoalType, string[]> = {
-  finance:   ['PKR', 'USD', 'EUR', '%', 'transactions', 'items'],
-  health:    ['kg', 'lbs', 'steps', 'minutes', 'hours', 'days', '%'],
-  learning:  ['minutes', 'hours', 'lessons', 'chapters', 'pages', 'courses'],
-  habit:     ['days', 'times', 'streak', 'weeks'],
-  work:      ['tasks', 'hours', 'projects', '%', 'clients'],
-  lifestyle: ['days', 'sessions', 'events', 'activities', 'hours'],
-  custom:    ['custom', 'sessions', 'tasks', 'hours'],
-};
-
-const DEFAULT_UNIT: Record<GoalType, string> = {
-  finance: 'PKR', health: 'kg', learning: 'hours',
-  habit: 'days', work: 'tasks', lifestyle: 'days', custom: 'custom',
-};
 
 const slideVariants = {
   enter: (dir: number) => ({
@@ -117,11 +87,11 @@ const toPlainDate = (val: unknown): Date | null => {
 };
 
 const EXAMPLE_GOALS = [
-  'Save PKR 100,000 to buy laptop',
-  'Read 12 books on leadership & growth',
-  'Earn PKR 50,000 from freelance work',
+  'Save PKR 100,000 for emergency fund',
+  'Exercise for 300 minutes this week',
+  'Read 20 books this year',
   'Lose 5 kg weight in 2 months',
-  'Learn Next.js 14 & build 3 fullstack apps',
+  'Practice coding for 100 hours',
 ];
 
 function TypewriterExamples({ isDark }: { isDark: boolean }) {
@@ -157,7 +127,7 @@ function TypewriterExamples({ isDark }: { isDark: boolean }) {
     <Box sx={{ minHeight: '32px', display: 'flex', alignItems: 'center' }}>
       <Typography
         sx={{
-          fontSize: '1.15rem',
+          fontSize: '1.05rem',
           fontWeight: 800,
           color: textColor,
           lineHeight: 1.3,
@@ -192,23 +162,26 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
-  // ── Step State ─────────────────────────────────────────────────────────────
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  // ── Step State (5-step wizard) ─────────────────────────────────────────────
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [slideDir, setSlideDir] = useState<1 | -1>(1);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiCategoryDetected, setAiCategoryDetected] = useState(false);
 
   // ── Form States ────────────────────────────────────────────────────────────
   const [title, setTitle] = useState(goal?.title || '');
   const [description] = useState(goal?.description || '');
-  const [type, setType] = useState<(GoalType)>(goal?.type || 'custom');
+  const [type, setType] = useState<GoalType>(goal?.type || 'finance');
+  const [subcategory, setSubcategory] = useState<string>(goal?.subcategory || '');
+  const [showAllCategoryUnits, setShowAllCategoryUnits] = useState(false);
   const [priority] = useState<GoalPriority>(goal?.priority || 'Medium');
   const [dueDate, setDueDate] = useState<Date | null>(toPlainDate(goal?.dueDate));
   const [overallTargetValue, setOverallTargetValue] = useState<number | ''>(
     goal?.overallTargetValue || ''
   );
   const [overallTargetUnit, setOverallTargetUnit] = useState(
-    goal?.overallTargetUnit || DEFAULT_UNIT['custom']
+    goal?.overallTargetUnit || 'PKR'
   );
   const [startValue, setStartValue] = useState<number | ''>(
     typeof goal?.startValue === 'number' ? goal.startValue : (goal?.startingValue || '')
@@ -218,7 +191,7 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
   );
   const [direction, setDirection] = useState<'up' | 'down' | null>(goal?.direction || null);
 
-  // ── New Mandatory Architecture Properties ──
+  // ── Architecture & AI Properties ──
   const [intent, setIntent] = useState<string>(goal?.intent || '');
   const [progressTrackingType, setProgressTrackingType] = useState<'accumulative' | 'opposes'>(
     goal?.progressTrackingType || 'accumulative'
@@ -227,7 +200,6 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
     goal?.direction === 'up' ? 'UP' : goal?.direction === 'down' ? 'DOWN' : (goal?.direction as 'UP' | 'DOWN' | null) || null
   );
 
-  // AI-suggested helper properties
   const [aiVerb, setAiVerb] = useState(goal?.aiVerb || '');
   const [aiActivityVerb, setAiActivityVerb] = useState(goal?.aiActivityVerb || '');
   const [_aiSuggestedUnit, setAiSuggestedUnit] = useState(goal?.aiSuggestedUnit || '');
@@ -236,13 +208,38 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
   );
   const [aiStartValueLabel, setAiStartValueLabel] = useState('');
 
-  const activeColor = TYPE_COLORS[type];
+  const catConfig = useMemo(() => getCategoryConfig(type), [type]);
+  const activeColor = catConfig.color;
 
-  // Set initial default unit when category changes manually
-  const handleCategoryChange = (newType: GoalType) => {
-    setType(newType);
-    setOverallTargetUnit(DEFAULT_UNIT[newType]);
+  // Set category and default subcategory
+  const handleCategorySelect = (selectedCatType: GoalType) => {
+    setType(selectedCatType);
+    const subcats = getSubcategories(selectedCatType);
+    if (subcats.length > 0) {
+      setSubcategory(subcats[0].id);
+      if (subcats[0].units.length > 0) {
+        setOverallTargetUnit(subcats[0].units[0]);
+      }
+    } else {
+      setSubcategory('');
+      setOverallTargetUnit(getCategoryConfig(selectedCatType).allUnits[0] || 'units');
+    }
   };
+
+  // Select subcategory & update available units
+  const handleSubcategorySelect = (subcatId: string) => {
+    setSubcategory(subcatId);
+    setShowAllCategoryUnits(false);
+    const subcatUnits = getSubcategoryUnits(type, subcatId).units;
+    if (subcatUnits.length > 0 && !subcatUnits.includes(overallTargetUnit)) {
+      setOverallTargetUnit(subcatUnits[0]);
+    }
+  };
+
+  // Calculate current measurement type dynamically
+  const currentMeasurementType: MeasurementType = useMemo(() => {
+    return getMeasurementType(type, subcategory, overallTargetUnit);
+  }, [type, subcategory, overallTargetUnit]);
 
   // ── Date Presets ────────────────────────────────────────────────────────────
   const datePresets = useMemo(() => {
@@ -263,7 +260,6 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
     ];
   }, []);
 
-  // Sync date preset
   const selectDatePreset = (presetDate: Date) => {
     setDueDate(presetDate);
   };
@@ -292,8 +288,8 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
       if (!res.ok || data.error) {
         console.warn('AI evaluation warning:', data?.error || res.statusText);
         setAiError(data?.error || 'AI setup unavailable. Please specify target & category manually.');
+        setAiCategoryDetected(false);
       } else {
-        // Pre-populate AI suggestions
         if (data.suggestedTitle) {
           setTitle(data.suggestedTitle);
         }
@@ -321,8 +317,17 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
         if (data.progressMode) {
           setProgressMode(data.progressMode);
         }
-        if (data.suggestedCategory && TYPE_COLORS[data.suggestedCategory as GoalType]) {
+        if (data.suggestedCategory && GOAL_CATEGORIES_CONFIG[data.suggestedCategory]) {
           setType(data.suggestedCategory as GoalType);
+          setAiCategoryDetected(true);
+          const subcats = getSubcategories(data.suggestedCategory);
+          if (data.suggestedSubcategory) {
+            setSubcategory(data.suggestedSubcategory);
+          } else if (subcats.length > 0) {
+            setSubcategory(subcats[0].id);
+          }
+        } else {
+          setAiCategoryDetected(false);
         }
         if (data.suggestedUnit) {
           setOverallTargetUnit(data.suggestedUnit);
@@ -348,13 +353,12 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
         }
       }
 
-      // Transition to Step 2
       setSlideDir(1);
       setCurrentStep(2);
     } catch (err) {
       console.error('AI refinement error:', err);
       setAiError('Could not connect to AI. Please define category and target manually.');
-      // Still proceed to Step 2 so user can continue manually
+      setAiCategoryDetected(false);
       setSlideDir(1);
       setCurrentStep(2);
     } finally {
@@ -366,18 +370,18 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
   const handleNext = () => {
     if (currentStep === 1) {
       handleStep1Next();
-    } else if (currentStep === 4) {
+    } else if (currentStep === 5) {
       handleSaveGoal();
     } else {
       setSlideDir(1);
-      setCurrentStep((prev) => (prev + 1) as 2 | 3 | 4);
+      setCurrentStep((prev) => (prev + 1) as 2 | 3 | 4 | 5);
     }
   };
 
   const handleBack = () => {
     if (currentStep > 1) {
       setSlideDir(-1);
-      setCurrentStep((prev) => (prev - 1) as 1 | 2 | 3);
+      setCurrentStep((prev) => (prev - 1) as 1 | 2 | 3 | 4);
     }
   };
 
@@ -404,21 +408,21 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
         calculatedDirection = null;
       }
 
-      // Calculate timeFrame string
       let timeFrameStr = '30 days';
       if (dueDate) {
         const diffDays = Math.max(1, Math.ceil((dueDate.getTime() - nowTs.getTime()) / (1000 * 60 * 60 * 24)));
         timeFrameStr = diffDays >= 60 ? `${Math.round(diffDays / 30)} months` : `${diffDays} days`;
       }
 
-      // Evaluated mandatory fields with clean fallbacks
       const evaluatedIntent = intent || aiVerb || 'achieve';
-      const evaluatedUnit = overallTargetUnit || DEFAULT_UNIT[type] || 'units';
+      const evaluatedUnit = overallTargetUnit || 'units';
 
       const goalData: Goal = {
         title: title.trim(),
         description: description.trim() || undefined,
         type,
+        subcategory: subcategory || undefined,
+        measurementType: currentMeasurementType,
         priority,
         unit: evaluatedUnit,
         dueDate: dueDate ? Timestamp.fromDate(dueDate) : undefined,
@@ -435,7 +439,7 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
         aiVerb: aiVerb || evaluatedIntent,
         aiActivityVerb: aiActivityVerb || undefined,
         aiSuggestedUnit: evaluatedUnit,
-        goalFurnished: true, // Flag as furnished so page context knows it is setup
+        goalFurnished: true,
         progress: goal?.progress || 0,
         status: goal?.status || 'Not Started',
         userId: user.uid,
@@ -453,7 +457,6 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
       }
 
       onClose();
-      // Redirect to goal detail page
       if (newGoalId) {
         router.push(`/goals/${newGoalId}`);
       }
@@ -468,6 +471,14 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
   const borderCol = isDark ? '#334155' : '#e2e8f0';
   const textCol = isDark ? '#f1f5f9' : '#0f172a';
   const mutedCol = isDark ? '#64748b' : '#94a3b8';
+
+  const subcats = getSubcategories(type);
+  const activeSubcatUnitsObj = getSubcategoryUnits(type, subcategory);
+  const displayedUnits = showAllCategoryUnits
+    ? getAllUnitsForCategory(type)
+    : activeSubcatUnitsObj.units;
+
+  const mTypeMeta = MEASUREMENT_TYPE_META[currentMeasurementType];
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -493,7 +504,7 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
           <Stack direction="row" alignItems="center" spacing={1}>
             <MagicIcon sx={{ color: activeColor, fontSize: 18 }} />
             <Typography sx={{ fontSize: 12, fontWeight: 900, color: activeColor, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              Orbit Goal Builder
+              Orbit Goal Builder ({currentStep}/5)
             </Typography>
           </Stack>
           <IconButton size="small" onClick={onClose} sx={{ color: mutedCol }}>
@@ -503,8 +514,8 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
 
         <Divider sx={{ mx: 3, borderColor: borderCol }} />
 
-        {/* Wizard Body with Slide Animation */}
-        <DialogContent sx={{ px: 3, pt: 3, pb: 2, minHeight: 280, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        {/* Wizard Body */}
+        <DialogContent sx={{ px: 3, pt: 2.5, pb: 2, minHeight: 320, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <AnimatePresence mode="wait" custom={slideDir}>
             {aiLoading ? (
               <motion.div
@@ -531,7 +542,7 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
               >
                 {/* AI Error Warning */}
                 {aiError && (
-                  <Box sx={{ mb: 2.5, p: 1.5, borderRadius: '12px', bgcolor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                  <Box sx={{ mb: 2, p: 1.5, borderRadius: '12px', bgcolor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
                     <Typography sx={{ fontSize: 11.5, color: '#f59e0b', fontWeight: 600 }}>
                       ⚠️ {aiError}
                     </Typography>
@@ -545,7 +556,7 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                       Name your goal ✍️
                     </Typography>
                     <Typography sx={{ fontSize: 12.5, color: mutedCol, mb: 2.5 }}>
-                      Orbit AI will analyze your title to automatically pre-populate metrics, direction, and milestones.
+                      Orbit AI will analyze your title to automatically pre-select category, metrics, and duration.
                     </Typography>
 
                     <TextField
@@ -556,7 +567,7 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           borderRadius: '14px',
-                          fontSize: '1.2rem',
+                          fontSize: '1.15rem',
                           fontWeight: 700,
                           '& fieldset': { borderColor: borderCol },
                           '&:hover fieldset': { borderColor: activeColor },
@@ -565,7 +576,6 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                       }}
                     />
 
-                    {/* Dynamic Typewriter Examples */}
                     <Box
                       sx={{
                         mt: 2,
@@ -583,79 +593,209 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                   </Box>
                 )}
 
-                {/* ── STEP 2: Category & Units ── */}
+                {/* ── STEP 2: Category Selection (Creative UI & AI Heading Logic) ── */}
                 {currentStep === 2 && (
                   <Box>
+                    {/* Headings based on AI detection */}
                     <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5, color: textCol, fontSize: '1.2rem' }}>
-                      Category &amp; Units 📏
+                      {aiCategoryDetected
+                        ? 'We chose this category that matches your goal'
+                        : 'Choose the category that suits you best'}
                     </Typography>
-                    <Typography sx={{ fontSize: 12, color: mutedCol, mb: 2.5 }}>
-                      Which describes better for this goal?
+                    <Typography sx={{ fontSize: 12, color: mutedCol, mb: 2 }}>
+                      {aiCategoryDetected
+                        ? 'Tap any category to change'
+                        : 'Select a category to organize your target'}
                     </Typography>
 
-                    {/* Category Selection Grid */}
-                    <Typography sx={{ fontSize: 10, fontWeight: 800, color: mutedCol, mb: 1, textTransform: 'uppercase' }}>
-                      Choose Category
-                    </Typography>
-                    <Stack direction="row" gap={0.75} flexWrap="wrap" mb={2.5}>
-                      {GOAL_TYPES.map(({ value, label }) => (
-                        <Chip
-                          key={value}
-                          label={label}
-                          onClick={() => handleCategoryChange(value)}
-                          variant={type === value ? 'filled' : 'outlined'}
-                          sx={{
-                            borderRadius: '8px',
-                            fontWeight: 700,
-                            borderColor: type === value ? activeColor : borderCol,
-                            bgcolor: type === value ? `${activeColor}20` : 'transparent',
-                            color: type === value ? textCol : mutedCol,
-                            '&:hover': { bgcolor: `${activeColor}10` },
-                          }}
-                        />
-                      ))}
-                    </Stack>
+                    {/* Creative Category Cards Grid */}
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gap: 1.25,
+                        mb: 1,
+                      }}
+                    >
+                      {Object.values(GOAL_CATEGORIES_CONFIG).map((cat) => {
+                        const isSelected = type === cat.id;
+                        return (
+                          <Box
+                            key={cat.id}
+                            onClick={() => handleCategorySelect(cat.id)}
+                            sx={{
+                              p: 1.5,
+                              borderRadius: '16px',
+                              cursor: 'pointer',
+                              border: `2px solid ${isSelected ? cat.color : borderCol}`,
+                              bgcolor: isSelected
+                                ? isDark ? `${cat.color}25` : `${cat.color}15`
+                                : isDark ? '#0f172a' : '#f8fafc',
+                              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1.25,
+                              position: 'relative',
+                              overflow: 'hidden',
+                              '&:hover': {
+                                transform: 'translateY(-2px)',
+                                borderColor: cat.color,
+                                boxShadow: `0 4px 12px ${cat.color}25`,
+                              },
+                            }}
+                          >
+                            <Box
+                              sx={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: '12px',
+                                bgcolor: `${cat.color}20`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: 20,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {cat.emoji}
+                            </Box>
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                              <Typography
+                                sx={{
+                                  fontSize: 13,
+                                  fontWeight: 800,
+                                  color: isSelected ? textCol : isDark ? '#e2e8f0' : '#334155',
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                {cat.name}
+                              </Typography>
+                              {isSelected && aiCategoryDetected && cat.id === type && (
+                                <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: cat.color, mt: 0.2 }}>
+                                  AI Match ✨
+                                </Typography>
+                              )}
+                            </Box>
+                            {isSelected && (
+                              <CheckCircle sx={{ fontSize: 16, color: cat.color, flexShrink: 0 }} />
+                            )}
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
 
-                    {/* Unit Selector */}
-                    <Typography sx={{ fontSize: 10, fontWeight: 800, color: mutedCol, mb: 1, textTransform: 'uppercase' }}>
-                      Choose Unit
+                {/* ── STEP 3: Subcategory & Measurement Unit ── */}
+                {currentStep === 3 && (
+                  <Box>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5, color: textCol, fontSize: '1.2rem' }}>
+                      Subcategory &amp; Unit 📏
                     </Typography>
-                    <Stack direction="row" gap={0.75} flexWrap="wrap" mb={2}>
-                      {(CATEGORY_UNITS[type] || []).map((u) => (
-                        <Chip
-                          key={u}
-                          label={u}
-                          onClick={() => setOverallTargetUnit(u)}
-                          variant={overallTargetUnit === u ? 'filled' : 'outlined'}
-                          sx={{
-                            borderRadius: '8px',
-                            fontWeight: 600,
-                            borderColor: overallTargetUnit === u ? activeColor : borderCol,
-                            bgcolor: overallTargetUnit === u ? `${activeColor}15` : 'transparent',
-                            color: overallTargetUnit === u ? textCol : mutedCol,
-                          }}
-                        />
-                      ))}
-                    </Stack>
+                    <Typography sx={{ fontSize: 12, color: mutedCol, mb: 2 }}>
+                      Pick a subcategory under <strong style={{ color: activeColor }}>{catConfig.name}</strong> and choose how to measure progress.
+                    </Typography>
+
+                    {/* Subcategories Selector */}
+                    {subcats.length > 0 && (
+                      <Box sx={{ mb: 2.5 }}>
+                        <Typography sx={{ fontSize: 10, fontWeight: 800, color: mutedCol, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Select Subcategory
+                        </Typography>
+                        <Stack direction="row" gap={0.75} flexWrap="wrap">
+                          {subcats.map((sc) => {
+                            const isSelected = subcategory.toLowerCase() === sc.id.toLowerCase();
+                            return (
+                              <Chip
+                                key={sc.id}
+                                label={sc.name}
+                                onClick={() => handleSubcategorySelect(sc.id)}
+                                variant={isSelected ? 'filled' : 'outlined'}
+                                sx={{
+                                  borderRadius: '10px',
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  borderColor: isSelected ? activeColor : borderCol,
+                                  bgcolor: isSelected ? `${activeColor}25` : 'transparent',
+                                  color: isSelected ? textCol : mutedCol,
+                                  '&:hover': { bgcolor: `${activeColor}15` },
+                                }}
+                              />
+                            );
+                          })}
+                        </Stack>
+                      </Box>
+                    )}
+
+                    {/* Valid Units List */}
+                    <Box sx={{ mb: 1.5 }}>
+                      <Typography sx={{ fontSize: 10, fontWeight: 800, color: mutedCol, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Measurement Unit
+                      </Typography>
+                      <Stack direction="row" gap={0.75} flexWrap="wrap" mb={1}>
+                        {displayedUnits.map((u) => {
+                          const isSelected = overallTargetUnit === u;
+                          const mType = getMeasurementType(type, subcategory, u);
+                          const mMeta = MEASUREMENT_TYPE_META[mType];
+                          return (
+                            <Chip
+                              key={u}
+                              label={`${u} ${mMeta?.icon || ''}`}
+                              onClick={() => setOverallTargetUnit(u)}
+                              variant={isSelected ? 'filled' : 'outlined'}
+                              sx={{
+                                borderRadius: '10px',
+                                fontWeight: 700,
+                                fontSize: 12,
+                                borderColor: isSelected ? activeColor : borderCol,
+                                bgcolor: isSelected ? `${activeColor}20` : 'transparent',
+                                color: isSelected ? textCol : mutedCol,
+                              }}
+                            />
+                          );
+                        })}
+                      </Stack>
+
+                      {/* Option to show other category units */}
+                      <Button
+                        size="small"
+                        onClick={() => setShowAllCategoryUnits(!showAllCategoryUnits)}
+                        sx={{
+                          textTransform: 'none',
+                          fontSize: 11.5,
+                          color: activeColor,
+                          fontWeight: 700,
+                          p: 0,
+                          minWidth: 0,
+                          '&:hover': { background: 'transparent', textDecoration: 'underline' },
+                        }}
+                      >
+                        {showAllCategoryUnits
+                          ? '← Show recommended units for this subcategory'
+                          : `Show other units in ${catConfig.name}`}
+                      </Button>
+                    </Box>
+
+                    {/* Custom Unit Field */}
                     <TextField
-                      label="Custom Unit"
+                      label="Custom Unit Name"
                       value={overallTargetUnit}
                       onChange={(e) => setOverallTargetUnit(e.target.value)}
                       size="small"
                       fullWidth
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                      sx={{ mt: 1, '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
                     />
                   </Box>
                 )}
 
-                {/* ── STEP 3: Target Value & Starting Baseline ── */}
-                {currentStep === 3 && (
+                {/* ── STEP 4: Target Value & Measurement Type Explanation ── */}
+                {currentStep === 4 && (
                   <Box>
                     <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: textCol, fontSize: '1.2rem' }}>
-                      Define target values 🎯
+                      Define target value 🎯
                     </Typography>
-                    <Typography sx={{ fontSize: 12.5, color: mutedCol, mb: 2.5 }}>
-                      Specify what target value you want to hit to complete the goal.
+                    <Typography sx={{ fontSize: 12.5, color: mutedCol, mb: 2 }}>
+                      Specify the numerical target you aim to reach in <strong>{overallTargetUnit}</strong>.
                     </Typography>
 
                     <Stack spacing={2.5}>
@@ -665,10 +805,30 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                         value={overallTargetValue}
                         onChange={(e) => setOverallTargetValue(e.target.value === '' ? '' : Number(e.target.value))}
                         fullWidth
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '14px', fontSize: '1.1rem', fontWeight: 700 } }}
                       />
 
-                      {/* Render Starting Baseline conditionally if progressMode is snapshot/current_value */}
+                      {/* Measurement Type Explanation Badge */}
+                      <Box
+                        sx={{
+                          p: 2,
+                          borderRadius: '16px',
+                          bgcolor: isDark ? `${activeColor}15` : `${activeColor}10`,
+                          border: `1px solid ${activeColor}30`,
+                        }}
+                      >
+                        <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
+                          <Typography sx={{ fontSize: 16 }}>{mTypeMeta?.icon}</Typography>
+                          <Typography sx={{ fontSize: 12, fontWeight: 800, color: activeColor, textTransform: 'uppercase' }}>
+                            Measurement Type: {mTypeMeta?.label}
+                          </Typography>
+                        </Stack>
+                        <Typography sx={{ fontSize: 11.5, color: textCol, fontWeight: 500 }}>
+                          Progress Formula: <strong style={{ color: activeColor }}>{mTypeMeta?.formula}</strong>
+                        </Typography>
+                      </Box>
+
+                      {/* Starting level for snapshot / current_value mode */}
                       {progressMode === 'current_value' && (
                         <Box>
                           <Typography sx={{ fontSize: 12, fontWeight: 700, color: textCol, mb: 1 }}>
@@ -688,8 +848,8 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                   </Box>
                 )}
 
-                {/* ── STEP 4: Target Date & Presets ── */}
-                {currentStep === 4 && (
+                {/* ── STEP 5: Target Date & Presets ── */}
+                {currentStep === 5 && (
                   <Box>
                     <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: textCol, fontSize: '1.2rem' }}>
                       Target deadline 📅
@@ -698,7 +858,6 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                       When do you plan to achieve this goal?
                     </Typography>
 
-                    {/* Presets */}
                     <Stack direction="row" gap={1} mb={2.5}>
                       {datePresets.map((preset) => {
                         const isPresetActive = dueDate?.toDateString() === preset.date.toDateString();
@@ -708,7 +867,7 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                             label={preset.label}
                             onClick={() => selectDatePreset(preset.date)}
                             sx={{
-                              borderRadius: '8px',
+                              borderRadius: '10px',
                               fontWeight: 700,
                               borderColor: isPresetActive ? activeColor : borderCol,
                               bgcolor: isPresetActive ? `${activeColor}15` : 'transparent',
@@ -735,66 +894,65 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                     />
                   </Box>
                 )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </DialogContent>
 
-                 {/* ── STEP 5: Milestones Setup (REMOVED) ── */}
-               </motion.div>
-             )}
-           </AnimatePresence>
-         </DialogContent>
- 
-         <Divider sx={{ mx: 3, borderColor: borderCol }} />
- 
-         {/* Footer Navigation */}
-         <DialogActions sx={{ px: 3, pb: 3, pt: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-           {currentStep > 1 && !aiLoading && (
-             <Button
-               onClick={handleBack}
-               startIcon={<ArrowBack />}
-               sx={{
-                 textTransform: 'none',
-                 color: mutedCol,
-                 fontWeight: 700,
-                 fontSize: 12.5,
-                 '&:hover': {
-                   background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                   color: textCol,
-                 },
-               }}
-             >
-               Back
-             </Button>
-           )}
-           <Box flex={1} />
-           {!aiLoading && (
-             <Button
-               variant="contained"
-               onClick={handleNext}
-               disabled={
-                 (currentStep === 1 && !title.trim()) ||
-                 (currentStep === 2 && (!type || !overallTargetUnit)) ||
-                 (currentStep === 3 && overallTargetValue === '') ||
-                 (currentStep === 3 && progressMode === 'current_value' && startValue === '') ||
-                 (currentStep === 4 && !dueDate)
-               }
-               sx={{
-                 textTransform: 'none',
-                 fontWeight: 800,
-                 borderRadius: '12px',
-                 background: `linear-gradient(135deg, ${activeColor} 0%, ${activeColor}cc 100%)`,
-                 color: '#fff',
-                 px: 3.5,
-                 py: 0.9,
-                 boxShadow: `0 4px 14px ${activeColor}40`,
-                 transition: 'all 0.2s',
-                 '&:hover': {
-                   opacity: 0.92,
-                   boxShadow: `0 6px 18px ${activeColor}50`,
-                 },
-               }}
-             >
-               {currentStep === 4 ? (goal ? 'Update Goal' : 'Launch Goal 🚀') : 'Next'}
-             </Button>
-           )}
+        <Divider sx={{ mx: 3, borderColor: borderCol }} />
+
+        {/* Footer Navigation */}
+        <DialogActions sx={{ px: 3, pb: 3, pt: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {currentStep > 1 && !aiLoading && (
+            <Button
+              onClick={handleBack}
+              startIcon={<ArrowBack />}
+              sx={{
+                textTransform: 'none',
+                color: mutedCol,
+                fontWeight: 700,
+                fontSize: 12.5,
+                '&:hover': {
+                  background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                  color: textCol,
+                },
+              }}
+            >
+              Back
+            </Button>
+          )}
+          <Box flex={1} />
+          {!aiLoading && (
+            <Button
+              variant="contained"
+              onClick={handleNext}
+              disabled={
+                (currentStep === 1 && !title.trim()) ||
+                (currentStep === 2 && !type) ||
+                (currentStep === 3 && (!subcategory || !overallTargetUnit)) ||
+                (currentStep === 4 && overallTargetValue === '') ||
+                (currentStep === 4 && progressMode === 'current_value' && startValue === '') ||
+                (currentStep === 5 && !dueDate)
+              }
+              sx={{
+                textTransform: 'none',
+                fontWeight: 800,
+                borderRadius: '12px',
+                background: `linear-gradient(135deg, ${activeColor} 0%, ${activeColor}cc 100%)`,
+                color: '#fff',
+                px: 3.5,
+                py: 0.9,
+                boxShadow: `0 4px 14px ${activeColor}40`,
+                transition: 'all 0.2s',
+                '&:hover': {
+                  opacity: 0.92,
+                  boxShadow: `0 6px 18px ${activeColor}50`,
+                },
+              }}
+            >
+              {currentStep === 5 ? (goal ? 'Update Goal' : 'Launch Goal 🚀') : 'Next'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </LocalizationProvider>

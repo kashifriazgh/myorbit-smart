@@ -59,6 +59,7 @@ In addition to refining the title, evaluate and suggest the best configuration m
 - direction: "UP" or "DOWN" (when progressTrackingType is "opposes", e.g. weight loss is "DOWN", weight gain is "UP", or null if accumulative).
 - progressMode: "cumulative" or "current_value".
 - suggestedCategory: one of: "finance", "health", "learning", "habit", "work", "lifestyle", "custom".
+- suggestedSubcategory: suggested subcategory string (e.g. "Saving", "Fitness", "Reading", "Career", "Travel", "Build Habit").
 - suggestedUnit: a measurement unit suitable for the goal (e.g. "kg", "PKR", "pages", "hours", "tasks").
 - targetValueSuggestion: a suggested number target if none is specified or if it's vague (otherwise null).
 - startingValueSuggestion: a suggested starting baseline number (e.g. 80 for weight loss 80kg -> 60kg, 60 for weight gain, or 0 for saving/accumulative).
@@ -187,7 +188,21 @@ Provide your response strictly in the following JSON format without any markdown
   "contributionAmount": 10,
   "reason": "Short explanation"
 }`;
-      prompt = `Goal Title: "${goalTitle || 'Goal'}" | Milestone: "${milestoneTitle || title || ''}"`;
+    } else if (action === 'recommend-milestone-type') {
+      const { subcategory, measurementType } = body;
+      systemPrompt = `You are an expert productivity coach. Analyze the given goal details and recommend the absolute best milestone type for this goal.
+Available milestone types:
+- "schedule": Sync with calendar events. Best for time-bound activities, exercise/fitness sessions, routine study blocks, or sleep consistency.
+- "todo": Sync with task checklists. Best for actionable tasks, project deliverables, skill exercises, or reading chapters.
+- "finance_source": Sync with wallet / fund source. Best for monetary savings, debt pay-off, income targets, investments, or spending limits.
+- "manual": Manual checkpoint. Best for custom milestones or general progress entries.
+
+Provide your response strictly in the following JSON format without any markdown or code blocks:
+{
+  "recommendedMilestoneType": "schedule" | "todo" | "finance_source" | "manual",
+  "reason": "One short, clear sentence explaining why this milestone type fits this goal best."
+}`;
+      prompt = `Goal Title: "${title}" | Category: "${category || type || 'custom'}" | Subcategory: "${subcategory || 'None'}" | Unit: "${unit || 'units'}" | MeasurementType: "${measurementType || 'qty'}" | Target: ${targetValue || 'None'}`;
       maxTokens = 150;
     } else {
       // Fallback: Original full smart-nudge behavior
