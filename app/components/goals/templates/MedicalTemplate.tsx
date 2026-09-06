@@ -139,7 +139,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
   // Care Plan Sections State
   const [appointments, setAppointments] = useState<MedicalAppointment[]>(() => {
     if (Array.isArray(goal.medicalAppointments) && goal.medicalAppointments.length > 0) {
-      return goal.medicalAppointments;
+      return goal.medicalAppointments as unknown as MedicalAppointment[];
     }
     const docName = String(answers.doctor_name || answers.doctor || 'Dr. Ahsan Raza');
     const clinicName = String(answers.clinic_name || answers.clinic || 'City Health Clinic');
@@ -159,7 +159,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
 
   const [tests, setTests] = useState<MedicalTest[]>(() => {
     if (Array.isArray(goal.medicalTests) && goal.medicalTests.length > 0) {
-      return goal.medicalTests;
+      return goal.medicalTests as unknown as MedicalTest[];
     }
     const testName = String(answers.test_name || answers.medical_test || 'Blood Test / MRI');
     return [
@@ -178,7 +178,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
 
   const [medicines, setMedicines] = useState<MedicalMedicine[]>(() => {
     if (Array.isArray(goal.medicalMedicines) && goal.medicalMedicines.length > 0) {
-      return goal.medicalMedicines;
+      return goal.medicalMedicines as unknown as MedicalMedicine[];
     }
     const medName = String(answers.medicine_name || answers.prescription || 'Vitamin D3 & B12');
     return [
@@ -194,7 +194,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
 
   const [medSchedule, setMedSchedule] = useState<MedicalScheduleSlot[]>(() => {
     if (Array.isArray(goal.medicalSchedule) && goal.medicalSchedule.length > 0) {
-      return goal.medicalSchedule;
+      return goal.medicalSchedule as unknown as MedicalScheduleSlot[];
     }
     return [
       { id: '1', time: 'Morning', label: '8:00 AM', taken: true },
@@ -205,7 +205,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
 
   const [followUps, setFollowUps] = useState<MedicalFollowUp[]>(() => {
     if (Array.isArray(goal.medicalFollowUps) && goal.medicalFollowUps.length > 0) {
-      return goal.medicalFollowUps;
+      return goal.medicalFollowUps as unknown as MedicalFollowUp[];
     }
     return [
       {

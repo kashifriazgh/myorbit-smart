@@ -76,7 +76,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
   // Nutrition items stored on goal.nutritionItems or questionnaire answers
   const [items, setItems] = useState<NutritionItem[]>(() => {
     if (Array.isArray(goal.nutritionItems) && goal.nutritionItems.length > 0) {
-      return goal.nutritionItems;
+      return goal.nutritionItems as unknown as NutritionItem[];
     }
     return [
       {

@@ -6,8 +6,8 @@ import { Goal, GoalStep, GoalStepStatus } from '../interface';
 export function getStepProgress(
   step: GoalStep,
   goal?: Goal | null,
-  linkedTodos?: Record<string, unknown>[],
-  linkedSchedules?: Record<string, unknown>[]
+  linkedTodos?: unknown[],
+  linkedSchedules?: unknown[]
 ): number {
   // 1. Finance / Savings / Linked Finance Source step
   if (step.linkedType === 'finance_source' || goal?.type === 'finance') {
@@ -36,7 +36,7 @@ export function getStepProgress(
   // 3. Linked Todo
   if (step.linkedType === 'todo' && step.linkedItemId) {
     if (linkedTodos && Array.isArray(linkedTodos)) {
-      const foundTodo = linkedTodos.find((t) => t.id === step.linkedItemId);
+      const foundTodo = (linkedTodos as Array<{ id?: string; status?: string; progressPercent?: number }>).find((t) => t.id === step.linkedItemId);
       if (foundTodo) {
         if (foundTodo.status === 'completed' || foundTodo.progressPercent === 100) return 100;
         return typeof foundTodo.progressPercent === 'number' ? foundTodo.progressPercent : 0;
@@ -47,7 +47,7 @@ export function getStepProgress(
   // 4. Linked Schedule
   if (step.linkedType === 'schedule' && step.linkedItemId) {
     if (linkedSchedules && Array.isArray(linkedSchedules)) {
-      const foundSched = linkedSchedules.find((s) => s.id === step.linkedItemId);
+      const foundSched = (linkedSchedules as Array<{ id?: string; status?: string }>).find((s) => s.id === step.linkedItemId);
       if (foundSched) {
         return foundSched.status === 'completed' ? 100 : 0;
       }
@@ -62,10 +62,17 @@ export function getStepProgress(
   return 0;
 }
 
+export interface ExpenseProgressItem {
+  currentValue?: number;
+  targetValue?: number;
+  initialValue?: number;
+  actionType?: string;
+}
+
 /**
  * Calculates item progress for an expense milestone item (0–100%).
  */
-export function getExpenseItemProgress(item: Record<string, unknown>): number {
+export function getExpenseItemProgress(item?: ExpenseProgressItem | null): number {
   if (!item) return 0;
   const current = typeof item.currentValue === 'number' ? item.currentValue : 0;
   const target = typeof item.targetValue === 'number' ? item.targetValue : 0;
@@ -96,15 +103,15 @@ export function getExpenseItemProgress(item: Record<string, unknown>): number {
  */
 export function calculateGoalOverallProgress(
   goal: Goal | null | undefined,
-  linkedTodos?: Record<string, unknown>[],
-  linkedSchedules?: Record<string, unknown>[]
+  linkedTodos?: unknown[],
+  linkedSchedules?: unknown[]
 ): number {
   if (!goal) return 0;
 
   // Check if debtRecords exist
   if (Array.isArray(goal.debtRecords) && goal.debtRecords.length > 0) {
     let sum = 0;
-    for (const item of goal.debtRecords) {
+    for (const item of goal.debtRecords as Array<{ paidAmount?: number; amount?: number }>) {
       const paid = typeof item.paidAmount === 'number' ? item.paidAmount : 0;
       const total = typeof item.amount === 'number' ? item.amount : 0;
       if (total > 0) {
@@ -117,7 +124,7 @@ export function calculateGoalOverallProgress(
   // Check if incomeSources exist
   if (Array.isArray(goal.incomeSources) && goal.incomeSources.length > 0) {
     let sum = 0;
-    for (const item of goal.incomeSources) {
+    for (const item of goal.incomeSources as Array<{ currentAmount?: number; targetAmount?: number }>) {
       const current = typeof item.currentAmount === 'number' ? item.currentAmount : 0;
       const target = typeof item.targetAmount === 'number' ? item.targetAmount : 0;
       if (target > 0) {
@@ -130,7 +137,7 @@ export function calculateGoalOverallProgress(
   // Check if expenseItems exist
   if (Array.isArray(goal.expenseItems) && goal.expenseItems.length > 0) {
     let sum = 0;
-    for (const item of goal.expenseItems) {
+    for (const item of goal.expenseItems as ExpenseProgressItem[]) {
       sum += getExpenseItemProgress(item);
     }
     return Math.max(0, Math.min(100, Math.round(sum / goal.expenseItems.length)));

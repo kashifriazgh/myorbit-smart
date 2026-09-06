@@ -126,7 +126,7 @@ export default function InvestTemplate({ goal, onUpdateGoal }: InvestTemplatePro
   // Profit logs stored on goal.profitLogs
   const [profitLogs, setProfitLogs] = useState<ProfitLog[]>(() => {
     if (Array.isArray(goal.profitLogs) && goal.profitLogs.length > 0) {
-      return goal.profitLogs;
+      return goal.profitLogs as unknown as ProfitLog[];
     }
     return [
       { id: '1', amount: 2000, date: '2026-08-15' },

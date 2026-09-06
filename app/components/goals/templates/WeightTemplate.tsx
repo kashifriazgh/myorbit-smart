@@ -71,7 +71,7 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
   // Weight logs stored on goal.weightLogs
   const [logs, setLogs] = useState<WeightLogEntry[]>(() => {
     if (Array.isArray(goal.weightLogs) && goal.weightLogs.length > 0) {
-      return goal.weightLogs;
+      return goal.weightLogs as unknown as WeightLogEntry[];
     }
     return [
       { id: '1', date: new Date().toISOString().split('T')[0], weight: Number(goal.currentValue || answers.current_weight || initialWeight) },

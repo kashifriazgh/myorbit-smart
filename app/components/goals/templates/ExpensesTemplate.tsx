@@ -133,7 +133,7 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
   // State for Expense items list
   const [expenses, setExpenses] = useState<ExpenseItem[]>(() => {
     if (Array.isArray(goal.expenseItems) && goal.expenseItems.length > 0) {
-      return goal.expenseItems;
+      return goal.expenseItems as unknown as ExpenseItem[];
     }
     const answers = goal.questionnaireAnswers || {};
     const initCat = String(answers.expense_category || 'Dining Out');

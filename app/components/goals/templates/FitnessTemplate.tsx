@@ -79,7 +79,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
   // Exercise items state
   const [exercises, setExercises] = useState<ExerciseItem[]>(() => {
     if (Array.isArray(goal.exerciseItems) && goal.exerciseItems.length > 0) {
-      return goal.exerciseItems;
+      return goal.exerciseItems as unknown as ExerciseItem[];
     }
     return [
       {

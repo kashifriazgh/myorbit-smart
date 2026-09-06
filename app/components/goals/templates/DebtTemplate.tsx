@@ -127,7 +127,7 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
   // Debt Records Array (Stored on goal.debtRecords)
   const [records, setRecords] = useState<DebtRecordItem[]>(() => {
     if (Array.isArray(goal.debtRecords) && goal.debtRecords.length > 0) {
-      return goal.debtRecords;
+      return goal.debtRecords as unknown as DebtRecordItem[];
     }
     const debtType = String(answers.debt_type || answers.type || 'payback');
     const amountVal = Number(goal.overallTargetValue || answers.target_amount || answers.amount || 50000);

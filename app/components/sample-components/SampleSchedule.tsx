@@ -1,6 +1,49 @@
 "use client";
 
-import { GlassWater, Bike, StretchHorizontal, Clock, Check } from "lucide-react";
+function GlassWaterIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M15.2 22H8.8a2 2 0 0 1-2-1.79L5 3h14l-1.8 17.21a2 2 0 0 1-2 1.79z" />
+      <path d="M6 12a5 5 0 0 1 6 0 5 5 0 0 0 6 0" />
+    </svg>
+  );
+}
+
+function BikeIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="5.5" cy="17.5" r="3.5" />
+      <circle cx="18.5" cy="17.5" r="3.5" />
+      <path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5L9.5 12l3-4.5h4l2 5" />
+      <path d="M12 17.5V14" />
+    </svg>
+  );
+}
+
+function StretchIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M21 12H3M21 12l-4-4m4 4l-4 4M3 12l4-4m-4 4l4 4" />
+    </svg>
+  );
+}
+
+function ClockIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </svg>
+  );
+}
+
+function CheckIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
 
 type TaskStatus = "done" | "upcoming";
 
@@ -22,7 +65,7 @@ const tasks: Task[] = [
     streak: 3,
     duration: "5 min",
     status: "done",
-    icon: GlassWater,
+    icon: GlassWaterIcon,
     iconBg: "bg-orange-100",
     iconColor: "text-orange-500",
   },
@@ -32,7 +75,7 @@ const tasks: Task[] = [
     streak: 6,
     duration: "15 min",
     status: "done",
-    icon: Bike,
+    icon: BikeIcon,
     iconBg: "bg-lime-100",
     iconColor: "text-lime-700",
   },
@@ -42,7 +85,7 @@ const tasks: Task[] = [
     streak: 5,
     duration: "10 min",
     status: "upcoming",
-    icon: StretchHorizontal,
+    icon: StretchIcon,
     iconBg: "bg-pink-100",
     iconColor: "text-pink-600",
   },
@@ -76,7 +119,7 @@ export default function SchedulePage() {
                   }`}
                 >
                   {task.status === "done" && (
-                    <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />
+                    <CheckIcon className="h-2.5 w-2.5 text-white" strokeWidth={3} />
                   )}
                 </span>
 
@@ -98,7 +141,7 @@ export default function SchedulePage() {
                   </div>
 
                   <div className="flex shrink-0 flex-col items-center gap-1 pl-2">
-                    <Clock className="h-4 w-4 text-gray-400" />
+                    <ClockIcon className="h-4 w-4 text-gray-400" />
                     <span className="text-xs text-gray-400">{task.duration}</span>
                   </div>
                 </div>

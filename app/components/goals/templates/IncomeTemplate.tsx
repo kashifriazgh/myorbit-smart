@@ -104,7 +104,7 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
   // Income Sources List (Stored on goal.incomeSources)
   const [sources, setSources] = useState<IncomeSourceItem[]>(() => {
     if (Array.isArray(goal.incomeSources) && goal.incomeSources.length > 0) {
-      return goal.incomeSources;
+      return goal.incomeSources as unknown as IncomeSourceItem[];
     }
     const initCurr = goal.currentValue || Number(answers.current_income || 0);
     const initTarg = goal.overallTargetValue || Number(answers.target_income || 0);
