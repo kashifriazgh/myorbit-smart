@@ -18,6 +18,13 @@ import {
   Tooltip,
   Modal,
   Fade,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  CircularProgress,
+  Stack,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -32,6 +39,8 @@ import { SchedulesProps } from '../../lib/interface';
 import SchedulesModal from './SchedulesModal';
 import { useSchedules } from '../../lib/context/SchedulesContext';
 import ReminderSendButton from '@/app/components/global/ReminderSendButton';
+import { doc, getDoc, updateDoc, addDoc, collection, Timestamp, serverTimestamp, setDoc } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 
 // Custom Styled Badge
 const StyledBadge = styled(Badge)(({ theme }) => ({
@@ -349,7 +358,7 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
                   {/* Priority / Linked Goal Objective Badge */}
                   {(schedule.goalTitle || schedule.linkedGoalId || schedule.objective) && (
                     <Chip
-                      label={schedule.goalTitle ? `🎯 Goal: ${schedule.goalTitle}` : (schedule.linkedGoalId ? '🎯 Goal Linked' : schedule.objective)}
+                      label={schedule.goalTitle || schedule.linkedGoalId ? '🎯 Linked' : schedule.objective}
                       size="small"
                       sx={{
                         height: 18,
@@ -467,7 +476,7 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
                     )}
                     {(schedule.goalTitle || schedule.linkedGoalId || schedule.objective) && (
                       <Chip
-                        label={schedule.goalTitle ? `🎯 Goal: ${schedule.goalTitle}` : (schedule.linkedGoalId ? '🎯 Goal Linked' : schedule.objective)}
+                        label={schedule.goalTitle || schedule.linkedGoalId ? '🎯 Linked' : schedule.objective}
                         size="small"
                         sx={{
                           height: 18,
@@ -899,6 +908,103 @@ const Schedules: React.FC = () => {
     });
   };
 
+  // Completion Prompt Dialog State for Goal-Linked Schedules
+  const [schedulePromptItem, setSchedulePromptItem] = useState<{
+    schedule: SchedulesProps;
+    assumedAmount: number;
+  } | null>(null);
+  const [schedulePromptAmount, setSchedulePromptAmount] = useState<number | ''>('');
+  const [completingScheduleWithSavings, setCompletingScheduleWithSavings] = useState(false);
+
+  const handleConfirmScheduleSavingsCompletion = async (addSavings: boolean) => {
+    if (!schedulePromptItem || !schedulePromptItem.schedule.id || !user) return;
+    const { schedule, assumedAmount } = schedulePromptItem;
+    setCompletingScheduleWithSavings(true);
+
+    try {
+      const confirmedAmount =
+        typeof schedulePromptAmount === 'number' && schedulePromptAmount > 0
+          ? schedulePromptAmount
+          : assumedAmount;
+
+      if (addSavings && confirmedAmount > 0 && schedule.linkedGoalId) {
+        // Fetch Goal document from Firestore
+        const goalRef = doc(db, 'goals', schedule.linkedGoalId);
+        const goalSnap = await getDoc(goalRef);
+
+        if (goalSnap.exists()) {
+          const goalData = goalSnap.data();
+          const linkedSource = goalData.linkedSourceId || `${goalData.title || 'Savings'} Pot`;
+
+          // 1. Log cashTransaction
+          await addDoc(collection(db, 'cashTransactions'), {
+            userId: user.uid,
+            amount: confirmedAmount,
+            type: 'add',
+            source: 'custom',
+            customPaymentHeadName: linkedSource,
+            category: 'manual',
+            note: `Completed schedule: ${schedule.title}`,
+            createdAt: Timestamp.now(),
+          });
+
+          // 2. Update totalCashSnapshots
+          const snapRef = doc(db, 'totalCashSnapshots', user.uid);
+          const snap = await getDoc(snapRef);
+
+          if (snap.exists()) {
+            const data = snap.data();
+            const customObj = typeof data?.sources?.custom === 'object' ? { ...data.sources.custom } : {};
+            const currentBal = Number(customObj[linkedSource] || 0);
+            customObj[linkedSource] = currentBal + confirmedAmount;
+            const updatedTotal = (Number(data.totalAmount) || 0) + confirmedAmount;
+
+            await updateDoc(snapRef, {
+              'sources.custom': customObj,
+              totalAmount: updatedTotal,
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            await setDoc(snapRef, {
+              userId: user.uid,
+              sources: { in_hand: 0, easypaisa: 0, jazzcash: 0, other: 0, bank: {}, custom: { [linkedSource]: confirmedAmount } },
+              totalAmount: confirmedAmount,
+              freezeAmount: 0,
+              createdAt: serverTimestamp(),
+            });
+          }
+
+          // 3. Update Goal transactions & currentValue
+          const existingTxns = Array.isArray(goalData.transactions) ? goalData.transactions : [];
+          const newTxn = {
+            date: new Date().toISOString().split('T')[0],
+            amount: confirmedAmount,
+            type: 'deposit',
+            note: `Schedule deposit: ${schedule.title}`,
+          };
+          const updatedTxns = [newTxn, ...existingTxns];
+          const updatedCurrentVal = (Number(goalData.currentValue) || 0) + confirmedAmount;
+
+          await updateDoc(goalRef, {
+            transactions: updatedTxns,
+            currentValue: updatedCurrentVal,
+          });
+        }
+      }
+
+      // 4. Mark schedule completed
+      await editSchedule(schedule.id, { status: 'completed' });
+      setSnackbar({ open: true, message: addSavings ? 'Schedule completed & savings added!' : 'Schedule completed!', severity: 'success' });
+    } catch (err) {
+      console.error('Failed to complete schedule with savings:', err);
+      setSnackbar({ open: true, message: 'Failed to complete schedule.', severity: 'error' });
+    } finally {
+      setCompletingScheduleWithSavings(false);
+      setSchedulePromptItem(null);
+      setSchedulePromptAmount('');
+    }
+  };
+
   const handleToggleStatus = async (schedule: SchedulesProps) => {
     if (isGuest) {
       setSnackbar({ open: true, message: 'Guest users are not allowed to modify schedules. Please sign up first.', severity: 'warning' });
@@ -906,6 +1012,18 @@ const Schedules: React.FC = () => {
     }
     if (!schedule.id) return;
     const newStatus = schedule.status === 'completed' ? 'pending' : 'completed';
+
+    // If completing a goal-linked schedule:
+    if (newStatus === 'completed' && schedule.linkedGoalId) {
+      const amt = schedule.contributionAmount || 0;
+      setSchedulePromptItem({
+        schedule,
+        assumedAmount: amt,
+      });
+      setSchedulePromptAmount(amt > 0 ? amt : '');
+      return;
+    }
+
     try {
       await editSchedule(schedule.id, { status: newStatus });
     } catch (err) {
@@ -1305,6 +1423,24 @@ const Schedules: React.FC = () => {
                 </Typography>
               </Box>
 
+              {/* Linked Goal Row */}
+              {(selectedQuickSchedule?.goalTitle || selectedQuickSchedule?.linkedGoalId) && (
+                <Box className="flex items-center justify-between mb-4">
+                  <Typography variant="body2" className="text-slate-500 dark:text-slate-400 font-medium">
+                    Linked Goal
+                  </Typography>
+                  <Chip
+                    label={`🎯 ${selectedQuickSchedule.goalTitle || 'Goal Linked'}`}
+                    size="small"
+                    sx={{
+                      fontWeight: 800,
+                      backgroundColor: '#8b5cf6',
+                      color: 'white',
+                    }}
+                  />
+                </Box>
+              )}
+
               {/* Priority Objective Row */}
               {selectedQuickSchedule?.objective && (
                 <Box className="flex items-center justify-between mb-4">
@@ -1407,6 +1543,67 @@ const Schedules: React.FC = () => {
           </Box>
         </Fade>
       </Modal>
+
+      {/* Prompt Dialog: "Have you got the amount?" when toggling schedule completion */}
+      <Dialog
+        open={Boolean(schedulePromptItem)}
+        onClose={() => setSchedulePromptItem(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '24px',
+            p: 1,
+            bgcolor: isDark ? '#1e293b' : '#ffffff',
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 17, color: isDark ? '#f1f5f9' : '#0f172a' }}>
+          Have you got the amount?
+        </DialogTitle>
+        <DialogContent dividers sx={{ borderBottom: 'none', borderTop: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Typography sx={{ fontSize: 13, color: isDark ? '#f1f5f9' : '#1e293b' }}>
+              Marking <strong>&ldquo;{schedulePromptItem?.schedule.title}&rdquo;</strong> as completed.
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b' }}>
+              Confirm the amount received to automatically credit the goal&apos;s linked Finance source:
+            </Typography>
+            <TextField
+              label="Received Amount"
+              type="number"
+              fullWidth
+              size="small"
+              autoFocus
+              value={schedulePromptAmount}
+              onChange={(e) => setSchedulePromptAmount(e.target.value ? Number(e.target.value) : '')}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, display: 'flex', justifyContent: 'space-between' }}>
+          <Button onClick={() => setSchedulePromptItem(null)} sx={{ textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="outlined"
+              disabled={completingScheduleWithSavings}
+              onClick={() => handleConfirmScheduleSavingsCompletion(false)}
+              sx={{ textTransform: 'none' }}
+            >
+              Skip Amount
+            </Button>
+            <Button
+              variant="contained"
+              disabled={completingScheduleWithSavings || typeof schedulePromptAmount !== 'number' || schedulePromptAmount <= 0}
+              onClick={() => handleConfirmScheduleSavingsCompletion(true)}
+              sx={{ textTransform: 'none', bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
+            >
+              {completingScheduleWithSavings ? <CircularProgress size={18} color="inherit" /> : 'Confirm & Save'}
+            </Button>
+          </Stack>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snackbar.open}

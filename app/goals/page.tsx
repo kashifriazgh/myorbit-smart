@@ -240,6 +240,8 @@ const GoalsPageInner: React.FC = () => {
                         <MenuItem value="learning">Learning</MenuItem>
                         <MenuItem value="habit">Habit</MenuItem>
                         <MenuItem value="work">Work</MenuItem>
+                        <MenuItem value="personal_growth">Personal Growth</MenuItem>
+                        <MenuItem value="travel">Travel</MenuItem>
                         <MenuItem value="lifestyle">Lifestyle</MenuItem>
                         <MenuItem value="custom">Custom</MenuItem>
                       </Select>

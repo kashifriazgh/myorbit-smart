@@ -3,6 +3,7 @@
 import React from 'react';
 import { Card, Tooltip } from '@mui/material';
 import { Goal, GoalStep, GoalStepStatus } from '../../lib/interface';
+import { calculateGoalOverallProgress } from '../../lib/utils/goalProgress';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { motion } from 'framer-motion';
 import {
@@ -81,8 +82,8 @@ const TYPE_META: Record<
     cardBgDark: '#0a1a1e',
     cardBorderDark: '#06b6d433',
   },
-  lifestyle: {
-    label: 'Lifestyle',
+  personal_growth: {
+    label: 'Personal Growth',
     color: '#EC4899',
     badgeBgLight: '#FDF2F8',
     badgeBgDark: '#ec489922',
@@ -90,6 +91,26 @@ const TYPE_META: Record<
     cardBorderLight: '#FBCFE8',
     cardBgDark: '#1f0e17',
     cardBorderDark: '#ec489933',
+  },
+  travel: {
+    label: 'Travel',
+    color: '#06B6D4',
+    badgeBgLight: '#ECFEFF',
+    badgeBgDark: '#06b6d422',
+    cardBgLight: '#ECFEFF',
+    cardBorderLight: '#A5F3FC',
+    cardBgDark: '#042f2e',
+    cardBorderDark: '#06b6d433',
+  },
+  lifestyle: {
+    label: 'Lifestyle',
+    color: '#F472B6',
+    badgeBgLight: '#FDF2F8',
+    badgeBgDark: '#f472b622',
+    cardBgLight: '#FDF2F8',
+    cardBorderLight: '#FBCFE8',
+    cardBgDark: '#1f0e17',
+    cardBorderDark: '#f472b633',
   },
   custom: {
     label: 'Custom',
@@ -114,13 +135,15 @@ function getTypeMeta(type: string | undefined) {
 function getGoalTypeIcon(type: string | undefined) {
   const size = { fontSize: 16 };
   switch (type) {
-    case 'finance':   return <TrendingUp sx={size} />;
-    case 'health':    return <FitnessCenter sx={size} />;
-    case 'learning':  return <School sx={size} />;
-    case 'habit':     return <Psychology sx={size} />;
-    case 'work':      return <WorkOutline sx={size} />;
-    case 'lifestyle': return <SelfImprovement sx={size} />;
-    default:          return <Category sx={size} />;
+    case 'finance':         return <TrendingUp sx={size} />;
+    case 'health':          return <FitnessCenter sx={size} />;
+    case 'learning':        return <School sx={size} />;
+    case 'habit':           return <Psychology sx={size} />;
+    case 'work':            return <WorkOutline sx={size} />;
+    case 'personal_growth': return <SelfImprovement sx={size} />;
+    case 'travel':          return <Category sx={size} />;
+    case 'lifestyle':       return <SelfImprovement sx={size} />;
+    default:                return <Category sx={size} />;
   }
 }
 
@@ -304,13 +327,7 @@ const GoalSimpleCard: React.FC<GoalSimpleCardProps> = ({
   const { totalTarget, progressActual } = calculateTargets(goal);
   const meta                         = getTypeMeta(goal.type);
 
-  const percent = (() => {
-    if (totalTarget > 0) {
-      const p = (progressActual / totalTarget) * 100;
-      return Math.max(0, Math.min(100, isFinite(p) ? p : 0));
-    }
-    return Math.max(0, Math.min(100, goal.progress ?? 0));
-  })();
+  const percent = calculateGoalOverallProgress(goal);
 
   const title    = goal.title || 'Untitled Goal';
   const deadline = formatDeadline(goal.deadline || goal.targetDate);

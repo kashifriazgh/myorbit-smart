@@ -923,6 +923,8 @@ export type GoalType =
   | 'learning'
   | 'habit'
   | 'work'
+  | 'personal_growth'
+  | 'travel'
   | 'lifestyle'
   | 'custom';
 
@@ -1004,6 +1006,35 @@ export interface Goal {
   measurementType?: 'qty' | 'duration' | 'frequency' | 'completion_percentage' | 'duration_of_consistency';
   recommendedMilestoneType?: 'schedule' | 'todo' | 'finance_source' | 'manual';
   aiMilestoneReason?: string;
+
+  // Structured questionnaire fields for template pages
+  questionnaireAnswers?: Record<string, unknown>;
+  milestoneItems?: string[];
+  currentValue?: number;
+  transactions?: Array<{ date: string; amount: number; type: 'deposit' | 'withdrawal'; note?: string }>;
+  expenseItems?: Array<Record<string, unknown>>;
+  incomeSources?: Array<Record<string, unknown>>;
+  debtRecords?: Array<Record<string, unknown>>;
+  profitLogs?: Array<Record<string, unknown>>;
+  exerciseItems?: Array<Record<string, unknown>>;
+  nutritionItems?: Array<Record<string, unknown>>;
+  weightLogs?: Array<Record<string, unknown>>;
+  sleepLogs?: Array<Record<string, unknown>>;
+  medicalAppointments?: Array<Record<string, unknown>>;
+  medicalTests?: Array<Record<string, unknown>>;
+  medicalMedicines?: Array<Record<string, unknown>>;
+  medicalSchedule?: Array<Record<string, unknown>>;
+  medicalFollowUps?: Array<Record<string, unknown>>;
+  learningCheckpoints?: Array<{ id?: string; label: string; done: boolean }>;
+  practiceSchedules?: Array<{ id?: string; activity: string; time?: string; frequencyPerWeek?: number }>;
+  readingLogs?: Array<{ id?: string; date: string; pagesRead: number; chapterNote?: string }>;
+  courseLessons?: Array<{ id?: string; title: string; durationMins?: number; completed: boolean; completedAt?: string }>;
+  habitCheckIns?: Array<{ id?: string; date: string; completed: boolean; note?: string }>;
+  habitCue?: string;
+  habitReward?: string;
+  quitStartDate?: string;
+  relapseLogs?: Array<{ id?: string; date: string; trigger?: string; note?: string }>;
+  routineItems?: Array<{ id?: string; title: string; time?: string; period?: 'morning' | 'afternoon' | 'evening' | 'night'; completed: boolean }>;
 }
 
 export interface TrackerCheckIn {

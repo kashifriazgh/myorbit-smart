@@ -9,12 +9,13 @@ import {
   TextField,
   Box,
   Typography,
-  Chip,
   IconButton,
   CircularProgress,
   Stack,
   Divider,
   Fade,
+  Chip,
+  Paper,
 } from '@mui/material';
 import { useRouter } from 'next/navigation';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -24,7 +25,10 @@ import {
   Close,
   ArrowBack,
   AutoAwesome as MagicIcon,
-  CheckCircle,
+  ArrowForward,
+  CalendarMonth,
+  Category,
+  Timeline,
 } from '@mui/icons-material';
 import { useGoals } from '../../lib/context/GoalsContext';
 import { useAuth } from '../../lib/context/userContext';
@@ -32,39 +36,37 @@ import { useCustomTheme } from '../../lib/context/themeContext';
 import { Goal, GoalType, GoalPriority } from '../../lib/interface';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Timestamp } from 'firebase/firestore';
+import GoalQuestionnaireStep from './GoalQuestionnaireStep';
 
 import {
   GOAL_CATEGORIES_CONFIG,
   getCategoryConfig,
   getSubcategories,
-  getSubcategoryUnits,
-  getAllUnitsForCategory,
   getMeasurementType,
-  MEASUREMENT_TYPE_META,
-  MeasurementType,
+  QuestionConfig,
 } from '../../lib/config/goalCategoriesConfig';
 
 interface GoalModalProps {
   open: boolean;
   onClose: () => void;
-  goal?: Goal; // Optional, only passed when editing
+  goal?: Goal; // Optional, passed when editing
   defaultType?: GoalType;
 }
 
 const slideVariants = {
   enter: (dir: number) => ({
-    x: dir > 0 ? 120 : -120,
+    x: dir > 0 ? 100 : -100,
     opacity: 0,
   }),
   center: {
     x: 0,
     opacity: 1,
-    transition: { duration: 0.25, ease: 'easeOut' as const },
+    transition: { duration: 0.22, ease: 'easeOut' as const },
   },
   exit: (dir: number) => ({
-    x: dir < 0 ? 120 : -120,
+    x: dir < 0 ? 100 : -100,
     opacity: 0,
-    transition: { duration: 0.2, ease: 'easeIn' as const },
+    transition: { duration: 0.18, ease: 'easeIn' as const },
   }),
 };
 
@@ -86,359 +88,298 @@ const toPlainDate = (val: unknown): Date | null => {
   return null;
 };
 
-const EXAMPLE_GOALS = [
-  'Save PKR 100,000 for emergency fund',
-  'Exercise for 300 minutes this week',
-  'Read 20 books this year',
-  'Lose 5 kg weight in 2 months',
-  'Practice coding for 100 hours',
-];
-
-function TypewriterExamples({ isDark }: { isDark: boolean }) {
-  const [exampleIndex, setExampleIndex] = useState(0);
-  const [currentText, setCurrentText] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    const fullText = EXAMPLE_GOALS[exampleIndex];
-    const typingSpeed = isDeleting ? 35 : 75;
-
-    const timer = setTimeout(() => {
-      if (!isDeleting) {
-        setCurrentText(fullText.substring(0, currentText.length + 1));
-        if (currentText.length === fullText.length) {
-          setTimeout(() => setIsDeleting(true), 2200);
-        }
-      } else {
-        setCurrentText(fullText.substring(0, currentText.length - 1));
-        if (currentText.length === 0) {
-          setIsDeleting(false);
-          setExampleIndex((prev) => (prev + 1) % EXAMPLE_GOALS.length);
-        }
-      }
-    }, typingSpeed);
-
-    return () => clearTimeout(timer);
-  }, [currentText, isDeleting, exampleIndex]);
-
-  const textColor = isDark ? '#38bdf8' : '#0284c7';
-
-  return (
-    <Box sx={{ minHeight: '32px', display: 'flex', alignItems: 'center' }}>
-      <Typography
-        sx={{
-          fontSize: '1.05rem',
-          fontWeight: 800,
-          color: textColor,
-          lineHeight: 1.3,
-        }}
-      >
-        &ldquo;{currentText}&rdquo;
-        <Box
-          component="span"
-          sx={{
-            display: 'inline-block',
-            width: '2px',
-            height: '1.1em',
-            bgcolor: textColor,
-            ml: '3px',
-            verticalAlign: 'middle',
-            animation: 'blinkCaret 1s infinite',
-            '@keyframes blinkCaret': {
-              '0%, 100%': { opacity: 1 },
-              '50%': { opacity: 0 },
-            },
-          }}
-        />
-      </Typography>
-    </Box>
-  );
-}
-
-export default function GoalModal({ open, onClose, goal, defaultType: _defaultType = 'finance' }: GoalModalProps) {
+export default function GoalModal({
+  open,
+  onClose,
+  goal,
+  defaultType = 'finance',
+}: GoalModalProps) {
   const { addGoal, updateGoal } = useGoals();
   const router = useRouter();
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
-  // ── Step State (5-step wizard) ─────────────────────────────────────────────
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  // ── Step State (4-step wizard) ─────────────────────────────────────────────
+  // Step 1: Category selection
+  // Step 2: Subcategory selection
+  // Step 3: Dynamic Questionnaire
+  // Step 4: Summary & Launch Goal
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [slideDir, setSlideDir] = useState<1 | -1>(1);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [aiCategoryDetected, setAiCategoryDetected] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // ── Form States ────────────────────────────────────────────────────────────
-  const [title, setTitle] = useState(goal?.title || '');
-  const [description] = useState(goal?.description || '');
-  const [type, setType] = useState<GoalType>(goal?.type || 'finance');
-  const [subcategory, setSubcategory] = useState<string>(goal?.subcategory || '');
-  const [showAllCategoryUnits, setShowAllCategoryUnits] = useState(false);
-  const [priority] = useState<GoalPriority>(goal?.priority || 'Medium');
-  const [dueDate, setDueDate] = useState<Date | null>(toPlainDate(goal?.dueDate));
-  const [overallTargetValue, setOverallTargetValue] = useState<number | ''>(
+  // ── Selections ─────────────────────────────────────────────────────────────
+  const [selectedCategory, setSelectedCategory] = useState<GoalType>(
+    goal?.type || defaultType || 'finance'
+  );
+  const [selectedSubcatId, setSelectedSubcatId] = useState<string>(
+    goal?.subcategory || ''
+  );
+  const [questionIndex, setQuestionIndex] = useState<number>(0);
+  const [answers, setAnswers] = useState<Record<string, unknown>>({});
+
+  // ── Final Form Values ──────────────────────────────────────────────────────
+  const [title, setTitle] = useState<string>(goal?.title || '');
+  const [targetValue, setTargetValue] = useState<number | ''>(
     goal?.overallTargetValue || ''
   );
-  const [overallTargetUnit, setOverallTargetUnit] = useState(
-    goal?.overallTargetUnit || 'PKR'
+  const [targetUnit, setTargetUnit] = useState<string>(
+    goal?.overallTargetUnit || 'units'
   );
-  const [startValue, setStartValue] = useState<number | ''>(
-    typeof goal?.startValue === 'number' ? goal.startValue : (goal?.startingValue || '')
-  );
-  const [progressMode, setProgressMode] = useState<'cumulative' | 'current_value'>(
-    goal?.progressMode || 'cumulative'
-  );
-  const [direction, setDirection] = useState<'up' | 'down' | null>(goal?.direction || null);
+  const [dueDate, setDueDate] = useState<Date | null>(toPlainDate(goal?.dueDate));
+  const [priority] = useState<GoalPriority>(goal?.priority || 'Medium');
 
-  // ── Architecture & AI Properties ──
-  const [intent, setIntent] = useState<string>(goal?.intent || '');
-  const [progressTrackingType, setProgressTrackingType] = useState<'accumulative' | 'opposes'>(
-    goal?.progressTrackingType || 'accumulative'
+  const activeCategoryConfig = useMemo(
+    () => getCategoryConfig(selectedCategory),
+    [selectedCategory]
   );
-  const [opposesDirection, setOpposesDirection] = useState<'UP' | 'DOWN' | null>(
-    goal?.direction === 'up' ? 'UP' : goal?.direction === 'down' ? 'DOWN' : (goal?.direction as 'UP' | 'DOWN' | null) || null
+  const activeColor = activeCategoryConfig.color;
+
+  const availableSubcats = useMemo(
+    () => getSubcategories(selectedCategory),
+    [selectedCategory]
   );
 
-  const [aiVerb, setAiVerb] = useState(goal?.aiVerb || '');
-  const [aiActivityVerb, setAiActivityVerb] = useState(goal?.aiActivityVerb || '');
-  const [_aiSuggestedUnit, setAiSuggestedUnit] = useState(goal?.aiSuggestedUnit || '');
-  const [trackingMethod, setTrackingMethod] = useState<'tracker' | 'milestones'>(
-    goal?.trackingMethod || 'milestones'
-  );
-  const [aiStartValueLabel, setAiStartValueLabel] = useState('');
+  const selectedSubcat = useMemo(() => {
+    return availableSubcats.find(
+      (sc) => sc.id.toLowerCase() === selectedSubcatId.toLowerCase()
+    );
+  }, [availableSubcats, selectedSubcatId]);
 
-  const catConfig = useMemo(() => getCategoryConfig(type), [type]);
-  const activeColor = catConfig.color;
-
-  // Set category and default subcategory
-  const handleCategorySelect = (selectedCatType: GoalType) => {
-    setType(selectedCatType);
-    const subcats = getSubcategories(selectedCatType);
-    if (subcats.length > 0) {
-      setSubcategory(subcats[0].id);
-      if (subcats[0].units.length > 0) {
-        setOverallTargetUnit(subcats[0].units[0]);
+  // Questions applicable to current subcategory considering dependencies
+  const activeQuestions = useMemo(() => {
+    if (!selectedSubcat) return [];
+    return selectedSubcat.questions.filter((q) => {
+      if (!q.dependsOnField) return true;
+      const depVal = answers[q.dependsOnField];
+      if (Array.isArray(q.dependsOnValue)) {
+        return q.dependsOnValue.includes(String(depVal));
       }
-    } else {
-      setSubcategory('');
-      setOverallTargetUnit(getCategoryConfig(selectedCatType).allUnits[0] || 'units');
-    }
-  };
+      return String(depVal) === String(q.dependsOnValue);
+    });
+  }, [selectedSubcat, answers]);
 
-  // Select subcategory & update available units
-  const handleSubcategorySelect = (subcatId: string) => {
-    setSubcategory(subcatId);
-    setShowAllCategoryUnits(false);
-    const subcatUnits = getSubcategoryUnits(type, subcatId).units;
-    if (subcatUnits.length > 0 && !subcatUnits.includes(overallTargetUnit)) {
-      setOverallTargetUnit(subcatUnits[0]);
-    }
-  };
-
-  // Calculate current measurement type dynamically
-  const currentMeasurementType: MeasurementType = useMemo(() => {
-    return getMeasurementType(type, subcategory, overallTargetUnit);
-  }, [type, subcategory, overallTargetUnit]);
-
-  // ── Date Presets ────────────────────────────────────────────────────────────
-  const datePresets = useMemo(() => {
-    const today = new Date();
-    return [
-      {
-        label: '1 Month',
-        date: new Date(today.getFullYear(), today.getMonth() + 1, today.getDate()),
-      },
-      {
-        label: '3 Months',
-        date: new Date(today.getFullYear(), today.getMonth() + 3, today.getDate()),
-      },
-      {
-        label: '6 Months',
-        date: new Date(today.getFullYear(), today.getMonth() + 6, today.getDate()),
-      },
-    ];
-  }, []);
-
-  const selectDatePreset = (presetDate: Date) => {
-    setDueDate(presetDate);
-  };
-
-  // ── Step 1 Next: Call AI refiner ──────────────────────────────────────────
-  const handleStep1Next = async () => {
-    if (!title.trim()) return;
-
-    setAiLoading(true);
-    setAiError(null);
-
-    try {
-      const res = await fetch('/api/goals/smart-nudge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'refine-title',
-          title: title.trim(),
-          currentDate: new Date().toISOString().split('T')[0],
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      console.log('AI Title Evaluation Payload:', data);
-
-      if (!res.ok || data.error) {
-        console.warn('AI evaluation warning:', data?.error || res.statusText);
-        setAiError(data?.error || 'AI setup unavailable. Please specify target & category manually.');
-        setAiCategoryDetected(false);
+  // Reset steps on open
+  useEffect(() => {
+    if (open) {
+      if (goal) {
+        setSelectedCategory(goal.type);
+        setSelectedSubcatId(goal.subcategory || '');
+        setTitle(goal.title);
+        setTargetValue(goal.overallTargetValue || '');
+        setTargetUnit(goal.overallTargetUnit || 'units');
+        setDueDate(toPlainDate(goal.dueDate));
+        if (goal.questionnaireAnswers) {
+          setAnswers(goal.questionnaireAnswers);
+        }
+        setCurrentStep(4);
       } else {
-        if (data.suggestedTitle) {
-          setTitle(data.suggestedTitle);
-        }
-        if (data.intent) {
-          setIntent(data.intent);
-        }
-        if (data.progressTrackingType) {
-          setProgressTrackingType(data.progressTrackingType);
-          if (data.progressTrackingType === 'opposes') {
-            setProgressMode('current_value');
-          }
-        }
-        if (data.direction) {
-          const dir = String(data.direction).toUpperCase();
-          if (dir === 'UP' || dir === 'DOWN') {
-            setOpposesDirection(dir as 'UP' | 'DOWN');
-            setDirection(dir === 'UP' ? 'up' : 'down');
-          } else {
-            setDirection(data.direction);
-          }
-        }
-        if (data.startingValueSuggestion !== undefined && data.startingValueSuggestion !== null) {
-          setStartValue(Number(data.startingValueSuggestion));
-        }
-        if (data.progressMode) {
-          setProgressMode(data.progressMode);
-        }
-        if (data.suggestedCategory && GOAL_CATEGORIES_CONFIG[data.suggestedCategory]) {
-          setType(data.suggestedCategory as GoalType);
-          setAiCategoryDetected(true);
-          const subcats = getSubcategories(data.suggestedCategory);
-          if (data.suggestedSubcategory) {
-            setSubcategory(data.suggestedSubcategory);
-          } else if (subcats.length > 0) {
-            setSubcategory(subcats[0].id);
-          }
-        } else {
-          setAiCategoryDetected(false);
-        }
-        if (data.suggestedUnit) {
-          setOverallTargetUnit(data.suggestedUnit);
-          setAiSuggestedUnit(data.suggestedUnit);
-        }
-        if (data.targetValueSuggestion) {
-          setOverallTargetValue(Number(data.targetValueSuggestion));
-        }
-        if (data.dueDateSuggestion) {
-          setDueDate(new Date(data.dueDateSuggestion + 'T00:00:00'));
-        }
-        if (data.startValueLabel) {
-          setAiStartValueLabel(data.startValueLabel);
-        }
-        if (data.trackingMethodSuggestion) {
-          setTrackingMethod(data.trackingMethodSuggestion);
-        }
-        if (data.verb) {
-          setAiVerb(data.verb);
-        }
-        if (data.activityVerb) {
-          setAiActivityVerb(data.activityVerb);
+        setCurrentStep(1);
+        setSelectedSubcatId('');
+        setQuestionIndex(0);
+        setAnswers({});
+        setTitle('');
+        setTargetValue('');
+        setDueDate(null);
+      }
+    }
+  }, [open, goal]);
+
+  // ── Step 1: Select Category (Auto Advance to Step 2) ────────────────────────
+  const handleSelectCategory = (catType: GoalType) => {
+    setSelectedCategory(catType);
+    const subcats = getSubcategories(catType);
+    if (subcats.length > 0) {
+      setSelectedSubcatId(subcats[0].id);
+    } else {
+      setSelectedSubcatId('');
+    }
+    setSlideDir(1);
+    setCurrentStep(2);
+  };
+
+  // ── Step 2: Select Subcategory (Auto Advance to Step 3 or 4) ────────────────
+  const handleSelectSubcategory = (subcatId: string) => {
+    setSelectedSubcatId(subcatId);
+    setAnswers({});
+    setQuestionIndex(0);
+
+    const subcatObj = availableSubcats.find(
+      (s) => s.id.toLowerCase() === subcatId.toLowerCase()
+    );
+
+    setSlideDir(1);
+    if (subcatObj && subcatObj.questions.length > 0) {
+      setCurrentStep(3);
+    } else {
+      // 0 Questions (e.g. Medical Care Plan) -> Skip Step 3 directly to Step 4!
+      deriveFinalDetails({}, subcatObj?.name || subcatId, selectedCategory);
+      setCurrentStep(4);
+    }
+  };
+
+  // ── Update Single Question Answer & Calculate Metrics ─────────────────────
+  const handleAnswerChange = (questionId: string, val: unknown) => {
+    const updatedAnswers = { ...answers, [questionId]: val };
+    setAnswers(updatedAnswers);
+    deriveFinalDetails(updatedAnswers, selectedSubcat?.name || selectedSubcatId, selectedCategory);
+  };
+
+  // ── Intelligent Target & Title Derivation ──────────────────────────────────
+  const deriveFinalDetails = (
+    ansMap: Record<string, unknown>,
+    subcatName: string,
+    catType: GoalType
+  ) => {
+    // 1. Unit & Target Value extraction
+    let unit = 'units';
+    let targetNum: number | '' = '';
+    const autoTitleParts: string[] = [];
+
+    // Amount extraction
+    for (const key of ['target_amount', 'amount', 'target_revenue', 'target_customers', 'target_weight', 'target_days', 'target_duration', 'total_quantity', 'trips_count', 'target_places', 'target_value']) {
+      if (ansMap[key] !== undefined && ansMap[key] !== null) {
+        const raw = ansMap[key];
+        if (typeof raw === 'number') {
+          targetNum = raw;
+        } else if (typeof raw === 'string' && /^\d+$/.test(raw)) {
+          targetNum = Number(raw);
         }
       }
+    }
 
-      setSlideDir(1);
-      setCurrentStep(2);
-    } catch (err) {
-      console.error('AI refinement error:', err);
-      setAiError('Could not connect to AI. Please define category and target manually.');
-      setAiCategoryDetected(false);
-      setSlideDir(1);
-      setCurrentStep(2);
-    } finally {
-      setAiLoading(false);
+    // Units derivation
+    if (catType === 'finance') {
+      unit = 'PKR';
+    } else if (subcatName?.toLowerCase().includes('fitness')) {
+      const metric = String(ansMap['progress_metric'] || 'sessions');
+      unit = metric === 'distance' ? 'km' : metric === 'minutes' ? 'minutes' : metric === 'steps' ? 'steps' : 'sessions';
+    } else if (subcatName?.toLowerCase().includes('reading')) {
+      const uType = String(ansMap['unit_type'] || 'pages').toLowerCase();
+      unit = uType.includes('chapter') ? 'chapters' : uType.includes('section') ? 'sections' : 'pages';
+    } else if (subcatName?.toLowerCase().includes('weight')) {
+      unit = 'kg';
+    } else if (subcatName?.toLowerCase().includes('sleep')) {
+      unit = 'hours';
+    } else if (subcatName?.toLowerCase().includes('courses')) {
+      unit = String(ansMap['unit_name'] || 'lessons');
+    } else if (subcatName?.toLowerCase().includes('trip')) {
+      unit = 'milestones';
+    } else if (subcatName?.toLowerCase().includes('explore')) {
+      unit = 'places';
+    } else if (subcatName?.toLowerCase().includes('travel days')) {
+      unit = 'days';
+    } else if (subcatName?.toLowerCase().includes('travel frequency')) {
+      unit = 'trips';
+    } else if (subcatName?.toLowerCase().includes('habit')) {
+      unit = 'days';
+    }
+
+    setTargetUnit(unit);
+    if (targetNum !== '') {
+      setTargetValue(targetNum);
+    }
+
+    // Date / Deadline extraction
+    for (const key of ['deadline', 'duration', 'dates', 'period']) {
+      const dVal = ansMap[key];
+      if (dVal instanceof Date) {
+        setDueDate(dVal);
+      } else if (typeof dVal === 'string') {
+        const today = new Date();
+        if (dVal.includes('1_month')) {
+          setDueDate(new Date(today.getFullYear(), today.getMonth() + 1, today.getDate()));
+        } else if (dVal.includes('2_months')) {
+          setDueDate(new Date(today.getFullYear(), today.getMonth() + 2, today.getDate()));
+        } else if (dVal.includes('3_months')) {
+          setDueDate(new Date(today.getFullYear(), today.getMonth() + 3, today.getDate()));
+        } else if (dVal.includes('6_months')) {
+          setDueDate(new Date(today.getFullYear(), today.getMonth() + 6, today.getDate()));
+        } else if (dVal.includes('1_year') || dVal.includes('this_year')) {
+          setDueDate(new Date(today.getFullYear() + 1, today.getMonth(), today.getDate()));
+        }
+      }
+    }
+
+    // Auto title generation if title not manually entered
+    if (!title || title.trim() === '') {
+      if (ansMap['habit_name'] && typeof ansMap['habit_name'] === 'string') {
+        autoTitleParts.push(ansMap['habit_name']);
+      } else if (ansMap['habit_to_quit'] && typeof ansMap['habit_to_quit'] === 'string') {
+        autoTitleParts.push(`Quit ${ansMap['habit_to_quit']}`);
+      } else if (ansMap['routine_type'] && typeof ansMap['routine_type'] === 'string') {
+        autoTitleParts.push(ansMap['routine_type']);
+      } else if (ansMap['course_name'] && typeof ansMap['course_name'] === 'string') {
+        autoTitleParts.push(`Complete ${ansMap['course_name']}`);
+      } else if (ansMap['destination'] && typeof ansMap['destination'] === 'string') {
+        autoTitleParts.push(`Trip to ${ansMap['destination']}`);
+      } else if (ansMap['project_name'] && typeof ansMap['project_name'] === 'string') {
+        autoTitleParts.push(ansMap['project_name']);
+      } else if (ansMap['purpose'] && typeof ansMap['purpose'] === 'string' && ansMap['purpose'] !== 'other') {
+        autoTitleParts.push(`Save for ${ansMap['purpose']}`);
+      } else {
+        autoTitleParts.push(`${subcatName} Goal`);
+      }
+
+      if (targetNum !== '') {
+        autoTitleParts.push(`(${targetNum} ${unit})`);
+      }
+      setTitle(autoTitleParts.join(' '));
     }
   };
 
-  // ── Step Navigation ────────────────────────────────────────────────────────
-  const handleNext = () => {
-    if (currentStep === 1) {
-      handleStep1Next();
-    } else if (currentStep === 5) {
-      handleSaveGoal();
+  // ── Step 3 Navigation (Next / Back inside Questionnaire) ──────────────────
+  const handleQuestionNext = () => {
+    if (questionIndex < activeQuestions.length - 1) {
+      setSlideDir(1);
+      setQuestionIndex((prev) => prev + 1);
     } else {
+      // Finished questionnaire -> Go to Step 4
       setSlideDir(1);
-      setCurrentStep((prev) => (prev + 1) as 2 | 3 | 4 | 5);
+      setCurrentStep(4);
     }
   };
 
-  const handleBack = () => {
-    if (currentStep > 1) {
+  const handleQuestionBack = () => {
+    if (questionIndex > 0) {
       setSlideDir(-1);
-      setCurrentStep((prev) => (prev - 1) as 1 | 2 | 3 | 4);
+      setQuestionIndex((prev) => prev - 1);
+    } else {
+      setSlideDir(-1);
+      setCurrentStep(2);
     }
   };
 
-  // ── Save Goal logic ────────────────────────────────────────────────────────
+  // ── Step 4: Save & Launch Goal ─────────────────────────────────────────────
   const handleSaveGoal = async () => {
     if (!title.trim() || !user?.uid) return;
 
-    setAiLoading(true);
+    setSaving(true);
     try {
       const nowTs = new Date();
-      const numStart = typeof startValue === 'number' ? startValue : 0;
-      const numTarget = typeof overallTargetValue === 'number' ? overallTargetValue : 0;
+      const numTarget = typeof targetValue === 'number' ? targetValue : 0;
+      const mType = getMeasurementType(selectedCategory, selectedSubcatId, targetUnit);
 
-      let calculatedDirection: 'up' | 'down' | null = direction;
-      const finalTrackingType = progressTrackingType;
-
-      if (finalTrackingType === 'opposes') {
-        if (opposesDirection === 'DOWN' || numTarget < numStart) {
-          calculatedDirection = 'down';
-        } else {
-          calculatedDirection = 'up';
+      // Extract milestone items if checkbox_milestones was answered
+      let milestoneItemsArr: string[] = [];
+      for (const val of Object.values(answers)) {
+        if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string') {
+          milestoneItemsArr = val as string[];
         }
-      } else {
-        calculatedDirection = null;
       }
-
-      let timeFrameStr = '30 days';
-      if (dueDate) {
-        const diffDays = Math.max(1, Math.ceil((dueDate.getTime() - nowTs.getTime()) / (1000 * 60 * 60 * 24)));
-        timeFrameStr = diffDays >= 60 ? `${Math.round(diffDays / 30)} months` : `${diffDays} days`;
-      }
-
-      const evaluatedIntent = intent || aiVerb || 'achieve';
-      const evaluatedUnit = overallTargetUnit || 'units';
 
       const goalData: Goal = {
         title: title.trim(),
-        description: description.trim() || undefined,
-        type,
-        subcategory: subcategory || undefined,
-        measurementType: currentMeasurementType,
+        type: selectedCategory,
+        subcategory: selectedSubcat?.name || selectedSubcatId,
+        measurementType: mType,
         priority,
-        unit: evaluatedUnit,
+        unit: targetUnit,
         dueDate: dueDate ? Timestamp.fromDate(dueDate) : undefined,
         overallTargetValue: numTarget,
-        overallTargetUnit: evaluatedUnit,
-        progressMode: finalTrackingType === 'opposes' ? 'current_value' : progressMode,
-        direction: calculatedDirection,
-        startValue: numStart,
-        startingValue: numStart,
-        intent: evaluatedIntent,
-        progressTrackingType: finalTrackingType,
-        timeFrame: timeFrameStr,
-        trackingMethod,
-        aiVerb: aiVerb || evaluatedIntent,
-        aiActivityVerb: aiActivityVerb || undefined,
-        aiSuggestedUnit: evaluatedUnit,
+        overallTargetUnit: targetUnit,
+        progressMode: 'cumulative',
         goalFurnished: true,
         progress: goal?.progress || 0,
         status: goal?.status || 'Not Started',
@@ -447,23 +388,25 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
         updatedAt: Timestamp.fromDate(nowTs),
         authorName: user.email || 'Anonymous',
         steps: goal?.steps || [],
+        questionnaireAnswers: answers,
+        milestoneItems: milestoneItemsArr,
       };
 
-      let newGoalId = goal?.id;
+      let savedGoalId = goal?.id;
       if (goal) {
         await updateGoal(goal.id!, goalData);
       } else {
-        newGoalId = await addGoal(goalData);
+        savedGoalId = await addGoal(goalData);
       }
 
       onClose();
-      if (newGoalId) {
-        router.push(`/goals/${newGoalId}`);
+      if (savedGoalId) {
+        router.push(`/goals/${savedGoalId}`);
       }
     } catch (err) {
       console.error('Failed to save goal:', err);
     } finally {
-      setAiLoading(false);
+      setSaving(false);
     }
   };
 
@@ -472,29 +415,23 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
   const textCol = isDark ? '#f1f5f9' : '#0f172a';
   const mutedCol = isDark ? '#64748b' : '#94a3b8';
 
-  const subcats = getSubcategories(type);
-  const activeSubcatUnitsObj = getSubcategoryUnits(type, subcategory);
-  const displayedUnits = showAllCategoryUnits
-    ? getAllUnitsForCategory(type)
-    : activeSubcatUnitsObj.units;
-
-  const mTypeMeta = MEASUREMENT_TYPE_META[currentMeasurementType];
+  const currentQuestion: QuestionConfig | undefined = activeQuestions[questionIndex];
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Dialog
         open={open}
         onClose={onClose}
-        maxWidth="xs"
+        maxWidth="sm"
         fullWidth
         TransitionComponent={Fade}
-        transitionDuration={400}
+        transitionDuration={350}
         PaperProps={{
           sx: {
             background: isDarkBg,
-            borderRadius: '24px',
+            borderRadius: '28px',
             border: `1px solid ${borderCol}`,
-            boxShadow: 24,
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
             overflow: 'hidden',
           },
         }}
@@ -502,37 +439,71 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
         {/* Header */}
         <Box sx={{ p: 3, pb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Stack direction="row" alignItems="center" spacing={1}>
-            <MagicIcon sx={{ color: activeColor, fontSize: 18 }} />
-            <Typography sx={{ fontSize: 12, fontWeight: 900, color: activeColor, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              Orbit Goal Builder ({currentStep}/5)
+            <MagicIcon sx={{ color: activeColor, fontSize: 20 }} />
+            <Typography
+              sx={{
+                fontSize: 12,
+                fontWeight: 900,
+                color: activeColor,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Goal Creation ({currentStep}/4)
             </Typography>
           </Stack>
-          <IconButton size="small" onClick={onClose} sx={{ color: mutedCol }}>
-            <Close fontSize="small" />
-          </IconButton>
+
+          {/* Step Indicator Dots */}
+          <Stack direction="row" spacing={0.75} alignItems="center">
+            {[1, 2, 3, 4].map((stepNum) => (
+              <Box
+                key={stepNum}
+                sx={{
+                  width: stepNum === currentStep ? 22 : 8,
+                  height: 8,
+                  borderRadius: '4px',
+                  bgcolor: stepNum === currentStep ? activeColor : stepNum < currentStep ? `${activeColor}60` : borderCol,
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              />
+            ))}
+            <IconButton size="small" onClick={onClose} sx={{ color: mutedCol, ml: 1 }}>
+              <Close fontSize="small" />
+            </IconButton>
+          </Stack>
         </Box>
 
         <Divider sx={{ mx: 3, borderColor: borderCol }} />
 
         {/* Wizard Body */}
-        <DialogContent sx={{ px: 3, pt: 2.5, pb: 2, minHeight: 320, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <DialogContent
+          sx={{
+            px: 3.5,
+            pt: 3,
+            pb: 2.5,
+            minHeight: 380,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+          }}
+        >
           <AnimatePresence mode="wait" custom={slideDir}>
-            {aiLoading ? (
+            {saving ? (
               <motion.div
                 key="loader"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 0' }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0' }}
               >
-                <CircularProgress size={36} sx={{ color: activeColor, mb: 2 }} />
-                <Typography sx={{ fontSize: 13, color: mutedCol, fontWeight: 700 }}>
-                  Orbit AI is evaluating goal parameters…
+                <CircularProgress size={44} sx={{ color: activeColor, mb: 2 }} />
+                <Typography sx={{ fontSize: 14, color: mutedCol, fontWeight: 700 }}>
+                  Building custom goal template...
                 </Typography>
               </motion.div>
             ) : (
               <motion.div
-                key={currentStep}
+                key={`${currentStep}-${questionIndex}`}
                 custom={slideDir}
                 variants={slideVariants}
                 initial="enter"
@@ -540,120 +511,57 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                 exit="exit"
                 style={{ width: '100%' }}
               >
-                {/* AI Error Warning */}
-                {aiError && (
-                  <Box sx={{ mb: 2, p: 1.5, borderRadius: '12px', bgcolor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                    <Typography sx={{ fontSize: 11.5, color: '#f59e0b', fontWeight: 600 }}>
-                      ⚠️ {aiError}
-                    </Typography>
-                  </Box>
-                )}
-
-                {/* ── STEP 1: Title Input ── */}
+                {/* ── STEP 1: Main Category Selection Grid ── */}
                 {currentStep === 1 && (
                   <Box>
-                    <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: textCol, fontSize: '1.25rem' }}>
-                      Name your goal ✍️
+                    <Typography variant="h5" sx={{ fontWeight: 900, mb: 0.5, color: textCol, fontSize: '1.3rem' }}>
+                      What area would you like to focus on? 🎯
                     </Typography>
                     <Typography sx={{ fontSize: 12.5, color: mutedCol, mb: 2.5 }}>
-                      Orbit AI will analyze your title to automatically pre-select category, metrics, and duration.
+                      Select a category to customize your goal framework:
                     </Typography>
 
-                    <TextField
-                      fullWidth
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Enter your goal title..."
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: '14px',
-                          fontSize: '1.15rem',
-                          fontWeight: 700,
-                          '& fieldset': { borderColor: borderCol },
-                          '&:hover fieldset': { borderColor: activeColor },
-                          '&.Mui-focused fieldset': { borderColor: activeColor, borderWidth: '2px' },
-                        },
-                      }}
-                    />
-
-                    <Box
-                      sx={{
-                        mt: 2,
-                        p: 2,
-                        borderRadius: '14px',
-                        bgcolor: isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(2, 132, 199, 0.06)',
-                        border: `1px dashed ${isDark ? 'rgba(56, 189, 248, 0.3)' : 'rgba(2, 132, 199, 0.3)'}`,
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 11, fontWeight: 800, color: isDark ? '#38bdf8' : '#0284c7', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5 }}>
-                        💡 Inspiration Examples
-                      </Typography>
-                      <TypewriterExamples isDark={isDark} />
-                    </Box>
-                  </Box>
-                )}
-
-                {/* ── STEP 2: Category Selection (Creative UI & AI Heading Logic) ── */}
-                {currentStep === 2 && (
-                  <Box>
-                    {/* Headings based on AI detection */}
-                    <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5, color: textCol, fontSize: '1.2rem' }}>
-                      {aiCategoryDetected
-                        ? 'We chose this category that matches your goal'
-                        : 'Choose the category that suits you best'}
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, color: mutedCol, mb: 2 }}>
-                      {aiCategoryDetected
-                        ? 'Tap any category to change'
-                        : 'Select a category to organize your target'}
-                    </Typography>
-
-                    {/* Creative Category Cards Grid */}
                     <Box
                       sx={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(2, 1fr)',
-                        gap: 1.25,
-                        mb: 1,
+                        gap: 1.5,
                       }}
                     >
                       {Object.values(GOAL_CATEGORIES_CONFIG).map((cat) => {
-                        const isSelected = type === cat.id;
+                        const isSelected = selectedCategory === cat.id;
                         return (
-                          <Box
+                          <Paper
                             key={cat.id}
-                            onClick={() => handleCategorySelect(cat.id)}
+                            elevation={0}
+                            onClick={() => handleSelectCategory(cat.id)}
                             sx={{
-                              p: 1.5,
-                              borderRadius: '16px',
+                              p: 2,
+                              borderRadius: '20px',
                               cursor: 'pointer',
                               border: `2px solid ${isSelected ? cat.color : borderCol}`,
-                              bgcolor: isSelected
-                                ? isDark ? `${cat.color}25` : `${cat.color}15`
-                                : isDark ? '#0f172a' : '#f8fafc',
-                              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                              bgcolor: isDark ? '#0f172a' : '#f8fafc',
+                              transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 1.25,
-                              position: 'relative',
-                              overflow: 'hidden',
+                              gap: 1.5,
                               '&:hover': {
-                                transform: 'translateY(-2px)',
+                                transform: 'translateY(-3px)',
                                 borderColor: cat.color,
-                                boxShadow: `0 4px 12px ${cat.color}25`,
+                                boxShadow: `0 8px 20px ${cat.color}25`,
                               },
                             }}
                           >
                             <Box
                               sx={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: '12px',
+                                width: 44,
+                                height: 44,
+                                borderRadius: '14px',
                                 bgcolor: `${cat.color}20`,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: 20,
+                                fontSize: 24,
                                 flexShrink: 0,
                               }}
                             >
@@ -662,236 +570,233 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                             <Box sx={{ minWidth: 0, flex: 1 }}>
                               <Typography
                                 sx={{
-                                  fontSize: 13,
+                                  fontSize: 14,
                                   fontWeight: 800,
-                                  color: isSelected ? textCol : isDark ? '#e2e8f0' : '#334155',
+                                  color: textCol,
                                   lineHeight: 1.2,
                                 }}
                               >
                                 {cat.name}
                               </Typography>
-                              {isSelected && aiCategoryDetected && cat.id === type && (
-                                <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: cat.color, mt: 0.2 }}>
-                                  AI Match ✨
+                              <Typography
+                                sx={{
+                                  fontSize: 11,
+                                  color: mutedCol,
+                                  mt: 0.3,
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {cat.subcategories.length} goal templates
+                              </Typography>
+                            </Box>
+                            <ArrowForward sx={{ fontSize: 16, color: cat.color, opacity: 0.7 }} />
+                          </Paper>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
+
+                {/* ── STEP 2: Subcategory Selection ── */}
+                {currentStep === 2 && (
+                  <Box>
+                    <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
+                      <Typography sx={{ fontSize: 20 }}>{activeCategoryConfig.emoji}</Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 900, color: textCol, fontSize: '1.3rem' }}>
+                        Select {activeCategoryConfig.name} Goal Type
+                      </Typography>
+                    </Stack>
+                    <Typography sx={{ fontSize: 12.5, color: mutedCol, mb: 2.5 }}>
+                      Choose a specific subcategory template to proceed:
+                    </Typography>
+
+                    <Stack spacing={1.5}>
+                      {availableSubcats.map((sc) => {
+                        const isSelected = selectedSubcatId.toLowerCase() === sc.id.toLowerCase();
+                        return (
+                          <Paper
+                            key={sc.id}
+                            elevation={0}
+                            onClick={() => handleSelectSubcategory(sc.id)}
+                            sx={{
+                              p: 2,
+                              borderRadius: '18px',
+                              cursor: 'pointer',
+                              border: `2px solid ${isSelected ? activeColor : borderCol}`,
+                              bgcolor: isSelected
+                                ? isDark ? `${activeColor}20` : `${activeColor}10`
+                                : isDark ? '#0f172a' : '#f8fafc',
+                              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              '&:hover': {
+                                borderColor: activeColor,
+                                transform: 'translateX(4px)',
+                              },
+                            }}
+                          >
+                            <Box>
+                              <Typography sx={{ fontSize: 14.5, fontWeight: 800, color: textCol }}>
+                                {sc.name}
+                              </Typography>
+                              {sc.description && (
+                                <Typography sx={{ fontSize: 11.5, color: mutedCol, mt: 0.25 }}>
+                                  {sc.description}
                                 </Typography>
                               )}
                             </Box>
-                            {isSelected && (
-                              <CheckCircle sx={{ fontSize: 16, color: cat.color, flexShrink: 0 }} />
-                            )}
-                          </Box>
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                              <Chip
+                                label={`${sc.questions.length} Questions`}
+                                size="small"
+                                sx={{
+                                  fontWeight: 700,
+                                  fontSize: 10.5,
+                                  bgcolor: `${activeColor}18`,
+                                  color: activeColor,
+                                }}
+                              />
+                              <ArrowForward sx={{ fontSize: 18, color: activeColor }} />
+                            </Stack>
+                          </Paper>
                         );
                       })}
-                    </Box>
+                    </Stack>
                   </Box>
                 )}
 
-                {/* ── STEP 3: Subcategory & Measurement Unit ── */}
-                {currentStep === 3 && (
+                {/* ── STEP 3: Dynamic Questionnaire ── */}
+                {currentStep === 3 && currentQuestion && (
                   <Box>
-                    <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5, color: textCol, fontSize: '1.2rem' }}>
-                      Subcategory &amp; Unit 📏
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, color: mutedCol, mb: 2 }}>
-                      Pick a subcategory under <strong style={{ color: activeColor }}>{catConfig.name}</strong> and choose how to measure progress.
-                    </Typography>
-
-                    {/* Subcategories Selector */}
-                    {subcats.length > 0 && (
-                      <Box sx={{ mb: 2.5 }}>
-                        <Typography sx={{ fontSize: 10, fontWeight: 800, color: mutedCol, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Select Subcategory
-                        </Typography>
-                        <Stack direction="row" gap={0.75} flexWrap="wrap">
-                          {subcats.map((sc) => {
-                            const isSelected = subcategory.toLowerCase() === sc.id.toLowerCase();
-                            return (
-                              <Chip
-                                key={sc.id}
-                                label={sc.name}
-                                onClick={() => handleSubcategorySelect(sc.id)}
-                                variant={isSelected ? 'filled' : 'outlined'}
-                                sx={{
-                                  borderRadius: '10px',
-                                  fontWeight: 700,
-                                  fontSize: 12,
-                                  borderColor: isSelected ? activeColor : borderCol,
-                                  bgcolor: isSelected ? `${activeColor}25` : 'transparent',
-                                  color: isSelected ? textCol : mutedCol,
-                                  '&:hover': { bgcolor: `${activeColor}15` },
-                                }}
-                              />
-                            );
-                          })}
-                        </Stack>
-                      </Box>
-                    )}
-
-                    {/* Valid Units List */}
-                    <Box sx={{ mb: 1.5 }}>
-                      <Typography sx={{ fontSize: 10, fontWeight: 800, color: mutedCol, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Measurement Unit
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                      <Typography sx={{ fontSize: 11, fontWeight: 800, color: activeColor, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Question {questionIndex + 1} of {activeQuestions.length}
                       </Typography>
-                      <Stack direction="row" gap={0.75} flexWrap="wrap" mb={1}>
-                        {displayedUnits.map((u) => {
-                          const isSelected = overallTargetUnit === u;
-                          const mType = getMeasurementType(type, subcategory, u);
-                          const mMeta = MEASUREMENT_TYPE_META[mType];
-                          return (
-                            <Chip
-                              key={u}
-                              label={`${u} ${mMeta?.icon || ''}`}
-                              onClick={() => setOverallTargetUnit(u)}
-                              variant={isSelected ? 'filled' : 'outlined'}
-                              sx={{
-                                borderRadius: '10px',
-                                fontWeight: 700,
-                                fontSize: 12,
-                                borderColor: isSelected ? activeColor : borderCol,
-                                bgcolor: isSelected ? `${activeColor}20` : 'transparent',
-                                color: isSelected ? textCol : mutedCol,
-                              }}
-                            />
-                          );
-                        })}
-                      </Stack>
-
-                      {/* Option to show other category units */}
-                      <Button
+                      <Chip
+                        label={selectedSubcat?.name}
                         size="small"
-                        onClick={() => setShowAllCategoryUnits(!showAllCategoryUnits)}
-                        sx={{
-                          textTransform: 'none',
-                          fontSize: 11.5,
-                          color: activeColor,
-                          fontWeight: 700,
-                          p: 0,
-                          minWidth: 0,
-                          '&:hover': { background: 'transparent', textDecoration: 'underline' },
-                        }}
-                      >
-                        {showAllCategoryUnits
-                          ? '← Show recommended units for this subcategory'
-                          : `Show other units in ${catConfig.name}`}
-                      </Button>
+                        sx={{ fontWeight: 700, fontSize: 11, bgcolor: `${activeColor}18`, color: activeColor }}
+                      />
                     </Box>
 
-                    {/* Custom Unit Field */}
-                    <TextField
-                      label="Custom Unit Name"
-                      value={overallTargetUnit}
-                      onChange={(e) => setOverallTargetUnit(e.target.value)}
-                      size="small"
-                      fullWidth
-                      sx={{ mt: 1, '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                    <GoalQuestionnaireStep
+                      question={currentQuestion}
+                      value={answers[currentQuestion.id]}
+                      onChange={(val) => handleAnswerChange(currentQuestion.id, val)}
+                      color={activeColor}
+                      isDark={isDark}
                     />
                   </Box>
                 )}
 
-                {/* ── STEP 4: Target Value & Measurement Type Explanation ── */}
+                {/* ── STEP 4: Final Goal Review & Launch ── */}
                 {currentStep === 4 && (
                   <Box>
-                    <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: textCol, fontSize: '1.2rem' }}>
-                      Define target value 🎯
+                    <Typography variant="h5" sx={{ fontWeight: 900, mb: 0.5, color: textCol, fontSize: '1.25rem' }}>
+                      Review &amp; Launch Goal 🚀
                     </Typography>
-                    <Typography sx={{ fontSize: 12.5, color: mutedCol, mb: 2 }}>
-                      Specify the numerical target you aim to reach in <strong>{overallTargetUnit}</strong>.
+                    <Typography sx={{ fontSize: 12, color: mutedCol, mb: 2.5 }}>
+                      Confirm your goal details before saving to your space:
                     </Typography>
 
                     <Stack spacing={2.5}>
-                      <TextField
-                        label={`Target Value (${overallTargetUnit})`}
-                        type="number"
-                        value={overallTargetValue}
-                        onChange={(e) => setOverallTargetValue(e.target.value === '' ? '' : Number(e.target.value))}
-                        fullWidth
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '14px', fontSize: '1.1rem', fontWeight: 700 } }}
-                      />
-
-                      {/* Measurement Type Explanation Badge */}
-                      <Box
-                        sx={{
-                          p: 2,
-                          borderRadius: '16px',
-                          bgcolor: isDark ? `${activeColor}15` : `${activeColor}10`,
-                          border: `1px solid ${activeColor}30`,
-                        }}
-                      >
-                        <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
-                          <Typography sx={{ fontSize: 16 }}>{mTypeMeta?.icon}</Typography>
-                          <Typography sx={{ fontSize: 12, fontWeight: 800, color: activeColor, textTransform: 'uppercase' }}>
-                            Measurement Type: {mTypeMeta?.label}
-                          </Typography>
-                        </Stack>
-                        <Typography sx={{ fontSize: 11.5, color: textCol, fontWeight: 500 }}>
-                          Progress Formula: <strong style={{ color: activeColor }}>{mTypeMeta?.formula}</strong>
+                      {/* Goal Title Input */}
+                      <Box>
+                        <Typography sx={{ fontSize: 11.5, fontWeight: 800, color: mutedCol, mb: 0.75, textTransform: 'uppercase' }}>
+                          Goal Title
                         </Typography>
+                        <TextField
+                          fullWidth
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          placeholder="e.g. Save PKR 100,000 for emergency fund"
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              borderRadius: '16px',
+                              fontSize: '1.05rem',
+                              fontWeight: 800,
+                            },
+                          }}
+                        />
                       </Box>
 
-                      {/* Starting level for snapshot / current_value mode */}
-                      {progressMode === 'current_value' && (
-                        <Box>
-                          <Typography sx={{ fontSize: 12, fontWeight: 700, color: textCol, mb: 1 }}>
-                            {aiStartValueLabel || 'What level are you starting from?'}
-                          </Typography>
-                          <TextField
-                            label={`Current Starting level (${overallTargetUnit})`}
-                            type="number"
-                            value={startValue}
-                            onChange={(e) => setStartValue(e.target.value === '' ? '' : Number(e.target.value))}
-                            fullWidth
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Box>
-                      )}
-                    </Stack>
-                  </Box>
-                )}
+                      {/* Goal Parameters Summary Card */}
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          p: 2.25,
+                          borderRadius: '20px',
+                          bgcolor: isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(248, 250, 252, 0.8)',
+                          border: `1.5px solid ${activeColor}40`,
+                        }}
+                      >
+                        <Stack spacing={1.5}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                              <Category sx={{ fontSize: 18, color: activeColor }} />
+                              <Typography sx={{ fontSize: 12, fontWeight: 700, color: mutedCol }}>Category</Typography>
+                            </Stack>
+                            <Chip
+                              label={`${activeCategoryConfig.emoji} ${activeCategoryConfig.name} • ${selectedSubcat?.name || selectedSubcatId}`}
+                              size="small"
+                              sx={{ fontWeight: 800, bgcolor: `${activeColor}20`, color: activeColor }}
+                            />
+                          </Stack>
 
-                {/* ── STEP 5: Target Date & Presets ── */}
-                {currentStep === 5 && (
-                  <Box>
-                    <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: textCol, fontSize: '1.2rem' }}>
-                      Target deadline 📅
-                    </Typography>
-                    <Typography sx={{ fontSize: 12.5, color: mutedCol, mb: 2.5 }}>
-                      When do you plan to achieve this goal?
-                    </Typography>
+                          <Divider sx={{ borderColor: borderCol }} />
 
-                    <Stack direction="row" gap={1} mb={2.5}>
-                      {datePresets.map((preset) => {
-                        const isPresetActive = dueDate?.toDateString() === preset.date.toDateString();
-                        return (
-                          <Chip
-                            key={preset.label}
-                            label={preset.label}
-                            onClick={() => selectDatePreset(preset.date)}
-                            sx={{
-                              borderRadius: '10px',
-                              fontWeight: 700,
-                              borderColor: isPresetActive ? activeColor : borderCol,
-                              bgcolor: isPresetActive ? `${activeColor}15` : 'transparent',
-                              color: isPresetActive ? textCol : mutedCol,
-                            }}
-                          />
-                        );
-                      })}
-                    </Stack>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                              <Timeline sx={{ fontSize: 18, color: activeColor }} />
+                              <Typography sx={{ fontSize: 12, fontWeight: 700, color: mutedCol }}>Target Metric</Typography>
+                            </Stack>
+                            <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: textCol }}>
+                              {targetValue !== '' ? `${targetValue} ${targetUnit}` : `Custom (${targetUnit})`}
+                            </Typography>
+                          </Stack>
 
-                    <DatePicker
-                      value={dueDate}
-                      onChange={(val) => setDueDate(val as Date | null)}
-                      slotProps={{
-                        textField: {
-                          fullWidth: true,
-                          sx: {
-                            '& .MuiOutlinedInput-root': {
-                              borderRadius: '14px',
+                          <Divider sx={{ borderColor: borderCol }} />
+
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                              <CalendarMonth sx={{ fontSize: 18, color: activeColor }} />
+                              <Typography sx={{ fontSize: 12, fontWeight: 700, color: mutedCol }}>Deadline</Typography>
+                            </Stack>
+                            <Typography sx={{ fontSize: 13, fontWeight: 800, color: textCol }}>
+                              {dueDate ? dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No fixed deadline'}
+                            </Typography>
+                          </Stack>
+                        </Stack>
+                      </Paper>
+
+                      {/* Optional Target Value / Deadline Adjustment */}
+                      <Stack direction="row" spacing={1.5}>
+                        <TextField
+                          label={`Target Value (${targetUnit})`}
+                          type="number"
+                          value={targetValue}
+                          onChange={(e) => setTargetValue(e.target.value === '' ? '' : Number(e.target.value))}
+                          size="small"
+                          fullWidth
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                        />
+                        <DatePicker
+                          label="Deadline Date"
+                          value={dueDate}
+                          onChange={(dVal) => setDueDate(dVal as Date | null)}
+                          slotProps={{
+                            textField: {
+                              size: 'small',
+                              fullWidth: true,
+                              sx: { '& .MuiOutlinedInput-root': { borderRadius: '12px' } },
                             },
-                          },
-                        },
-                      }}
-                    />
+                          }}
+                        />
+                      </Stack>
+                    </Stack>
                   </Box>
                 )}
               </motion.div>
@@ -902,38 +807,53 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
         <Divider sx={{ mx: 3, borderColor: borderCol }} />
 
         {/* Footer Navigation */}
-        <DialogActions sx={{ px: 3, pb: 3, pt: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {currentStep > 1 && !aiLoading && (
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            pt: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            justify: 'space-between',
+          }}
+        >
+          {currentStep > 1 && !saving && (
             <Button
-              onClick={handleBack}
+              onClick={() => {
+                if (currentStep === 3) {
+                  handleQuestionBack();
+                } else if (currentStep === 4) {
+                  if (activeQuestions.length > 0) {
+                    setSlideDir(-1);
+                    setCurrentStep(3);
+                  } else {
+                    setSlideDir(-1);
+                    setCurrentStep(2);
+                  }
+                } else {
+                  setSlideDir(-1);
+                  setCurrentStep((prev) => (prev - 1) as 1 | 2);
+                }
+              }}
               startIcon={<ArrowBack />}
               sx={{
                 textTransform: 'none',
                 color: mutedCol,
                 fontWeight: 700,
                 fontSize: 12.5,
-                '&:hover': {
-                  background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                  color: textCol,
-                },
+                '&:hover': { color: textCol },
               }}
             >
               Back
             </Button>
           )}
+
           <Box flex={1} />
-          {!aiLoading && (
+
+          {!saving && currentStep === 3 && (
             <Button
               variant="contained"
-              onClick={handleNext}
-              disabled={
-                (currentStep === 1 && !title.trim()) ||
-                (currentStep === 2 && !type) ||
-                (currentStep === 3 && (!subcategory || !overallTargetUnit)) ||
-                (currentStep === 4 && overallTargetValue === '') ||
-                (currentStep === 4 && progressMode === 'current_value' && startValue === '') ||
-                (currentStep === 5 && !dueDate)
-              }
+              onClick={handleQuestionNext}
               sx={{
                 textTransform: 'none',
                 fontWeight: 800,
@@ -943,14 +863,32 @@ export default function GoalModal({ open, onClose, goal, defaultType: _defaultTy
                 px: 3.5,
                 py: 0.9,
                 boxShadow: `0 4px 14px ${activeColor}40`,
-                transition: 'all 0.2s',
-                '&:hover': {
-                  opacity: 0.92,
-                  boxShadow: `0 6px 18px ${activeColor}50`,
-                },
+                '&:hover': { opacity: 0.92 },
               }}
             >
-              {currentStep === 5 ? (goal ? 'Update Goal' : 'Launch Goal 🚀') : 'Next'}
+              {questionIndex < activeQuestions.length - 1 ? 'Next Question' : 'Review Goal'}
+            </Button>
+          )}
+
+          {!saving && currentStep === 4 && (
+            <Button
+              variant="contained"
+              onClick={handleSaveGoal}
+              disabled={!title.trim()}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 800,
+                borderRadius: '14px',
+                background: `linear-gradient(135deg, ${activeColor} 0%, ${activeColor}cc 100%)`,
+                color: '#fff',
+                px: 4,
+                py: 1,
+                fontSize: '0.95rem',
+                boxShadow: `0 6px 18px ${activeColor}40`,
+                '&:hover': { opacity: 0.92 },
+              }}
+            >
+              {goal ? 'Update Goal' : 'Launch Goal 🚀'}
             </Button>
           )}
         </DialogActions>

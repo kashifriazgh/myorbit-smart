@@ -48,13 +48,32 @@ import { useAuth } from '../../lib/context/userContext';
 import { useTodoContext } from '../../lib/context/todoContext';
 import { useSchedules } from '../../lib/context/SchedulesContext';
 import { GoalType, GoalStep, GoalStepStatus, Goal } from '../../lib/interface';
+import { calculateGoalOverallProgress } from '@/app/lib/utils/goalProgress';
 import GoalModal from '../../components/goals/GoalModal';
 import MilestoneList from '../../components/goals/MilestoneList';
 import MilestoneDetailSheet from '../../components/goals/MilestoneDetailSheet';
 import AISuggestMilestonesModal from '../../components/goals/AISuggestMilestonesModal';
-import CreateTrackerModal from '../../components/goals/CreateTrackerModal';
-import TrackerView from '../../components/goals/TrackerView';
 import AddMoney from '../../components/finance/TotalCashSnapshot/AddMoney';
+
+import SavingsTemplate from '@/app/components/goals/templates/SavingsTemplate';
+import ExpensesTemplate from '@/app/components/goals/templates/ExpensesTemplate';
+import IncomeTemplate from '@/app/components/goals/templates/IncomeTemplate';
+import DebtTemplate from '@/app/components/goals/templates/DebtTemplate';
+import InvestTemplate from '@/app/components/goals/templates/InvestTemplate';
+
+import FitnessTemplate from '@/app/components/goals/templates/FitnessTemplate';
+import NutritionTemplate from '@/app/components/goals/templates/NutritionTemplate';
+import WeightTemplate from '@/app/components/goals/templates/WeightTemplate';
+import SleepTemplate from '@/app/components/goals/templates/SleepTemplate';
+import MedicalTemplate from '@/app/components/goals/templates/MedicalTemplate';
+
+import CoursesTemplate from '@/app/components/goals/templates/CoursesTemplate';
+import ReadingTemplate from '@/app/components/goals/templates/ReadingTemplate';
+
+import BuildHabitTemplate from '@/app/components/goals/templates/BuildHabitTemplate';
+import QuitHabitTemplate from '@/app/components/goals/templates/QuitHabitTemplate';
+import DailyRoutineTemplate from '@/app/components/goals/templates/DailyRoutineTemplate';
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -564,87 +583,7 @@ function StatStrip({
   );
 }
 
-// ─── AI Banner ────────────────────────────────────────────────────────────────
 
-function AIBanner({
-  typeColor,
-  isDark,
-  onAnalyze,
-}: {
-  typeColor: string;
-  isDark: boolean;
-  onAnalyze: () => void;
-}) {
-  return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.5,
-        p: '12px 14px',
-        borderRadius: '14px',
-        background: isDark ? `${typeColor}18` : `${typeColor}12`,
-        border: `1px solid ${typeColor}35`,
-        mb: 2.5,
-      }}
-    >
-      <Box
-        sx={{
-          width: 36,
-          height: 36,
-          borderRadius: '10px',
-          background: typeColor,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <AutoAwesome sx={{ fontSize: 16, color: '#fff' }} />
-      </Box>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography
-          sx={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: isDark ? '#f1f5f9' : '#111',
-            lineHeight: 1.2,
-          }}
-        >
-          Improve this goal with AI
-        </Typography>
-        <Typography
-          sx={{
-            fontSize: 11,
-            color: isDark ? '#94a3b8' : '#6b7280',
-            mt: '2px',
-          }}
-        >
-          Get milestone suggestions & analysis
-        </Typography>
-      </Box>
-      <Button
-        onClick={onAnalyze}
-        size="small"
-        sx={{
-          flexShrink: 0,
-          background: typeColor,
-          color: '#fff',
-          fontWeight: 600,
-          fontSize: 11,
-          textTransform: 'none',
-          borderRadius: '8px',
-          px: 1.5,
-          py: 0.75,
-          whiteSpace: 'nowrap',
-          '&:hover': { background: typeColor, opacity: 0.88 },
-        }}
-      >
-        Analyze →
-      </Button>
-    </Box>
-  );
-}
 
 // ─── Section Header ───────────────────────────────────────────────────────────
 
@@ -810,7 +749,7 @@ const GoalDetailInner: React.FC = () => {
   const { user } = useAuth();
   const { todos, addTodo, updateTodo } = useTodoContext();
   const { allSchedules, addSchedule } = useSchedules();
-  const { goals, deleteGoal, addGoalStep, updateGoal: _updateGoal, saveGoalTracker, removeGoalTracker, addTrackerCheckIn, loading: goalsLoading } = useGoals();
+  const { goals, deleteGoal, addGoalStep, updateGoal: _updateGoal, saveGoalTracker: _saveGoalTracker, removeGoalTracker: _removeGoalTracker, addTrackerCheckIn: _addTrackerCheckIn, loading: goalsLoading } = useGoals();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
@@ -881,9 +820,8 @@ const GoalDetailInner: React.FC = () => {
   const [savingMilestone, setSavingMilestone] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [firstView, setFirstView] = useState(false);
+  const [_firstView, setFirstView] = useState(false);
   const [aiSuggestOpen, setAiSuggestOpen] = useState(false);
-  const [trackerModalOpen, setTrackerModalOpen] = useState(false);
   const [addMoneyOpen, setAddMoneyOpen] = useState(false);
 
   // States for adding linked Task
@@ -1024,6 +962,18 @@ const GoalDetailInner: React.FC = () => {
     if (!dueDateDate) return 0;
     return Math.ceil((dueDateDate.getTime() - Date.now()) / DAY_IN_MS);
   }, [dueDateDate]);
+
+  const overallProgress = useMemo(() => {
+    return calculateGoalOverallProgress(goal, todos, allSchedules);
+  }, [goal, todos, allSchedules]);
+
+  useEffect(() => {
+    if (goal?.id && typeof overallProgress === 'number' && goal.progress !== overallProgress) {
+      _updateGoal(goal.id, { progress: overallProgress }).catch((err) =>
+        console.warn('Failed to sync calculated goal progress:', err)
+      );
+    }
+  }, [goal?.id, goal?.progress, overallProgress, _updateGoal]);
 
   useEffect(() => {
     if (!goal && goals.length > 0) router.push('/goals');
@@ -1641,7 +1591,7 @@ const GoalDetailInner: React.FC = () => {
             )}
           </Box>
 
-          <HeroRing pct={goal.progress ?? 0} />
+          <HeroRing pct={overallProgress} />
         </Box>
       </Box>
 
@@ -1668,14 +1618,7 @@ const GoalDetailInner: React.FC = () => {
           isDark={isDark}
         />
 
-        {/* AI banner — first view or always show */}
-        {firstView && (
-          <AIBanner
-            typeColor={typeColor}
-            isDark={isDark}
-            onAnalyze={() => alert('AI suggestion feature coming soon!')}
-          />
-        )}
+
 
         {/* Description (full) */}
         {goal.description && (
@@ -1697,70 +1640,103 @@ const GoalDetailInner: React.FC = () => {
           </>
         )}
 
-        {/* Milestones / Steps — timeline style */}
-        <SectionTitle
-          isDark={isDark}
-          action={
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              {!goal.trackerEnabled && steps.length === 0 && (
-                <Button
-                  size="small"
-                  onClick={() => setTrackerModalOpen(true)}
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: typeColor,
-                  }}
-                >
-                  Create Tracker
-                </Button>
-              )}
-            </Stack>
-          }
-        >
-          {goal.trackerEnabled ? 'Tracker Setup' : `Steps & milestones (${doneCnt}/${totalCnt})`}
-        </SectionTitle>
-        {goal.trackerEnabled && goal.tracker ? (
-          <TrackerView
-            goalId={goal.id!}
-            goalTitle={goal.title}
-            tracker={goal.tracker}
-            activityVerb={goal.aiActivityVerb}
-            verb={goal.aiVerb}
-            progressMode={goal.progressMode}
-            direction={goal.direction}
-            startValue={goal.startValue}
-            typeColor={typeColor}
-            isDark={isDark}
-            onCheckIn={async (updatedCheckIn) => {
-              await addTrackerCheckIn(goal.id!, updatedCheckIn);
-            }}
-            onRemove={async () => {
-              if (confirm('Are you sure you want to remove the tracker? All check-in history will be deleted.')) {
-                await removeGoalTracker(goal.id!);
-              }
-            }}
-          />
-        ) : (
-          <MilestoneList
-            goalId={goal.id!}
-            steps={steps}
-            goalTargetValue={goal.overallTargetValue}
-            onStepsChange={() => {
-              /* Firestore snapshot updates automatically */
-            }}
-            onSelectStep={(step) => {
-              setSelectedStepId(step.id);
-              setSheetOpen(true);
-            }}
-            onAddStep={openAddMilestoneDialog}
-            onTriggerAISuggest={() => setAiSuggestOpen(true)}
-            onCreateTracker={() => setTrackerModalOpen(true)}
-            onOpenAddMoney={() => setAddMoneyOpen(true)}
-            typeColor={typeColor}
-          />
+        {/* Finance Subcategory Milestone Template */}
+        {goal.type === 'finance' && (
+          <Box sx={{ mb: 4 }}>
+            <SectionTitle isDark={isDark}>Financial Milestone Tracking</SectionTitle>
+            {(goal.subcategory === 'Saving' || goal.subcategory === 'Savings') && (
+              <SavingsTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} onOpenAddMoney={() => setAddMoneyOpen(true)} />
+            )}
+            {(goal.subcategory === 'Reduce Expenses' || goal.subcategory === 'Expenses') && (
+              <ExpensesTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Increase Income' || goal.subcategory === 'Income') && (
+              <IncomeTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Manage Debt' || goal.subcategory === 'Debt') && (
+              <DebtTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Invest' || goal.subcategory === 'Investing') && (
+              <InvestTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+          </Box>
         )}
+
+        {/* Health Subcategory Milestone Template */}
+        {goal.type === 'health' && (
+          <Box sx={{ mb: 4 }}>
+            <SectionTitle isDark={isDark}>Health & Wellness Tracking</SectionTitle>
+            {(goal.subcategory === 'Fitness' || goal.subcategory === 'Walking' || goal.subcategory === 'Fitness & Exercise') && (
+              <FitnessTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Nutrition' || goal.subcategory === 'Diet') && (
+              <NutritionTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Weight' || goal.subcategory === 'Weight Loss' || goal.subcategory === 'Weight Gain') && (
+              <WeightTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Sleep' || goal.subcategory === 'Sleep Schedule') && (
+              <SleepTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Medical Care Plan' || goal.subcategory === 'Medical' || goal.subcategory === 'Medical Care') && (
+              <MedicalTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+          </Box>
+        )}
+
+        {/* Learning Subcategory Milestone Template */}
+        {goal.type === 'learning' && (
+          <Box sx={{ mb: 4 }}>
+            <SectionTitle isDark={isDark}>Learning & Skill Progress</SectionTitle>
+            {(goal.subcategory === 'Courses' || goal.subcategory === 'Course' || goal.subcategory === 'Skills' || goal.subcategory === 'Skill') && (
+              <CoursesTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Reading' || goal.subcategory === 'Book' || goal.subcategory === 'Books') && (
+              <ReadingTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+          </Box>
+        )}
+
+        {/* Habit Subcategory Milestone Template */}
+        {goal.type === 'habit' && (
+          <Box sx={{ mb: 4 }}>
+            <SectionTitle isDark={isDark}>Habit & Routine Tracking</SectionTitle>
+            {(goal.subcategory === 'Build' || goal.subcategory === 'Build Habit') && (
+              <BuildHabitTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Quit' || goal.subcategory === 'Quit Habit') && (
+              <QuitHabitTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+            {(goal.subcategory === 'Daily Routine' || goal.subcategory === 'Routine') && (
+              <DailyRoutineTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
+            )}
+          </Box>
+        )}
+
+
+
+
+        {/* Milestones / Steps — timeline style */}
+        <SectionTitle isDark={isDark}>
+          {`Steps & milestones (${doneCnt}/${totalCnt})`}
+        </SectionTitle>
+
+        <MilestoneList
+          goalId={goal.id!}
+          steps={steps}
+          goalTargetValue={goal.overallTargetValue}
+          onStepsChange={() => {
+            /* Firestore snapshot updates automatically */
+          }}
+          onSelectStep={(step) => {
+            setSelectedStepId(step.id);
+            setSheetOpen(true);
+          }}
+          onAddStep={openAddMilestoneDialog}
+          onTriggerAISuggest={() => setAiSuggestOpen(true)}
+          onOpenAddMoney={() => setAddMoneyOpen(true)}
+          typeColor={typeColor}
+        />
 
         <AddMoney
           externalOpen={addMoneyOpen}
@@ -3653,24 +3629,6 @@ const GoalDetailInner: React.FC = () => {
         onAcceptMilestone={async ({ title, description, endDate }) => {
           await addGoalStep(goal.id!, { title, description: description || undefined, weight: 1, endDate });
         }}
-      />
-
-      {/* ── Create Tracker Modal ── */}
-      <CreateTrackerModal
-        open={trackerModalOpen}
-        onClose={() => setTrackerModalOpen(false)}
-        goal={{
-          title: goal.title,
-          dueDate: dueDateDate ? dueDateDate.toISOString().split('T')[0] : undefined,
-          overallTargetValue: goal.overallTargetValue,
-          overallTargetUnit: goal.overallTargetUnit || goal.aiSuggestedUnit,
-        }}
-        activityVerb={goal.aiActivityVerb}
-        verb={goal.aiVerb}
-        suggestedUnit={goal.aiSuggestedUnit}
-        typeColor={typeColor}
-        isDark={isDark}
-        onConfirm={(tracker) => saveGoalTracker(goal.id!, tracker)}
       />
     </Box>
   );
