@@ -24,6 +24,8 @@ import {
   Checklist as TodoIcon,
   Flag as CheckpointIcon,
   Bookmark as BookmarkIcon,
+  LockClock as LockClockIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -65,19 +67,42 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
   const { todos, addTodo, updateTodo } = useTodoContext();
   const { allSchedules, addSchedule } = useSchedules();
 
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const answers = goal.questionnaireAnswers || {};
 
-  const bookTitle = goal.title || String(answers.book_title || answers.reading_title || 'Atomic Habits');
-  const author = String(answers.author || answers.writer || 'James Clear');
-  const readingFormat = String(answers.format || answers.reading_format || 'Book');
+  const materialType = String(answers.material_type || answers.format || 'Book');
+  const bookTitle = goal.title || String(answers.material_name || answers.reading_title || answers.book_title || 'Reading Item');
+  const author = String(answers.author || answers.writer || '');
 
-  const unitStr = String(goal.overallTargetUnit || answers.unit || 'pages');
-  const targetPages = Number(goal.overallTargetValue || answers.target_pages || answers.target_amount || 320);
-  const [currentPages, setCurrentPages] = useState<number>(goal.currentValue || Number(answers.current_page || 140));
+  // Progress Unit & Target extraction
+  const trackByUnit = useMemo(() => {
+    const rawTrack = String(answers.track_by || goal.overallTargetUnit || goal.unit || 'pages').toLowerCase();
+    return rawTrack.includes('chapter') ? 'chapters' : 'pages';
+  }, [answers.track_by, goal.overallTargetUnit, goal.unit]);
 
-  const dailyReadingTime = String(answers.reading_time || answers.daily_time || '09:30 PM');
+  const targetPages = Number(
+    goal.overallTargetValue ||
+    answers.total_pages ||
+    answers.total_chapters ||
+    answers.target_pages ||
+    0
+  );
 
-  // Reading Logs State
+  // Daily target pages/chapters user wants to read per session
+  const dailyTargetNum = Number(
+    answers.daily_target_qty ||
+    answers.daily_pages ||
+    answers.daily_chapters ||
+    answers.daily_reading_target ||
+    0
+  );
+  const dailyTargetText = dailyTargetNum > 0 ? String(dailyTargetNum) : 'some';
+
+  const dailyReadingTime = String(answers.preferred_time || answers.reading_time || 'Flexible');
+
+  const [currentPages, setCurrentPages] = useState<number>(goal.currentValue || 0);
+
+  // Reset dummy data: strict fallback to goal.readingLogs || []
   const [readingLogs, setReadingLogs] = useState<ReadingLog[]>(() => {
     if (Array.isArray(goal.readingLogs) && goal.readingLogs.length > 0) {
       return goal.readingLogs.map((l, i) => ({
@@ -87,13 +112,10 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
         chapterNote: l.chapterNote,
       }));
     }
-    return [
-      { id: '1', date: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0], pagesRead: 30, chapterNote: 'Read Chapter 1 & 2 on Habit Loops' },
-      { id: '2', date: new Date(Date.now() - 86400000).toISOString().split('T')[0], pagesRead: 25, chapterNote: 'Identity-based Habits insights' },
-    ];
+    return [];
   });
 
-  // Checkpoints / Key Milestones State
+  // Reset dummy data: strict fallback to goal.learningCheckpoints || []
   const [checkpoints, setCheckpoints] = useState<ReadingCheckpoint[]>(() => {
     if (Array.isArray(goal.learningCheckpoints) && goal.learningCheckpoints.length > 0) {
       return goal.learningCheckpoints.map((c, i) => ({
@@ -102,13 +124,12 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
         done: !!c.done,
       }));
     }
-    return [
-      { id: '1', label: 'Finish Part 1: The Fundamentals', done: true },
-      { id: '2', label: 'Finish Part 2: The 1st Law (Make It Obvious)', done: true },
-      { id: '3', label: 'Finish Part 3: The 2nd Law (Make It Attractive)', done: false },
-      { id: '4', label: 'Finish Book & write summary notes', done: false },
-    ];
+    return [];
   });
+
+  // Check if today's reading progress has already been logged
+  const todayLog = useMemo(() => readingLogs.find((l) => l.date === todayStr), [readingLogs, todayStr]);
+  const hasLoggedToday = Boolean(todayLog);
 
   // Modal States
   const [logModalOpen, setLogModalOpen] = useState(false);
@@ -125,13 +146,21 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
   const [schedKind, setSchedKind] = useState<'schedule' | 'todo'>('schedule');
   const [schedTitle, setSchedTitle] = useState('');
   const [schedTime, setSchedTime] = useState('21:30');
-  const [schedDate, setSchedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [schedDate, setSchedDate] = useState(todayStr);
   const [savingSched, setSavingSched] = useState(false);
 
+  // -------------------------------------------------------------
+  // Progress Calculation Rule:
+  // - If targetPages > 0: progress % = (currentPages / targetPages) * 100
+  // - If NO targetPages (0/blank): accumulate progress by 3% for pages or 8.66% for chapters on every day log!
+  // -------------------------------------------------------------
   const progressPercent = useMemo(() => {
-    if (!targetPages || targetPages <= 0) return 0;
-    return Math.max(0, Math.min(100, Math.round((currentPages / targetPages) * 100)));
-  }, [currentPages, targetPages]);
+    if (targetPages > 0) {
+      return Math.max(0, Math.min(100, Math.round((currentPages / targetPages) * 100)));
+    }
+    // No target set -> return stored goal progress
+    return Math.max(0, Math.min(100, Math.round(goal.progress || 0)));
+  }, [currentPages, targetPages, goal.progress]);
 
   const checkpointsDoneCnt = useMemo(() => checkpoints.filter((c) => c.done).length, [checkpoints]);
 
@@ -145,10 +174,10 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
     }
   };
 
-  // Quick Log Reading
+  // Quick Log Reading Progress
   const handleSaveLog = async (addPagesVal?: number) => {
-    const val = typeof addPagesVal === 'number' ? addPagesVal : typeof pagesInput === 'number' ? pagesInput : 0;
-    if (val <= 0 || !goal.id) return;
+    const val = typeof addPagesVal === 'number' ? addPagesVal : typeof pagesInput === 'number' ? pagesInput : (dailyTargetNum > 0 ? dailyTargetNum : 1);
+    if (val <= 0 || !goal.id || hasLoggedToday) return;
     setSavingLog(true);
     try {
       const newTotal = currentPages + val;
@@ -156,14 +185,28 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
 
       const newLog: ReadingLog = {
         id: String(Date.now()),
-        date: new Date().toISOString().split('T')[0],
+        date: todayStr,
         pagesRead: val,
         chapterNote: noteInput.trim() || undefined,
       };
-      const updatedLogs = [newLog, ...readingLogs];
+      const updatedLogs = [newLog, ...readingLogs.filter((l) => l.date !== todayStr)];
       setReadingLogs(updatedLogs);
 
-      await persistReadingData({ currentValue: newTotal, readingLogs: updatedLogs });
+      const updates: Partial<Goal> = {
+        currentValue: newTotal,
+        readingLogs: updatedLogs,
+      };
+
+      // Progress accumulation if no total target pages/chapters were provided
+      if (!targetPages || targetPages <= 0) {
+        const incrementPct = trackByUnit === 'chapters' ? 8.66 : 3.0;
+        const newProgress = Math.min(100, Math.round(((goal.progress || 0) + incrementPct) * 100) / 100);
+        updates.progress = newProgress;
+      } else {
+        updates.progress = Math.min(100, Math.round((newTotal / targetPages) * 100));
+      }
+
+      await persistReadingData(updates);
       setLogModalOpen(false);
       setPagesInput('');
       setNoteInput('');
@@ -172,6 +215,13 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
     } finally {
       setSavingLog(false);
     }
+  };
+
+  const handleDeleteLog = async (logId: string) => {
+    if (!confirm('Are you sure you want to delete this reading log entry?')) return;
+    const updated = readingLogs.filter((l) => l.id !== logId);
+    setReadingLogs(updated);
+    await persistReadingData({ readingLogs: updated });
   };
 
   // Toggle Checkpoint
@@ -203,6 +253,12 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
     }
   };
 
+  const handleDeleteCheckpoint = async (id: string) => {
+    const updated = checkpoints.filter((c) => c.id !== id);
+    setCheckpoints(updated);
+    await persistReadingData({ learningCheckpoints: updated });
+  };
+
   // Schedule Routine or Task
   const handleScheduleRoutine = async () => {
     if (!schedTitle.trim() || !user || !goal.id) return;
@@ -211,7 +267,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
       if (schedKind === 'schedule') {
         await addSchedule({
           title: schedTitle.trim(),
-          date: schedDate || new Date().toISOString().split('T')[0],
+          date: schedDate || todayStr,
           startTime: schedTime || '21:30',
           endTime: '22:00',
           projectId: goal.projectId || '',
@@ -297,7 +353,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
             </Box>
             <Box>
               <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-                Reading Tracker · {readingFormat}
+                Reading Tracker · {materialType}
               </Typography>
               <Typography sx={{ fontSize: 18, fontWeight: 800, color: textPrimary, mt: 0.2 }}>
                 {bookTitle}
@@ -320,12 +376,20 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
         <Box sx={{ mt: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}>
             <Typography sx={{ fontSize: 28, fontWeight: 800, color: textPrimary, fontFamily: 'monospace' }}>
-              {currentPages.toLocaleString()} <span style={{ fontSize: 14, fontWeight: 600, color: textMuted }}>/ {targetPages} {unitStr}</span>
+              {currentPages.toLocaleString()}{' '}
+              <span style={{ fontSize: 14, fontWeight: 600, color: textMuted }}>
+                {targetPages > 0 ? `/ ${targetPages} ${trackByUnit}` : `${trackByUnit} read`}
+              </span>
             </Typography>
             <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#3b82f6' }}>
-              {targetPages - currentPages > 0 ? `${targetPages - currentPages} ${unitStr} left` : 'Completed!'}
+              {targetPages > 0
+                ? targetPages - currentPages > 0
+                  ? `${targetPages - currentPages} ${trackByUnit} left`
+                  : 'Completed!'
+                : `+${trackByUnit === 'chapters' ? '8.66%' : '3%'} / log`}
             </Typography>
           </Box>
+
           <Box sx={{ height: 8, borderRadius: 99, bgcolor: isDark ? '#334155' : '#f1f5f9', overflow: 'hidden' }}>
             <Box
               sx={{
@@ -339,12 +403,12 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           </Box>
         </Box>
 
-        {/* Daily Routine Pill */}
+        {/* Preferred Routine Pill */}
         <Box sx={{ mt: 3, p: 1.5, borderRadius: '16px', bgcolor: isDark ? '#0c4a6e' : '#f0f9ff', display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <ClockIcon sx={{ color: '#0284c7', fontSize: 22 }} />
           <Box>
             <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase' }}>
-              Daily Reading Routine
+              Preferred Reading Time
             </Typography>
             <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
               {dailyReadingTime}
@@ -352,40 +416,66 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           </Box>
         </Box>
 
-        {/* Quick Log Presets */}
-        <Box sx={{ mt: 2.5 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 600, color: textMuted, textTransform: 'uppercase', mb: 1 }}>
-            Quick Log Reading Pages Today
+        {/* ------------------------------------------------------------- */}
+        {/* DAILY READING PROMPT & LOG CONTROL (REQ: Have U read [x] pages today?) */}
+        {/* ------------------------------------------------------------- */}
+        <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${cardBorder}` }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, mb: 1.5 }}>
+            Have you read {dailyTargetText} {trackByUnit} today?
           </Typography>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            {[10, 20, 30, 50].map((num) => (
-              <Button
-                key={num}
-                variant="outlined"
-                size="small"
-                onClick={() => handleSaveLog(num)}
-                fullWidth
-                sx={{
-                  borderRadius: '12px',
-                  textTransform: 'none',
-                  fontWeight: 700,
-                  borderColor: isDark ? '#334155' : '#cbd5e1',
-                  color: textPrimary,
-                  '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.08)', borderColor: '#3b82f6' },
-                }}
-              >
-                +{num} pgs
-              </Button>
-            ))}
+
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
             <Button
               variant="contained"
               size="small"
-              onClick={() => setLogModalOpen(true)}
-              sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 700, bgcolor: '#3b82f6', '&:hover': { bgcolor: '#2563eb' } }}
+              disabled={hasLoggedToday}
+              onClick={() => handleSaveLog(dailyTargetNum > 0 ? dailyTargetNum : 10)}
+              startIcon={hasLoggedToday ? <LockClockIcon sx={{ fontSize: 16 }} /> : <AddIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                borderRadius: '12px',
+                textTransform: 'none',
+                fontWeight: 800,
+                fontSize: 12.5,
+                bgcolor: '#3b82f6',
+                '&:hover': { bgcolor: '#2563eb' },
+                '&.Mui-disabled': {
+                  bgcolor: isDark ? '#334155' : '#cbd5e1',
+                  color: textMuted,
+                },
+              }}
             >
-              Custom
+              {hasLoggedToday ? 'Logged for Today' : `Yes, I read ${dailyTargetText} ${trackByUnit} today`}
+            </Button>
+
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={hasLoggedToday}
+              onClick={() => setLogModalOpen(true)}
+              sx={{
+                borderRadius: '12px',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: 12,
+                borderColor: cardBorder,
+                color: textPrimary,
+              }}
+            >
+              Custom Amount / Note
             </Button>
           </Box>
+
+          {hasLoggedToday ? (
+            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#10b981', mt: 1.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              ✅ Today&apos;s reading logged ({todayLog?.pagesRead} {trackByUnit}) · Disabled until tomorrow
+            </Typography>
+          ) : (
+            <Typography sx={{ fontSize: 11.5, color: textMuted, mt: 1 }}>
+              {targetPages <= 0
+                ? `Log once per day to increase progress (+${trackByUnit === 'chapters' ? '8.66%' : '3%'}).`
+                : 'Log once per day. Option disables after logging until tomorrow.'}
+            </Typography>
+          )}
         </Box>
       </Box>
 
@@ -398,14 +488,6 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
               Reading History & Notes ({readingLogs.length})
             </Typography>
           </Box>
-          <Button
-            size="small"
-            onClick={() => setLogModalOpen(true)}
-            startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#3b82f6' }}
-          >
-            + Log Reading
-          </Button>
         </Box>
 
         <Stack spacing={1.25}>
@@ -417,23 +499,39 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
                 borderRadius: '16px',
                 bgcolor: surfaceBg,
                 border: `1px solid ${cardBorder}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
               }}
             >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box>
                 <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-                  Read <strong style={{ color: '#3b82f6' }}>{log.pagesRead} {unitStr}</strong>
+                  Read <strong style={{ color: '#3b82f6' }}>{log.pagesRead} {trackByUnit}</strong>
                 </Typography>
+
+                {log.chapterNote && (
+                  <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.3 }}>
+                    💡 {log.chapterNote}
+                  </Typography>
+                )}
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography sx={{ fontSize: 11, color: textMuted }}>
                   {formatDate(log.date)}
                 </Typography>
+                <IconButton size="small" onClick={() => handleDeleteLog(log.id)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' } }}>
+                  <DeleteIcon sx={{ fontSize: 16 }} />
+                </IconButton>
               </Box>
-              {log.chapterNote && (
-                <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.5 }}>
-                  💡 {log.chapterNote}
-                </Typography>
-              )}
             </Box>
           ))}
+
+          {readingLogs.length === 0 && (
+            <Typography sx={{ fontSize: 12, color: textMuted, fontStyle: 'italic', textAlign: 'center', py: 2 }}>
+              No reading logs recorded yet. Use the prompt above to record your reading sessions!
+            </Typography>
+          )}
         </Stack>
       </Box>
 
@@ -443,7 +541,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <CheckpointIcon sx={{ color: '#eab308', fontSize: 20 }} />
             <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-              Book Parts & Checkpoints ({checkpointsDoneCnt}/{checkpoints.length})
+              Reading Checkpoints ({checkpointsDoneCnt}/{checkpoints.length})
             </Typography>
           </Box>
           <Button
@@ -460,7 +558,6 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           {checkpoints.map((cp) => (
             <Box
               key={cp.id}
-              onClick={() => toggleCheckpoint(cp.id)}
               sx={{
                 p: 2,
                 borderRadius: '16px',
@@ -468,25 +565,39 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
                 border: `1px solid ${cardBorder}`,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 1.5,
-                cursor: 'pointer',
+                justifyContent: 'space-between',
               }}
             >
-              <IconButton size="small" sx={{ p: 0, color: cp.done ? '#10b981' : textMuted }}>
-                {cp.done ? <CheckCircle sx={{ fontSize: 20 }} /> : <RadioButtonUnchecked sx={{ fontSize: 20 }} />}
-              </IconButton>
-              <Typography
-                sx={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: cp.done ? textMuted : textPrimary,
-                  textDecoration: cp.done ? 'line-through' : 'none',
-                }}
+              <Box
+                onClick={() => toggleCheckpoint(cp.id)}
+                sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer', flex: 1 }}
               >
-                {cp.label}
-              </Typography>
+                <IconButton size="small" sx={{ p: 0, color: cp.done ? '#10b981' : textMuted }}>
+                  {cp.done ? <CheckCircle sx={{ fontSize: 20 }} /> : <RadioButtonUnchecked sx={{ fontSize: 20 }} />}
+                </IconButton>
+                <Typography
+                  sx={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: cp.done ? textMuted : textPrimary,
+                    textDecoration: cp.done ? 'line-through' : 'none',
+                  }}
+                >
+                  {cp.label}
+                </Typography>
+              </Box>
+
+              <IconButton size="small" onClick={() => handleDeleteCheckpoint(cp.id)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' } }}>
+                <DeleteIcon sx={{ fontSize: 16 }} />
+              </IconButton>
             </Box>
           ))}
+
+          {checkpoints.length === 0 && (
+            <Typography sx={{ fontSize: 12, color: textMuted, fontStyle: 'italic', textAlign: 'center', py: 2 }}>
+              No checkpoints added yet. Click &quot;+ Add Checkpoint&quot; to add custom reading milestones.
+            </Typography>
+          )}
         </Stack>
       </Box>
 
@@ -530,7 +641,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
                     {s.title}
                   </Typography>
                   <Typography sx={{ fontSize: 11, color: textMuted }}>
-                    Time: {s.startTime || '09:30 PM'} · Daily Reading
+                    Time: {s.startTime || '21:30'} · Daily Reading
                   </Typography>
                 </Box>
               </Box>
@@ -568,14 +679,14 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
       </Box>
 
       {/* Dialog: Log Reading Progress */}
-      <Dialog open={logModalOpen} onClose={() => setLogModalOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Log Reading Progress</DialogTitle>
+      <Dialog open={logModalOpen} onClose={() => setLogModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Log Reading Progress</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField
-              label={`Pages / ${unitStr} Read Today`}
+              label={`${trackByUnit === 'chapters' ? 'Chapters' : 'Pages'} Read Today`}
               type="number"
-              placeholder="e.g. 25"
+              placeholder={dailyTargetNum > 0 ? `e.g. ${dailyTargetNum}` : 'e.g. 15'}
               fullWidth
               size="small"
               value={pagesInput}
@@ -594,23 +705,23 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setLogModalOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setLogModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
             Cancel
           </Button>
           <Button
             variant="contained"
             disabled={savingLog || typeof pagesInput !== 'number' || pagesInput <= 0}
             onClick={() => handleSaveLog()}
-            sx={{ textTransform: 'none', bgcolor: '#3b82f6', '&:hover': { bgcolor: '#2563eb' } }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#3b82f6', '&:hover': { bgcolor: '#2563eb' } }}
           >
-            Save Reading Log
+            {savingLog ? 'Saving...' : 'Save Reading Log'}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Dialog: Add Checkpoint */}
-      <Dialog open={addCpOpen} onClose={() => setAddCpOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Add Reading Checkpoint</DialogTitle>
+      <Dialog open={addCpOpen} onClose={() => setAddCpOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Add Reading Checkpoint</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField
@@ -624,23 +735,23 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setAddCpOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setAddCpOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
             Cancel
           </Button>
           <Button
             variant="contained"
             disabled={savingCp || !cpLabelInput.trim()}
             onClick={handleAddCheckpoint}
-            sx={{ textTransform: 'none', bgcolor: '#eab308', '&:hover': { bgcolor: '#ca8a04' } }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#eab308', '&:hover': { bgcolor: '#ca8a04' } }}
           >
-            Add Checkpoint
+            {savingCp ? 'Saving...' : 'Add Checkpoint'}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Dialog: Schedule Reading Session / Task */}
-      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Schedule Reading Reminder</DialogTitle>
+      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Schedule Reading Reminder</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Box sx={{ display: 'flex', gap: 1 }}>
@@ -696,16 +807,16 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
             Cancel
           </Button>
           <Button
             variant="contained"
             disabled={savingSched || !schedTitle.trim()}
             onClick={handleScheduleRoutine}
-            sx={{ textTransform: 'none', bgcolor: '#3b82f6', '&:hover': { bgcolor: '#2563eb' } }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#3b82f6', '&:hover': { bgcolor: '#2563eb' } }}
           >
-            Save Reminder
+            {savingSched ? 'Saving...' : 'Save Reminder'}
           </Button>
         </DialogActions>
       </Dialog>

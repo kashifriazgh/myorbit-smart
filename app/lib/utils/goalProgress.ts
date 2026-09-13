@@ -143,6 +143,19 @@ export function calculateGoalOverallProgress(
     return Math.max(0, Math.min(100, Math.round(sum / goal.expenseItems.length)));
   }
 
+  // Check if exerciseItems exist
+  if (Array.isArray(goal.exerciseItems) && goal.exerciseItems.length > 0) {
+    let sum = 0;
+    for (const item of goal.exerciseItems as Array<{ currentValue?: number; targetValue?: number }>) {
+      const current = typeof item.currentValue === 'number' ? item.currentValue : 0;
+      const target = typeof item.targetValue === 'number' ? item.targetValue : 0;
+      if (target > 0) {
+        sum += Math.max(0, Math.min(100, Math.round((current / target) * 100)));
+      }
+    }
+    return Math.max(0, Math.min(100, Math.round(sum / goal.exerciseItems.length)));
+  }
+
   const steps = goal.steps || [];
 
   if (steps.length > 0) {

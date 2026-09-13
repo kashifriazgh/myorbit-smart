@@ -28,6 +28,12 @@ import {
   CheckCircle,
   RadioButtonUnchecked,
   Checklist as TodoIcon,
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+  Medication as SupplementIcon,
+  Fastfood as FastFoodIcon,
+  Cake as SugarIcon,
+  LocalBar as SoftDrinkIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -40,10 +46,10 @@ import { db } from '@/app/lib/firebase';
 export interface NutritionItem {
   id?: string;
   name: string;
-  category: 'water' | 'calories' | 'protein' | 'fruits' | 'other';
+  category: 'water' | 'calories' | 'protein' | 'sugar' | 'soft_drinks' | 'fast_food' | 'meals' | 'supplements' | 'fruits' | 'other';
   targetValue: number;
   currentValue: number;
-  unit: 'L' | 'ml' | 'kcal' | 'g' | 'servings';
+  unit: string;
   scheduleTime?: string;
 }
 
@@ -52,15 +58,36 @@ interface NutritionTemplateProps {
   onUpdateGoal?: (goalId: string, updates: Partial<Goal>) => Promise<void>;
 }
 
-const NUTRITION_META = {
+const NUTRITION_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
   water: { label: 'Water Intake', icon: WaterIcon, color: '#0284c7' },
   calories: { label: 'Daily Calories', icon: MealIcon, color: '#f59e0b' },
   protein: { label: 'Protein Intake', icon: ProteinIcon, color: '#10b981' },
+  sugar: { label: 'Sugar Control', icon: SugarIcon, color: '#ec4899' },
+  soft_drinks: { label: 'Soft Drinks', icon: SoftDrinkIcon, color: '#ef4444' },
+  fast_food: { label: 'Fast Food', icon: FastFoodIcon, color: '#f97316' },
+  meals: { label: 'Balanced Meals', icon: MealIcon, color: '#8b5cf6' },
+  supplements: { label: 'Supplements', icon: SupplementIcon, color: '#06b6d4' },
   fruits: { label: 'Fruits & Veggies', icon: FruitIcon, color: '#ec4899' },
   other: { label: 'Other Nutrition', icon: MealIcon, color: '#64748b' },
 };
 
 function formatUnitVal(val: number, unit: string) {
+  if (unit === 'glasses') return `${val.toLocaleString()} ${val === 1 ? 'glass' : 'glasses'}`;
+  if (unit === 'liters' || unit === 'L') return `${val.toLocaleString()} ${val === 1 ? 'liter' : 'liters'}`;
+  if (unit === 'ml') return `${val.toLocaleString()} ml`;
+  if (unit === 'bottles') return `${val.toLocaleString()} ${val === 1 ? 'bottle' : 'bottles'}`;
+  if (unit === 'cans') return `${val.toLocaleString()} ${val === 1 ? 'can' : 'cans'}`;
+  if (unit === 'sips') return `${val.toLocaleString()} ${val === 1 ? 'sip' : 'sips'}`;
+  if (unit === 'tabs' || unit === 'tablets') return `${val.toLocaleString()} ${val === 1 ? 'tab' : 'tabs'}`;
+  if (unit === 'capsules') return `${val.toLocaleString()} ${val === 1 ? 'capsule' : 'capsules'}`;
+  if (unit === 'scoops') return `${val.toLocaleString()} ${val === 1 ? 'scoop' : 'scoops'}`;
+  if (unit === 'doses') return `${val.toLocaleString()} ${val === 1 ? 'dose' : 'doses'}`;
+  if (unit === 'teaspoons') return `${val.toLocaleString()} ${val === 1 ? 'teaspoon' : 'teaspoons'}`;
+  if (unit === 'times') return `${val.toLocaleString()} ${val === 1 ? 'time' : 'times'}`;
+  if (unit === 'grams' || unit === 'gm' || unit === 'g') return `${val.toLocaleString()} g`;
+  if (unit === 'calories' || unit === 'kcal') return `${val.toLocaleString()} kcal`;
+  if (unit === 'servings') return `${val.toLocaleString()} ${val === 1 ? 'serving' : 'servings'}`;
+  if (unit === 'meals') return `${val.toLocaleString()} ${val === 1 ? 'meal' : 'meals'}`;
   return `${val.toLocaleString()} ${unit}`;
 }
 
@@ -73,29 +100,47 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
 
   const answers = goal.questionnaireAnswers || {};
 
-  // Nutrition items stored on goal.nutritionItems or questionnaire answers
+  // Nutrition items stored on goal.nutritionItems or derived from questionnaire answers
   const [items, setItems] = useState<NutritionItem[]>(() => {
     if (Array.isArray(goal.nutritionItems) && goal.nutritionItems.length > 0) {
       return goal.nutritionItems as unknown as NutritionItem[];
     }
+
+    const trackItem = String(answers.track_item || 'Nutrition Intake');
+    const targetAmt = Number(answers.target_amount || goal.overallTargetValue || 8);
+    const chosenUnit = String(
+      goal.overallTargetUnit ||
+        answers.unit_water ||
+        answers.unit_protein ||
+        answers.unit_calories ||
+        answers.unit_sugar ||
+        answers.unit_soft_drinks ||
+        answers.unit_fast_food ||
+        answers.unit_meals ||
+        answers.unit_supplements ||
+        'servings'
+    );
+
+    let catKey: NutritionItem['category'] = 'other';
+    const lowerItem = trackItem.toLowerCase();
+    if (lowerItem.includes('water')) catKey = 'water';
+    else if (lowerItem.includes('protein')) catKey = 'protein';
+    else if (lowerItem.includes('calorie')) catKey = 'calories';
+    else if (lowerItem.includes('sugar')) catKey = 'sugar';
+    else if (lowerItem.includes('soft') || lowerItem.includes('drink')) catKey = 'soft_drinks';
+    else if (lowerItem.includes('fast') || lowerItem.includes('junk')) catKey = 'fast_food';
+    else if (lowerItem.includes('meal')) catKey = 'meals';
+    else if (lowerItem.includes('supplement')) catKey = 'supplements';
+
     return [
       {
         id: '1',
-        name: String(answers.nutrition_name || 'Daily Water Intake'),
-        category: 'water',
-        targetValue: Number(answers.target_water || answers.target_amount || goal.overallTargetValue || 3),
-        currentValue: Number(answers.current_water || 1.5),
-        unit: 'L',
+        name: goal.title || `${trackItem} Tracker`,
+        category: catKey,
+        targetValue: targetAmt,
+        currentValue: Number(goal.currentValue || 0),
+        unit: chosenUnit,
         scheduleTime: '08:00 AM',
-      },
-      {
-        id: '2',
-        name: 'Protein Goal',
-        category: 'protein',
-        targetValue: Number(answers.target_protein || 80),
-        currentValue: Number(answers.current_protein || 45),
-        unit: 'g',
-        scheduleTime: '01:00 PM',
       },
     ];
   });
@@ -107,7 +152,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
   const [category, setCategory] = useState<NutritionItem['category']>('water');
   const [targetVal, setTargetVal] = useState<number | ''>('');
   const [currentVal, setCurrentVal] = useState<number | ''>('');
-  const [unit, setUnit] = useState<NutritionItem['unit']>('L');
+  const [unit, setUnit] = useState<string>('glasses');
   const [time, setTime] = useState('08:00 AM');
   const [savingItem, setSavingItem] = useState(false);
 
@@ -136,12 +181,44 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     return todos.filter((t) => (t as { linkedGoalId?: string }).linkedGoalId === goal.id);
   }, [todos, goal.id]);
 
+  const saveItemsList = async (updatedList: NutritionItem[]) => {
+    setItems(updatedList);
+    if (!goal.id) return;
+
+    if (onUpdateGoal) {
+      await onUpdateGoal(goal.id, { nutritionItems: updatedList });
+    } else {
+      await updateDoc(doc(db, 'goals', goal.id), { nutritionItems: updatedList });
+    }
+  };
+
+  const handleOpenItemModal = (item?: NutritionItem, idx?: number) => {
+    if (item && idx !== undefined) {
+      setEditingIdx(idx);
+      setName(item.name);
+      setCategory(item.category);
+      setTargetVal(item.targetValue);
+      setCurrentVal(item.currentValue);
+      setUnit(item.unit);
+      setTime(item.scheduleTime || '08:00 AM');
+    } else {
+      setEditingIdx(null);
+      setName('');
+      setCategory('water');
+      setTargetVal('');
+      setCurrentVal('');
+      setUnit('glasses');
+      setTime('08:00 AM');
+    }
+    setModalOpen(true);
+  };
+
   const handleSaveItem = async () => {
     if (!name.trim() || typeof targetVal !== 'number' || targetVal <= 0 || !goal.id) return;
     setSavingItem(true);
     try {
       const newItem: NutritionItem = {
-        id: editingIdx !== null ? items[editingIdx].id : String(Date.now()),
+        id: editingIdx !== null && items[editingIdx] ? items[editingIdx].id : 'nut_' + Date.now(),
         name: name.trim(),
         category,
         targetValue: targetVal,
@@ -156,20 +233,20 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
       } else {
         updated = [...items, newItem];
       }
-      setItems(updated);
 
-      if (onUpdateGoal) {
-        await onUpdateGoal(goal.id, { nutritionItems: updated });
-      } else {
-        await updateDoc(doc(db, 'goals', goal.id), { nutritionItems: updated });
-      }
-
+      await saveItemsList(updated);
       setModalOpen(false);
     } catch (err) {
       console.error('Failed to save nutrition item:', err);
     } finally {
       setSavingItem(false);
     }
+  };
+
+  const handleDeleteItem = async (idxToDelete: number) => {
+    if (!confirm('Are you sure you want to delete this nutrition tracker item?')) return;
+    const filtered = items.filter((_, idx) => idx !== idxToDelete);
+    await saveItemsList(filtered);
   };
 
   const handleLogIntake = async () => {
@@ -184,13 +261,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
       };
 
       const updatedList = items.map((it, idx) => (idx === selectedItemIdx ? updatedItem : it));
-      setItems(updatedList);
-
-      if (onUpdateGoal) {
-        await onUpdateGoal(goal.id, { nutritionItems: updatedList });
-      } else {
-        await updateDoc(doc(db, 'goals', goal.id), { nutritionItems: updatedList });
-      }
+      await saveItemsList(updatedList);
 
       setAddAmount('');
       setLogModalOpen(false);
@@ -305,16 +376,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
           </Typography>
           <Button
             size="small"
-            onClick={() => {
-              setEditingIdx(null);
-              setName('');
-              setCategory('water');
-              setTargetVal('');
-              setCurrentVal('');
-              setUnit('L');
-              setTime('08:00 AM');
-              setModalOpen(true);
-            }}
+            onClick={() => handleOpenItemModal()}
             startIcon={<AddIcon sx={{ fontSize: 15 }} />}
             sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#10b981' }}
           >
@@ -364,16 +426,24 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
                     </Box>
                   </Box>
 
-                  <Chip
-                    label={`${progress}% Achieved`}
-                    size="small"
-                    sx={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      bgcolor: isDark ? `${meta.color}20` : `${meta.color}10`,
-                      color: meta.color,
-                    }}
-                  />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Chip
+                      label={`${progress}% Achieved`}
+                      size="small"
+                      sx={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        bgcolor: isDark ? `${meta.color}20` : `${meta.color}10`,
+                        color: meta.color,
+                      }}
+                    />
+                    <IconButton size="small" onClick={() => handleOpenItemModal(it, idx)}>
+                      <EditIcon sx={{ fontSize: 16, color: textMuted }} />
+                    </IconButton>
+                    <IconButton size="small" onClick={() => handleDeleteItem(idx)} sx={{ color: '#ef4444' }}>
+                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Box>
                 </Box>
 
                 <Box sx={{ mt: 2, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
@@ -491,7 +561,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField
               label="Intake Name"
-              placeholder="e.g. Daily Water, Protein Shake, Calorie Target"
+              placeholder="e.g. Daily Water, Protein Shake, Vitamin D Tabs"
               fullWidth
               size="small"
               value={name}
@@ -501,22 +571,38 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
             <FormControl fullWidth size="small">
               <InputLabel>Category</InputLabel>
               <Select value={category} label="Category" onChange={(e) => setCategory(e.target.value as NutritionItem['category'])}>
-                <MenuItem value="water">Water Intake</MenuItem>
-                <MenuItem value="calories">Daily Calories</MenuItem>
-                <MenuItem value="protein">Protein Intake</MenuItem>
-                <MenuItem value="fruits">Fruits & Vegetables</MenuItem>
-                <MenuItem value="other">Other</MenuItem>
+                <MenuItem value="water">Water Intake 💧</MenuItem>
+                <MenuItem value="protein">Protein Intake 🥩</MenuItem>
+                <MenuItem value="calories">Daily Calories 🔥</MenuItem>
+                <MenuItem value="sugar">Sugar Control 🍬</MenuItem>
+                <MenuItem value="soft_drinks">Soft Drinks 🥤</MenuItem>
+                <MenuItem value="fast_food">Fast Food 🍔</MenuItem>
+                <MenuItem value="meals">Balanced Meals 🥗</MenuItem>
+                <MenuItem value="supplements">Supplements 💊</MenuItem>
+                <MenuItem value="fruits">Fruits & Vegetables 🍎</MenuItem>
+                <MenuItem value="other">Other 🍽️</MenuItem>
               </Select>
             </FormControl>
 
             <FormControl fullWidth size="small">
               <InputLabel>Unit</InputLabel>
-              <Select value={unit} label="Unit" onChange={(e) => setUnit(e.target.value as NutritionItem['unit'])}>
-                <MenuItem value="L">Liters (L)</MenuItem>
-                <MenuItem value="ml">Milliliters (ml)</MenuItem>
-                <MenuItem value="kcal">Calories (kcal)</MenuItem>
-                <MenuItem value="g">Grams (g)</MenuItem>
-                <MenuItem value="servings">Servings</MenuItem>
+              <Select value={unit} label="Unit" onChange={(e) => setUnit(e.target.value)}>
+                <MenuItem value="glasses">Glasses 🥛</MenuItem>
+                <MenuItem value="liters">Liters (L) 🧴</MenuItem>
+                <MenuItem value="ml">Milliliters (ml) 🧪</MenuItem>
+                <MenuItem value="bottles">Bottles 🍼</MenuItem>
+                <MenuItem value="cans">Cans 🥫</MenuItem>
+                <MenuItem value="sips">Sips 🥤</MenuItem>
+                <MenuItem value="grams">Grams (gm) ⚖️</MenuItem>
+                <MenuItem value="scoops">Scoops 🏋️</MenuItem>
+                <MenuItem value="servings">Servings 🍽️</MenuItem>
+                <MenuItem value="calories">Calories (kcal) 🔥</MenuItem>
+                <MenuItem value="teaspoons">Teaspoons 🥄</MenuItem>
+                <MenuItem value="tabs">Tablets / Tabs 💊</MenuItem>
+                <MenuItem value="capsules">Capsules 💊</MenuItem>
+                <MenuItem value="doses">Doses 🧪</MenuItem>
+                <MenuItem value="times">Times / Occurrences 📅</MenuItem>
+                <MenuItem value="meals">Meals 🥗</MenuItem>
               </Select>
             </FormControl>
 
@@ -638,7 +724,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
 
             <TextField
               label="Reminder Title"
-              placeholder="e.g. Lunch & Protein Shake or Drink 1L Water"
+              placeholder="e.g. Lunch & Protein Shake or Take Vitamin D Tabs"
               fullWidth
               size="small"
               value={schedTitle}

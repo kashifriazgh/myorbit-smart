@@ -17,6 +17,7 @@ import {
   Select,
   FormControl,
   InputLabel,
+  Tooltip,
 } from '@mui/material';
 import {
   MonitorWeight as WeightIcon,
@@ -27,6 +28,8 @@ import {
   CheckCircle,
   RadioButtonUnchecked,
   Checklist as TodoIcon,
+  Delete as DeleteIcon,
+  LockClock as LockClockIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -55,6 +58,18 @@ function formatDate(dateStr: string | Date | null | undefined) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function parseDateVal(dateVal: unknown): Date {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Date) return dateVal;
+  if (typeof dateVal === 'object' && 'toDate' in (dateVal as { toDate: () => Date })) {
+    return (dateVal as { toDate: () => Date }).toDate();
+  }
+  if (typeof dateVal === 'object' && 'seconds' in (dateVal as { seconds: number })) {
+    return new Date((dateVal as { seconds: number }).seconds * 1000);
+  }
+  return new Date(String(dateVal));
+}
+
 export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplateProps) {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
@@ -67,6 +82,9 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
 
   const initialWeight = Number(answers.initial_weight || answers.current_weight || 80);
   const targetWeight = Number(goal.overallTargetValue || answers.target_weight || 70);
+
+  // Frequency of logging from questionnaire (e.g. 'weekly', 'biweekly', 'monthly')
+  const loggingFreq = String(answers.logging_frequency || 'weekly').toLowerCase();
 
   // Weight logs stored on goal.weightLogs
   const [logs, setLogs] = useState<WeightLogEntry[]>(() => {
@@ -102,6 +120,39 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
     ? Math.max(0, Math.min(100, Math.round((changeAchieved / totalChangeNeeded) * 100)))
     : 100;
 
+  // Calculate next allowed weigh-in date based on frequency restriction
+  const nextLogInfo = useMemo(() => {
+    // Get last log date
+    const lastDate = logs.length > 0 && logs[0].date
+      ? parseDateVal(logs[0].date)
+      : (goal.createdAt ? parseDateVal(goal.createdAt) : new Date());
+
+    let daysRequired = 7; // default weekly
+    if (loggingFreq.includes('biweekly')) {
+      daysRequired = 14;
+    } else if (loggingFreq.includes('monthly')) {
+      daysRequired = 30;
+    } else if (loggingFreq.includes('daily')) {
+      daysRequired = 1;
+    } else if (loggingFreq.includes('weekly')) {
+      daysRequired = 7;
+    }
+
+    const nextAllowedDate = new Date(lastDate.getTime() + daysRequired * 24 * 60 * 60 * 1000);
+    const now = new Date();
+
+    // If no logs recorded yet, allow immediately
+    if (logs.length === 0) {
+      return { canLog: true, daysRemaining: 0, nextAllowedDate, daysRequired };
+    }
+
+    const diffTime = nextAllowedDate.getTime() - now.getTime();
+    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const canLog = diffTime <= 0;
+
+    return { canLog, daysRemaining: Math.max(0, daysRemaining), nextAllowedDate, daysRequired };
+  }, [logs, loggingFreq, goal.createdAt]);
+
   // Filter linked schedules and todos
   const linkedWeightSchedules = useMemo(() => {
     if (!goal.id) return [];
@@ -114,7 +165,8 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
   }, [todos, goal.id]);
 
   const handleAddWeightLog = async () => {
-    if (typeof logWeight !== 'number' || logWeight <= 0 || !goal.id) return;
+    // Note: 0 weight is allowed (e.g. 0 kg gain/loss or 0 weight change)
+    if (typeof logWeight !== 'number' || logWeight < 0 || !goal.id) return;
     setSavingLog(true);
     try {
       const newEntry: WeightLogEntry = {
@@ -145,6 +197,27 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
       console.error('Failed to log weight:', err);
     } finally {
       setSavingLog(false);
+    }
+  };
+
+  const handleDeleteWeightLog = async (entryIdx: number) => {
+    if (!confirm('Are you sure you want to delete this weight log entry?')) return;
+    const updatedLogs = logs.filter((_, idx) => idx !== entryIdx);
+    setLogs(updatedLogs);
+
+    const newCurrent = updatedLogs.length > 0 ? updatedLogs[0].weight : initialWeight;
+    if (goal.id) {
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, {
+          weightLogs: updatedLogs,
+          currentValue: newCurrent,
+        });
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), {
+          weightLogs: updatedLogs,
+          currentValue: newCurrent,
+        });
+      }
     }
   };
 
@@ -218,7 +291,7 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
           <Box>
             <Typography sx={{ fontSize: 11, fontWeight: 600, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-              Weight Goal ({isWeightLoss ? 'Weight Loss' : 'Weight Gain'})
+              Weight Goal ({isWeightLoss ? 'Weight Loss' : 'Weight Gain'}) · {loggingFreq.toUpperCase()} Schedule
             </Typography>
             <Typography sx={{ fontSize: 18, fontWeight: 700, color: textPrimary, mt: 0.5 }}>
               {goal.title}
@@ -252,14 +325,44 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
             : `${Math.abs(changeAchieved).toFixed(1)} ${unit} gained out of ${totalChangeNeeded} ${unit} target`}
         </Typography>
 
-        <Button
-          variant="contained"
-          onClick={() => setAddLogOpen(true)}
-          startIcon={<AddIcon />}
-          sx={{ mt: 2.5, borderRadius: '12px', textTransform: 'none', fontWeight: 700, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
-        >
-          + Log Current Weight
-        </Button>
+        {/* Log Weight Button & Frequency Lock Enforcement */}
+        <Box sx={{ mt: 2.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+          <Tooltip
+            title={
+              !nextLogInfo.canLog
+                ? `Next weigh-in available in ${nextLogInfo.daysRemaining} days (${loggingFreq} schedule)`
+                : ''
+            }
+          >
+            <span>
+              <Button
+                variant="contained"
+                disabled={!nextLogInfo.canLog}
+                onClick={() => setAddLogOpen(true)}
+                startIcon={!nextLogInfo.canLog ? <LockClockIcon /> : <AddIcon />}
+                sx={{
+                  borderRadius: '12px',
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  bgcolor: '#10b981',
+                  '&:hover': { bgcolor: '#059669' },
+                  '&.Mui-disabled': {
+                    bgcolor: isDark ? '#334155' : '#e2e8f0',
+                    color: textMuted,
+                  },
+                }}
+              >
+                + Log Current Weight
+              </Button>
+            </span>
+          </Tooltip>
+
+          {!nextLogInfo.canLog && (
+            <Typography sx={{ fontSize: 12, color: textMuted, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              🔒 Next weigh-in available in <strong>{nextLogInfo.daysRemaining} {nextLogInfo.daysRemaining === 1 ? 'day' : 'days'}</strong> ({loggingFreq} schedule)
+            </Typography>
+          )}
+        </Box>
       </Box>
 
       {/* Affect Weight Actions Section (Exercise or Nutrition schedules) */}
@@ -379,9 +482,14 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
                   )}
                 </Box>
               </Box>
-              <Typography sx={{ fontSize: 11, color: textMuted }}>
-                {formatDate(entry.date)}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{ fontSize: 11, color: textMuted }}>
+                  {formatDate(entry.date)}
+                </Typography>
+                <IconButton size="small" onClick={() => handleDeleteWeightLog(idx)} sx={{ color: '#ef4444' }}>
+                  <DeleteIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
             </Box>
           ))}
         </Stack>
@@ -398,7 +506,8 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
               fullWidth
               size="small"
               value={logWeight}
-              onChange={(e) => setLogWeight(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => setLogWeight(e.target.value !== '' ? Number(e.target.value) : '')}
+              helperText="Note: 0 value is allowed if zero weight was gained/lost."
             />
 
             <TextField
@@ -417,7 +526,7 @@ export default function WeightTemplate({ goal, onUpdateGoal }: WeightTemplatePro
           </Button>
           <Button
             variant="contained"
-            disabled={savingLog || typeof logWeight !== 'number' || logWeight <= 0}
+            disabled={savingLog || typeof logWeight !== 'number' || logWeight < 0}
             onClick={handleAddWeightLog}
             sx={{ textTransform: 'none', bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
           >

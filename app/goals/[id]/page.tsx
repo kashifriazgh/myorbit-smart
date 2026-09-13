@@ -1717,26 +1717,30 @@ const GoalDetailInner: React.FC = () => {
 
 
         {/* Milestones / Steps — timeline style */}
-        <SectionTitle isDark={isDark}>
-          {`Steps & milestones (${doneCnt}/${totalCnt})`}
-        </SectionTitle>
+        {steps.length > 0 && (
+          <>
+            <SectionTitle isDark={isDark}>
+              {`Steps & milestones (${doneCnt}/${totalCnt})`}
+            </SectionTitle>
 
-        <MilestoneList
-          goalId={goal.id!}
-          steps={steps}
-          goalTargetValue={goal.overallTargetValue}
-          onStepsChange={() => {
-            /* Firestore snapshot updates automatically */
-          }}
-          onSelectStep={(step) => {
-            setSelectedStepId(step.id);
-            setSheetOpen(true);
-          }}
-          onAddStep={openAddMilestoneDialog}
-          onTriggerAISuggest={() => setAiSuggestOpen(true)}
-          onOpenAddMoney={() => setAddMoneyOpen(true)}
-          typeColor={typeColor}
-        />
+            <MilestoneList
+              goalId={goal.id!}
+              steps={steps}
+              goalTargetValue={goal.overallTargetValue}
+              onStepsChange={() => {
+                /* Firestore snapshot updates automatically */
+              }}
+              onSelectStep={(step) => {
+                setSelectedStepId(step.id);
+                setSheetOpen(true);
+              }}
+              onAddStep={openAddMilestoneDialog}
+              onTriggerAISuggest={() => setAiSuggestOpen(true)}
+              onOpenAddMoney={() => setAddMoneyOpen(true)}
+              typeColor={typeColor}
+            />
+          </>
+        )}
 
         <AddMoney
           externalOpen={addMoneyOpen}

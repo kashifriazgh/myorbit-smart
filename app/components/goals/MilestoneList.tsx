@@ -210,64 +210,6 @@ export default function MilestoneList({
 
   return (
     <Box>
-      {/* Empty State */}
-      {!hasSteps && (
-        <Box
-          sx={{
-            borderRadius: '24px',
-            background: isDark
-              ? 'linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%)'
-              : 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-            border: `1px solid ${isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.15)'}`,
-            p: { xs: 3, sm: 4.5 },
-            textAlign: 'center',
-            mb: 3,
-            boxShadow: isDark ? '0 10px 30px -10px rgba(0,0,0,0.5)' : '0 10px 30px -10px rgba(99, 102, 241, 0.05)',
-          }}
-        >
-          <Box sx={{ display: 'inline-flex', p: 1.5, borderRadius: '50%', bgcolor: 'rgba(99, 102, 241, 0.1)', mb: 2 }}>
-            <TrackChanges sx={{ fontSize: 32, color: '#6366f1' }} />
-          </Box>
-
-          <Typography variant="h6" sx={{ fontWeight: 850, mb: 1, color: isDark ? '#f1f5f9' : '#0f172a', fontSize: '1.2rem' }}>
-            Get Started with Milestones 🚀
-          </Typography>
-
-          <Typography sx={{ fontSize: 13, color: isDark ? '#94a3b8' : '#475569', mb: 3.5, maxLen: 480, mx: 'auto', lineHeight: 1.6 }}>
-            Breaking down your goal into small checkpoints makes it significantly easier to achieve. 
-            Add your schedules, tasks, or funding sources to track progress.
-          </Typography>
-
-          <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="center" alignItems="center">
-            {onAddStep && (
-              <Button
-                size="large"
-                variant="contained"
-                onClick={onAddStep}
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 800,
-                  borderRadius: '14px',
-                  py: 1.4,
-                  px: 5,
-                  width: { xs: '100%', sm: 'auto' },
-                  background: typeColor || 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                  color: '#fff',
-                  boxShadow: '0 4px 14px rgba(99, 102, 241, 0.3)',
-                  transition: 'all 0.25s',
-                  '&:hover': {
-                    opacity: 0.95,
-                    boxShadow: '0 6px 20px rgba(99, 102, 241, 0.45)',
-                  },
-                }}
-              >
-                Add Your First Milestone
-              </Button>
-            )}
-          </Stack>
-        </Box>
-      )}
-
       {/* Milestone Card Items */}
       {orderedSteps.map((step, index) => {
         if (step.linkedType === 'finance_source') {

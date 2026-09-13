@@ -13,36 +13,38 @@ import {
   DialogContent,
   DialogActions,
   Stack,
-  MenuItem,
-  Select,
-  FormControl,
-  InputLabel,
+  Paper,
+  Tooltip,
 } from '@mui/material';
 import {
-  WbSunny as MorningIcon,
-  WbTwilight as AfternoonIcon,
-  NightsStay as EveningIcon,
-  Bedtime as NightIcon,
   CheckCircle,
   RadioButtonUnchecked,
   Add as AddIcon,
-  Event as EventIcon,
-  Checklist as TodoIcon,
+  Schedule as TimeIcon,
+  LocalFireDepartment as StreakIcon,
+  Checklist as ChecklistIcon,
+  DeleteOutline as DeleteIcon,
+  DoneAll as DoneAllIcon,
+  ErrorOutline as WarningIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { useAuth } from '@/app/lib/context/userContext';
-import { useTodoContext } from '@/app/lib/context/todoContext';
-import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 
-export interface RoutineStep {
+export interface RoutineItem {
   id: string;
-  title: string;
-  time?: string;
-  period: 'morning' | 'afternoon' | 'evening' | 'night';
-  completed: boolean;
+  name: string;
+  time: string; // e.g. "4:30 AM" or "6:00 AM - 6:30 AM"
+  checked: boolean;
+}
+
+export interface RoutineDailyLog {
+  id: string;
+  date: string; // YYYY-MM-DD
+  checkedCount: number;
+  totalItems: number;
+  fullStreak: boolean;
 }
 
 interface DailyRoutineTemplateProps {
@@ -53,62 +55,90 @@ interface DailyRoutineTemplateProps {
 export default function DailyRoutineTemplate({ goal, onUpdateGoal }: DailyRoutineTemplateProps) {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
-  const { user } = useAuth();
-  const { todos, addTodo, updateTodo } = useTodoContext();
-  const { allSchedules, addSchedule } = useSchedules();
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
+  // Questionnaire Answers
   const answers = goal.questionnaireAnswers || {};
+  const routineTitle = goal.title || String(answers.routine_type || answers.custom_routine_type || 'Daily Routine');
 
-  const routineTitle = goal.title || String(answers.routine_title || answers.routine_name || 'Ideal Daily Routine');
-
-  // Routine Items State
-  const [items, setItems] = useState<RoutineStep[]>(() => {
+  // Routine Items State (NO DUMMY DATA — starts clean)
+  const [items, setItems] = useState<RoutineItem[]>(() => {
     if (Array.isArray(goal.routineItems) && goal.routineItems.length > 0) {
-      return goal.routineItems.map((r, i) => ({
-        id: r.id || String(i),
-        title: r.title,
-        time: r.time,
-        period: r.period || 'morning',
-        completed: !!r.completed,
+      return (goal.routineItems as Array<{ id?: string; title?: string; name?: string; time?: string; checked?: boolean; completed?: boolean }>).map((r, i) => ({
+        id: r.id || String(i + 1),
+        name: r.name || r.title || `Routine Step ${i + 1}`,
+        time: r.time || 'Flexible',
+        checked: !!(r.checked || r.completed),
       }));
     }
-    return [
-      { id: '1', title: '500ml Water & Morning Stretch', time: '07:00 AM', period: 'morning', completed: true },
-      { id: '2', title: '15-min Meditation & Journaling', time: '07:20 AM', period: 'morning', completed: true },
-      { id: '3', title: 'Healthy Lunch & 10-min Walk', time: '01:00 PM', period: 'afternoon', completed: false },
-      { id: '4', title: '30-min Reading or Skill Practice', time: '08:00 PM', period: 'evening', completed: false },
-      { id: '5', title: 'Screen-off & Sleep Preparation', time: '10:30 PM', period: 'night', completed: false },
-    ];
+    return [];
   });
 
-  // Modal States
-  const [addItemOpen, setAddItemOpen] = useState(false);
-  const [itemTitle, setItemTitle] = useState('');
-  const [itemTime, setItemTime] = useState('08:00 AM');
-  const [itemPeriod, setItemPeriod] = useState<RoutineStep['period']>('morning');
-  const [savingItem, setSavingItem] = useState(false);
+  // Daily Routine Logs History
+  const [logs, setLogs] = useState<RoutineDailyLog[]>(() => {
+    const raw = (goal as unknown as Record<string, unknown>).routineLogs;
+    if (Array.isArray(raw)) {
+      return raw as RoutineDailyLog[];
+    }
+    return [];
+  });
 
-  // Schedule Routine Modal State
-  const [schedModalOpen, setSchedModalOpen] = useState(false);
-  const [schedKind, setSchedKind] = useState<'schedule' | 'todo'>('schedule');
-  const [schedTitle, setSchedTitle] = useState('');
-  const [schedTime, setSchedTime] = useState('07:00');
-  const [schedDate, setSchedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [savingSched, setSavingSched] = useState(false);
+  // Check if user already logged routine for today
+  const todayLog = useMemo(() => {
+    return logs.find((l) => l.date === todayStr);
+  }, [logs, todayStr]);
+
+  const isTodayLogged = !!todayLog;
+
+  // Modals & Forms
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [routineName, setRoutineName] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [savingItem, setSavingItem] = useState(false);
+  const [savingLog, setSavingLog] = useState(false);
 
   // Computations
-  const doneCnt = useMemo(() => items.filter((i) => i.completed).length, [items]);
-  const progressPct = useMemo(() => (items.length > 0 ? Math.round((doneCnt / items.length) * 100) : 0), [doneCnt, items]);
+  const checkedCount = useMemo(() => items.filter((i) => i.checked).length, [items]);
+  const totalItems = items.length;
 
-  // Persist Goal Helpers
-  const persistRoutineData = async (updated: RoutineStep[]) => {
+  // Streak Count
+  const currentStreak = useMemo(() => {
+    let streak = 0;
+    const sorted = [...logs].sort((a, b) => (b.date > a.date ? 1 : -1));
+    for (const log of sorted) {
+      if (log.fullStreak) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }, [logs]);
+
+  // Total 100% full streak days achieved
+  const totalFullStreakDays = useMemo(() => logs.filter((l) => l.fullStreak).length, [logs]);
+
+  // Persist Goal Updates
+  const persistRoutineData = async (updatedItems: RoutineItem[], updatedLogs: RoutineDailyLog[]) => {
     if (!goal.id) return;
-    const pct = updated.length > 0 ? Math.round((updated.filter((i) => i.completed).length / updated.length) * 100) : 0;
+    const fullStreakDays = updatedLogs.filter((l) => l.fullStreak).length;
+    const targetDays = typeof goal.overallTargetValue === 'number' && goal.overallTargetValue > 0 ? goal.overallTargetValue : 30;
+    const computedProgress = Math.min(100, Math.round((fullStreakDays / targetDays) * 100));
+
     const updates: Partial<Goal> = {
-      routineItems: updated,
-      currentValue: updated.filter((i) => i.completed).length,
-      progress: pct,
-    };
+      routineItems: updatedItems.map((item) => ({
+        id: item.id,
+        title: item.name,
+        time: item.time,
+        completed: item.checked,
+      })),
+      routineLogs: updatedLogs,
+      currentValue: fullStreakDays,
+      progress: computedProgress,
+      updatedAt: new Date(),
+    } as unknown as Partial<Goal>;
+
     if (onUpdateGoal) {
       await onUpdateGoal(goal.id, updates);
     } else {
@@ -116,32 +146,41 @@ export default function DailyRoutineTemplate({ goal, onUpdateGoal }: DailyRoutin
     }
   };
 
-  // Toggle Item
-  const toggleItem = async (id: string) => {
-    const updated = items.map((i) => (i.id === id ? { ...i, completed: !i.completed } : i));
+  // Toggle single item checkbox
+  const toggleItemCheckbox = async (id: string) => {
+    if (isTodayLogged) return; // Locked after today's log is submitted
+    const updated = items.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item));
     setItems(updated);
-    await persistRoutineData(updated);
+    await persistRoutineData(updated, logs);
   };
 
-  // Add Item
-  const handleAddItem = async () => {
-    if (!itemTitle.trim() || !goal.id) return;
+  // Add Routine Item
+  const handleAddRoutineItem = async () => {
+    if (!routineName.trim() || !goal.id) return;
     setSavingItem(true);
     try {
-      const newItem: RoutineStep = {
+      let formattedTime = startTime.trim();
+      if (startTime.trim() && endTime.trim()) {
+        formattedTime = `${startTime.trim()} - ${endTime.trim()}`;
+      } else if (!formattedTime) {
+        formattedTime = 'Anytime';
+      }
+
+      const newItem: RoutineItem = {
         id: String(Date.now()),
-        title: itemTitle.trim(),
-        time: itemTime,
-        period: itemPeriod,
-        completed: false,
+        name: routineName.trim(),
+        time: formattedTime,
+        checked: false,
       };
 
-      const updated = [...items, newItem];
-      setItems(updated);
-      await persistRoutineData(updated);
+      const updatedItems = [...items, newItem];
+      setItems(updatedItems);
+      await persistRoutineData(updatedItems, logs);
 
       setAddItemOpen(false);
-      setItemTitle('');
+      setRoutineName('');
+      setStartTime('');
+      setEndTime('');
     } catch (err) {
       console.error('Failed to add routine item:', err);
     } finally {
@@ -149,411 +188,441 @@ export default function DailyRoutineTemplate({ goal, onUpdateGoal }: DailyRoutin
     }
   };
 
-  // Schedule Routine or Task
-  const handleScheduleRoutine = async () => {
-    if (!schedTitle.trim() || !user || !goal.id) return;
-    setSavingSched(true);
-    try {
-      if (schedKind === 'schedule') {
-        await addSchedule({
-          title: schedTitle.trim(),
-          date: schedDate || new Date().toISOString().split('T')[0],
-          startTime: schedTime || '07:00',
-          endTime: '08:00',
-          projectId: goal.projectId || '',
-          userId: user.uid,
-          status: 'pending',
-          priority: 'medium',
-          linkedGoalId: goal.id,
-          goalTitle: goal.title,
-          frequencyMode: 'daily',
-        });
-      } else {
-        await addTodo({
-          title: schedTitle.trim(),
-          status: 'in_progress',
-          priority: 'urgent',
-          projectId: goal.projectId || '',
-          authorId: user.uid,
-          dueDate: schedDate ? new Date(schedDate) : new Date(),
-          steps: [],
-          tags: [],
-          progressPercent: 0,
-          assignedUsers: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          linkedGoalId: goal.id,
-          goalTitle: goal.title,
-        });
-      }
+  // Delete Routine Item
+  const handleDeleteItem = async (id: string) => {
+    const updatedItems = items.filter((i) => i.id !== id);
+    setItems(updatedItems);
+    await persistRoutineData(updatedItems, logs);
+  };
 
-      setSchedTitle('');
-      setSchedModalOpen(false);
+  // Log Daily Routine Progress
+  const handleLogDailyRoutine = async () => {
+    if (!goal.id || isTodayLogged) return;
+    setSavingLog(true);
+    try {
+      const isFull = checkedCount === totalItems && totalItems > 0;
+      const newLog: RoutineDailyLog = {
+        id: String(Date.now()),
+        date: todayStr,
+        checkedCount,
+        totalItems,
+        fullStreak: isFull,
+      };
+
+      const updatedLogs = [newLog, ...logs.filter((l) => l.date !== todayStr)];
+      setLogs(updatedLogs);
+      await persistRoutineData(items, updatedLogs);
     } catch (err) {
-      console.error('Failed to add routine schedule:', err);
+      console.error('Failed to record daily routine log:', err);
     } finally {
-      setSavingSched(false);
+      setSavingLog(false);
     }
   };
 
-  // Group items by period
-  const periods = [
-    { key: 'morning', label: 'Morning Routine', icon: MorningIcon, color: '#0284c7', bg: isDark ? '#0c4a6e' : '#f0f9ff' },
-    { key: 'afternoon', label: 'Afternoon Routine', icon: AfternoonIcon, color: '#f59e0b', bg: isDark ? '#451a03' : '#fff7ed' },
-    { key: 'evening', label: 'Evening Routine', icon: EveningIcon, color: '#8b5cf6', bg: isDark ? '#2e1065' : '#f5f3ff' },
-    { key: 'night', label: 'Bedtime Routine', icon: NightIcon, color: '#6366f1', bg: isDark ? '#1e1b4b' : '#eef2ff' },
-  ];
-
-  // Linked items
-  const linkedRoutineSchedules = useMemo(() => {
-    if (!goal.id) return [];
-    return allSchedules.filter((s) => (s as { linkedGoalId?: string }).linkedGoalId === goal.id);
-  }, [allSchedules, goal.id]);
-
-  const linkedRoutineTodos = useMemo(() => {
-    if (!goal.id) return [];
-    return todos.filter((t) => (t as { linkedGoalId?: string }).linkedGoalId === goal.id);
-  }, [todos, goal.id]);
-
+  // UI Theme Token Colors
   const surfaceBg = isDark ? '#1e293b' : '#ffffff';
   const cardBorder = isDark ? '#334155' : '#e2e8f0';
-  const textPrimary = isDark ? '#f1f5f9' : '#1e293b';
+  const textPrimary = isDark ? '#f1f5f9' : '#0f172a';
   const textMuted = isDark ? '#94a3b8' : '#64748b';
+  const activeColor = '#8B5CF6';
 
   return (
-    <Box sx={{ width: '100%', maxWidth: 720, mx: 'auto' }}>
-      {/* Hero Card */}
-      <Box
+    <Box sx={{ width: '100%', maxWidth: 760, mx: 'auto', p: { xs: 1, sm: 2 } }}>
+      {/* Header Banner */}
+      <Paper
+        elevation={0}
         sx={{
           borderRadius: '24px',
-          border: `1px solid ${cardBorder}`,
-          bgcolor: surfaceBg,
-          p: 3,
-          boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 20px rgba(15,23,42,0.06)',
+          border: `1.5px solid ${activeColor}40`,
+          bgcolor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)',
+          p: { xs: 2.5, sm: 3 },
           mb: 3,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" spacing={2}>
           <Box>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-              Daily Routine
-            </Typography>
-            <Typography sx={{ fontSize: 20, fontWeight: 800, color: textPrimary, mt: 0.5 }}>
+            <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
+              <Chip
+                label="Daily Routine"
+                size="small"
+                sx={{
+                  bgcolor: `${activeColor}20`,
+                  color: activeColor,
+                  fontWeight: 800,
+                  fontSize: 11,
+                  textTransform: 'uppercase',
+                }}
+              />
+              {currentStreak > 0 && (
+                <Chip
+                  icon={<StreakIcon sx={{ color: '#f59e0b !important', fontSize: '16px !important' }} />}
+                  label={`${currentStreak} Day Streak 🔥`}
+                  size="small"
+                  sx={{
+                    bgcolor: 'rgba(245, 158, 11, 0.15)',
+                    color: '#f59e0b',
+                    fontWeight: 800,
+                    fontSize: 11,
+                  }}
+                />
+              )}
+            </Stack>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: textPrimary, fontSize: { xs: '1.25rem', sm: '1.5rem' } }}>
               {routineTitle}
             </Typography>
-          </Box>
-          <Chip
-            label={`${progressPct}% Today`}
-            size="small"
-            sx={{ bgcolor: isDark ? '#0c4a6e' : '#e0f2fe', color: '#0284c7', fontWeight: 700, fontSize: 11 }}
-          />
-        </Box>
-
-        {/* Progress Gauge */}
-        <Box sx={{ mt: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}>
-            <Typography sx={{ fontSize: 28, fontWeight: 800, color: textPrimary, fontFamily: 'monospace' }}>
-              {doneCnt} / {items.length} <span style={{ fontSize: 14, fontWeight: 600, color: textMuted }}>Steps Completed</span>
-            </Typography>
-            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#0284c7' }}>
-              {progressPct}% Done
+            <Typography sx={{ fontSize: 13, color: textMuted, mt: 0.5 }}>
+              Track &amp; complete your daily routine items to maintain a 100% daily streak!
             </Typography>
           </Box>
-          <Box sx={{ height: 8, borderRadius: 99, bgcolor: isDark ? '#334155' : '#f1f5f9', overflow: 'hidden' }}>
-            <Box
-              sx={{
-                height: '100%',
-                width: `${progressPct}%`,
-                bgcolor: '#0284c7',
-                borderRadius: 99,
-                transition: 'width 0.5s ease',
-              }}
-            />
-          </Box>
-        </Box>
 
-        {/* Action Button Row */}
-        <Box sx={{ mt: 3, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           <Button
-            size="small"
             variant="contained"
             onClick={() => setAddItemOpen(true)}
-            startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-            sx={{ borderRadius: '12px', textTransform: 'none', fontSize: 12, fontWeight: 700, bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
+            startIcon={<AddIcon />}
+            sx={{
+              borderRadius: '16px',
+              bgcolor: activeColor,
+              color: '#fff',
+              fontWeight: 800,
+              px: 2.5,
+              py: 1,
+              textTransform: 'none',
+              boxShadow: `0 4px 14px ${activeColor}40`,
+              '&:hover': { bgcolor: '#7c3aed' },
+              flexShrink: 0,
+            }}
           >
             + Add Routine Step
           </Button>
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => {
-              setSchedTitle(`Daily Routine Time-Block: ${routineTitle}`);
-              setSchedModalOpen(true);
-            }}
-            startIcon={<EventIcon sx={{ fontSize: 16 }} />}
-            sx={{ borderRadius: '12px', textTransform: 'none', fontSize: 12, fontWeight: 700 }}
-          >
-            + Schedule Time-Block
-          </Button>
-        </Box>
-      </Box>
+        </Stack>
+      </Paper>
 
-      {/* Routine Period Sections */}
-      <Stack spacing={2.5} sx={{ mb: 3 }}>
-        {periods.map((period) => {
-          const Icon = period.icon;
-          const periodItems = items.filter((i) => i.period === period.key);
-          const donePeriodCnt = periodItems.filter((i) => i.completed).length;
+      {/* SOLO CARD CONTAINING ALL ROUTINE ITEMS WITH CHECKBOXES */}
+      <Paper
+        elevation={0}
+        sx={{
+          borderRadius: '24px',
+          border: `1.5px solid ${cardBorder}`,
+          bgcolor: surfaceBg,
+          p: { xs: 2.5, sm: 3 },
+          boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.3)' : '0 10px 30px rgba(15,23,42,0.05)',
+          mb: 3,
+        }}
+      >
+        <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <ChecklistIcon sx={{ color: activeColor, fontSize: 24 }} />
+            <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary }}>
+              Routine Checklist ({checkedCount} / {totalItems} Done Today)
+            </Typography>
+          </Stack>
+          {totalItems > 0 && (
+            <Chip
+              label={`${Math.round((checkedCount / totalItems) * 100)}% Completed`}
+              size="small"
+              sx={{
+                bgcolor: checkedCount === totalItems ? '#10b98120' : `${activeColor}15`,
+                color: checkedCount === totalItems ? '#10b981' : activeColor,
+                fontWeight: 800,
+                fontSize: 11,
+              }}
+            />
+          )}
+        </Stack>
 
-          return (
-            <Box key={period.key}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, px: 0.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Box sx={{ p: 0.75, borderRadius: '10px', bgcolor: period.bg, color: period.color, display: 'flex', alignItems: 'center' }}>
-                    <Icon sx={{ fontSize: 18 }} />
-                  </Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-                    {period.label} ({donePeriodCnt}/{periodItems.length})
-                  </Typography>
-                </Box>
-                <Button
-                  size="small"
-                  onClick={() => {
-                    setItemPeriod(period.key as RoutineStep['period']);
-                    setItemTitle('');
-                    setAddItemOpen(true);
+        {/* List of Routine Items */}
+        {items.length > 0 ? (
+          <Stack spacing={1.5} mb={3}>
+            {items.map((item) => {
+              const isDone = item.checked;
+              return (
+                <Paper
+                  key={item.id}
+                  elevation={0}
+                  onClick={() => toggleItemCheckbox(item.id)}
+                  sx={{
+                    p: 2,
+                    borderRadius: '16px',
+                    border: `1.5px solid ${isDone ? '#10b98150' : cardBorder}`,
+                    bgcolor: isDone
+                      ? isDark
+                        ? 'rgba(16, 185, 129, 0.08)'
+                        : 'rgba(16, 185, 129, 0.04)'
+                      : isDark
+                      ? '#0f172a'
+                      : '#f8fafc',
+                    cursor: isTodayLogged ? 'default' : 'pointer',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    '&:hover': isTodayLogged
+                      ? {}
+                      : {
+                          borderColor: isDone ? '#10b981' : activeColor,
+                          transform: 'translateY(-2px)',
+                        },
                   }}
-                  sx={{ textTransform: 'none', fontSize: 11, fontWeight: 700, color: period.color }}
                 >
-                  + Add Step
-                </Button>
-              </Box>
-
-              <Stack spacing={1}>
-                {periodItems.map((step) => (
-                  <Box
-                    key={step.id}
-                    onClick={() => toggleItem(step.id)}
-                    sx={{
-                      p: 2,
-                      borderRadius: '16px',
-                      bgcolor: surfaceBg,
-                      border: `1px solid ${cardBorder}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <IconButton size="small" sx={{ p: 0, color: step.completed ? '#10b981' : textMuted }}>
-                        {step.completed ? <CheckCircle sx={{ fontSize: 20 }} /> : <RadioButtonUnchecked sx={{ fontSize: 20 }} />}
-                      </IconButton>
-                      <Typography sx={{ fontSize: 13, fontWeight: 600, color: step.completed ? textMuted : textPrimary, textDecoration: step.completed ? 'line-through' : 'none' }}>
-                        {step.title}
+                  <Stack direction="row" alignItems="center" spacing={2} sx={{ minWidth: 0, flex: 1 }}>
+                    <IconButton
+                      size="small"
+                      disabled={isTodayLogged}
+                      sx={{ p: 0, color: isDone ? '#10b981' : textMuted }}
+                    >
+                      {isDone ? <CheckCircle sx={{ fontSize: 24 }} /> : <RadioButtonUnchecked sx={{ fontSize: 24 }} />}
+                    </IconButton>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography
+                        sx={{
+                          fontSize: 14.5,
+                          fontWeight: 700,
+                          color: isDone ? textMuted : textPrimary,
+                          textDecoration: isDone ? 'line-through' : 'none',
+                        }}
+                      >
+                        {item.name}
                       </Typography>
                     </Box>
+                  </Stack>
 
-                    {step.time && (
-                      <Chip label={step.time} size="small" sx={{ bgcolor: isDark ? '#334155' : '#f1f5f9', color: textMuted, fontSize: 10, fontWeight: 700 }} />
+                  <Stack direction="row" alignItems="center" spacing={1.5}>
+                    <Chip
+                      icon={<TimeIcon sx={{ fontSize: '14px !important', color: `${textMuted} !important` }} />}
+                      label={item.time}
+                      size="small"
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: 11,
+                        bgcolor: isDark ? '#334155' : '#e2e8f0',
+                        color: textMuted,
+                      }}
+                    />
+                    {!isTodayLogged && (
+                      <Tooltip title="Delete Step">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteItem(item.id);
+                          }}
+                          sx={{ color: textMuted, '&:hover': { color: '#ef4444' } }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     )}
-                  </Box>
-                ))}
+                  </Stack>
+                </Paper>
+              );
+            })}
+          </Stack>
+        ) : (
+          <Box
+            sx={{
+              p: 4,
+              textAlign: 'center',
+              borderRadius: '16px',
+              border: `2px dashed ${cardBorder}`,
+              mb: 3,
+            }}
+          >
+            <ChecklistIcon sx={{ fontSize: 40, color: textMuted, opacity: 0.5, mb: 1 }} />
+            <Typography sx={{ fontSize: 14, fontWeight: 700, color: textPrimary, mb: 0.5 }}>
+              No routine steps added yet!
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: textMuted, mb: 2 }}>
+              Add items like &quot;Wake Up - 4:30 AM&quot;, &quot;Fajr - 5:00 AM&quot;, or &quot;Morning Exercise - 5:30 AM&quot;.
+            </Typography>
+            <Button
+              variant="outlined"
+              onClick={() => setAddItemOpen(true)}
+              startIcon={<AddIcon />}
+              sx={{
+                borderRadius: '12px',
+                borderColor: activeColor,
+                color: activeColor,
+                fontWeight: 800,
+                textTransform: 'none',
+              }}
+            >
+              + Create First Step
+            </Button>
+          </Box>
+        )}
 
-                {periodItems.length === 0 && (
-                  <Typography sx={{ fontSize: 11, color: textMuted, fontStyle: 'italic', px: 1, py: 0.5 }}>
-                    No steps added for {period.label.toLowerCase()} yet.
-                  </Typography>
-                )}
-              </Stack>
-            </Box>
-          );
-        })}
-      </Stack>
-
-      {/* Synced Routine Schedules & Tasks */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
-          <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-            Synced Routine Reminders ({linkedRoutineSchedules.length + linkedRoutineTodos.length})
-          </Typography>
-        </Box>
-
-        <Stack spacing={1.25}>
-          {linkedRoutineSchedules.map((s) => (
-            <Box
-              key={s.id}
+        {/* LOG DAILY ROUTINE PROGRESS BUTTON */}
+        <Box sx={{ pt: 1 }}>
+          {isTodayLogged ? (
+            <Paper
+              elevation={0}
               sx={{
                 p: 2,
                 borderRadius: '16px',
-                bgcolor: surfaceBg,
-                border: `1px solid ${cardBorder}`,
+                bgcolor: todayLog?.fullStreak ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                border: `1.5px solid ${todayLog?.fullStreak ? '#10b981' : '#f59e0b'}`,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                justifyContent: 'center',
+                gap: 1.5,
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <EventIcon sx={{ color: '#0284c7', fontSize: 20 }} />
-                <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-                    {s.title}
-                  </Typography>
-                  <Typography sx={{ fontSize: 11, color: textMuted }}>
-                    Time: {s.startTime || '07:00 AM'} · Daily Routine
-                  </Typography>
-                </Box>
-              </Box>
-              <Chip label="Scheduled" size="small" sx={{ bgcolor: isDark ? '#0c4a6e' : '#e0f2fe', color: '#0284c7', fontSize: 10, fontWeight: 700 }} />
-            </Box>
-          ))}
+              {todayLog?.fullStreak ? (
+                <DoneAllIcon sx={{ color: '#10b981', fontSize: 24 }} />
+              ) : (
+                <WarningIcon sx={{ color: '#f59e0b', fontSize: 24 }} />
+              )}
+              <Typography sx={{ fontSize: 14, fontWeight: 800, color: todayLog?.fullStreak ? '#10b981' : '#f59e0b' }}>
+                {todayLog?.fullStreak
+                  ? `Today's routine recorded (${todayLog.checkedCount}/${todayLog.totalItems} done - 100% Daily Streak Achieved! 🔥)`
+                  : `Today's routine recorded (${todayLog?.checkedCount}/${todayLog?.totalItems} done - Missed 100% streak for today)`}
+              </Typography>
+            </Paper>
+          ) : (
+            <Button
+              fullWidth
+              variant="contained"
+              disabled={savingLog || items.length === 0}
+              onClick={handleLogDailyRoutine}
+              startIcon={<DoneAllIcon />}
+              sx={{
+                py: 1.5,
+                borderRadius: '16px',
+                fontWeight: 900,
+                fontSize: 14.5,
+                textTransform: 'none',
+                bgcolor: checkedCount === totalItems && totalItems > 0 ? '#10b981' : activeColor,
+                color: '#fff',
+                boxShadow: checkedCount === totalItems && totalItems > 0 ? '0 4px 14px rgba(16, 185, 129, 0.4)' : `0 4px 14px ${activeColor}40`,
+                '&:hover': {
+                  bgcolor: checkedCount === totalItems && totalItems > 0 ? '#059669' : '#7c3aed',
+                },
+              }}
+            >
+              Have U followed all routine for today? ({checkedCount}/{totalItems} Done)
+            </Button>
+          )}
+        </Box>
+      </Paper>
 
-          {linkedRoutineTodos.map((todo) => {
-            const isDone = todo.status === 'completed';
-            return (
+      {/* RECENT ROUTINE LOGS HISTORY */}
+      {logs.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            borderRadius: '24px',
+            border: `1.5px solid ${cardBorder}`,
+            bgcolor: surfaceBg,
+            p: { xs: 2.5, sm: 3 },
+          }}
+        >
+          <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary, mb: 2 }}>
+            Daily Routine History ({totalFullStreakDays} Streak Days Recorded)
+          </Typography>
+          <Stack spacing={1}>
+            {logs.map((log) => (
               <Box
-                key={todo.id}
-                onClick={() => todo.id && updateTodo(todo.id, { status: isDone ? 'in_progress' : 'completed' })}
+                key={log.id}
                 sx={{
-                  p: 2,
-                  borderRadius: '16px',
-                  bgcolor: surfaceBg,
+                  p: 1.75,
+                  borderRadius: '14px',
+                  bgcolor: isDark ? '#0f172a' : '#f8fafc',
                   border: `1px solid ${cardBorder}`,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 1.5,
-                  cursor: 'pointer',
+                  justifyContent: 'space-between',
                 }}
               >
-                <IconButton size="small" sx={{ p: 0, color: isDone ? '#10b981' : textMuted }}>
-                  {isDone ? <CheckCircle sx={{ fontSize: 20 }} /> : <RadioButtonUnchecked sx={{ fontSize: 20 }} />}
-                </IconButton>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: isDone ? textMuted : textPrimary, textDecoration: isDone ? 'line-through' : 'none' }}>
-                  {todo.title}
-                </Typography>
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  {log.fullStreak ? (
+                    <StreakIcon sx={{ color: '#f59e0b', fontSize: 20 }} />
+                  ) : (
+                    <CheckCircle sx={{ color: textMuted, fontSize: 20 }} />
+                  )}
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
+                    {log.date}
+                  </Typography>
+                </Stack>
+                <Chip
+                  label={log.fullStreak ? `100% Done (${log.checkedCount}/${log.totalItems})` : `Partial (${log.checkedCount}/${log.totalItems})`}
+                  size="small"
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: 11,
+                    bgcolor: log.fullStreak ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                    color: log.fullStreak ? '#10b981' : '#f59e0b',
+                  }}
+                />
               </Box>
-            );
-          })}
-        </Stack>
-      </Box>
-
-      {/* Dialog: Add Routine Item */}
-      <Dialog open={addItemOpen} onClose={() => setAddItemOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Add Routine Step</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Routine Block Period</InputLabel>
-              <Select value={itemPeriod} label="Routine Block Period" onChange={(e) => setItemPeriod(e.target.value as RoutineStep['period'])}>
-                <MenuItem value="morning">Morning Routine</MenuItem>
-                <MenuItem value="afternoon">Afternoon Routine</MenuItem>
-                <MenuItem value="evening">Evening Routine</MenuItem>
-                <MenuItem value="night">Bedtime Routine</MenuItem>
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="Step Description"
-              placeholder="e.g. 500ml Water, 15-min Stretch, Journaling"
-              fullWidth
-              size="small"
-              value={itemTitle}
-              onChange={(e) => setItemTitle(e.target.value)}
-            />
-
-            <TextField
-              label="Anchor Time (Optional)"
-              placeholder="e.g. 07:15 AM"
-              fullWidth
-              size="small"
-              value={itemTime}
-              onChange={(e) => setItemTime(e.target.value)}
-            />
+            ))}
           </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setAddItemOpen(false)} sx={{ textTransform: 'none' }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={savingItem || !itemTitle.trim()}
-            onClick={handleAddItem}
-            sx={{ textTransform: 'none', bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
-          >
-            Add Step
-          </Button>
-        </DialogActions>
-      </Dialog>
+        </Paper>
+      )}
 
-      {/* Dialog: Schedule Routine or Task */}
-      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Schedule Routine Reminder</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
+      {/* DIALOG: ADD ROUTINE ITEM */}
+      <Dialog open={addItemOpen} onClose={() => setAddItemOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 18 }}>Add Routine Step</DialogTitle>
+        <DialogContent dividers sx={{ pt: 2 }}>
+          <Stack spacing={2.5}>
+            <Box>
+              <Typography sx={{ fontSize: 12, fontWeight: 800, color: textMuted, mb: 0.5, textTransform: 'uppercase' }}>
+                Routine Step Name *
+              </Typography>
+              <TextField
                 fullWidth
-                variant={schedKind === 'schedule' ? 'contained' : 'outlined'}
-                onClick={() => setSchedKind('schedule')}
-                startIcon={<EventIcon />}
-                size="small"
-                sx={{ textTransform: 'none', borderRadius: '10px' }}
-              >
-                Schedule Routine
-              </Button>
-              <Button
-                fullWidth
-                variant={schedKind === 'todo' ? 'contained' : 'outlined'}
-                onClick={() => setSchedKind('todo')}
-                startIcon={<TodoIcon />}
-                size="small"
-                sx={{ textTransform: 'none', borderRadius: '10px' }}
-              >
-                Task Reminder
-              </Button>
+                placeholder="e.g. Wake Up, Fajr, Morning Exercise, Learning"
+                value={routineName}
+                onChange={(e) => setRoutineName(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+              />
             </Box>
 
-            <TextField
-              label="Routine Reminder Title"
-              placeholder="e.g. Morning Time-Block Routine"
-              fullWidth
-              size="small"
-              value={schedTitle}
-              onChange={(e) => setSchedTitle(e.target.value)}
-            />
-
-            <TextField
-              label="Time"
-              type="time"
-              fullWidth
-              size="small"
-              value={schedTime}
-              onChange={(e) => setSchedTime(e.target.value)}
-            />
-
-            <TextField
-              label="Date"
-              type="date"
-              fullWidth
-              size="small"
-              InputLabelProps={{ shrink: true }}
-              value={schedDate}
-              onChange={(e) => setSchedDate(e.target.value)}
-            />
+            <Stack direction="row" spacing={1.5}>
+              <Box flex={1}>
+                <Typography sx={{ fontSize: 12, fontWeight: 800, color: textMuted, mb: 0.5, textTransform: 'uppercase' }}>
+                  Start Time
+                </Typography>
+                <TextField
+                  fullWidth
+                  placeholder="e.g. 4:30 AM"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                />
+              </Box>
+              <Box flex={1}>
+                <Typography sx={{ fontSize: 12, fontWeight: 800, color: textMuted, mb: 0.5, textTransform: 'uppercase' }}>
+                  End Time (Optional)
+                </Typography>
+                <TextField
+                  fullWidth
+                  placeholder="e.g. 5:00 AM"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                />
+              </Box>
+            </Stack>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setAddItemOpen(false)} sx={{ textTransform: 'none', fontWeight: 700 }}>
             Cancel
           </Button>
           <Button
             variant="contained"
-            disabled={savingSched || !schedTitle.trim()}
-            onClick={handleScheduleRoutine}
-            sx={{ textTransform: 'none', bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
+            disabled={savingItem || !routineName.trim()}
+            onClick={handleAddRoutineItem}
+            sx={{
+              borderRadius: '12px',
+              bgcolor: activeColor,
+              fontWeight: 800,
+              textTransform: 'none',
+              px: 3,
+              '&:hover': { bgcolor: '#7c3aed' },
+            }}
           >
-            Save Reminder
+            Add Step
           </Button>
         </DialogActions>
       </Dialog>

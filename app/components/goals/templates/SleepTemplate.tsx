@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogActions,
   Stack,
+  InputAdornment,
 } from '@mui/material';
 import {
   NightsStay as MoonIcon,
@@ -23,6 +24,8 @@ import {
   CheckCircle,
   RadioButtonUnchecked,
   Checklist as TodoIcon,
+  Delete as DeleteIcon,
+  LockClock as LockClockIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -32,10 +35,26 @@ import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 
+export interface SleepLogEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  hours: number;
+  note?: string;
+}
+
 interface SleepTemplateProps {
   goal: Goal;
   onUpdateGoal?: (goalId: string, updates: Partial<Goal>) => Promise<void>;
 }
+
+function formatDate(dateStr: string | Date | null | undefined) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return String(dateStr);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+const SLEEP_HOURS_OPTIONS = [5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 
 export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps) {
   const { theme } = useCustomTheme();
@@ -49,10 +68,53 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
   const targetHours = goal.overallTargetValue || Number(answers.target_hours || answers.hours || 8);
   const bedTime = String(answers.bedtime || answers.bed_time || '10:30 PM');
   const wakeTime = String(answers.wake_time || answers.wake_up_time || '06:30 AM');
-  const consistencyCount = Number(answers.consistency_count || answers.streak || 12);
-  const initialLastNightHours = Number(goal.currentValue || answers.last_night_hours || answers.logged_hours || 7);
 
-  const [hours, setHours] = useState(initialLastNightHours);
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // Sleep logs stored on goal.sleepLogs (reset dummy data: no fake 12 day streak or default 7.5h)
+  const [logs, setLogs] = useState<SleepLogEntry[]>(() => {
+    if (Array.isArray(goal.sleepLogs) && goal.sleepLogs.length > 0) {
+      return goal.sleepLogs as unknown as SleepLogEntry[];
+    }
+    return [];
+  });
+
+  // Check if today's sleep duration has already been logged
+  const todayLog = useMemo(() => logs.find((l) => l.date === todayStr), [logs, todayStr]);
+  const hasLoggedToday = Boolean(todayLog);
+  const hours = todayLog ? todayLog.hours : (goal.currentValue || 0);
+
+  // Compute real consistency streak (0 initially when no logs exist)
+  const streakCount = useMemo(() => {
+    if (logs.length === 0) return Number(answers.streak_count || 0);
+    const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
+    const latestDate = new Date(sorted[0].date);
+    const diffDays = Math.floor((new Date().getTime() - latestDate.getTime()) / (1000 * 3600 * 24));
+    if (diffDays > 1) return 0; // Streak broken
+
+    let prevDateStr = sorted[0].date;
+    let streak = 1;
+    for (let i = 1; i < sorted.length; i++) {
+      const p = new Date(prevDateStr);
+      const curr = new Date(sorted[i].date);
+      const dayDiff = Math.round((p.getTime() - curr.getTime()) / (1000 * 3600 * 24));
+      if (dayDiff === 1) {
+        streak++;
+        prevDateStr = sorted[i].date;
+      } else if (dayDiff === 0) {
+        continue;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }, [logs, answers.streak_count]);
+
+  // Dialog state for Custom Sleep Log
+  const [logModalOpen, setLogModalOpen] = useState(false);
+  const [customHours, setCustomHours] = useState<number | ''>('');
+  const [customNote, setCustomNote] = useState('');
+  const [savingLog, setSavingLog] = useState(false);
 
   // Schedule modal states
   const [schedModalOpen, setSchedModalOpen] = useState(false);
@@ -83,13 +145,56 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
     return todos.filter((t) => (t as { linkedGoalId?: string }).linkedGoalId === goal.id);
   }, [todos, goal.id]);
 
-  const handleLog = async (value: number) => {
-    setHours(value);
-    if (!goal.id) return;
-    if (onUpdateGoal) {
-      await onUpdateGoal(goal.id, { currentValue: value });
-    } else {
-      await updateDoc(doc(db, 'goals', goal.id), { currentValue: value });
+  const handleLogSleep = async (value: number, noteTxt?: string) => {
+    if (typeof value !== 'number' || value <= 0 || !goal.id) return;
+    setSavingLog(true);
+    try {
+      const newEntry: SleepLogEntry = {
+        id: String(Date.now()),
+        date: todayStr,
+        hours: value,
+        note: noteTxt ? noteTxt.trim() : undefined,
+      };
+
+      const updatedLogs = [newEntry, ...logs.filter((l) => l.date !== todayStr)];
+      setLogs(updatedLogs);
+
+      const updates = {
+        sleepLogs: updatedLogs,
+        currentValue: value,
+      };
+
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, updates);
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), updates);
+      }
+
+      setCustomHours('');
+      setCustomNote('');
+      setLogModalOpen(false);
+    } catch (err) {
+      console.error('Failed to log sleep:', err);
+    } finally {
+      setSavingLog(false);
+    }
+  };
+
+  const handleDeleteLog = async (logId: string) => {
+    if (!confirm('Are you sure you want to delete this sleep log?')) return;
+    const updatedLogs = logs.filter((l) => l.id !== logId);
+    setLogs(updatedLogs);
+
+    const newTodayLog = updatedLogs.find((l) => l.date === todayStr);
+    const newCurrent = newTodayLog ? newTodayLog.hours : (updatedLogs[0]?.hours || 0);
+
+    if (goal.id) {
+      const updates = { sleepLogs: updatedLogs, currentValue: newCurrent };
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, updates);
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), updates);
+      }
     }
   };
 
@@ -247,43 +352,91 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           </Box>
         </Box>
 
-        {/* Streak Row */}
+        {/* Streak Row (Derived strictly from logs - 0 initially) */}
         <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, borderRadius: '16px', bgcolor: isDark ? 'rgba(51,65,85,0.3)' : '#f8fafc' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <FlameIcon sx={{ color: '#f97316', fontSize: 20 }} />
             <Typography sx={{ fontSize: 13, color: textPrimary }}>
-              <strong style={{ color: '#f97316' }}>{consistencyCount} day</strong> consistency streak
+              <strong style={{ color: '#f97316' }}>{streakCount} day</strong> consistency streak
             </Typography>
           </Box>
           <Typography sx={{ fontSize: 12, color: textMuted }}>
-            Last night: <strong>{hours}h</strong>
+            Logged for today: <strong>{hours > 0 ? `${hours}h` : 'No log yet'}</strong>
           </Typography>
         </Box>
 
-        {/* Quick Log Presets */}
+        {/* Expanded Sleep Duration Options */}
         <Box sx={{ mt: 3 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 600, color: textMuted, textTransform: 'uppercase', mb: 1 }}>
-            Log Last Night&apos;s Sleep Hours
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', mb: 1, letterSpacing: '.05em' }}>
+            Mark Tonight&apos;s Sleep Duration ({targetHours}h Goal)
           </Typography>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            {[5, 6, 7, 8, 9].map((h) => (
-              <Button
-                key={h}
-                variant={hours === h ? 'contained' : 'outlined'}
-                onClick={() => handleLog(h)}
-                fullWidth
-                size="small"
-                sx={{
-                  borderRadius: '12px',
-                  textTransform: 'none',
-                  fontWeight: 700,
-                  bgcolor: hours === h ? '#6366f1' : 'transparent',
-                  '&:hover': { bgcolor: hours === h ? '#4f46e5' : 'rgba(99,102,241,0.08)' },
-                }}
-              >
-                {h}h
-              </Button>
-            ))}
+
+          {/* Quick Preset Buttons (5h to 10h) */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+            {SLEEP_HOURS_OPTIONS.map((h) => {
+              const isSelected = hours === h;
+              return (
+                <Button
+                  key={h}
+                  variant={isSelected ? 'contained' : 'outlined'}
+                  disabled={hasLoggedToday}
+                  onClick={() => handleLogSleep(h)}
+                  size="small"
+                  sx={{
+                    borderRadius: '12px',
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    minWidth: 48,
+                    bgcolor: isSelected ? '#6366f1' : 'transparent',
+                    borderColor: isSelected ? '#6366f1' : cardBorder,
+                    color: isSelected ? '#ffffff' : textPrimary,
+                    '&:hover': { bgcolor: isSelected ? '#4f46e5' : 'rgba(99,102,241,0.08)' },
+                    '&.Mui-disabled': {
+                      bgcolor: isSelected ? 'rgba(99,102,241,0.5)' : 'transparent',
+                      color: isSelected ? '#ffffff' : textMuted,
+                      borderColor: cardBorder,
+                    },
+                  }}
+                >
+                  {h}h
+                </Button>
+              );
+            })}
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mt: 1.5 }}>
+            <Button
+              size="small"
+              disabled={hasLoggedToday}
+              onClick={() => {
+                setCustomHours(hours > 0 ? hours : '');
+                setCustomNote('');
+                setLogModalOpen(true);
+              }}
+              startIcon={hasLoggedToday ? <LockClockIcon sx={{ fontSize: 16 }} /> : <AddIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                borderRadius: '10px',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: 12,
+                color: hasLoggedToday ? textMuted : '#6366f1',
+                bgcolor: hasLoggedToday ? (isDark ? '#334155' : '#e2e8f0') : isDark ? 'rgba(99,102,241,0.15)' : '#e0e7ff',
+                '&:hover': { bgcolor: isDark ? 'rgba(99,102,241,0.25)' : '#c7d2fe' },
+              }}
+            >
+              {hasLoggedToday ? 'Logged for Today' : '+ Custom Hours / Note'}
+            </Button>
+
+            {hasLoggedToday ? (
+              <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                ✅ Tonight&apos;s sleep logged: {hours}h · Disabled until tomorrow
+              </Typography>
+            ) : (
+              <Typography sx={{ fontSize: 11.5, color: textMuted }}>
+                Log once per day. Option disables after logging until tomorrow.
+              </Typography>
+            )}
           </Box>
         </Box>
       </Box>
@@ -368,9 +521,101 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
         </Stack>
       </Box>
 
+      {/* Sleep History Logs */}
+      {logs.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em', mb: 1.5, px: 0.5 }}>
+            Recorded Sleep History ({logs.length})
+          </Typography>
+
+          <Stack spacing={1.25}>
+            {logs.map((entry) => (
+              <Box
+                key={entry.id}
+                sx={{
+                  p: 2,
+                  borderRadius: '16px',
+                  bgcolor: surfaceBg,
+                  border: `1px solid ${cardBorder}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <MoonIcon sx={{ color: '#6366f1', fontSize: 20 }} />
+                  <Box>
+                    <Typography sx={{ fontSize: 14, fontWeight: 700, color: textPrimary, fontFamily: 'monospace' }}>
+                      {entry.hours} hours
+                    </Typography>
+                    {entry.note && (
+                      <Typography sx={{ fontSize: 11, color: textMuted }}>
+                        {entry.note}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontSize: 11, color: textMuted }}>
+                    {formatDate(entry.date)}
+                  </Typography>
+                  <IconButton size="small" onClick={() => handleDeleteLog(entry.id)} sx={{ color: '#ef4444' }}>
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
+      {/* Custom Sleep Duration Modal */}
+      <Dialog open={logModalOpen} onClose={() => setLogModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Log Today&apos;s Sleep Duration</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField
+              label="Sleep Duration (Hours)"
+              type="number"
+              fullWidth
+              size="small"
+              value={customHours}
+              onChange={(e) => setCustomHours(e.target.value !== '' ? Number(e.target.value) : '')}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">hours</InputAdornment>,
+              }}
+              placeholder="e.g. 7.5"
+            />
+
+            <TextField
+              label="Notes (Optional)"
+              placeholder="e.g. Slept deeply, woke up refreshed"
+              fullWidth
+              size="small"
+              value={customNote}
+              onChange={(e) => setCustomNote(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setLogModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={savingLog || typeof customHours !== 'number' || customHours <= 0}
+            onClick={() => typeof customHours === 'number' && handleLogSleep(customHours, customNote)}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
+          >
+            {savingLog ? 'Saving...' : 'Save Log'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Schedule Sleep Routine Modal */}
-      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Schedule Sleep Routine</DialogTitle>
+      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Schedule Sleep Routine</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Box sx={{ display: 'flex', gap: 1 }}>
@@ -426,16 +671,16 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
             Cancel
           </Button>
           <Button
             variant="contained"
             disabled={savingSched || !schedTitle.trim()}
             onClick={handleScheduleRoutine}
-            sx={{ textTransform: 'none', bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
           >
-            Save Routine
+            {savingSched ? 'Saving...' : 'Save Routine'}
           </Button>
         </DialogActions>
       </Dialog>

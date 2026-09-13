@@ -45,6 +45,8 @@ export interface SubcategoryConfig {
   unitMeasurementTypes: Record<string, MeasurementType>;
   examples?: string[];
   questions: QuestionConfig[];
+  disabled?: boolean;
+  disabledMessage?: string;
 }
 
 export interface CategoryConfig {
@@ -57,6 +59,8 @@ export interface CategoryConfig {
   description: string;
   subcategories: SubcategoryConfig[];
   allUnits: string[];
+  disabled?: boolean;
+  disabledMessage?: string;
 }
 
 export const MEASUREMENT_TYPE_META: Record<
@@ -258,84 +262,7 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
           reps: 'qty',
           kg: 'qty',
         },
-        questions: [
-          {
-            id: 'activity_type',
-            question: 'What activity will you perform?',
-            type: 'single_choice',
-            options: [
-              { label: 'Walking', value: 'Walking', icon: '🚶' },
-              { label: 'Running', value: 'Running', icon: '🏃' },
-              { label: 'Gym Workout', value: 'Gym', icon: '🏋️' },
-              { label: 'Cycling', value: 'Cycling', icon: '🚴' },
-              { label: 'Exercise routine', value: 'exercise_routine', icon: '🧘' },
-              { label: 'Other Activity', value: 'other', isCustomInput: true },
-            ],
-          },
-          {
-            id: 'exercise_list',
-            question: 'Select exercises for your routine:',
-            type: 'multi_choice',
-            dependsOnField: 'activity_type',
-            dependsOnValue: 'exercise_routine',
-            options: [
-              { label: 'Pushups', value: 'Pushups' },
-              { label: 'Squats', value: 'Squats' },
-              { label: 'Planks', value: 'Planks' },
-              { label: 'Pullups', value: 'Pullups' },
-              { label: 'Lunges', value: 'Lunges' },
-              { label: 'HIIT / Cardio', value: 'HIIT' },
-              { label: 'Yoga & Stretching', value: 'Yoga' },
-            ],
-          },
-          {
-            id: 'frequency',
-            question: 'How often do you want to do it?',
-            type: 'single_choice',
-            options: [
-              { label: 'Daily', value: 'daily' },
-              { label: '3 days/week', value: '3_days_week' },
-              { label: '4 days/week', value: '4_days_week' },
-              { label: '5 days/week', value: '5_days_week' },
-              { label: 'Custom frequency', value: 'custom' },
-            ],
-          },
-          {
-            id: 'progress_metric',
-            question: 'What describes best to measure the progress?',
-            type: 'single_choice',
-            options: [
-              { label: 'Sessions', value: 'sessions' },
-              { label: 'Minutes', value: 'minutes' },
-              { label: 'Distance (km/mi)', value: 'distance' },
-              { label: 'Steps', value: 'steps' },
-              { label: 'Repetitions', value: 'reps' },
-              { label: 'Weight lifted', value: 'weight_lifted' },
-              { label: 'Other', value: 'other' },
-            ],
-          },
-          {
-            id: 'target_value',
-            question: 'What is your target?',
-            type: 'amount_or_choice',
-            options: [
-              { label: 'Just build consistency', value: 'consistency' },
-              { label: 'Input Target Metric Value', value: 'custom_target', isCustomInput: true },
-            ],
-          },
-          {
-            id: 'duration',
-            question: 'Until when?',
-            type: 'date_or_choice',
-            options: [
-              { label: '15 Days', value: '15_days' },
-              { label: '1 Month', value: '1_month' },
-              { label: '2 Months', value: '2_months' },
-              { label: '3 Months', value: '3_months' },
-              { label: 'Specific Date', value: 'specific_date', isCustomInput: true },
-            ],
-          },
-        ],
+        questions: [],
       },
       {
         id: 'nutrition',
@@ -374,22 +301,125 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
               { label: 'Soft drinks', value: 'Soft drinks', icon: '🥤' },
               { label: 'Fast food', value: 'Fast food', icon: '🍔' },
               { label: 'Balanced Meals', value: 'Meals', icon: '🥗' },
+              { label: 'Supplements', value: 'Supplements', icon: '💊' },
+              { label: 'Other Item', value: 'other', isCustomInput: true },
+            ],
+          },
+          // Unit selection for Water
+          {
+            id: 'unit_water',
+            question: 'Select unit / metric for Water:',
+            type: 'single_choice',
+            dependsOnField: 'track_item',
+            dependsOnValue: 'Water',
+            options: [
+              { label: 'Glasses', value: 'glasses', icon: '🥛' },
+              { label: 'Liters (L)', value: 'liters', icon: '🧴' },
+              { label: 'Milliliters (ml)', value: 'ml', icon: '🧪' },
+              { label: 'Bottles', value: 'bottles', icon: '🍼' },
+            ],
+          },
+          // Unit selection for Protein
+          {
+            id: 'unit_protein',
+            question: 'Select unit / metric for Protein:',
+            type: 'single_choice',
+            dependsOnField: 'track_item',
+            dependsOnValue: 'Protein',
+            options: [
+              { label: 'Grams (gm)', value: 'grams', icon: '⚖️' },
+              { label: 'Scoops', value: 'scoops', icon: '🏋️' },
+              { label: 'Servings', value: 'servings', icon: '🍽️' },
+            ],
+          },
+          // Unit selection for Calories
+          {
+            id: 'unit_calories',
+            question: 'Select unit / metric for Calories:',
+            type: 'single_choice',
+            dependsOnField: 'track_item',
+            dependsOnValue: 'Calories',
+            options: [
+              { label: 'Calories (kcal)', value: 'calories', icon: '🔥' },
+            ],
+          },
+          // Unit selection for Sugar
+          {
+            id: 'unit_sugar',
+            question: 'Select unit / metric for Sugar:',
+            type: 'single_choice',
+            dependsOnField: 'track_item',
+            dependsOnValue: 'Sugar',
+            options: [
+              { label: 'Grams (gm)', value: 'grams', icon: '⚖️' },
+              { label: 'Teaspoons', value: 'teaspoons', icon: '🥄' },
+              { label: 'Items', value: 'items', icon: '🍬' },
+            ],
+          },
+          // Unit selection for Soft drinks
+          {
+            id: 'unit_soft_drinks',
+            question: 'Select unit / metric for Soft drinks:',
+            type: 'single_choice',
+            dependsOnField: 'track_item',
+            dependsOnValue: 'Soft drinks',
+            options: [
+              { label: 'Bottles', value: 'bottles', icon: '🍾' },
+              { label: 'Cans', value: 'cans', icon: '🥫' },
+              { label: 'Sips', value: 'sips', icon: '🥤' },
+              { label: 'Servings / Glasses', value: 'servings', icon: '🥛' },
+            ],
+          },
+          // Unit selection for Fast food
+          {
+            id: 'unit_fast_food',
+            question: 'Select unit / metric for Fast food:',
+            type: 'single_choice',
+            dependsOnField: 'track_item',
+            dependsOnValue: 'Fast food',
+            options: [
+              { label: 'Servings', value: 'servings', icon: '🍽️' },
+              { label: 'Times / Occurrences', value: 'times', icon: '📅' },
+              { label: 'Meals / Items', value: 'items', icon: '🍔' },
+            ],
+          },
+          // Unit selection for Balanced Meals
+          {
+            id: 'unit_meals',
+            question: 'Select unit / metric for Balanced Meals:',
+            type: 'single_choice',
+            dependsOnField: 'track_item',
+            dependsOnValue: ['Meals', 'Balanced Meals'],
+            options: [
+              { label: 'Meals', value: 'meals', icon: '🥗' },
+              { label: 'Servings', value: 'servings', icon: '🍽️' },
+              { label: 'Grams (gm)', value: 'grams', icon: '⚖️' },
+            ],
+          },
+          // Unit selection for Supplements
+          {
+            id: 'unit_supplements',
+            question: 'Select unit / metric for Supplements:',
+            type: 'single_choice',
+            dependsOnField: 'track_item',
+            dependsOnValue: 'Supplements',
+            options: [
+              { label: 'Tablets / Tabs', value: 'tabs', icon: '💊' },
+              { label: 'Grams (gm)', value: 'grams', icon: '⚖️' },
+              { label: 'Capsules', value: 'capsules', icon: '💊' },
+              { label: 'Scoops', value: 'scoops', icon: '🥄' },
+              { label: 'Doses', value: 'doses', icon: '🧪' },
             ],
           },
           {
-            id: 'target_type',
-            question: 'What is your target type?',
-            type: 'single_choice',
-            options: [
-              { label: 'Exact Target Amount', value: 'exact_amount' },
-              { label: 'Maximum Limit Amount', value: 'max_amount' },
-              { label: 'Minimum Goal Amount', value: 'min_amount' },
-              { label: 'Frequency / Consistency', value: 'frequency' },
-            ],
+            id: 'target_amount',
+            question: 'What is your target amount per day?',
+            type: 'number_input',
+            placeholder: 'e.g. 8',
           },
           {
             id: 'frequency',
-            question: 'How often?',
+            question: 'How often do you want to record it?',
             type: 'single_choice',
             options: [
               { label: 'Daily', value: 'daily' },
@@ -597,36 +627,42 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
             ],
           },
           {
-            id: 'unit_type',
-            question: 'How much is there to read?',
+            id: 'material_name',
+            question: 'What is the name of your Book, Article, Novel, or Research Paper?',
+            type: 'text_input',
+            placeholder: 'e.g. Atomic Habits, Clean Code, AI Research Paper',
+            required: true,
+          },
+          {
+            id: 'track_by',
+            question: 'How would you like to track progress?',
             type: 'single_choice',
             options: [
-              { label: 'Pages', value: 'Pages' },
-              { label: 'Chapters', value: 'Chapters' },
-              { label: 'Sections', value: 'Sections' },
-              { label: 'Entire Material', value: 'Entire Material' },
+              { label: 'By Pages', value: 'pages', icon: '📄' },
+              { label: 'By Chapters', value: 'chapters', icon: '🔖' },
             ],
           },
           {
-            id: 'total_quantity',
-            question: 'What is your target quantity?',
-            type: 'amount_or_choice',
-            options: [
-              { label: 'Finish the entire material', value: 'finish_all' },
-              { label: 'Input total number', value: 'custom_number', isCustomInput: true },
-            ],
+            id: 'total_pages',
+            question: 'How many pages are there in total?',
+            type: 'number_input',
+            placeholder: 'e.g. 300 (leave blank if unknown)',
+            dependsOnField: 'track_by',
+            dependsOnValue: 'pages',
           },
           {
-            id: 'deadline',
-            question: 'By when?',
-            type: 'date_or_choice',
-            options: [
-              { label: 'In 1 Month', value: '1_month' },
-              { label: 'In 2 Months', value: '2_months' },
-              { label: 'In 3 Months', value: '3_months' },
-              { label: 'Specific Date', value: 'specific_date', isCustomInput: true },
-              { label: 'No deadline', value: 'no_deadline' },
-            ],
+            id: 'total_chapters',
+            question: 'How many chapters are there in total?',
+            type: 'number_input',
+            placeholder: 'e.g. 20 (leave blank if unknown)',
+            dependsOnField: 'track_by',
+            dependsOnValue: 'chapters',
+          },
+          {
+            id: 'daily_target_qty',
+            question: 'How many pages/chapters do you plan to read per session?',
+            type: 'number_input',
+            placeholder: 'e.g. 10 pages or 1 chapter (leave blank for flexible)',
           },
           {
             id: 'frequency',
@@ -741,6 +777,8 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
         id: 'build',
         name: 'Build',
         description: 'Build a new positive daily or weekly habit.',
+        disabled: true,
+        disabledMessage: 'Not available now',
         units: ['days', 'times', 'streak'],
         unitMeasurementTypes: {
           days: 'duration_of_consistency',
@@ -790,6 +828,8 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
         id: 'quit',
         name: 'Quit',
         description: 'Reduce or eliminate a bad habit.',
+        disabled: true,
+        disabledMessage: 'Not available now',
         units: ['days', 'weeks', 'times'],
         unitMeasurementTypes: {
           days: 'duration_of_consistency',
@@ -889,6 +929,8 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
     lightBg: '#f0f9ff',
     darkBg: '#071b2e',
     description: 'Career advancement, project completion, business metrics & productivity',
+    disabled: true,
+    disabledMessage: 'Not available now',
     allUnits: ['hours', '%', 'projects', 'tasks', 'clients', 'PKR', 'USD', 'EUR', 'milestones'],
     subcategories: [
       {
@@ -1103,6 +1145,8 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
     lightBg: '#fdf2f8',
     darkBg: '#1f0815',
     description: 'Confidence, communication skills, relationships & self-improvement',
+    disabled: true,
+    disabledMessage: 'Not available now',
     allUnits: ['sessions', 'conversations', 'days', 'actions', 'tasks'],
     subcategories: [
       {
@@ -1277,6 +1321,8 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
     lightBg: '#ecfeff',
     darkBg: '#042f2e',
     description: 'Plan trips, explore cities, track travel frequency & travel days',
+    disabled: true,
+    disabledMessage: 'Not available now',
     allUnits: ['trips', 'places', 'days', 'cities', 'countries'],
     subcategories: [
       {

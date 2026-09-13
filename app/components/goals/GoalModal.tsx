@@ -16,6 +16,8 @@ import {
   Fade,
   Chip,
   Paper,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useRouter } from 'next/navigation';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -188,10 +190,13 @@ export default function GoalModal({
 
   // ── Step 1: Select Category (Auto Advance to Step 2) ────────────────────────
   const handleSelectCategory = (catType: GoalType) => {
+    const config = getCategoryConfig(catType);
+    if (config?.disabled) return;
     setSelectedCategory(catType);
     const subcats = getSubcategories(catType);
     if (subcats.length > 0) {
-      setSelectedSubcatId(subcats[0].id);
+      const firstEnabled = subcats.find((s) => !s.disabled);
+      setSelectedSubcatId(firstEnabled ? firstEnabled.id : subcats[0].id);
     } else {
       setSelectedSubcatId('');
     }
@@ -201,13 +206,14 @@ export default function GoalModal({
 
   // ── Step 2: Select Subcategory (Auto Advance to Step 3 or 4) ────────────────
   const handleSelectSubcategory = (subcatId: string) => {
-    setSelectedSubcatId(subcatId);
-    setAnswers({});
-    setQuestionIndex(0);
-
     const subcatObj = availableSubcats.find(
       (s) => s.id.toLowerCase() === subcatId.toLowerCase()
     );
+    if (subcatObj?.disabled) return;
+
+    setSelectedSubcatId(subcatId);
+    setAnswers({});
+    setQuestionIndex(0);
 
     setSlideDir(1);
     if (subcatObj && subcatObj.questions.length > 0) {
@@ -238,7 +244,7 @@ export default function GoalModal({
     const autoTitleParts: string[] = [];
 
     // Amount extraction
-    for (const key of ['target_amount', 'amount', 'target_revenue', 'target_customers', 'target_weight', 'target_days', 'target_duration', 'total_quantity', 'trips_count', 'target_places', 'target_value']) {
+    for (const key of ['target_amount', 'amount', 'target_revenue', 'target_customers', 'target_weight', 'target_days', 'target_duration', 'total_quantity', 'total_pages', 'total_chapters', 'total_units', 'trips_count', 'target_places', 'target_value']) {
       if (ansMap[key] !== undefined && ansMap[key] !== null) {
         const raw = ansMap[key];
         if (typeof raw === 'number') {
@@ -256,8 +262,8 @@ export default function GoalModal({
       const metric = String(ansMap['progress_metric'] || 'sessions');
       unit = metric === 'distance' ? 'km' : metric === 'minutes' ? 'minutes' : metric === 'steps' ? 'steps' : 'sessions';
     } else if (subcatName?.toLowerCase().includes('reading')) {
-      const uType = String(ansMap['unit_type'] || 'pages').toLowerCase();
-      unit = uType.includes('chapter') ? 'chapters' : uType.includes('section') ? 'sections' : 'pages';
+      const trackBy = String(ansMap['track_by'] || ansMap['unit_type'] || 'pages').toLowerCase();
+      unit = trackBy.includes('chapter') ? 'chapters' : 'pages';
     } else if (subcatName?.toLowerCase().includes('weight')) {
       unit = 'kg';
     } else if (subcatName?.toLowerCase().includes('sleep')) {
@@ -272,6 +278,18 @@ export default function GoalModal({
       unit = 'days';
     } else if (subcatName?.toLowerCase().includes('travel frequency')) {
       unit = 'trips';
+    } else if (subcatName?.toLowerCase().includes('nutrition')) {
+      const chosenUnit =
+        ansMap['unit_water'] ||
+        ansMap['unit_protein'] ||
+        ansMap['unit_calories'] ||
+        ansMap['unit_sugar'] ||
+        ansMap['unit_soft_drinks'] ||
+        ansMap['unit_fast_food'] ||
+        ansMap['unit_meals'] ||
+        ansMap['unit_supplements'] ||
+        'servings';
+      unit = String(chosenUnit);
     } else if (subcatName?.toLowerCase().includes('habit')) {
       unit = 'days';
     }
@@ -304,12 +322,20 @@ export default function GoalModal({
 
     // Auto title generation if title not manually entered
     if (!title || title.trim() === '') {
-      if (ansMap['habit_name'] && typeof ansMap['habit_name'] === 'string') {
+      if (ansMap['material_name'] && typeof ansMap['material_name'] === 'string') {
+        autoTitleParts.push(`Read ${ansMap['material_name']}`);
+      } else if (ansMap['reading_title'] && typeof ansMap['reading_title'] === 'string') {
+        autoTitleParts.push(`Read ${ansMap['reading_title']}`);
+      } else if (ansMap['habit_name'] && typeof ansMap['habit_name'] === 'string') {
         autoTitleParts.push(ansMap['habit_name']);
       } else if (ansMap['habit_to_quit'] && typeof ansMap['habit_to_quit'] === 'string') {
         autoTitleParts.push(`Quit ${ansMap['habit_to_quit']}`);
       } else if (ansMap['routine_type'] && typeof ansMap['routine_type'] === 'string') {
-        autoTitleParts.push(ansMap['routine_type']);
+        if (ansMap['routine_type'] === 'custom' && ansMap['custom_routine_type']) {
+          autoTitleParts.push(String(ansMap['custom_routine_type']));
+        } else {
+          autoTitleParts.push(String(ansMap['routine_type']));
+        }
       } else if (ansMap['course_name'] && typeof ansMap['course_name'] === 'string') {
         autoTitleParts.push(`Complete ${ansMap['course_name']}`);
       } else if (ansMap['destination'] && typeof ansMap['destination'] === 'string') {
@@ -322,7 +348,7 @@ export default function GoalModal({
         autoTitleParts.push(`${subcatName} Goal`);
       }
 
-      if (targetNum !== '') {
+      if (targetNum !== '' && !ansMap['routine_type']) {
         autoTitleParts.push(`(${targetNum} ${unit})`);
       }
       setTitle(autoTitleParts.join(' '));
@@ -410,6 +436,9 @@ export default function GoalModal({
     }
   };
 
+  const muiTheme = useTheme();
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
+
   const isDarkBg = isDark ? '#1e293b' : '#ffffff';
   const borderCol = isDark ? '#334155' : '#e2e8f0';
   const textCol = isDark ? '#f1f5f9' : '#0f172a';
@@ -422,27 +451,34 @@ export default function GoalModal({
       <Dialog
         open={open}
         onClose={onClose}
-        maxWidth="sm"
+        fullScreen={isMobile}
+        maxWidth="md"
         fullWidth
         TransitionComponent={Fade}
         transitionDuration={350}
         PaperProps={{
           sx: {
             background: isDarkBg,
-            borderRadius: '28px',
-            border: `1px solid ${borderCol}`,
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            borderRadius: { xs: 0, sm: '28px' },
+            border: { xs: 'none', sm: `1px solid ${borderCol}` },
+            boxShadow: { xs: 'none', sm: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' },
             overflow: 'hidden',
+            margin: { xs: 0, sm: 2 },
+            height: { xs: '100dvh', sm: 'auto' },
+            maxHeight: { xs: '100dvh', sm: '90vh' },
+            width: { xs: '100vw', sm: '100%' },
+            display: 'flex',
+            flexDirection: 'column',
           },
         }}
       >
         {/* Header */}
-        <Box sx={{ p: 3, pb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box sx={{ p: { xs: 2, sm: 3 }, pb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <Stack direction="row" alignItems="center" spacing={1}>
             <MagicIcon sx={{ color: activeColor, fontSize: 20 }} />
             <Typography
               sx={{
-                fontSize: 12,
+                fontSize: { xs: 11, sm: 12 },
                 fontWeight: 900,
                 color: activeColor,
                 letterSpacing: '0.08em',
@@ -459,7 +495,7 @@ export default function GoalModal({
               <Box
                 key={stepNum}
                 sx={{
-                  width: stepNum === currentStep ? 22 : 8,
+                  width: stepNum === currentStep ? { xs: 16, sm: 22 } : 8,
                   height: 8,
                   borderRadius: '4px',
                   bgcolor: stepNum === currentStep ? activeColor : stepNum < currentStep ? `${activeColor}60` : borderCol,
@@ -473,18 +509,20 @@ export default function GoalModal({
           </Stack>
         </Box>
 
-        <Divider sx={{ mx: 3, borderColor: borderCol }} />
+        <Divider sx={{ mx: { xs: 2, sm: 3 }, borderColor: borderCol }} />
 
         {/* Wizard Body */}
         <DialogContent
           sx={{
-            px: 3.5,
-            pt: 3,
-            pb: 2.5,
-            minHeight: 380,
+            px: { xs: 2, sm: 3.5 },
+            pt: { xs: 2, sm: 3 },
+            pb: { xs: 2, sm: 2.5 },
+            minHeight: { xs: 'auto', sm: 380 },
+            flex: 1,
+            overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'center',
+            justifyContent: 'flex-start',
           }}
         >
           <AnimatePresence mode="wait" custom={slideDir}>
@@ -514,7 +552,7 @@ export default function GoalModal({
                 {/* ── STEP 1: Main Category Selection Grid ── */}
                 {currentStep === 1 && (
                   <Box>
-                    <Typography variant="h5" sx={{ fontWeight: 900, mb: 0.5, color: textCol, fontSize: '1.3rem' }}>
+                    <Typography variant="h5" sx={{ fontWeight: 900, mb: 0.5, color: textCol, fontSize: { xs: '1.15rem', sm: '1.3rem' } }}>
                       What area would you like to focus on? 🎯
                     </Typography>
                     <Typography sx={{ fontSize: 12.5, color: mutedCol, mb: 2.5 }}>
@@ -524,44 +562,50 @@ export default function GoalModal({
                     <Box
                       sx={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
                         gap: 1.5,
                       }}
                     >
                       {Object.values(GOAL_CATEGORIES_CONFIG).map((cat) => {
                         const isSelected = selectedCategory === cat.id;
+                        const isDisabled = !!cat.disabled;
                         return (
                           <Paper
                             key={cat.id}
                             elevation={0}
-                            onClick={() => handleSelectCategory(cat.id)}
+                            onClick={() => {
+                              if (!isDisabled) handleSelectCategory(cat.id);
+                            }}
                             sx={{
-                              p: 2,
+                              p: { xs: 1.75, sm: 2 },
                               borderRadius: '20px',
-                              cursor: 'pointer',
+                              cursor: isDisabled ? 'not-allowed' : 'pointer',
+                              opacity: isDisabled ? 0.55 : 1,
                               border: `2px solid ${isSelected ? cat.color : borderCol}`,
                               bgcolor: isDark ? '#0f172a' : '#f8fafc',
                               transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
                               display: 'flex',
                               alignItems: 'center',
                               gap: 1.5,
-                              '&:hover': {
-                                transform: 'translateY(-3px)',
-                                borderColor: cat.color,
-                                boxShadow: `0 8px 20px ${cat.color}25`,
-                              },
+                              '&:hover': isDisabled
+                                ? {}
+                                : {
+                                    transform: 'translateY(-3px)',
+                                    borderColor: cat.color,
+                                    boxShadow: `0 8px 20px ${cat.color}25`,
+                                  },
                             }}
                           >
                             <Box
                               sx={{
-                                width: 44,
-                                height: 44,
+                                width: { xs: 40, sm: 44 },
+                                height: { xs: 40, sm: 44 },
                                 borderRadius: '14px',
                                 bgcolor: `${cat.color}20`,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: 24,
+                                fontSize: { xs: 20, sm: 24 },
                                 flexShrink: 0,
                               }}
                             >
@@ -570,7 +614,7 @@ export default function GoalModal({
                             <Box sx={{ minWidth: 0, flex: 1 }}>
                               <Typography
                                 sx={{
-                                  fontSize: 14,
+                                  fontSize: { xs: 13.5, sm: 14 },
                                   fontWeight: 800,
                                   color: textCol,
                                   lineHeight: 1.2,
@@ -581,17 +625,32 @@ export default function GoalModal({
                               <Typography
                                 sx={{
                                   fontSize: 11,
-                                  color: mutedCol,
+                                  color: isDisabled ? '#ef4444' : mutedCol,
                                   mt: 0.3,
+                                  fontWeight: isDisabled ? 700 : 500,
                                   whiteSpace: 'nowrap',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                 }}
                               >
-                                {cat.subcategories.length} goal templates
+                                {isDisabled ? (cat.disabledMessage || 'Not available now') : `${cat.subcategories.length} goal templates`}
                               </Typography>
                             </Box>
-                            <ArrowForward sx={{ fontSize: 16, color: cat.color, opacity: 0.7 }} />
+                            {isDisabled ? (
+                              <Chip
+                                label="Not available"
+                                size="small"
+                                sx={{
+                                  height: 22,
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  bgcolor: isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)',
+                                  color: '#ef4444',
+                                }}
+                              />
+                            ) : (
+                              <ArrowForward sx={{ fontSize: 16, color: cat.color, opacity: 0.7 }} />
+                            )}
                           </Paper>
                         );
                       })}
@@ -615,15 +674,19 @@ export default function GoalModal({
                     <Stack spacing={1.5}>
                       {availableSubcats.map((sc) => {
                         const isSelected = selectedSubcatId.toLowerCase() === sc.id.toLowerCase();
+                        const isDisabled = !!sc.disabled;
                         return (
                           <Paper
                             key={sc.id}
                             elevation={0}
-                            onClick={() => handleSelectSubcategory(sc.id)}
+                            onClick={() => {
+                              if (!isDisabled) handleSelectSubcategory(sc.id);
+                            }}
                             sx={{
                               p: 2,
                               borderRadius: '18px',
-                              cursor: 'pointer',
+                              cursor: isDisabled ? 'not-allowed' : 'pointer',
+                              opacity: isDisabled ? 0.55 : 1,
                               border: `2px solid ${isSelected ? activeColor : borderCol}`,
                               bgcolor: isSelected
                                 ? isDark ? `${activeColor}20` : `${activeColor}10`
@@ -632,10 +695,12 @@ export default function GoalModal({
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
-                              '&:hover': {
-                                borderColor: activeColor,
-                                transform: 'translateX(4px)',
-                              },
+                              '&:hover': isDisabled
+                                ? {}
+                                : {
+                                    borderColor: activeColor,
+                                    transform: 'translateX(4px)',
+                                  },
                             }}
                           >
                             <Box>
@@ -649,17 +714,32 @@ export default function GoalModal({
                               )}
                             </Box>
                             <Stack direction="row" alignItems="center" spacing={1}>
-                              <Chip
-                                label={`${sc.questions.length} Questions`}
-                                size="small"
-                                sx={{
-                                  fontWeight: 700,
-                                  fontSize: 10.5,
-                                  bgcolor: `${activeColor}18`,
-                                  color: activeColor,
-                                }}
-                              />
-                              <ArrowForward sx={{ fontSize: 18, color: activeColor }} />
+                              {isDisabled ? (
+                                <Chip
+                                  label={sc.disabledMessage || 'Not available now'}
+                                  size="small"
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontSize: 10.5,
+                                    bgcolor: isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)',
+                                    color: '#ef4444',
+                                  }}
+                                />
+                              ) : (
+                                <>
+                                  <Chip
+                                    label={`${sc.questions.length} Questions`}
+                                    size="small"
+                                    sx={{
+                                      fontWeight: 700,
+                                      fontSize: 10.5,
+                                      bgcolor: `${activeColor}18`,
+                                      color: activeColor,
+                                    }}
+                                  />
+                                  <ArrowForward sx={{ fontSize: 18, color: activeColor }} />
+                                </>
+                              )}
                             </Stack>
                           </Paper>
                         );
@@ -773,7 +853,7 @@ export default function GoalModal({
                       </Paper>
 
                       {/* Optional Target Value / Deadline Adjustment */}
-                      <Stack direction="row" spacing={1.5}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                         <TextField
                           label={`Target Value (${targetUnit})`}
                           type="number"

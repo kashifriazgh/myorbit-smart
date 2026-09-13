@@ -23,7 +23,8 @@ import {
   Event as EventIcon,
   Checklist as TodoIcon,
   PlayCircleOutline as LessonIcon,
-  Flag as CheckpointIcon,
+  LockClock as LockClockIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -88,20 +89,31 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
   const { todos, addTodo, updateTodo } = useTodoContext();
   const { allSchedules, addSchedule } = useSchedules();
 
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const answers = goal.questionnaireAnswers || {};
 
-  const skillName = goal.title || String(answers.skill_name || answers.course_name || 'Web Development');
-  const unitKey = String(goal.overallTargetUnit || answers.unit || 'hours').toLowerCase();
-  const unitDef = UNIT_OPTIONS.find((u) => u.key === unitKey) || UNIT_OPTIONS[1];
-
-  const targetLevel = Number(goal.overallTargetValue || answers.target_level || answers.target_amount || 50);
-  const [currentLevel, setCurrentLevel] = useState<number>(goal.currentValue || Number(answers.current_level || 12));
-  const [profLevel, setProfLevel] = useState<string>(String(answers.proficiency_level || 'Elementary'));
-
-  const resource = String(answers.resource || answers.learning_source || 'Online Course / Self Study');
+  const skillName = goal.title || String(answers.course_name || answers.skill_name || 'Course Goal');
+  const resource = String(answers.learning_mode || answers.resource || 'Course');
   const instructor = String(answers.instructor || answers.author || '');
 
-  // Lessons / Lectures State
+  // Extract Course Term (e.g. Video, Lecture, Lesson, Session, Module)
+  const courseTerm = useMemo(() => {
+    return String(answers.unit_name || answers.learning_unit || goal.overallTargetUnit || goal.unit || 'Lesson');
+  }, [answers.unit_name, answers.learning_unit, goal.overallTargetUnit, goal.unit]);
+
+  // Determine Action Verb based on course term
+  const actionVerb = useMemo(() => {
+    const termLower = courseTerm.toLowerCase();
+    if (termLower.includes('video')) return 'watched';
+    if (termLower.includes('lecture') || termLower.includes('session')) return 'attended';
+    return 'completed';
+  }, [courseTerm]);
+
+  const targetLevel = Number(goal.overallTargetValue || answers.total_units || answers.target_level || answers.target_amount || 0);
+  const [currentLevel, setCurrentLevel] = useState<number>(goal.currentValue || 0);
+  const [_profLevel, _setProfLevel] = useState<string>(String(answers.proficiency_level || 'Beginner'));
+
+  // Reset dummy data: strict fallback to goal arrays or empty []
   const [lessons, setLessons] = useState<CourseLesson[]>(() => {
     if (Array.isArray(goal.courseLessons) && goal.courseLessons.length > 0) {
       return goal.courseLessons.map((l, i) => ({
@@ -112,15 +124,9 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
         completedAt: l.completedAt,
       }));
     }
-    return [
-      { id: '1', title: 'Course Overview & Setup', durationMins: 20, completed: true, completedAt: new Date().toISOString() },
-      { id: '2', title: 'Core Principles & Fundamentals', durationMins: 45, completed: true, completedAt: new Date().toISOString() },
-      { id: '3', title: 'Hands-on Practice Session 1', durationMins: 60, completed: false },
-      { id: '4', title: 'Advanced Concepts & Capstone Project', durationMins: 90, completed: false },
-    ];
+    return [];
   });
 
-  // Practice Schedules State
   const [practiceList, setPracticeList] = useState<PracticeSession[]>(() => {
     if (Array.isArray(goal.practiceSchedules) && goal.practiceSchedules.length > 0) {
       return goal.practiceSchedules.map((p, i) => ({
@@ -130,13 +136,9 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
         frequencyPerWeek: p.frequencyPerWeek || 3,
       }));
     }
-    return [
-      { id: '1', activity: 'Daily Practice / Coding Session', time: '08:00 PM', frequencyPerWeek: 5 },
-      { id: '2', activity: 'Weekly Project Review & Quiz', time: '10:00 AM', frequencyPerWeek: 1 },
-    ];
+    return [];
   });
 
-  // Checkpoints State
   const [checkpoints, setCheckpoints] = useState<LearningCheckpoint[]>(() => {
     if (Array.isArray(goal.learningCheckpoints) && goal.learningCheckpoints.length > 0) {
       return goal.learningCheckpoints.map((c, i) => ({
@@ -145,13 +147,13 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
         done: !!c.done,
       }));
     }
-    return [
-      { id: '1', label: 'Finish introductory module & setup environment', done: true },
-      { id: '2', label: 'Complete first 5 practice exercises', done: true },
-      { id: '3', label: 'Build midterm mini project', done: false },
-      { id: '4', label: 'Earn course certificate / Pass final assessment', done: false },
-    ];
+    return [];
   });
+
+  // Check if today's lesson/unit has been logged/completed today
+  const hasLoggedToday = useMemo(() => {
+    return lessons.some((l) => l.completed && l.completedAt && l.completedAt.split('T')[0] === todayStr);
+  }, [lessons, todayStr]);
 
   // Modal States
   const [logModalOpen, setLogModalOpen] = useState(false);
@@ -169,30 +171,28 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
   const [practiceFreq, setPracticeFreq] = useState(3);
   const [savingPractice, setSavingPractice] = useState(false);
 
-  const [addCheckpointOpen, setAddCheckpointOpen] = useState(false);
+  const [_addCheckpointOpen, setAddCheckpointOpen] = useState(false);
   const [checkpointLabel, setCheckpointLabel] = useState('');
-  const [savingCheckpoint, setSavingCheckpoint] = useState(false);
+  const [_savingCheckpoint, setSavingCheckpoint] = useState(false);
 
   // Schedule Routine Modal State
   const [schedModalOpen, setSchedModalOpen] = useState(false);
   const [schedKind, setSchedKind] = useState<'schedule' | 'todo'>('schedule');
   const [schedTitle, setSchedTitle] = useState('');
   const [schedTime, setSchedTime] = useState('20:00');
-  const [schedDate, setSchedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [schedDate, setSchedDate] = useState(todayStr);
   const [savingSched, setSavingSched] = useState(false);
 
   // Progress Computations
   const mainProgress = useMemo(() => {
-    if (unitDef.kind === 'categorical') {
-      const idx = PROFICIENCY_LEVELS.indexOf(profLevel);
-      return Math.round(((idx >= 0 ? idx + 1 : 1) / PROFICIENCY_LEVELS.length) * 100);
+    if (!targetLevel || targetLevel <= 0) {
+      return clamp(Math.round(goal.progress || 0));
     }
-    if (!targetLevel || targetLevel <= 0) return 0;
     return clamp(Math.round((currentLevel / targetLevel) * 100));
-  }, [unitDef.kind, profLevel, currentLevel, targetLevel]);
+  }, [currentLevel, targetLevel, goal.progress]);
 
   const lessonsDoneCnt = useMemo(() => lessons.filter((l) => l.completed).length, [lessons]);
-  const checkpointsDoneCnt = useMemo(() => checkpoints.filter((c) => c.done).length, [checkpoints]);
+  const _checkpointsDoneCnt = useMemo(() => checkpoints.filter((c) => c.done).length, [checkpoints]);
 
   // Persist Goal Helpers
   const persistCourseData = async (updates: Partial<Goal>) => {
@@ -204,14 +204,56 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
     }
   };
 
-  // Quick Log
+  // Quick Daily Log Progress (REQ: Have U [x] todays [y]?)
+  const handleQuickDailyLog = async () => {
+    if (!goal.id || hasLoggedToday) return;
+    setSavingLog(true);
+    try {
+      const newTotal = currentLevel + 1;
+      setCurrentLevel(newTotal);
+
+      const newLesson: CourseLesson = {
+        id: String(Date.now()),
+        title: `${courseTerm} #${newTotal}`,
+        completed: true,
+        completedAt: new Date().toISOString(),
+      };
+      const updatedLessons = [newLesson, ...lessons];
+      setLessons(updatedLessons);
+
+      const updates: Partial<Goal> = {
+        currentValue: newTotal,
+        courseLessons: updatedLessons,
+      };
+
+      if (targetLevel > 0) {
+        updates.progress = clamp(Math.round((newTotal / targetLevel) * 100));
+      } else {
+        updates.progress = clamp(Math.round(((goal.progress || 0) + 5) * 100) / 100);
+      }
+
+      await persistCourseData(updates);
+    } catch (err) {
+      console.error('Failed to log daily course progress:', err);
+    } finally {
+      setSavingLog(false);
+    }
+  };
+
+  // Log Custom Amount
   const handleSaveLog = async () => {
-    if (typeof logVal !== 'number' || logVal < 0 || !goal.id) return;
+    if (typeof logVal !== 'number' || logVal <= 0 || !goal.id) return;
     setSavingLog(true);
     try {
       const newTotal = currentLevel + logVal;
       setCurrentLevel(newTotal);
-      await persistCourseData({ currentValue: newTotal });
+
+      const updates: Partial<Goal> = { currentValue: newTotal };
+      if (targetLevel > 0) {
+        updates.progress = clamp(Math.round((newTotal / targetLevel) * 100));
+      }
+
+      await persistCourseData(updates);
       setLogModalOpen(false);
       setLogVal('');
     } catch (err) {
@@ -228,14 +270,18 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
     );
     setLessons(updated);
 
-    // If unit is lessons/lectures, auto-update current level count!
-    if (unitDef.key === 'lessons') {
-      const newDoneCount = updated.filter((l) => l.completed).length;
-      setCurrentLevel(newDoneCount);
-      await persistCourseData({ courseLessons: updated, currentValue: newDoneCount });
-    } else {
-      await persistCourseData({ courseLessons: updated });
+    const newDoneCount = updated.filter((l) => l.completed).length;
+    setCurrentLevel(newDoneCount);
+
+    const updates: Partial<Goal> = {
+      courseLessons: updated,
+      currentValue: newDoneCount,
+    };
+    if (targetLevel > 0) {
+      updates.progress = clamp(Math.round((newDoneCount / targetLevel) * 100));
     }
+
+    await persistCourseData(updates);
   };
 
   // Add Lesson
@@ -259,6 +305,12 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
     } finally {
       setSavingLesson(false);
     }
+  };
+
+  const handleDeleteLesson = async (id: string) => {
+    const updated = lessons.filter((l) => l.id !== id);
+    setLessons(updated);
+    await persistCourseData({ courseLessons: updated });
   };
 
   // Add Practice Session
@@ -285,14 +337,14 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
   };
 
   // Toggle Checkpoint
-  const toggleCheckpoint = async (id: string) => {
+  const _toggleCheckpoint = async (id: string) => {
     const updated = checkpoints.map((c) => (c.id === id ? { ...c, done: !c.done } : c));
     setCheckpoints(updated);
     await persistCourseData({ learningCheckpoints: updated });
   };
 
   // Add Checkpoint
-  const handleAddCheckpoint = async () => {
+  const _handleAddCheckpoint = async () => {
     if (!checkpointLabel.trim() || !goal.id) return;
     setSavingCheckpoint(true);
     try {
@@ -321,7 +373,7 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
       if (schedKind === 'schedule') {
         await addSchedule({
           title: schedTitle.trim(),
-          date: schedDate || new Date().toISOString().split('T')[0],
+          date: schedDate || todayStr,
           startTime: schedTime || '20:00',
           endTime: '21:00',
           projectId: goal.projectId || '',
@@ -420,101 +472,90 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
             </Box>
           </Box>
           <Chip
-            label={unitDef.label}
+            label={`${mainProgress}% Completed`}
             size="small"
             sx={{ bgcolor: isDark ? '#4c1d95' : '#f3e8ff', color: '#a855f7', fontWeight: 700, fontSize: 11 }}
           />
         </Box>
 
-        {/* Level / Gauge Indicator */}
+        {/* Gauge Indicator */}
         <Box sx={{ mt: 3.5 }}>
-          {unitDef.kind === 'categorical' ? (
-            <>
-              <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}>
-                <Typography sx={{ fontSize: 24, fontWeight: 800, color: textPrimary }}>
-                  {profLevel}
-                </Typography>
-                <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#d946ef' }}>
-                  {mainProgress}% Proficiency
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                {PROFICIENCY_LEVELS.map((level, i) => {
-                  const filled = i <= PROFICIENCY_LEVELS.indexOf(profLevel);
-                  return (
-                    <Box key={level} sx={{ flex: 1 }}>
-                      <Box
-                        onClick={() => {
-                          setProfLevel(level);
-                          persistCourseData({ questionnaireAnswers: { ...answers, proficiency_level: level } });
-                        }}
-                        sx={{
-                          height: 8,
-                          borderRadius: 99,
-                          bgcolor: filled ? '#d946ef' : isDark ? '#334155' : '#f1f5f9',
-                          cursor: 'pointer',
-                          transition: 'all 0.3s ease',
-                          '&:hover': { opacity: 0.8 },
-                        }}
-                      />
-                      <Typography sx={{ fontSize: 9, color: filled ? '#d946ef' : textMuted, textAlign: 'center', mt: 0.5, fontWeight: filled ? 700 : 500 }}>
-                        {level}
-                      </Typography>
-                    </Box>
-                  );
-                })}
-              </Box>
-            </>
-          ) : (
-            <>
-              <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}>
-                <Typography sx={{ fontSize: 28, fontWeight: 800, color: textPrimary, fontFamily: 'monospace' }}>
-                  {currentLevel.toLocaleString()} <span style={{ fontSize: 14, fontWeight: 600, color: textMuted }}>{unitDef.suffix || goal.unit}</span>
-                </Typography>
-                <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#d946ef' }}>
-                  {mainProgress}% of Target ({targetLevel} {unitDef.suffix || goal.unit})
-                </Typography>
-              </Box>
-              <Box sx={{ height: 8, borderRadius: 99, bgcolor: isDark ? '#334155' : '#f1f5f9', overflow: 'hidden' }}>
-                <Box
-                  sx={{
-                    height: '100%',
-                    width: `${mainProgress}%`,
-                    bgcolor: '#d946ef',
-                    borderRadius: 99,
-                    transition: 'width 0.5s ease',
-                  }}
-                />
-              </Box>
-            </>
-          )}
+          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}>
+            <Typography sx={{ fontSize: 28, fontWeight: 800, color: textPrimary, fontFamily: 'monospace' }}>
+              {currentLevel.toLocaleString()}{' '}
+              <span style={{ fontSize: 14, fontWeight: 600, color: textMuted }}>
+                {targetLevel > 0 ? `/ ${targetLevel} ${courseTerm}s` : `${courseTerm}s completed`}
+              </span>
+            </Typography>
+            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#d946ef' }}>
+              {targetLevel > 0 ? `${mainProgress}% of Target` : `${currentLevel} done`}
+            </Typography>
+          </Box>
+          <Box sx={{ height: 8, borderRadius: 99, bgcolor: isDark ? '#334155' : '#f1f5f9', overflow: 'hidden' }}>
+            <Box
+              sx={{
+                height: '100%',
+                width: `${mainProgress}%`,
+                bgcolor: '#d946ef',
+                borderRadius: 99,
+                transition: 'width 0.5s ease',
+              }}
+            />
+          </Box>
         </Box>
 
-        {/* Quick Actions Row */}
-        <Box sx={{ mt: 3, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {unitDef.kind !== 'categorical' && (
+        {/* ------------------------------------------------------------- */}
+        {/* DAILY COURSE PROMPT (REQ: Have U [x] todays [y]?)             */}
+        {/* where x = watched/attended/completed, y = courseTerm           */}
+        {/* ------------------------------------------------------------- */}
+        <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${cardBorder}` }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, mb: 1.5 }}>
+            Have you {actionVerb} today&apos;s {courseTerm}?
+          </Typography>
+
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
             <Button
-              size="small"
               variant="contained"
-              onClick={() => setLogModalOpen(true)}
-              startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-              sx={{ borderRadius: '12px', textTransform: 'none', fontSize: 12, fontWeight: 700, bgcolor: '#d946ef', '&:hover': { bgcolor: '#c026d3' } }}
+              size="small"
+              disabled={hasLoggedToday}
+              onClick={handleQuickDailyLog}
+              startIcon={hasLoggedToday ? <LockClockIcon sx={{ fontSize: 16 }} /> : <AddIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                borderRadius: '12px',
+                textTransform: 'none',
+                fontWeight: 800,
+                fontSize: 12.5,
+                bgcolor: '#d946ef',
+                '&:hover': { bgcolor: '#c026d3' },
+                '&.Mui-disabled': {
+                  bgcolor: isDark ? '#334155' : '#cbd5e1',
+                  color: textMuted,
+                },
+              }}
             >
-              + Log {unitDef.label}
+              {hasLoggedToday ? 'Logged for Today' : `Yes, ${actionVerb} today's ${courseTerm}`}
             </Button>
+
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={hasLoggedToday}
+              onClick={() => setLogModalOpen(true)}
+              sx={{ borderRadius: '12px', textTransform: 'none', fontSize: 12, fontWeight: 700, borderColor: cardBorder, color: textPrimary }}
+            >
+              Custom Amount
+            </Button>
+          </Box>
+
+          {hasLoggedToday ? (
+            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#10b981', mt: 1.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              ✅ Today&apos;s {courseTerm} logged! Disabled until tomorrow
+            </Typography>
+          ) : (
+            <Typography sx={{ fontSize: 11.5, color: textMuted, mt: 1 }}>
+              Log once per day to record progress. Option disables after logging until tomorrow.
+            </Typography>
           )}
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => {
-              setSchedTitle(`Study / Practice Session: ${skillName}`);
-              setSchedModalOpen(true);
-            }}
-            startIcon={<EventIcon sx={{ fontSize: 16 }} />}
-            sx={{ borderRadius: '12px', textTransform: 'none', fontSize: 12, fontWeight: 700 }}
-          >
-            + Schedule Study Session
-          </Button>
         </Box>
       </Box>
 
@@ -524,7 +565,7 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <LessonIcon sx={{ color: '#a855f7', fontSize: 20 }} />
             <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-              Lessons & Lectures ({lessonsDoneCnt}/{lessons.length})
+              Lessons & Modules ({lessonsDoneCnt}/{lessons.length})
             </Typography>
           </Box>
           <Button
@@ -541,7 +582,6 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
           {lessons.map((lesson) => (
             <Box
               key={lesson.id}
-              onClick={() => toggleLesson(lesson.id)}
               sx={{
                 p: 2,
                 borderRadius: '16px',
@@ -550,12 +590,12 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                '&:hover': { borderColor: '#a855f7' },
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box
+                onClick={() => toggleLesson(lesson.id)}
+                sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer', flex: 1 }}
+              >
                 <IconButton size="small" sx={{ p: 0, color: lesson.completed ? '#10b981' : textMuted }}>
                   {lesson.completed ? <CheckCircle sx={{ fontSize: 20 }} /> : <RadioButtonUnchecked sx={{ fontSize: 20 }} />}
                 </IconButton>
@@ -577,13 +617,25 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
                   )}
                 </Box>
               </Box>
-              {lesson.completedAt && (
-                <Typography sx={{ fontSize: 10, color: textMuted, fontStyle: 'italic' }}>
-                  Completed {formatDate(lesson.completedAt)}
-                </Typography>
-              )}
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {lesson.completedAt && (
+                  <Typography sx={{ fontSize: 10, color: textMuted, fontStyle: 'italic' }}>
+                    Completed {formatDate(lesson.completedAt)}
+                  </Typography>
+                )}
+                <IconButton size="small" onClick={() => handleDeleteLesson(lesson.id)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' } }}>
+                  <DeleteIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
             </Box>
           ))}
+
+          {lessons.length === 0 && (
+            <Typography sx={{ fontSize: 12, color: textMuted, fontStyle: 'italic', textAlign: 'center', py: 2 }}>
+              No lessons added yet. Click &quot;+ Add Lesson&quot; to build your course outline!
+            </Typography>
+          )}
         </Stack>
       </Box>
 
@@ -634,76 +686,14 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
                   sx={{ bgcolor: isDark ? '#0c4a6e' : '#e0f2fe', color: '#0284c7', fontWeight: 700, fontSize: 11 }}
                 />
               </Box>
-
-              {/* 7-day dot indicator */}
-              <Box sx={{ mt: 1.5, display: 'flex', gap: 0.75 }}>
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <Box
-                    key={i}
-                    sx={{
-                      height: 6,
-                      flex: 1,
-                      borderRadius: 99,
-                      bgcolor: i < p.frequencyPerWeek ? '#0284c7' : isDark ? '#334155' : '#f1f5f9',
-                    }}
-                  />
-                ))}
-              </Box>
             </Box>
           ))}
-        </Stack>
-      </Box>
 
-      {/* Learning Checkpoints Section */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <CheckpointIcon sx={{ color: '#eab308', fontSize: 20 }} />
-            <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-              Checkpoints ({checkpointsDoneCnt}/{checkpoints.length})
+          {practiceList.length === 0 && (
+            <Typography sx={{ fontSize: 12, color: textMuted, fontStyle: 'italic', textAlign: 'center', py: 2 }}>
+              No practice routines scheduled yet. Click &quot;+ Add Practice&quot; to set up your weekly study habits.
             </Typography>
-          </Box>
-          <Button
-            size="small"
-            onClick={() => setAddCheckpointOpen(true)}
-            startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#eab308' }}
-          >
-            + Add Checkpoint
-          </Button>
-        </Box>
-
-        <Stack spacing={1.25}>
-          {checkpoints.map((cp) => (
-            <Box
-              key={cp.id}
-              onClick={() => toggleCheckpoint(cp.id)}
-              sx={{
-                p: 2,
-                borderRadius: '16px',
-                bgcolor: surfaceBg,
-                border: `1px solid ${cardBorder}`,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
-                cursor: 'pointer',
-              }}
-            >
-              <IconButton size="small" sx={{ p: 0, color: cp.done ? '#10b981' : textMuted }}>
-                {cp.done ? <CheckCircle sx={{ fontSize: 20 }} /> : <RadioButtonUnchecked sx={{ fontSize: 20 }} />}
-              </IconButton>
-              <Typography
-                sx={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: cp.done ? textMuted : textPrimary,
-                  textDecoration: cp.done ? 'line-through' : 'none',
-                }}
-              >
-                {cp.label}
-              </Typography>
-            </Box>
-          ))}
+          )}
         </Stack>
       </Box>
 
@@ -736,7 +726,7 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
                     {s.title}
                   </Typography>
                   <Typography sx={{ fontSize: 11, color: textMuted }}>
-                    Time: {s.startTime || '08:00 PM'} · Daily Study
+                    Time: {s.startTime || '20:00'} · Daily Study
                   </Typography>
                 </Box>
               </Box>
@@ -774,14 +764,14 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
       </Box>
 
       {/* Dialog: Quick Log Progress */}
-      <Dialog open={logModalOpen} onClose={() => setLogModalOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Log {unitDef.label}</DialogTitle>
+      <Dialog open={logModalOpen} onClose={() => setLogModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Log {courseTerm}s</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField
-              label={`Logged ${unitDef.label} Count`}
+              label={`Logged ${courseTerm} Count`}
               type="number"
-              placeholder="e.g. 2 (hours / lessons)"
+              placeholder="e.g. 1 or 2"
               fullWidth
               size="small"
               value={logVal}
@@ -790,35 +780,35 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setLogModalOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setLogModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
             Cancel
           </Button>
           <Button
             variant="contained"
             disabled={savingLog || typeof logVal !== 'number' || logVal <= 0}
             onClick={handleSaveLog}
-            sx={{ textTransform: 'none', bgcolor: '#d946ef', '&:hover': { bgcolor: '#c026d3' } }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#d946ef', '&:hover': { bgcolor: '#c026d3' } }}
           >
-            Save Progress
+            {savingLog ? 'Saving...' : 'Save Log'}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Dialog: Add Lesson */}
-      <Dialog open={addLessonOpen} onClose={() => setAddLessonOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Add Course Lesson / Lecture</DialogTitle>
+      <Dialog open={addLessonOpen} onClose={() => setAddLessonOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Add {courseTerm}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField
-              label="Lesson Title"
-              placeholder="e.g. Chapter 4: State Management"
+              label={`${courseTerm} Title`}
+              placeholder={`e.g. Introduction to ${skillName}`}
               fullWidth
               size="small"
               value={lessonTitleInput}
               onChange={(e) => setLessonTitleInput(e.target.value)}
             />
             <TextField
-              label="Estimated Duration (minutes)"
+              label="Estimated Duration (Minutes)"
               type="number"
               fullWidth
               size="small"
@@ -828,43 +818,43 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setAddLessonOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setAddLessonOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
             Cancel
           </Button>
           <Button
             variant="contained"
             disabled={savingLesson || !lessonTitleInput.trim()}
             onClick={handleAddLesson}
-            sx={{ textTransform: 'none', bgcolor: '#a855f7', '&:hover': { bgcolor: '#9333ea' } }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#a855f7', '&:hover': { bgcolor: '#9333ea' } }}
           >
-            Add Lesson
+            {savingLesson ? 'Saving...' : `Add ${courseTerm}`}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Dialog: Add Practice */}
-      <Dialog open={addPracticeOpen} onClose={() => setAddPracticeOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Add Practice Routine</DialogTitle>
+      <Dialog open={addPracticeOpen} onClose={() => setAddPracticeOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Add Practice Session</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField
-              label="Activity Name"
-              placeholder="e.g. Coding Challenges / Portfolio Design"
+              label="Practice Activity"
+              placeholder="e.g. Daily Exercises or Coding Practice"
               fullWidth
               size="small"
               value={practiceActivity}
               onChange={(e) => setPracticeActivity(e.target.value)}
             />
             <TextField
-              label="Routine Time"
-              placeholder="e.g. 08:00 PM"
+              label="Preferred Time"
+              type="time"
               fullWidth
               size="small"
               value={practiceTime}
               onChange={(e) => setPracticeTime(e.target.value)}
             />
             <TextField
-              label="Frequency (days per week)"
+              label="Times Per Week (1-7)"
               type="number"
               fullWidth
               size="small"
@@ -874,53 +864,23 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setAddPracticeOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setAddPracticeOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
             Cancel
           </Button>
           <Button
             variant="contained"
             disabled={savingPractice || !practiceActivity.trim()}
             onClick={handleAddPractice}
-            sx={{ textTransform: 'none', bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
           >
-            Add Practice
+            {savingPractice ? 'Saving...' : 'Add Routine'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: Add Checkpoint */}
-      <Dialog open={addCheckpointOpen} onClose={() => setAddCheckpointOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Add Learning Checkpoint</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <TextField
-              label="Checkpoint Description"
-              placeholder="e.g. Complete mid-course evaluation exam"
-              fullWidth
-              size="small"
-              value={checkpointLabel}
-              onChange={(e) => setCheckpointLabel(e.target.value)}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setAddCheckpointOpen(false)} sx={{ textTransform: 'none' }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={savingCheckpoint || !checkpointLabel.trim()}
-            onClick={handleAddCheckpoint}
-            sx={{ textTransform: 'none', bgcolor: '#eab308', '&:hover': { bgcolor: '#ca8a04' } }}
-          >
-            Add Checkpoint
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Dialog: Schedule Routine / Task */}
-      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Schedule Study Session</DialogTitle>
+      {/* Dialog: Schedule Study Session / Task */}
+      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Schedule Study Session</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Box sx={{ display: 'flex', gap: 1 }}>
@@ -932,7 +892,7 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
                 size="small"
                 sx={{ textTransform: 'none', borderRadius: '10px' }}
               >
-                Schedule Session
+                Schedule Routine
               </Button>
               <Button
                 fullWidth
@@ -947,8 +907,8 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
             </Box>
 
             <TextField
-              label="Study Title"
-              placeholder="e.g. 1-Hour Daily Study Routine"
+              label="Reminder Title"
+              placeholder={`e.g. Study ${skillName}`}
               fullWidth
               size="small"
               value={schedTitle}
@@ -976,16 +936,16 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
             Cancel
           </Button>
           <Button
             variant="contained"
             disabled={savingSched || !schedTitle.trim()}
             onClick={handleScheduleRoutine}
-            sx={{ textTransform: 'none', bgcolor: '#d946ef', '&:hover': { bgcolor: '#c026d3' } }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#d946ef', '&:hover': { bgcolor: '#c026d3' } }}
           >
-            Save Routine
+            {savingSched ? 'Saving...' : 'Save Reminder'}
           </Button>
         </DialogActions>
       </Dialog>
