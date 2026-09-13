@@ -444,7 +444,23 @@ export default function GoalModal({
   const textCol = isDark ? '#f1f5f9' : '#0f172a';
   const mutedCol = isDark ? '#64748b' : '#94a3b8';
 
-  const currentQuestion: QuestionConfig | undefined = activeQuestions[questionIndex];
+  const currentQuestionRaw: QuestionConfig | undefined = activeQuestions[questionIndex];
+
+  const currentQuestion = useMemo(() => {
+    if (!currentQuestionRaw) return undefined;
+    if (
+      currentQuestionRaw.id === 'track_item' &&
+      (answers['nutrition_goal'] === 'reduce' || answers['nutrition_goal'] === 'limit' || answers['nutrition_goal'] === 'decrease')
+    ) {
+      return {
+        ...currentQuestionRaw,
+        options: currentQuestionRaw.options?.filter(
+          (opt) => opt.value !== 'Water' && opt.value !== 'Meals'
+        ),
+      };
+    }
+    return currentQuestionRaw;
+  }, [currentQuestionRaw, answers]);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>

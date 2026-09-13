@@ -98,7 +98,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
   const { todos, addTodo, updateTodo } = useTodoContext();
   const { allSchedules, addSchedule } = useSchedules();
 
-  const answers = goal.questionnaireAnswers || {};
+  const answers = useMemo(() => goal.questionnaireAnswers || {}, [goal.questionnaireAnswers]);
 
   // Nutrition items stored on goal.nutritionItems or derived from questionnaire answers
   const [items, setItems] = useState<NutritionItem[]>(() => {
@@ -169,6 +169,37 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
   const [schedTime, setSchedTime] = useState('08:00');
   const [schedDate, setSchedDate] = useState(new Date().toISOString().split('T')[0]);
   const [savingSched, setSavingSched] = useState(false);
+
+  const selectedNutName = useMemo(() => {
+    const raw = String(
+      answers.track_item ||
+      answers.track_item_custom ||
+      answers.nutrition_type ||
+      answers.item_type ||
+      items[0]?.name ||
+      ''
+    ).trim();
+
+    if (!raw || raw.toLowerCase() === 'other' || raw.toLowerCase() === 'nutrition goal') {
+      return items[0]?.name || '';
+    }
+    return raw;
+  }, [answers, items]);
+
+  const displayTitle = useMemo(() => {
+    if (!selectedNutName) return goal.title;
+    if (goal.title.toLowerCase().includes(selectedNutName.toLowerCase())) {
+      return goal.title;
+    }
+    return `${goal.title} - ${selectedNutName}`;
+  }, [goal.title, selectedNutName]);
+
+  const handleOpenLogModal = (idx: number) => {
+    setSelectedItemIdx(idx);
+    const targetItem = items[idx];
+    setAddAmount(targetItem ? targetItem.targetValue : 1);
+    setLogModalOpen(true);
+  };
 
   // Filter linked schedules and todos
   const linkedNutritionSchedules = useMemo(() => {
@@ -340,18 +371,14 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
           Health · Nutrition & Hydration Goal
         </Typography>
         <Typography sx={{ fontSize: 18, fontWeight: 700, color: textPrimary, mt: 0.5, mb: 2 }}>
-          {goal.title}
+          {displayTitle}
         </Typography>
 
         {/* Quick Log Button */}
         <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
           <Button
             variant="contained"
-            onClick={() => {
-              setSelectedItemIdx(0);
-              setAddAmount('');
-              setLogModalOpen(true);
-            }}
+            onClick={() => handleOpenLogModal(0)}
             startIcon={<AddIcon />}
             sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 700, bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
           >
@@ -452,11 +479,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
                   </Typography>
                   <Button
                     size="small"
-                    onClick={() => {
-                      setSelectedItemIdx(idx);
-                      setAddAmount('');
-                      setLogModalOpen(true);
-                    }}
+                    onClick={() => handleOpenLogModal(idx)}
                     sx={{ textTransform: 'none', fontSize: 11, fontWeight: 700, color: meta.color }}
                   >
                     + Add Intake
@@ -677,6 +700,25 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
               value={addAmount}
               onChange={(e) => setAddAmount(e.target.value ? Number(e.target.value) : '')}
             />
+
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', pt: 0.5 }}>
+              <Chip
+                label={`Full Target (${items[selectedItemIdx]?.targetValue || 1} ${items[selectedItemIdx]?.unit || ''})`}
+                onClick={() => setAddAmount(items[selectedItemIdx]?.targetValue || 1)}
+                size="small"
+                color="primary"
+                sx={{ fontWeight: 700, cursor: 'pointer' }}
+              />
+              {items[selectedItemIdx]?.targetValue && items[selectedItemIdx].targetValue > 1 && (
+                <Chip
+                  label={`Half Target (${Math.round(items[selectedItemIdx].targetValue / 2)} ${items[selectedItemIdx]?.unit || ''})`}
+                  onClick={() => setAddAmount(Math.round(items[selectedItemIdx].targetValue / 2))}
+                  size="small"
+                  variant="outlined"
+                  sx={{ fontWeight: 700, cursor: 'pointer' }}
+                />
+              )}
+            </Box>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>

@@ -215,6 +215,22 @@ function calculateExerciseProgress(item: ExerciseItem): number {
   return Math.max(0, Math.min(100, Math.round(((item.currentValue || 0) / item.targetValue) * 100)));
 }
 
+export function getDefaultTargetForUnit(unit: string): number {
+  const norm = (unit || '').toLowerCase().trim();
+  if (norm === 'steps') return 5000;
+  if (norm === 'km' || norm === 'kilometer' || norm === 'kilometers') return 5;
+  if (norm === 'meters') return 1000;
+  if (norm === 'minutes' || norm === 'mins') return 30;
+  if (norm === 'hours') return 1;
+  if (norm === 'rounds') return 3;
+  if (norm === 'reps') return 20;
+  if (norm === 'sets') return 3;
+  if (norm === 'sessions') return 1;
+  if (norm === 'laps') return 10;
+  if (norm === 'kcal') return 300;
+  return 10;
+}
+
 function formatUnitVal(val: number, unit: string) {
   if (unit === 'steps') return `${val.toLocaleString()} steps`;
   if (unit === 'minutes' || unit === 'mins') return `${val} minutes`;
@@ -260,7 +276,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
   const [exPurpose, setExPurpose] = useState('General Health');
   const [exTarget, setExTarget] = useState<number | ''>(5000);
   const [exCurrent, setExCurrent] = useState<number | ''>(0);
-  const [exTime, setExTime] = useState('07:00 AM');
+  const [exTime, setExTime] = useState('07:00');
   const [savingEx, setSavingEx] = useState(false);
 
   // Quick Log Modal State
@@ -320,12 +336,26 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     return EXERCISE_UNITS_MAP[activeExerciseName] || EXERCISE_UNITS_MAP[exName] || DEFAULT_UNITS;
   }, [activeExerciseName, exName]);
 
+  // Unit change handler with intelligent default target values per metric unit
+  const handleUnitChange = (newUnit: string) => {
+    setExUnit((prevUnit) => {
+      setExTarget((prevTarget) => {
+        const oldDefault = getDefaultTargetForUnit(prevUnit);
+        if (prevTarget === '' || prevTarget === 5000 || prevTarget === oldDefault) {
+          return getDefaultTargetForUnit(newUnit);
+        }
+        return prevTarget;
+      });
+      return newUnit;
+    });
+  };
+
   // Select Exercise Preset and auto-assign 1st relevant unit
   const handleSelectExercise = (name: string) => {
     setExName(name);
     const units = EXERCISE_UNITS_MAP[name] || DEFAULT_UNITS;
     if (units.length > 0) {
-      setExUnit(units[0].value);
+      handleUnitChange(units[0].value);
     }
   };
 
@@ -366,7 +396,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
       setExPurpose(item.purpose || 'General Health');
       setExTarget(item.targetValue);
       setExCurrent(item.currentValue || 0);
-      setExTime(item.scheduleTime || '07:00 AM');
+      setExTime(item.scheduleTime || '07:00');
     } else {
       setEditingId(null);
       setExName('Walk');
@@ -377,7 +407,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
       setExPurpose('General Health');
       setExTarget(5000);
       setExCurrent(0);
-      setExTime('07:00 AM');
+      setExTime('07:00');
     }
     setExerciseModalOpen(true);
   };
@@ -1108,7 +1138,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
                       return (
                         <Box
                           key={u.value}
-                          onClick={() => setExUnit(u.value)}
+                          onClick={() => handleUnitChange(u.value)}
                           sx={{
                             p: 2,
                             borderRadius: '16px',
@@ -1247,7 +1277,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
                         <Select
                           value={exUnit}
                           label="Selected Unit"
-                          onChange={(e) => setExUnit(e.target.value)}
+                          onChange={(e) => handleUnitChange(e.target.value)}
                           sx={{ borderRadius: '14px' }}
                         >
                           {currentAvailableUnits.map((u) => (
@@ -1265,7 +1295,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
                         <Chip
                           key={u.value}
                           label={`${u.icon} ${u.label}`}
-                          onClick={() => setExUnit(u.value)}
+                          onClick={() => handleUnitChange(u.value)}
                           size="small"
                           sx={{
                             fontSize: 11,
@@ -1291,11 +1321,12 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
                       />
                       <TextField
                         label="Preferred Routine Time"
-                        placeholder="e.g. 07:00 AM"
+                        type="time"
                         fullWidth
                         size="small"
                         value={exTime}
                         onChange={(e) => setExTime(e.target.value)}
+                        InputLabelProps={{ shrink: true }}
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: '14px' } }}
                       />
                     </Box>

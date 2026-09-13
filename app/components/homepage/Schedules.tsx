@@ -1015,13 +1015,70 @@ const Schedules: React.FC = () => {
 
     // If completing a goal-linked schedule:
     if (newStatus === 'completed' && schedule.linkedGoalId) {
-      const amt = schedule.contributionAmount || 0;
-      setSchedulePromptItem({
-        schedule,
-        assumedAmount: amt,
-      });
-      setSchedulePromptAmount(amt > 0 ? amt : '');
-      return;
+      try {
+        const goalRef = doc(db, 'goals', schedule.linkedGoalId);
+        const goalSnap = await getDoc(goalRef);
+
+        if (goalSnap.exists()) {
+          const goalData = goalSnap.data();
+          const cat = (goalData.type || '').toLowerCase();
+          const subcat = (goalData.subcategory || '').toLowerCase();
+
+          // Financial Deposit Prompt ONLY for Finance / Saving goals!
+          const isFinanceSaving = cat === 'finance' && (subcat.includes('saving') || subcat.includes('fund') || subcat.includes('savings'));
+
+          if (isFinanceSaving) {
+            const amt = schedule.contributionAmount || Number(goalData.overallTargetValue || 0);
+            setSchedulePromptItem({
+              schedule,
+              assumedAmount: amt,
+            });
+            setSchedulePromptAmount(amt > 0 ? amt : '');
+            return;
+          }
+
+          // If linked to Fitness goal: update exercise items progress
+          if (cat === 'health' && (subcat.includes('fitness') || subcat.includes('walking'))) {
+            const exercises = Array.isArray(goalData.exerciseItems) ? [...goalData.exerciseItems] : [];
+            if (exercises.length > 0) {
+              const matchedEx = exercises.find((e: { name?: string }) =>
+                schedule.title.toLowerCase().includes((e.name || '').toLowerCase())
+              );
+              const exToUpdate = (matchedEx || exercises[0]) as { currentValue?: number; targetValue?: number };
+              if (exToUpdate) {
+                exToUpdate.currentValue = (exToUpdate.currentValue || 0) + (exToUpdate.targetValue || 1);
+                let sum = 0;
+                for (const itemEx of exercises as Array<{ targetValue?: number; currentValue?: number }>) {
+                  const tVal = itemEx.targetValue || 0;
+                  const cVal = itemEx.currentValue || 0;
+                  if (tVal > 0) {
+                    sum += Math.max(0, Math.min(100, Math.round((cVal / tVal) * 100)));
+                  }
+                }
+                const newMean = Math.max(0, Math.min(100, Math.round(sum / exercises.length)));
+                await updateDoc(goalRef, {
+                  exerciseItems: exercises,
+                  progress: newMean,
+                  updatedAt: serverTimestamp(),
+                });
+              }
+            }
+          }
+          // If linked to Nutrition goal: record daily intake log
+          else if (cat === 'health' && (subcat.includes('nutrition') || subcat.includes('diet'))) {
+            const logs = Array.isArray(goalData.nutritionLogs) ? [...goalData.nutritionLogs] : [];
+            const todayStr = new Date().toISOString().split('T')[0];
+            logs.push({ id: String(Date.now()), date: todayStr, qty: 1, itemType: schedule.title });
+            await updateDoc(goalRef, {
+              nutritionLogs: logs,
+              currentValue: (Number(goalData.currentValue) || 0) + 1,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error inspecting linked goal for schedule toggle:', err);
+      }
     }
 
     try {

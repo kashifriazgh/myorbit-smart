@@ -13,6 +13,8 @@ import QuickLinks from './components/homepage/QuickLinks';
 import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingInitializer';
 import InstallShortcutBanner from './components/global/InstallShortcutBanner';
 
+import DailyChecks from './components/global/DailyChecks';
+
 // Lazy load components
 const ImportantTasks = lazy(
   () => import('./components/homepage/ImportantTasks'),
@@ -70,10 +72,11 @@ export default function Homepage() {
       <GuestUserBanner />
       <GuideBanner />
 
-      <div className="grid grid-cols-1 gap-6 mb-8 mt-4">
+      <div className="grid grid-cols-1 gap-6 mb-4 mt-4">
         <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
           <HomepageHeader />
         </Suspense>
+        <DailyChecks />
       </div>
 
       {/* Updated Three Column Layout */}

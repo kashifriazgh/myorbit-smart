@@ -1018,6 +1018,7 @@ export interface Goal {
   profitLogs?: unknown[];
   exerciseItems?: unknown[];
   nutritionItems?: unknown[];
+  nutritionLogs?: Array<{ id?: string; date: string; qty?: number; itemType?: string }>;
   weightLogs?: unknown[];
   sleepLogs?: unknown[];
   medicalAppointments?: unknown[];
@@ -1035,6 +1036,7 @@ export interface Goal {
   quitStartDate?: string;
   relapseLogs?: Array<{ id?: string; date: string; trigger?: string; note?: string }>;
   routineItems?: Array<{ id?: string; title: string; time?: string; period?: 'morning' | 'afternoon' | 'evening' | 'night'; completed: boolean }>;
+  routineLogs?: Array<{ id?: string; date: string; checkedCount?: number; totalItems?: number; fullStreak?: boolean }>;
 }
 
 export interface TrackerCheckIn {
