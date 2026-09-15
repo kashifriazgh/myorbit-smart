@@ -15,6 +15,9 @@ import {
   Stack,
   CircularProgress,
   Tooltip,
+  Modal,
+  Fade,
+  Collapse,
 } from '@mui/material';
 import {
   AccountBalanceWallet,
@@ -22,13 +25,13 @@ import {
   ArrowDownward,
   ArrowUpward,
   CalendarMonth,
-  Event as EventIcon,
   Checklist as TodoIcon,
   Delete as DeleteIcon,
   AccessTime as ClockIcon,
-  Check as CheckIcon,
   MonetizationOn,
   LinkOff,
+  Schedule as ScheduleIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -45,6 +48,19 @@ export interface Transaction {
   note?: string;
 }
 
+export interface SavingsActionItem {
+  id: string;
+  task: string;
+  done: boolean;
+  assumedContributionValue?: number;
+  kind?: 'schedule' | 'todo';
+  dueDate?: string;
+  time?: string;
+  assignee?: string;
+  scheduleId?: string;
+  todoId?: string;
+}
+
 interface SavingsTemplateProps {
   goal: Goal;
   onUpdateGoal?: (goalId: string, updates: Partial<Goal>) => Promise<void>;
@@ -52,8 +68,9 @@ interface SavingsTemplateProps {
 }
 
 function formatMoney(value: number, currency: string = 'PKR') {
+  const displayCurrency = currency === 'units' ? 'PKR' : currency;
   const sign = value < 0 ? '-' : '';
-  return `${sign}${currency} ${Math.round(Math.abs(value)).toLocaleString()}`;
+  return `${sign}${displayCurrency} ${Math.round(Math.abs(value)).toLocaleString()}`;
 }
 
 const toPlainDate = (value: unknown): Date | null => {
@@ -88,11 +105,12 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
   const { user } = useAuth();
-  const { todos, addTodo, updateTodo, deleteTodo } = useTodoContext();
-  const { allSchedules, addSchedule, editSchedule, removeSchedule } = useSchedules();
+  const { addTodo, updateTodo, deleteTodo } = useTodoContext();
+  const { addSchedule, editSchedule, removeSchedule } = useSchedules();
 
   const answers = goal.questionnaireAnswers || {};
-  const currency = String(goal.overallTargetUnit || answers.currency || 'PKR');
+  const rawUnit = goal.overallTargetUnit || answers.currency || 'PKR';
+  const currency = String(rawUnit === 'units' ? 'PKR' : rawUnit);
   const openingBalance = Number(answers.opening_balance || 0);
 
   const targetValue = goal.overallTargetValue || Number(answers.target_amount || answers.amount || 0);
@@ -104,7 +122,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
     String(goal.linkedSourceId || answers.saving_source || answers.fund_source || '')
   );
 
-  // New source creation state (shown ONLY when no source exists yet)
+  // New source creation state
   const [createSourceOpen, setCreateSourceOpen] = useState(false);
   const [newSourceName, setNewSourceName] = useState('');
   const [creatingSource, setCreatingSource] = useState(false);
@@ -115,30 +133,115 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
     return [];
   });
 
+  // Strategy Tasks State
+  const [actions, setActions] = useState<SavingsActionItem[]>(() => {
+    if (Array.isArray(goal.actions)) return goal.actions as unknown as SavingsActionItem[];
+    if (Array.isArray(goal.steps)) {
+      return (goal.steps as unknown as Array<Record<string, unknown>>).map((s, idx) => ({
+        id: String(s.id || `step_${idx}`),
+        task: String(s.task || s.title || ''),
+        done: Boolean(s.done || s.status === 'completed'),
+        assumedContributionValue: Number(s.assumedContributionValue || 0),
+        kind: (s.kind as 'schedule' | 'todo') || (s.linkedType as 'schedule' | 'todo') || undefined,
+        scheduleId: String(s.scheduleId || s.linkedItemId || ''),
+        todoId: String(s.todoId || ''),
+      }));
+    }
+    return [];
+  });
+  const [newStepInput, setNewStepInput] = useState('');
+
+  // Strategy Task Details Modal State
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [activeStep, setActiveStep] = useState<SavingsActionItem | null>(null);
+  const [taskEditText, setTaskEditText] = useState('');
+  const [taskEditAssumedVal, setTaskEditAssumedVal] = useState<number | ''>('');
+  const [taskEditKind, setTaskEditKind] = useState<'none' | 'schedule' | 'todo'>('none');
+  const [taskEditDate, setTaskEditDate] = useState('');
+  const [taskEditStartTime, setTaskEditStartTime] = useState('10:00');
+  const [taskEditEndTime, setTaskEditEndTime] = useState('11:00');
+  const [taskEditTodoTime, setTaskEditTodoTime] = useState('');
+  const [taskEditAssignee, setTaskEditAssignee] = useState('');
+  const [showConvertOptions, setShowConvertOptions] = useState(false);
+  const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+
+  // Update Progress Modal State
+  const [progressDialogOpen, setProgressDialogOpen] = useState(false);
+  const [progressInputAmount, setProgressInputAmount] = useState<number | ''>('');
+  const [savingProgress, setSavingProgress] = useState(false);
+
   // Sleek Add Money Dialog (ONLY Amount + Note)
   const [addTxnOpen, setAddTxnOpen] = useState(false);
   const [txnAmount, setTxnAmount] = useState<number | ''>('');
   const [txnNote, setTxnNote] = useState('');
   const [savingTxn, setSavingTxn] = useState(false);
 
-  // Action Item (Schedule / Todo) creation modal states
-  const [addActionOpen, setAddActionOpen] = useState(false);
-  const [actionKind] = useState<'schedule' | 'todo'>('schedule');
-  const [actionTitle, setActionTitle] = useState('');
-  const [actionTime, setActionTime] = useState('10:00');
-  const [actionDueDate, setActionDueDate] = useState(new Date().toISOString().split('T')[0]);
-  const [actionContributionAmount, setActionContributionAmount] = useState<number | ''>('');
-  const [savingAction, setSavingAction] = useState(false);
+  // Periodic Savings Check-In Reminder State
+  const [reminderFreq, setReminderFreq] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>(() => {
+    return (goal.savingsReminderFreq as 'daily' | 'weekly' | 'monthly' | 'custom') || 'weekly';
+  });
+  const [customIntervalDays, setCustomIntervalDays] = useState<number>(() => {
+    return goal.savingsCustomIntervalDays || 3;
+  });
+  const [lastCheckInDate, setLastCheckInDate] = useState<string>(() => {
+    return goal.lastSavingsCheckInDate || '';
+  });
+  const [freqSettingsOpen, setFreqSettingsOpen] = useState(false);
 
-  // Completion Prompt Dialog ("Have you got the amount?")
-  const [promptItem, setPromptItem] = useState<{
-    id: string;
-    title: string;
-    kind: 'schedule' | 'todo';
-    assumedAmount: number;
-  } | null>(null);
-  const [promptAmount, setPromptAmount] = useState<number | ''>('');
-  const [completingAction, setCompletingAction] = useState(false);
+  // Completion Prompt Dialog for Strategy Steps
+  const [stepPromptItem, setStepPromptItem] = useState<SavingsActionItem | null>(null);
+  const [stepPromptAmount, setStepPromptAmount] = useState<number | ''>('');
+  const [savingStepPrompt, setSavingStepPrompt] = useState(false);
+
+  // Helper: Persist Actions list to Goal
+  const saveActionsList = async (updated: SavingsActionItem[]) => {
+    setActions(updated);
+    if (goal.id) {
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, { actions: updated as unknown as Goal['actions'] });
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), { actions: updated });
+      }
+    }
+  };
+
+  // Check if periodic check-in is due
+  const isCheckInDue = useMemo(() => {
+    if (!lastCheckInDate) return true;
+    const last = new Date(lastCheckInDate);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (reminderFreq === 'daily') return diffDays >= 1;
+    if (reminderFreq === 'weekly') return diffDays >= 7;
+    if (reminderFreq === 'monthly') return diffDays >= 30;
+    if (reminderFreq === 'custom') return diffDays >= (customIntervalDays || 3);
+    return false;
+  }, [lastCheckInDate, reminderFreq, customIntervalDays]);
+
+  const handleUpdateReminderFreq = async (freq: 'daily' | 'weekly' | 'monthly' | 'custom', customDays?: number) => {
+    setReminderFreq(freq);
+    if (customDays) setCustomIntervalDays(customDays);
+    if (goal.id) {
+      const payload = { savingsReminderFreq: freq, savingsCustomIntervalDays: customDays || customIntervalDays };
+      if (onUpdateGoal) await onUpdateGoal(goal.id, payload);
+      else await updateDoc(doc(db, 'goals', goal.id), payload);
+    }
+    setFreqSettingsOpen(false);
+  };
+
+  const handleConfirmCheckIn = async (openDepositModal?: boolean) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    setLastCheckInDate(todayStr);
+    if (goal.id) {
+      const payload = { lastSavingsCheckInDate: todayStr };
+      if (onUpdateGoal) await onUpdateGoal(goal.id, payload);
+      else await updateDoc(doc(db, 'goals', goal.id), payload);
+    }
+    if (openDepositModal) {
+      setAddTxnOpen(true);
+    }
+  };
 
   // Auto-set initial default source if missing
   useEffect(() => {
@@ -160,7 +263,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
   }, [transactions, openingBalance, goal.currentValue]);
 
   const progress = useMemo(() => {
-    if (!targetValue || targetValue <= 0) return null;
+    if (!targetValue || targetValue <= 0) return 0;
     return Math.max(0, Math.min(100, Math.round((totalSaved / targetValue) * 100)));
   }, [totalSaved, targetValue]);
 
@@ -175,37 +278,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
     return { daysLeft, duration, elapsed, timeProgress };
   }, [startDate, targetDate]);
 
-  // Combined timeline list of linked Schedules & Todos for this Savings Goal
-  const actionItems = useMemo(() => {
-    if (!goal.id) return [];
-    const schedList = allSchedules
-      .filter((s) => (s as { linkedGoalId?: string }).linkedGoalId === goal.id)
-      .map((s) => ({
-        id: s.id || '',
-        title: s.title,
-        kind: 'schedule' as const,
-        date: s.date,
-        time: s.startTime || '10:00',
-        status: s.status,
-        assumedAmount: s.contributionAmount || 0,
-      }));
-
-    const todoList = todos
-      .filter((t) => (t as { linkedGoalId?: string }).linkedGoalId === goal.id)
-      .map((t) => ({
-        id: t.id || '',
-        title: t.title,
-        kind: 'todo' as const,
-        date: formatDate(t.dueDate),
-        time: 'Task',
-        status: t.status,
-        assumedAmount: 0,
-      }));
-
-    return [...schedList, ...todoList];
-  }, [allSchedules, todos, goal.id]);
-
-  // Behind-the-scenes helper: Sync transaction to Finance snapshot & cashTransactions
+  // Record Finance transaction & sync snapshot
   const recordFinanceTransaction = async (
     amount: number,
     type: 'deposit' | 'withdrawal',
@@ -276,24 +349,27 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
     setTransactions(updatedTxns);
 
     const netChange = type === 'deposit' ? amount : -amount;
-    const updatedCurrentVal = (goal.currentValue || 0) + netChange;
+    const updatedCurrentVal = Math.max(0, (goal.currentValue || 0) + netChange);
+    const newPct = targetValue > 0 ? Math.max(0, Math.min(100, Math.round((updatedCurrentVal / targetValue) * 100))) : 0;
 
     if (onUpdateGoal) {
       await onUpdateGoal(goal.id, {
         transactions: updatedTxns,
         currentValue: updatedCurrentVal,
+        progress: newPct,
         linkedSourceId: sourceToUse,
       });
     } else {
       await updateDoc(doc(db, 'goals', goal.id), {
         transactions: updatedTxns,
         currentValue: updatedCurrentVal,
+        progress: newPct,
         linkedSourceId: sourceToUse,
       });
     }
   };
 
-  // Handle Add Deposit Submission (Amount & Note ONLY)
+  // Handle Add Deposit Submission
   const handleAddDeposit = async () => {
     if (typeof txnAmount !== 'number' || txnAmount <= 0 || !goal.id || !user) return;
     setSavingTxn(true);
@@ -306,6 +382,35 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
       console.error('Failed to add deposit:', err);
     } finally {
       setSavingTxn(false);
+    }
+  };
+
+  // Open Log / Update Progress Modal for Savings Goal
+  const handleOpenProgressModal = () => {
+    setProgressInputAmount(totalSaved);
+    setProgressDialogOpen(true);
+  };
+
+  // Confirm Log / Update Progress
+  const handleSaveProgress = async () => {
+    if (typeof progressInputAmount !== 'number' || progressInputAmount < 0 || !user || !goal.id) return;
+    setSavingProgress(true);
+
+    try {
+      const delta = progressInputAmount - totalSaved;
+      if (delta !== 0) {
+        await recordFinanceTransaction(
+          Math.abs(delta),
+          delta > 0 ? 'deposit' : 'withdrawal',
+          selectedSource,
+          `Progress update adjustment`
+        );
+      }
+      setProgressDialogOpen(false);
+    } catch (err) {
+      console.error('Failed to update progress:', err);
+    } finally {
+      setSavingProgress(false);
     }
   };
 
@@ -343,16 +448,19 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
 
       const netChange = targetTxn.type === 'deposit' ? -targetTxn.amount : targetTxn.amount;
       const updatedCurrentVal = Math.max(0, (goal.currentValue || 0) + netChange);
+      const newPct = targetValue > 0 ? Math.max(0, Math.min(100, Math.round((updatedCurrentVal / targetValue) * 100))) : 0;
 
       if (onUpdateGoal) {
         await onUpdateGoal(goal.id, {
           transactions: updatedTxns,
           currentValue: updatedCurrentVal,
+          progress: newPct,
         });
       } else {
         await updateDoc(doc(db, 'goals', goal.id), {
           transactions: updatedTxns,
           currentValue: updatedCurrentVal,
+          progress: newPct,
         });
       }
     } catch (err) {
@@ -360,7 +468,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
     }
   };
 
-  // Unlink/Reset source (allowing attached source deletion)
+  // Unlink source
   const handleUnlinkSource = async () => {
     if (!goal.id) return;
     if (!confirm('Unlink and reset the Finance Source for this goal?')) return;
@@ -372,7 +480,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
     }
   };
 
-  // Handle Initial Source Creation (Shown ONLY if no source is attached yet)
+  // Handle Initial Source Creation
   const handleCreateSource = async () => {
     if (!newSourceName.trim() || !user || !goal.id) return;
     setCreatingSource(true);
@@ -428,116 +536,247 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
     }
   };
 
-  // Create Linked Schedule or Todo
-  const handleAddAction = async () => {
-    if (!actionTitle.trim() || !user || !goal.id) return;
-    setSavingAction(true);
-    try {
-      const assumedVal = typeof actionContributionAmount === 'number' ? actionContributionAmount : undefined;
+  // Add Strategic Action Step from inline row
+  const handleAddStep = async () => {
+    const text = newStepInput.trim();
+    if (!text) return;
 
-      if (actionKind === 'schedule') {
-        await addSchedule({
-          title: actionTitle.trim(),
-          date: actionDueDate || new Date().toISOString().split('T')[0],
-          startTime: actionTime || '10:00',
-          endTime: '11:00',
-          projectId: goal.projectId || '',
-          userId: user.uid,
-          status: 'pending',
-          priority: 'medium',
-          linkedGoalId: goal.id,
-          goalTitle: goal.title,
-          contributionAmount: assumedVal,
-        });
+    const newStep: SavingsActionItem = {
+      id: 'step_' + Date.now(),
+      task: text,
+      done: false,
+    };
+    const updated = [...actions, newStep];
+    await saveActionsList(updated);
+    setNewStepInput('');
+  };
+
+  // Delete Action Step inline
+  const handleDeleteStep = async (stepId: string) => {
+    const step = actions.find((s) => s.id === stepId);
+    if (step?.scheduleId && removeSchedule) {
+      await removeSchedule(step.scheduleId, true).catch((err) => console.error(err));
+    }
+    if (step?.todoId && deleteTodo) {
+      await deleteTodo(step.todoId, true).catch((err) => console.error(err));
+    }
+
+    const updated = actions.filter((s) => s.id !== stepId);
+    await saveActionsList(updated);
+  };
+
+  // Open Task Detail Dialog for Strategy Step
+  const handleOpenTaskDetailModal = (step: SavingsActionItem) => {
+    setActiveStep(step);
+    setTaskEditText(step.task);
+    setTaskEditAssumedVal(step.assumedContributionValue || '');
+    const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
+    setTaskEditKind(kind as 'none' | 'schedule' | 'todo');
+    setShowConvertOptions(kind === 'schedule' || kind === 'todo');
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    setTaskEditDate(step.dueDate || todayStr);
+    setTaskEditStartTime(step.time || '10:00');
+    setTaskEditEndTime('11:00');
+    setTaskEditTodoTime(step.time || '');
+    setTaskEditAssignee(step.assignee || '');
+    setTaskModalOpen(true);
+  };
+
+  // Save Task Edit / Convert to Schedule or Todo
+  const handleSaveTaskDetail = async () => {
+    if (!activeStep || !taskEditText.trim()) return;
+    setSavingTaskEdit(true);
+
+    try {
+      let updatedScheduleId = activeStep.scheduleId;
+      let updatedTodoId = activeStep.todoId;
+      const rawDate = taskEditDate || new Date().toISOString().split('T')[0];
+      const targetDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
+
+      if (taskEditKind === 'schedule') {
+        if (updatedTodoId && deleteTodo) {
+          await deleteTodo(updatedTodoId, true).catch((err) => console.error(err));
+          updatedTodoId = undefined;
+        }
+
+        if (!updatedScheduleId) {
+          if (addSchedule) {
+            const created = await addSchedule({
+              userId: user?.uid || '',
+              title: taskEditText.trim(),
+              date: targetDate,
+              startTime: taskEditStartTime || '10:00',
+              endTime: taskEditEndTime || '11:00',
+              status: activeStep.done ? 'completed' : 'pending',
+              linkedGoalId: goal.id,
+              goalTitle: goal.title,
+              contributionAmount: Number(taskEditAssumedVal) || 0,
+            });
+            if (typeof created === 'string') updatedScheduleId = created;
+            else if (created && typeof (created as { id?: string }).id === 'string') updatedScheduleId = (created as { id: string }).id;
+          }
+        } else if (editSchedule) {
+          await editSchedule(updatedScheduleId, {
+            title: taskEditText.trim(),
+            date: targetDate,
+            startTime: taskEditStartTime || '10:00',
+            endTime: taskEditEndTime || '11:00',
+            contributionAmount: Number(taskEditAssumedVal) || 0,
+          });
+        }
+      } else if (taskEditKind === 'todo') {
+        if (updatedScheduleId && removeSchedule) {
+          await removeSchedule(updatedScheduleId, true).catch((err) => console.error(err));
+          updatedScheduleId = undefined;
+        }
+
+        if (!updatedTodoId) {
+          if (addTodo) {
+            const created = await addTodo({
+              title: taskEditText.trim(),
+              status: activeStep.done ? 'completed' : 'in_progress',
+              priority: 'routine',
+              projectId: goal.projectId || '',
+              authorId: user?.uid || '',
+              dueDate: new Date(targetDate),
+              steps: [],
+              tags: [],
+              progressPercent: 0,
+              assignedUsers: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              linkedGoalId: goal.id,
+              goalTitle: goal.title,
+            });
+            if (typeof created === 'string') updatedTodoId = created;
+            else if (created && typeof (created as { id?: string }).id === 'string') updatedTodoId = (created as { id: string }).id;
+          }
+        } else if (updateTodo) {
+          await updateTodo(updatedTodoId, {
+            title: taskEditText.trim(),
+            dueDate: new Date(targetDate),
+          });
+        }
       } else {
-        await addTodo({
-          title: actionTitle.trim(),
-          status: 'in_progress',
-          priority: 'routine',
-          projectId: goal.projectId || '',
-          authorId: user.uid,
-          dueDate: actionDueDate ? new Date(actionDueDate) : new Date(),
-          steps: [],
-          tags: [],
-          progressPercent: 0,
-          assignedUsers: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          linkedGoalId: goal.id,
-          goalTitle: goal.title,
-        });
+        if (updatedScheduleId && removeSchedule) {
+          await removeSchedule(updatedScheduleId, true).catch((err) => console.error(err));
+          updatedScheduleId = undefined;
+        }
+        if (updatedTodoId && deleteTodo) {
+          await deleteTodo(updatedTodoId, true).catch((err) => console.error(err));
+          updatedTodoId = undefined;
+        }
       }
 
-      setActionTitle('');
-      setActionContributionAmount('');
-      setAddActionOpen(false);
+      const updated = actions.map((s) => {
+        if (s.id === activeStep.id) {
+          return {
+            ...s,
+            task: taskEditText.trim(),
+            kind: taskEditKind === 'none' ? undefined : taskEditKind,
+            dueDate: targetDate,
+            time: taskEditKind === 'schedule' ? taskEditStartTime : taskEditTodoTime,
+            assumedContributionValue: Number(taskEditAssumedVal) || 0,
+            scheduleId: updatedScheduleId,
+            todoId: updatedTodoId,
+            assignee: taskEditAssignee.trim() || undefined,
+          };
+        }
+        return s;
+      });
+
+      await saveActionsList(updated);
+      setTaskModalOpen(false);
+      setActiveStep(null);
     } catch (err) {
-      console.error('Failed to add action:', err);
+      console.error('Failed to save task details:', err);
     } finally {
-      setSavingAction(false);
+      setSavingTaskEdit(false);
     }
   };
 
-  // Open "Have you got the amount?" prompt when clicking complete on an action item
-  const handleInitiateCompletion = (item: {
-    id: string;
-    title: string;
-    kind: 'schedule' | 'todo';
-    assumedAmount?: number;
-  }) => {
-    const amt = item.assumedAmount || 0;
-    setPromptItem({
-      id: item.id,
-      title: item.title,
-      kind: item.kind,
-      assumedAmount: amt,
-    });
-    setPromptAmount(amt > 0 ? amt : '');
-  };
-
-  // Confirm Completion with optional savings entry
-  const handleConfirmCompletion = async (addMoneyToSavings: boolean) => {
-    if (!promptItem || !user || !goal.id) return;
-    setCompletingAction(true);
+  // Delete Action Step from Modal
+  const handleDeleteTaskFromModal = async () => {
+    if (!activeStep) return;
+    setSavingTaskEdit(true);
 
     try {
-      const confirmedVal = typeof promptAmount === 'number' && promptAmount > 0 ? promptAmount : promptItem.assumedAmount;
+      if (activeStep.scheduleId && removeSchedule) {
+        await removeSchedule(activeStep.scheduleId, true).catch((err) => console.error(err));
+      }
+      if (activeStep.todoId && deleteTodo) {
+        await deleteTodo(activeStep.todoId, true).catch((err) => console.error(err));
+      }
 
-      if (addMoneyToSavings && confirmedVal > 0) {
+      const updated = actions.filter((s) => s.id !== activeStep.id);
+      await saveActionsList(updated);
+      setTaskModalOpen(false);
+      setActiveStep(null);
+    } catch (err) {
+      console.error('Failed to delete task step:', err);
+    } finally {
+      setSavingTaskEdit(false);
+    }
+  };
+
+  // Toggle Strategic Action Step completion
+  const handleToggleStepCompletion = async (step: SavingsActionItem) => {
+    if (!step.done && step.assumedContributionValue && step.assumedContributionValue > 0) {
+      setStepPromptItem(step);
+      setStepPromptAmount(step.assumedContributionValue);
+      return;
+    }
+
+    const newDone = !step.done;
+
+    if (step.scheduleId && editSchedule) {
+      editSchedule(step.scheduleId, { status: newDone ? 'completed' : 'pending' }).catch((err) => console.error(err));
+    }
+    if (step.todoId && updateTodo) {
+      updateTodo(step.todoId, { status: newDone ? 'completed' : 'in_progress' }).catch((err) => console.error(err));
+    }
+
+    const updated = actions.map((s) => (s.id === step.id ? { ...s, done: newDone } : s));
+    await saveActionsList(updated);
+  };
+
+  // Confirm Step Completion with Financial Deposit
+  const handleConfirmStepPrompt = async (applyDeposit: boolean) => {
+    if (!stepPromptItem) return;
+    setSavingStepPrompt(true);
+
+    try {
+      const step = stepPromptItem;
+      const depositAmt = applyDeposit && typeof stepPromptAmount === 'number' && stepPromptAmount > 0
+        ? stepPromptAmount
+        : 0;
+
+      if (depositAmt > 0) {
         await recordFinanceTransaction(
-          confirmedVal,
+          depositAmt,
           'deposit',
           selectedSource,
-          `Completed ${promptItem.kind}: ${promptItem.title}`
+          `Completed strategy step: ${step.task}`
         );
       }
 
-      if (promptItem.kind === 'schedule') {
-        await editSchedule(promptItem.id, { status: 'completed' });
-      } else {
-        await updateTodo(promptItem.id, { status: 'completed', progressPercent: 100, completedAt: new Date() });
+      if (step.scheduleId && editSchedule) {
+        editSchedule(step.scheduleId, { status: 'completed' }).catch((err) => console.error(err));
+      }
+      if (step.todoId && updateTodo) {
+        updateTodo(step.todoId, { status: 'completed' }).catch((err) => console.error(err));
       }
 
-      setPromptItem(null);
-      setPromptAmount('');
+      const updated = actions.map((s) => (s.id === step.id ? { ...s, done: true } : s));
+      await saveActionsList(updated);
+
+      setStepPromptItem(null);
+      setStepPromptAmount('');
     } catch (err) {
-      console.error('Failed completing item:', err);
+      console.error('Failed to confirm step prompt:', err);
     } finally {
-      setCompletingAction(false);
-    }
-  };
-
-  // Delete Schedule or Todo item
-  const handleDeleteActionItem = async (id: string, kind: 'schedule' | 'todo') => {
-    if (!confirm(`Are you sure you want to delete this ${kind}?`)) return;
-    try {
-      if (kind === 'schedule') {
-        await removeSchedule(id);
-      } else {
-        await deleteTodo(id);
-      }
-    } catch (err) {
-      console.error(`Failed to delete ${kind}:`, err);
+      setSavingStepPrompt(false);
     }
   };
 
@@ -548,7 +787,89 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
 
   return (
     <Box sx={{ width: '100%', spaceY: 3 }}>
-      {/* 🌟 1. HERO TARGET CARD (Prominent Target Date Banner + Deposited Total) */}
+      {/* 🌟 SAVINGS INTERVAL CHECK-IN REMINDER BANNER */}
+      {isCheckInDue && (
+        <Box
+          sx={{
+            borderRadius: '24px',
+            background: isDark
+              ? 'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(15,23,42,0.9) 100%)'
+              : 'linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%)',
+            border: '1.5px solid #10b981',
+            p: 2.5,
+            mb: 3,
+            boxShadow: '0 8px 25px rgba(16,185,129,0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 2,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: '14px',
+                bgcolor: '#10b981',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: '0 4px 12px rgba(16,185,129,0.4)',
+              }}
+            >
+              <MonetizationOn sx={{ fontSize: 24 }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary }}>
+                Savings Check-In ({reminderFreq.toUpperCase()})
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: textMuted, mt: 0.2 }}>
+                Have you got money in your savings for this {reminderFreq === 'daily' ? 'day' : reminderFreq === 'weekly' ? 'week' : reminderFreq === 'monthly' ? 'month' : 'session'}?
+              </Typography>
+            </Box>
+          </Box>
+
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => handleConfirmCheckIn(true)}
+              sx={{
+                bgcolor: '#10b981',
+                color: '#ffffff',
+                fontWeight: 800,
+                borderRadius: '12px',
+                textTransform: 'none',
+                px: 2,
+                '&:hover': { bgcolor: '#059669' },
+              }}
+            >
+              + Yes, Log Deposit
+            </Button>
+            <Button
+              size="small"
+              onClick={() => handleConfirmCheckIn(false)}
+              sx={{
+                color: textMuted,
+                fontWeight: 700,
+                borderRadius: '12px',
+                textTransform: 'none',
+              }}
+            >
+              Not Yet
+            </Button>
+            <IconButton size="small" onClick={() => setFreqSettingsOpen(true)} sx={{ color: textMuted }}>
+              <ClockIcon sx={{ fontSize: 20 }} />
+            </IconButton>
+          </Stack>
+        </Box>
+      )}
+
+      {/* 🌟 1. HERO TARGET CARD */}
       <Box
         sx={{
           borderRadius: '28px',
@@ -561,7 +882,6 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
           overflow: 'hidden',
         }}
       >
-        {/* Subtle accent glow */}
         <Box
           sx={{
             position: 'absolute',
@@ -576,12 +896,32 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
           }}
         />
 
-        {/* Goal Title */}
-        <Typography sx={{ fontSize: 22, fontWeight: 800, color: textPrimary, letterSpacing: '-0.02em' }}>
-          {goal.title}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+          <Typography sx={{ fontSize: 22, fontWeight: 800, color: textPrimary, letterSpacing: '-0.02em' }}>
+            {goal.title}
+          </Typography>
 
-        {/* 🌟 Prominent Emerging Target Date Banner */}
+          {/* Update Progress Button */}
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={handleOpenProgressModal}
+            startIcon={<EditIcon sx={{ fontSize: 15 }} />}
+            sx={{
+              borderRadius: '12px',
+              textTransform: 'none',
+              fontWeight: 700,
+              fontSize: 12,
+              borderColor: '#10b981',
+              color: '#10b981',
+              '&:hover': { bgcolor: isDark ? 'rgba(16,185,129,0.1)' : '#ecfdf5', borderColor: '#059669' },
+            }}
+          >
+            Update Progress
+          </Button>
+        </Box>
+
+        {/* Prominent Target Date Banner */}
         {targetDate && (
           <Box
             sx={{
@@ -615,7 +955,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
               </Box>
               <Box>
                 <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '.06em' }}>
-                  Emerging Target Date
+                  Target Date
                 </Typography>
                 <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary }}>
                   {formatDate(targetDate)}
@@ -658,7 +998,6 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
             </Box>
           </Box>
 
-          {/* Prominent + Add Money Button */}
           <Button
             variant="contained"
             onClick={() => setAddTxnOpen(true)}
@@ -681,31 +1020,28 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
         </Box>
 
         {/* Dynamic Progress Bar */}
-        {progress !== null && (
-          <Box sx={{ mt: 2.5 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
-              <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted }}>
-                Savings Progress
-              </Typography>
-              <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#10b981' }}>
-                {progress}%
-              </Typography>
-            </Box>
-            <Box sx={{ height: 10, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
-              <Box
-                sx={{
-                  height: '100%',
-                  width: `${progress}%`,
-                  bgcolor: '#10b981',
-                  borderRadius: 99,
-                  transition: 'width 0.5s ease',
-                }}
-              />
-            </Box>
+        <Box sx={{ mt: 2.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted }}>
+              Savings Progress
+            </Typography>
+            <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#10b981' }}>
+              {progress}%
+            </Typography>
           </Box>
-        )}
+          <Box sx={{ height: 8, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
+            <Box
+              sx={{
+                height: '100%',
+                width: `${progress}%`,
+                bgcolor: '#10b981',
+                borderRadius: 99,
+                transition: 'width 0.5s ease',
+              }}
+            />
+          </Box>
+        </Box>
 
-        {/* Behind-the-scenes Source Setup Option (ONLY shown if no source attached yet) */}
         {!selectedSource ? (
           <Box sx={{ mt: 3, pt: 2, borderTop: `1px dashed ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography sx={{ fontSize: 12, color: textMuted }}>
@@ -721,7 +1057,6 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
             </Button>
           </Box>
         ) : (
-          /* Subtle option to unlink/reset source if user wants to change it */
           <Box sx={{ mt: 2.5, display: 'flex', justifyContent: 'flex-end' }}>
             <Tooltip title="Unlink / reset linked finance source">
               <IconButton size="small" onClick={handleUnlinkSource} sx={{ color: textMuted, opacity: 0.5, '&:hover': { opacity: 1, color: '#ef4444' } }}>
@@ -732,7 +1067,131 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
         )}
       </Box>
 
-      {/* 🌟 2. SAVINGS LEDGER (With Option to Delete Any Entry) */}
+      {/* 🌟 2. STRATEGY TASKS SECTION (Matching ExpensesTemplate style) */}
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
+          <Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              🎯 Strategy Tasks ({actions.length})
+            </Typography>
+            <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.2 }}>
+              Action steps to reach your savings target
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Strategic Tasks List */}
+        <div className="space-y-2 mb-3">
+          {actions.map((step) => {
+            const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
+            const hasLink = kind === 'schedule' || kind === 'todo';
+
+            return (
+              <div
+                key={step.id}
+                onClick={() => handleOpenTaskDetailModal(step)}
+                className="group flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500 shadow-sm"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {/* Custom Checkbox */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStepCompletion(step);
+                    }}
+                    className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
+                      step.done
+                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                        : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400'
+                    }`}
+                  >
+                    {step.done && (
+                      <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
+                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+
+                  {/* Task text */}
+                  <span
+                    className={`text-sm font-semibold truncate ${
+                      step.done
+                        ? 'line-through text-slate-400 dark:text-slate-500'
+                        : 'text-slate-800 dark:text-slate-100'
+                    }`}
+                  >
+                    {step.task}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Expected savings amount pill */}
+                  {step.assumedContributionValue ? (
+                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-2 py-0.5 rounded-full">
+                      +{formatMoney(step.assumedContributionValue, currency)}
+                    </span>
+                  ) : null}
+
+                  {/* Schedule/Todo converted pill */}
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
+                      hasLink
+                        ? kind === 'schedule'
+                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
+                          : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {kind === 'schedule'
+                      ? '🗓 Schedule'
+                      : kind === 'todo'
+                      ? '✅ Todo'
+                      : 'Add to Schedule/Todo →'}
+                  </span>
+
+                  {/* Delete step button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteStep(step.id);
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                    title="Delete step"
+                  >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Inline Add Strategic Action Step Input */}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="+ Quickly add a strategy task…"
+            value={newStepInput}
+            onChange={(e) => setNewStepInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAddStep();
+            }}
+            className="flex-1 text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 dark:focus:border-emerald-500"
+          />
+          <button
+            type="button"
+            onClick={handleAddStep}
+            disabled={!newStepInput.trim()}
+            className="px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm"
+          >
+            Add Task
+          </button>
+        </div>
+      </Box>
+
+      {/* 🌟 3. SAVINGS LEDGER */}
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
           <Typography sx={{ fontSize: 13, fontWeight: 800, color: textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
@@ -810,7 +1269,6 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
                       {isDeposit ? '+' : '-'}{formatMoney(t.amount, currency)}
                     </Typography>
 
-                    {/* Delete Entry Button */}
                     <IconButton
                       size="small"
                       onClick={() => handleDeleteTransaction(i)}
@@ -829,174 +1287,376 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
         )}
       </Box>
 
-      {/* 🌟 3. SCHEDULES & TODOS TIMELINE LIST (Styled per SampleSchedule.tsx) */}
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 800, color: textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-            Savings Routines & Tasks ({actionItems.length})
-          </Typography>
-          <Button
-            size="small"
-            onClick={() => setAddActionOpen(true)}
-            startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#10b981' }}
-          >
-            + Add Schedule / Task
-          </Button>
-        </Box>
+      {/* 🌟 4. STRATEGY TASK DETAIL MODAL */}
+      <Modal
+        open={taskModalOpen}
+        onClose={() => setTaskModalOpen(false)}
+        closeAfterTransition
+      >
+        <Fade in={taskModalOpen}>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[440px] shadow-2xl overflow-hidden border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+              <p className="text-[1.05rem] font-extrabold text-slate-800 dark:text-slate-100">
+                Task Details
+              </p>
+              <button
+                type="button"
+                onClick={() => setTaskModalOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
+                  <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
 
-        {actionItems.length === 0 ? (
-          <Box
-            sx={{
-              p: 3.5,
-              borderRadius: '20px',
-              border: `1px dashed ${cardBorder}`,
-              bgcolor: surfaceBg,
-              textAlign: 'center',
-            }}
-          >
-            <Typography sx={{ fontSize: 13, color: textMuted }}>
-              No routine schedules or tasks linked to this goal. Add scheduled deposit reminders!
-            </Typography>
-          </Box>
-        ) : (
-          /* Vertical Timeline Layout inspired by SampleSchedule.tsx */
-          <Box sx={{ position: 'relative', pl: 3.5, pt: 1 }}>
-            {actionItems.map((item, index) => {
-              const isDone = item.status === 'completed';
-              const isLast = index === actionItems.length - 1;
+            {/* Body */}
+            <div className="p-6 space-y-4 overflow-y-auto max-h-[75vh] custom-scrollbar">
+              {/* Editable Task Title */}
+              <div
+                className="rounded-2xl p-3"
+                style={{
+                  background: 'var(--title-bg, #f8fafc)',
+                  border: '1px solid var(--title-border, #e2e8f0)',
+                }}
+              >
+                <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1">
+                  Task
+                </p>
+                <textarea
+                  rows={2}
+                  value={taskEditText}
+                  onChange={(e) => setTaskEditText(e.target.value)}
+                  placeholder="Describe this strategy step…"
+                  style={{
+                    width: '100%',
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    resize: 'none',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    lineHeight: 1.5,
+                    color: 'inherit',
+                  }}
+                  className="text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                />
+              </div>
 
-              return (
-                <Box key={item.id} sx={{ position: 'relative', pb: isLast ? 0 : 3 }}>
-                  {/* Connecting dotted line */}
-                  {!isLast && (
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        left: -20,
-                        top: 24,
-                        bottom: -8,
-                        width: '2px',
-                        borderLeft: `2px dotted ${isDark ? '#334155' : '#cbd5e1'}`,
-                      }}
-                    />
-                  )}
-
-                  {/* Status node marker */}
-                  <Box
-                    onClick={() => {
-                      if (!isDone) {
-                        handleInitiateCompletion(item);
-                      }
+              {/* Expected Savings Amount Row */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                    Expected Savings
+                  </p>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                    Amount saved when this task is done
+                  </p>
+                </div>
+                <div
+                  className="flex items-center gap-1 rounded-xl px-3 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                >
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {currency}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="0"
+                    value={taskEditAssumedVal}
+                    onChange={(e) => setTaskEditAssumedVal(e.target.value ? Number(e.target.value) : '')}
+                    style={{
+                      width: '80px',
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '15px',
+                      fontWeight: 700,
+                      fontFamily: 'inherit',
+                      textAlign: 'right',
+                      color: 'inherit',
                     }}
-                    sx={{
-                      position: 'absolute',
-                      left: -28,
-                      top: 14,
-                      width: 18,
-                      height: 18,
-                      borderRadius: '50%',
-                      bgcolor: isDone ? '#10b981' : surfaceBg,
-                      border: isDone ? 'none' : `2px solid ${isDark ? '#64748b' : '#94a3b8'}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: isDone ? 'default' : 'pointer',
-                      zIndex: 2,
-                    }}
-                  >
-                    {isDone && <CheckIcon sx={{ fontSize: 12, color: '#ffffff' }} />}
-                  </Box>
+                    className="text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
 
-                  {/* Task Card */}
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      p: 2.25,
-                      borderRadius: '20px',
-                      bgcolor: surfaceBg,
-                      border: `1px solid ${cardBorder}`,
-                      opacity: isDone ? 0.65 : 1,
-                      transition: 'all 0.2s ease',
-                      boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 2px 8px rgba(15,23,42,0.04)',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      {/* Icon badge box */}
-                      <Box
-                        sx={{
-                          width: 46,
-                          height: 46,
-                          borderRadius: '14px',
-                          bgcolor: item.kind === 'schedule' ? (isDark ? '#064e3b' : '#ffedd5') : (isDark ? '#1e3a8a' : '#e0f2fe'),
-                          color: item.kind === 'schedule' ? '#f97316' : '#0284c7',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {item.kind === 'schedule' ? <EventIcon sx={{ fontSize: 24 }} /> : <TodoIcon sx={{ fontSize: 24 }} />}
-                      </Box>
+              {/* Assignee Row */}
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                  Assignee
+                </p>
+                <input
+                  type="text"
+                  placeholder="e.g. Myself, Ali…"
+                  value={taskEditAssignee}
+                  onChange={(e) => setTaskEditAssignee(e.target.value)}
+                  style={{
+                    width: '160px',
+                    padding: '8px 12px',
+                    borderRadius: '12px',
+                    border: '1px solid #e2e8f0',
+                    background: '#f8fafc',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    color: 'inherit',
+                  }}
+                  className="dark:border-slate-700 dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                />
+              </div>
 
-                      <Box>
-                        <Typography sx={{ fontSize: 15, fontWeight: 700, color: textPrimary, textDecoration: isDone ? 'line-through' : 'none' }}>
-                          {item.title}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                          <Chip
-                            label={item.kind === 'schedule' ? 'Schedule' : 'Todo Task'}
-                            size="small"
-                            sx={{ fontSize: 10, height: 20, bgcolor: isDark ? '#334155' : '#f1f5f9', fontWeight: 600 }}
+              {/* View full scheduling toggle */}
+              <div>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  onClick={() => setShowConvertOptions((p) => !p)}
+                  endIcon={
+                    <svg viewBox="0 0 20 20" fill="none" className={`w-4 h-4 transition-transform ${showConvertOptions ? 'rotate-180' : ''}`}>
+                      <path d="M5 8l5 5 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  }
+                  sx={{
+                    borderRadius: '14px',
+                    py: 1.2,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    borderColor: showConvertOptions ? '#10b981' : '#e2e8f0',
+                    color: showConvertOptions ? '#10b981' : '#475569',
+                    '&:hover': { borderColor: '#10b981', color: '#10b981' },
+                  }}
+                >
+                  {showConvertOptions
+                    ? 'Hide scheduling options'
+                    : taskEditKind !== 'none'
+                    ? `Linked to ${taskEditKind === 'schedule' ? 'Schedule' : 'Todo'} — edit →`
+                    : 'Add to Schedule or Todo →'}
+                </Button>
+
+                <Collapse in={showConvertOptions}>
+                  <div className="mt-3 space-y-3">
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 px-3.5 py-2.5 rounded-2xl border border-emerald-200/60 dark:border-emerald-500/20 leading-relaxed font-medium">
+                      📌 Linking makes this task visible in{' '}
+                      <strong>Schedules / Todos</strong> and syncs its completion back to this goal.
+                    </p>
+
+                    {/* Type selector */}
+                    <div className="flex gap-2">
+                      {(['none', 'schedule', 'todo'] as const).map((kind) => (
+                        <button
+                          key={kind}
+                          type="button"
+                          onClick={() => setTaskEditKind(kind)}
+                          className={`flex-1 py-2.5 rounded-2xl text-xs font-bold border-2 transition-all ${
+                            taskEditKind === kind
+                              ? kind === 'none'
+                                ? 'border-slate-400 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                                : kind === 'schedule'
+                                ? 'border-amber-400 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                : 'border-blue-400 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-300'
+                          }`}
+                        >
+                          {kind === 'none' ? '🚫 None' : kind === 'schedule' ? '🗓 Schedule' : '✅ Todo'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Schedule fields */}
+                    {taskEditKind === 'schedule' && (
+                      <div className="rounded-2xl bg-amber-50/60 dark:bg-amber-500/5 border border-amber-200/60 dark:border-amber-500/20 p-4 space-y-3">
+                        <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                          <ScheduleIcon sx={{ fontSize: 13 }} /> Schedule Details
+                        </p>
+                        <div>
+                          <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-1.5">
+                            📅 Date
+                          </label>
+                          <input
+                            type="date"
+                            value={taskEditDate}
+                            onChange={(e) => setTaskEditDate(e.target.value)}
+                            className="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 px-3.5 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-amber-400/70 font-semibold"
+                            style={{ colorScheme: 'light dark' }}
                           />
-                          {item.assumedAmount > 0 && (
-                            <Chip
-                              label={`Target: ${formatMoney(item.assumedAmount, currency)}`}
-                              size="small"
-                              sx={{ fontSize: 10, height: 20, bgcolor: isDark ? '#064e3b' : '#ecfdf5', color: '#10b981', fontWeight: 700 }}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-1.5">
+                              🕐 Start Time
+                            </label>
+                            <input
+                              type="time"
+                              value={taskEditStartTime}
+                              onChange={(e) => setTaskEditStartTime(e.target.value)}
+                              className="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-amber-400/70 font-semibold"
+                              style={{ colorScheme: 'light dark' }}
                             />
-                          )}
-                        </Box>
-                      </Box>
-                    </Box>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-1.5">
+                              🕑 End Time
+                            </label>
+                            <input
+                              type="time"
+                              value={taskEditEndTime}
+                              onChange={(e) => setTaskEditEndTime(e.target.value)}
+                              className="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-amber-400/70 font-semibold"
+                              style={{ colorScheme: 'light dark' }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      {/* Time info */}
-                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <ClockIcon sx={{ fontSize: 13, color: textMuted }} />
-                          <Typography sx={{ fontSize: 12, fontWeight: 600, color: textMuted }}>
-                            {item.time}
-                          </Typography>
-                        </Box>
-                        <Typography sx={{ fontSize: 10, color: textMuted }}>
-                          {item.date}
-                        </Typography>
-                      </Box>
+                    {/* Todo fields */}
+                    {taskEditKind === 'todo' && (
+                      <div className="rounded-2xl bg-blue-50/60 dark:bg-blue-500/5 border border-blue-200/60 dark:border-blue-500/20 p-4 space-y-3">
+                        <p className="text-[11px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wide flex items-center gap-1.5">
+                          <TodoIcon sx={{ fontSize: 13 }} /> Todo Details
+                        </p>
+                        <div>
+                          <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-1.5">
+                            📅 Due Date
+                          </label>
+                          <input
+                            type="date"
+                            value={taskEditDate}
+                            onChange={(e) => setTaskEditDate(e.target.value)}
+                            className="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 px-3.5 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-400/70 font-semibold"
+                            style={{ colorScheme: 'light dark' }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-1.5">
+                            🕐 Due Time <span className="font-normal text-slate-400">(Optional)</span>
+                          </label>
+                          <input
+                            type="time"
+                            value={taskEditTodoTime}
+                            onChange={(e) => setTaskEditTodoTime(e.target.value)}
+                            className="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 px-3.5 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-400/70 font-semibold"
+                            style={{ colorScheme: 'light dark' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Collapse>
+              </div>
 
-                      {/* Delete Action Item Button */}
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDeleteActionItem(item.id, item.kind)}
-                        sx={{
-                          color: textMuted,
-                          '&:hover': { color: '#ef4444', bgcolor: isDark ? 'rgba(239,68,68,0.1)' : '#fef2f2' },
-                        }}
-                      >
-                        <DeleteIcon sx={{ fontSize: 17 }} />
-                      </IconButton>
-                    </Box>
-                  </Box>
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-1">
+                <Button
+                  onClick={handleSaveTaskDetail}
+                  disabled={savingTaskEdit || !taskEditText.trim()}
+                  variant="contained"
+                  fullWidth
+                  sx={{
+                    borderRadius: '14px',
+                    py: 1.5,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    background: 'linear-gradient(to right, #059669, #10b981)',
+                    boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
+                    '&:hover': { background: 'linear-gradient(to right, #047857, #059669)' },
+                    '&:disabled': { background: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' },
+                  }}
+                >
+                  {savingTaskEdit ? 'Saving…' : 'Save Changes'}
+                </Button>
+
+                <Button
+                  onClick={handleDeleteTaskFromModal}
+                  disabled={savingTaskEdit}
+                  variant="contained"
+                  sx={{
+                    borderRadius: '14px',
+                    py: 1.5,
+                    px: 3,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    bgcolor: '#ef4444',
+                    color: '#fff',
+                    '&:hover': { bgcolor: '#dc2626' },
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Fade>
+      </Modal>
+
+      {/* 🌟 5. UPDATE PROGRESS MODAL */}
+      <Dialog
+        open={progressDialogOpen}
+        onClose={() => setProgressDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '24px',
+            p: 1,
+            bgcolor: surfaceBg,
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 17 }}>Update Goal Progress</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2.5} sx={{ pt: 1 }}>
+            <Typography sx={{ fontSize: 13, color: textMuted }}>
+              Update your current total savings amount towards this goal.
+            </Typography>
+
+            <Box sx={{ p: 2, borderRadius: '16px', bgcolor: isDark ? 'rgba(15,23,42,0.5)' : '#f8fafc', border: `1px solid ${cardBorder}` }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted }}>Current Saved</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#10b981' }}>{formatMoney(totalSaved, currency)}</Typography>
+              </Box>
+              {targetValue > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted }}>Target</Typography>
+                  <Typography sx={{ fontSize: 13, fontWeight: 800, color: textPrimary }}>{formatMoney(targetValue, currency)}</Typography>
                 </Box>
-              );
-            })}
-          </Box>
-        )}
-      </Box>
+              )}
+            </Box>
 
-      {/* 🌟 4. PROFESSIONAL & ATTRACTIVE ADD DEPOSIT DIALOG (ONLY Amount + Note Input) */}
+            <TextField
+              label={`New Total Saved (${currency})`}
+              type="number"
+              fullWidth
+              autoFocus
+              variant="outlined"
+              value={progressInputAmount}
+              onChange={(e) => setProgressInputAmount(e.target.value ? Number(e.target.value) : '')}
+              InputProps={{
+                sx: { borderRadius: '14px', fontSize: 16, fontWeight: 800, fontFamily: 'monospace' },
+              }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setProgressDialogOpen(false)} sx={{ textTransform: 'none' }}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={savingProgress || typeof progressInputAmount !== 'number' || progressInputAmount < 0}
+            onClick={handleSaveProgress}
+            sx={{ textTransform: 'none', bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
+          >
+            {savingProgress ? 'Saving...' : 'Save Progress'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🌟 6. ADD DEPOSIT DIALOG */}
       <Dialog
         open={addTxnOpen}
         onClose={() => setAddTxnOpen(false)}
@@ -1036,7 +1696,6 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
 
         <DialogContent sx={{ px: 3, py: 2 }}>
           <Stack spacing={2.5}>
-            {/* Field 1: Amount Input */}
             <TextField
               label={`Amount (${currency})`}
               type="number"
@@ -1050,7 +1709,6 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
               }}
             />
 
-            {/* Field 2: Note / Purpose (Optional) */}
             <TextField
               label="Note / Purpose (Optional)"
               placeholder="e.g. Monthly salary contribution, Freelance bonus"
@@ -1089,7 +1747,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
         </DialogActions>
       </Dialog>
 
-      {/* Initial Source Setup Dialog (ONLY shown when user clicks setup if no source exists) */}
+      {/* 🌟 7. INITIAL SOURCE SETUP DIALOG */}
       <Dialog open={createSourceOpen} onClose={() => setCreateSourceOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Set Up Finance Source</DialogTitle>
         <DialogContent dividers>
@@ -1123,118 +1781,101 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
         </DialogActions>
       </Dialog>
 
-      {/* Create Schedule / Todo Modal */}
-      <Dialog open={addActionOpen} onClose={() => setAddActionOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Add Savings Schedule or Task</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <TextField
-              label="Title"
-              placeholder="e.g. Weekly deposit reminder"
-              fullWidth
-              size="small"
-              value={actionTitle}
-              onChange={(e) => setActionTitle(e.target.value)}
-            />
-
-            <TextField
-              label="Due Date"
-              type="date"
-              fullWidth
-              size="small"
-              InputLabelProps={{ shrink: true }}
-              value={actionDueDate}
-              onChange={(e) => setActionDueDate(e.target.value)}
-            />
-
-            {actionKind === 'schedule' && (
-              <TextField
-                label="Time"
-                type="time"
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-                value={actionTime}
-                onChange={(e) => setActionTime(e.target.value)}
-              />
-            )}
-
-            <TextField
-              label={`Assumed Target Amount (${currency}) - Optional`}
-              type="number"
-              placeholder="e.g. 5000"
-              fullWidth
-              size="small"
-              value={actionContributionAmount}
-              onChange={(e) => setActionContributionAmount(e.target.value ? Number(e.target.value) : '')}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setAddActionOpen(false)} sx={{ textTransform: 'none' }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={savingAction || !actionTitle.trim()}
-            onClick={handleAddAction}
-            sx={{ textTransform: 'none', bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
-          >
-            {savingAction ? <CircularProgress size={18} color="inherit" /> : 'Save Action'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Prompt Dialog: "Have you got the amount?" */}
-      <Dialog open={!!promptItem} onClose={() => setPromptItem(null)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Have you got the amount?</DialogTitle>
+      {/* 🌟 8. STEP PROMPT DIALOG */}
+      <Dialog open={!!stepPromptItem} onClose={() => setStepPromptItem(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Confirm Savings Deposit</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Typography sx={{ fontSize: 13, color: textPrimary }}>
-              Marking <strong>&ldquo;{promptItem?.title}&rdquo;</strong> as completed.
+              Completing <strong>&ldquo;{stepPromptItem?.task}&rdquo;</strong>.
             </Typography>
 
             <Typography sx={{ fontSize: 12, color: textMuted }}>
-              Confirm the savings amount received for this task. It will automatically update your Finance total and goal progress:
+              Confirm the savings amount saved to add to your goal total & finance source:
             </Typography>
 
             <TextField
-              label={`Received Amount (${currency})`}
+              label={`Deposit Amount (${currency})`}
               type="number"
               fullWidth
               size="small"
               autoFocus
-              value={promptAmount}
-              onChange={(e) => setPromptAmount(e.target.value ? Number(e.target.value) : '')}
+              value={stepPromptAmount}
+              onChange={(e) => setStepPromptAmount(e.target.value ? Number(e.target.value) : '')}
             />
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2, display: 'flex', justifyContent: 'space-between' }}>
-          <Button onClick={() => setPromptItem(null)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setStepPromptItem(null)} sx={{ textTransform: 'none' }}>
             Cancel
           </Button>
           <Stack direction="row" spacing={1}>
             <Button
               variant="outlined"
-              disabled={completingAction}
-              onClick={() => handleConfirmCompletion(false)}
+              disabled={savingStepPrompt}
+              onClick={() => handleConfirmStepPrompt(false)}
               sx={{ textTransform: 'none' }}
             >
               Skip Amount
             </Button>
             <Button
               variant="contained"
-              disabled={completingAction || typeof promptAmount !== 'number' || promptAmount <= 0}
-              onClick={() => handleConfirmCompletion(true)}
+              disabled={savingStepPrompt || typeof stepPromptAmount !== 'number' || stepPromptAmount <= 0}
+              onClick={() => handleConfirmStepPrompt(true)}
               sx={{ textTransform: 'none', bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
             >
-              {completingAction ? <CircularProgress size={18} color="inherit" /> : 'Confirm & Save'}
+              {savingStepPrompt ? 'Saving...' : 'Confirm & Deposit'}
             </Button>
           </Stack>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🌟 9. REMINDER FREQUENCY SETTINGS DIALOG */}
+      <Dialog open={freqSettingsOpen} onClose={() => setFreqSettingsOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Savings Check-In Frequency</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Typography sx={{ fontSize: 13, color: textMuted }}>
+              Choose how often you would like to receive a check-in message asking if you have saved money:
+            </Typography>
+            <Stack spacing={1}>
+              {(['daily', 'weekly', 'monthly', 'custom'] as const).map((freq) => (
+                <Button
+                  key={freq}
+                  variant={reminderFreq === freq ? 'contained' : 'outlined'}
+                  onClick={() => handleUpdateReminderFreq(freq)}
+                  sx={{
+                    justifyContent: 'flex-start',
+                    textTransform: 'capitalize',
+                    fontWeight: 700,
+                    borderRadius: '12px',
+                    bgcolor: reminderFreq === freq ? '#10b981' : 'transparent',
+                    '&:hover': { bgcolor: reminderFreq === freq ? '#059669' : undefined },
+                  }}
+                >
+                  {freq === 'custom' ? `Custom (${customIntervalDays} days)` : freq}
+                </Button>
+              ))}
+            </Stack>
+            {reminderFreq === 'custom' && (
+              <TextField
+                label="Custom Interval (Days)"
+                type="number"
+                size="small"
+                value={customIntervalDays}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setCustomIntervalDays(val);
+                  handleUpdateReminderFreq('custom', val);
+                }}
+              />
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setFreqSettingsOpen(false)}>Done</Button>
         </DialogActions>
       </Dialog>
     </Box>
   );
 }
-
-

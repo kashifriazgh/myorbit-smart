@@ -375,6 +375,7 @@ export interface LoanRecord {
   counterparty: string; // name/identifier of the person
   dueDate?: Date | Timestamp;
   note?: string;
+  notes?: string;
   isSettled: boolean;
   createdAt: Date | Timestamp;
   updatedAt?: Date | Timestamp;
@@ -1012,6 +1013,10 @@ export interface Goal {
   milestoneItems?: string[];
   currentValue?: number;
   transactions?: Array<{ date: string; amount: number; type: 'deposit' | 'withdrawal'; note?: string }>;
+  actions?: unknown[];
+  savingsReminderFreq?: 'daily' | 'weekly' | 'monthly' | 'custom';
+  savingsCustomIntervalDays?: number;
+  lastSavingsCheckInDate?: string;
   expenseItems?: unknown[];
   incomeSources?: unknown[];
   debtRecords?: unknown[];
@@ -1037,6 +1042,7 @@ export interface Goal {
   relapseLogs?: Array<{ id?: string; date: string; trigger?: string; note?: string }>;
   routineItems?: Array<{ id?: string; title: string; time?: string; period?: 'morning' | 'afternoon' | 'evening' | 'night'; completed: boolean }>;
   routineLogs?: Array<{ id?: string; date: string; checkedCount?: number; totalItems?: number; fullStreak?: boolean }>;
+  linkedLoanIds?: string[];
 }
 
 export interface TrackerCheckIn {

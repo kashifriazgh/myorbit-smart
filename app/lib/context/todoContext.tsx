@@ -6,13 +6,12 @@ import React, {
   useEffect,
   useState,
   useCallback,
-  useRef,
 } from 'react';
 import {
   collection,
-  getDocs,
   query,
   where,
+  onSnapshot,
   doc,
   updateDoc,
   addDoc,
@@ -46,7 +45,7 @@ interface TodoContextType {
   updateSubStepStatus: (todoId: string, stepIndex: number, subIndex: number, done: boolean) => Promise<void>;
   addTodo: (todo: Omit<Todo, 'id'>) => Promise<string>;
   updateTodo: (id: string, updates: Partial<Todo>) => Promise<void>;
-  deleteTodo: (id: string) => Promise<void>;
+  deleteTodo: (id: string, forceDelete?: boolean) => Promise<void>;
   refreshTodos: () => void;
   /** Expose the invalidation helper so mutations in other components can call it */
   invalidateCache: () => void;
@@ -70,13 +69,10 @@ export const useTodoContext = () => {
 
 export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { updateLinkedItemStatusInGoal } = useGoals();
+  const { updateLinkedItemStatusInGoal, unlinkOrRemoveItemFromGoal } = useGoals();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState<TodoDataSource>('loading');
-
-  /** Prevent duplicate fetches when the user object re-renders */
-  const fetchingRef = useRef(false);
 
   // ── Helper: normalise Firestore timestamps into JS Dates ──────────────────
   const normaliseTodo = useCallback((data: Record<string, unknown>, id: string): Todo => ({
@@ -99,33 +95,7 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       : new Date(),
   }), []);
 
-  // ── Core fetch function (talks to Firebase) ───────────────────────────────
-  const fetchFromFirebase = useCallback(async (uid: string) => {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
-
-    try {
-      console.log('%c[TodoCache] 🔥 Fetching from Firebase…', 'color:#f59e0b;font-weight:bold');
-      const q = query(collection(db, 'todos'), where('authorId', '==', uid));
-      const snapshot = await getDocs(q);
-      const fetched: Todo[] = snapshot.docs.map((d) => normaliseTodo(d.data(), d.id));
-
-      setTodos(fetched);
-      setDataSource('firebase');
-      setLoading(false);
-
-      // Persist fresh data to localStorage
-      saveTodosCache(fetched, uid);
-      console.log(`%c[TodoCache] ✅ Saved ${fetched.length} todos to cache`, 'color:#22c55e;font-weight:bold');
-    } catch (error) {
-      console.error('[TodoCache] ❌ Firebase fetch failed:', error);
-      setLoading(false);
-    } finally {
-      fetchingRef.current = false;
-    }
-  }, [normaliseTodo]);
-
-  // ── Bootstrap on mount / user change ─────────────────────────────────────
+  // ── Bootstrap on mount / user change with real-time sync + localStorage priority ──
   useEffect(() => {
     if (!user) {
       setTodos([]);
@@ -135,23 +105,40 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // 1. Try cache first
+    // 1. Priority 1: Serve from localStorage cache immediately for 0ms initial load
     const cached = loadTodosCache(user.uid);
     if (cached) {
       console.log(`%c[TodoCache] 📦 Serving ${cached.todos.length} todos from localStorage cache`, 'color:#6366f1;font-weight:bold');
       setTodos(cached.todos);
       setDataSource('cache');
       setLoading(false);
-      // No Firebase call — done ✅
-      return;
+    } else {
+      setLoading(true);
+      setDataSource('loading');
     }
 
-    // 2. Cache miss or stale — fetch from Firebase
-    console.log('%c[TodoCache] ⚠️  Cache miss or stale — fetching from Firebase', 'color:#ef4444;font-weight:bold');
-    setLoading(true);
-    setDataSource('loading');
-    fetchFromFirebase(user.uid);
-  }, [user, fetchFromFirebase]);
+    // 2. Real-time Firestore listener for live sync across mobile & desktop browsers
+    const q = query(collection(db, 'todos'), where('authorId', '==', user.uid));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const fetched: Todo[] = snapshot.docs.map((d) => normaliseTodo(d.data(), d.id));
+        setTodos(fetched);
+        setDataSource('firebase');
+        setLoading(false);
+
+        // Persist fresh data to localStorage
+        saveTodosCache(fetched, user.uid);
+        console.log(`%c[TodoCache] ✅ Realtime synced ${fetched.length} todos`, 'color:#22c55e;font-weight:bold');
+      },
+      (error) => {
+        console.error('[TodoCache] ❌ Realtime sync failed:', error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, normaliseTodo]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Shared helper: update state and persist to cache atomically
@@ -191,14 +178,11 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('orbit_todo_updated', handleSync);
   }, [applyAndCache]);
 
-  // ── Public refresh (force re-fetch) ──────────────────────────────────────
+  // ── Public refresh helper ──────────────────────────────────────
   const refreshTodos = useCallback(() => {
     if (!user) return;
     invalidateTodosCache();
-    setLoading(true);
-    setDataSource('loading');
-    fetchFromFirebase(user.uid);
-  }, [user, fetchFromFirebase]);
+  }, [user]);
 
   // ── Cache invalidation (called after any mutation) ────────────────────────
   const invalidateCache = useCallback(() => {
@@ -338,12 +322,10 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deleteTodo = async (id: string) => {
+  const deleteTodo = async (id: string, _forceDelete?: boolean) => {
     const existingTodo = todos.find((t) => t.id === id);
-    if (existingTodo?.linkedGoalId) {
-      const gTitle = existingTodo.goalTitle ? ` "${existingTodo.goalTitle}"` : '';
-      alert(`⚠️ This todo task is associated with Goal${gTitle}. Please delete or remove this milestone from the Goal detail page first.`);
-      return;
+    if (existingTodo?.linkedGoalId && unlinkOrRemoveItemFromGoal) {
+      await unlinkOrRemoveItemFromGoal(existingTodo.linkedGoalId, id, 'todo').catch((e) => console.warn(e));
     }
 
     // 1. Optimistic remove

@@ -7,15 +7,15 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
-  useRef,
   ReactNode,
 } from 'react';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 import { SchedulesProps } from '../interface';
 import {
   createSchedule,
   updateSchedule,
   deleteSchedule,
-  getAllSchedulesByUser,
 } from '../functions/schedules';
 import { useAuth } from './userContext';
 import {
@@ -37,7 +37,7 @@ interface SchedulesContextType {
   setSelectedDate: (date: string) => void;
   addSchedule: (schedule: Omit<SchedulesProps, 'id'>) => Promise<string>;
   editSchedule: (scheduleId: string, updates: Partial<SchedulesProps>) => Promise<void>;
-  removeSchedule: (scheduleId: string) => Promise<void>;
+  removeSchedule: (scheduleId: string, forceDelete?: boolean) => Promise<void>;
   getSchedulesForDateRange: (startDate: string, endDate: string) => SchedulesProps[];
   refreshSchedules: () => void;
 }
@@ -46,13 +46,11 @@ const SchedulesContext = createContext<SchedulesContextType | undefined>(undefin
 
 export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { updateLinkedItemStatusInGoal } = useGoals();
+  const { updateLinkedItemStatusInGoal, unlinkOrRemoveItemFromGoal } = useGoals();
   const [allSchedules, setAllSchedules] = useState<SchedulesProps[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState<SchedulesDataSource>('loading');
   const [selectedDate, setSelectedDate] = useState<string>('');
-
-  const fetchingRef = useRef(false);
 
   // Set initial date to today
   useEffect(() => {
@@ -60,30 +58,7 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
     setSelectedDate(today);
   }, []);
 
-  // Fetch all schedules from Firebase and store in state + cache
-  const fetchAllFromFirebase = useCallback(async (uid: string) => {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
-
-    try {
-      console.log('%c[ScheduleCache] 🔥 Fetching schedules from Firebase…', 'color:#f59e0b;font-weight:bold');
-      const fetched = await getAllSchedulesByUser(uid, 1000);
-      setAllSchedules(fetched);
-      setDataSource('firebase');
-      setLoading(false);
-
-      // Save to localStorage cache
-      saveSchedulesCache(fetched, uid);
-      console.log(`%c[ScheduleCache] ✅ Cached ${fetched.length} schedules locally`, 'color:#22c55e;font-weight:bold');
-    } catch (error) {
-      console.error('[ScheduleCache] ❌ Failed to fetch schedules:', error);
-      setLoading(false);
-    } finally {
-      fetchingRef.current = false;
-    }
-  }, []);
-
-  // Bootstrap from cache on mount / user change
+  // Real-time synchronization from Firestore + localStorage priority bootstrap
   useEffect(() => {
     if (!user) {
       setAllSchedules([]);
@@ -93,21 +68,54 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
-    // Try cache first
+    // 1. Priority 1: Load from localStorage cache immediately for instant UI
     const cached = loadSchedulesCache(user.uid);
     if (cached) {
       console.log(`%c[ScheduleCache] 📦 Loaded ${cached.length} schedules from cache`, 'color:#6366f1;font-weight:bold');
       setAllSchedules(cached);
       setDataSource('cache');
       setLoading(false);
-      return;
+    } else {
+      setLoading(true);
+      setDataSource('loading');
     }
 
-    // Cache miss or stale -> fetch from Firebase
-    setLoading(true);
-    setDataSource('loading');
-    fetchAllFromFirebase(user.uid);
-  }, [user, fetchAllFromFirebase]);
+    // 2. Real-time Firestore listener for live sync across mobile & desktop devices
+    const q = query(
+      collection(db, 'schedules'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const fetched: SchedulesProps[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          fetched.push({
+            id: docSnap.id,
+            ...data,
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+            updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(),
+          } as SchedulesProps);
+        });
+
+        setAllSchedules(fetched);
+        setDataSource('firebase');
+        setLoading(false);
+
+        // Update localStorage cache with real-time data
+        saveSchedulesCache(fetched, user.uid);
+        console.log(`%c[ScheduleCache] ✅ Realtime synced ${fetched.length} schedules`, 'color:#22c55e;font-weight:bold');
+      },
+      (error) => {
+        console.error('[ScheduleCache] ❌ Realtime sync failed:', error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
 
   // Shared state helper to atomically update React state + localStorage cache
   const applyAndCache = useCallback((updater: (prev: SchedulesProps[]) => SchedulesProps[]) => {
@@ -140,14 +148,11 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
     return () => window.removeEventListener('orbit_schedule_updated', handleSync);
   }, [applyAndCache]);
 
-  // Force re-fetch from Firebase
+  // Force refresh cache helper
   const refreshSchedules = useCallback(() => {
     if (!user) return;
     invalidateSchedulesCache();
-    setLoading(true);
-    setDataSource('loading');
-    fetchAllFromFirebase(user.uid);
-  }, [user, fetchAllFromFirebase]);
+  }, [user]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Derived / Filtered state
@@ -156,21 +161,25 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
   // Derived schedules for the selectedDate
   const schedules = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
+    const selDate = selectedDate || todayStr;
+
     return allSchedules
       .filter((s) => {
-        if ((s.isFlexible || s.frequencyMode === 'daily') && selectedDate === todayStr) return true;
-        if (s.date === selectedDate) return true;
+        const sDate = s.date ? (s.date.includes('T') ? s.date.split('T')[0] : s.date) : todayStr;
 
-        if (s.frequencyMode === 'weekly' && Array.isArray(s.selectedDaysOfWeek) && s.selectedDaysOfWeek.length > 0 && selectedDate) {
-          const selDateObj = new Date(selectedDate + 'T00:00:00');
+        if ((s.isFlexible || s.frequencyMode === 'daily') && selDate === todayStr) return true;
+        if (sDate === selDate) return true;
+
+        if (s.frequencyMode === 'weekly' && Array.isArray(s.selectedDaysOfWeek) && s.selectedDaysOfWeek.length > 0 && selDate) {
+          const selDateObj = new Date(selDate + 'T00:00:00');
           if (!isNaN(selDateObj.getTime())) {
             const dayIdx = selDateObj.getDay(); // 0 (Sun) - 6 (Sat)
             if (s.selectedDaysOfWeek.includes(dayIdx)) return true;
           }
         }
 
-        if (s.frequencyMode === 'monthly' && Array.isArray(s.selectedDaysOfMonth) && s.selectedDaysOfMonth.length > 0 && selectedDate) {
-          const selDateObj = new Date(selectedDate + 'T00:00:00');
+        if (s.frequencyMode === 'monthly' && Array.isArray(s.selectedDaysOfMonth) && s.selectedDaysOfMonth.length > 0 && selDate) {
+          const selDateObj = new Date(selDate + 'T00:00:00');
           if (!isNaN(selDateObj.getTime())) {
             const monthDay = selDateObj.getDate(); // 1-31
             if (s.selectedDaysOfMonth.includes(monthDay)) return true;
@@ -179,7 +188,7 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         return false;
       })
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+      .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
   }, [allSchedules, selectedDate]);
 
   // Client-side date range filtering (removes Firebase read requests)
@@ -235,12 +244,10 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   };
 
-  const removeSchedule = async (scheduleId: string) => {
+  const removeSchedule = async (scheduleId: string, _forceDelete?: boolean) => {
     const existingSched = allSchedules.find((s) => s.id === scheduleId);
-    if (existingSched?.linkedGoalId) {
-      const gTitle = existingSched.goalTitle ? ` "${existingSched.goalTitle}"` : '';
-      alert(`⚠️ This schedule is associated with Goal${gTitle}. Please delete or remove this milestone from the Goal detail page first.`);
-      return;
+    if (existingSched?.linkedGoalId && unlinkOrRemoveItemFromGoal) {
+      await unlinkOrRemoveItemFromGoal(existingSched.linkedGoalId, scheduleId, 'schedule').catch((e) => console.warn(e));
     }
 
     // 1. Optimistic remove

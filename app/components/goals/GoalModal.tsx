@@ -216,10 +216,16 @@ export default function GoalModal({
     setQuestionIndex(0);
 
     setSlideDir(1);
-    if (subcatObj && subcatObj.questions.length > 0) {
+    const isFinanceIncome =
+      selectedCategory === 'finance' &&
+      (subcatId.toLowerCase().includes('income') || subcatId.toLowerCase() === 'increase_income');
+    if (isFinanceIncome || (subcatObj && subcatObj.questions.length === 0)) {
+      deriveFinalDetails({}, subcatObj?.name || subcatId, selectedCategory);
+      setCurrentStep(4);
+    } else if (subcatObj && subcatObj.questions.length > 0) {
       setCurrentStep(3);
     } else {
-      // 0 Questions (e.g. Medical Care Plan) -> Skip Step 3 directly to Step 4!
+      // 0 Questions -> Skip Step 3 directly to Step 4!
       deriveFinalDetails({}, subcatObj?.name || subcatId, selectedCategory);
       setCurrentStep(4);
     }

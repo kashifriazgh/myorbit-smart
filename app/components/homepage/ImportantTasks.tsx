@@ -40,6 +40,7 @@ import { Todo } from '@/app/lib/interface';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import ToDoModal from '@/app/components/to-do/todoModal';
+import LinkedItemDeleteDialog from '@/app/components/global/LinkedItemDeleteDialog';
 import { incrementTodoRescheduleCount } from '@/app/lib/utilts';
 
 const PRIORITY_ORDER = { critical: 0, urgent: 1, routine: 2 };
@@ -653,6 +654,31 @@ const ImportantTasks = () => {
   const [customAssigneeInput, setCustomAssigneeInput] = useState('');
   const [reschedulingLoading, setReschedulingLoading] = useState(false);
   const [todoModalOpen, setTodoModalOpen] = useState(false);
+  const [linkedDeleteTodo, setLinkedDeleteTodo] = useState<Todo | null>(null);
+
+  const handleDeleteTodo = async (todoId: string, forceConfirm?: boolean) => {
+    if (isGuest) {
+      alert('Guest users are not allowed to delete tasks. Please sign up first.');
+      return;
+    }
+    const task = todos.find((t) => t.id === todoId);
+    if (!forceConfirm && task?.linkedGoalId) {
+      setLinkedDeleteTodo(task);
+      return;
+    }
+
+    try {
+      if (task?.id) {
+        const { deleteTodoReminder } = await import('@/app/lib/utils/whatsapp-reminder');
+        await deleteTodoReminder(task.id).catch((err) => console.error(err));
+      }
+      await deleteTodo(todoId, true);
+      setSelectedQuickTask(null);
+      setLinkedDeleteTodo(null);
+    } catch (err) {
+      console.error('Failed to delete todo:', err);
+    }
+  };
 
   // Sync local title state when task is clicked/opened
   useEffect(() => {
@@ -1550,11 +1576,7 @@ const ImportantTasks = () => {
                   <Button
                     onClick={async () => {
                       if (selectedQuickTask) {
-                        const targetId = selectedQuickTask.id!;
-                        setSelectedQuickTask(null);
-                        const { deleteTodoReminder } = await import('@/app/lib/utils/whatsapp-reminder');
-                        await deleteTodoReminder(targetId).catch((err) => console.error(err));
-                        await deleteTodo(targetId);
+                        await handleDeleteTodo(selectedQuickTask.id);
                       }
                     }}
                     variant="contained"
@@ -1580,6 +1602,19 @@ const ImportantTasks = () => {
         </Modal>
       </CardContent>
     </Card>
+
+    {/* Linked Goal Task Delete Confirmation Dialog */}
+    <LinkedItemDeleteDialog
+      open={Boolean(linkedDeleteTodo)}
+      onClose={() => setLinkedDeleteTodo(null)}
+      onConfirmDelete={() => {
+        if (linkedDeleteTodo?.id) {
+          handleDeleteTodo(linkedDeleteTodo.id, true);
+        }
+      }}
+      itemType="Task"
+      goalTitle={linkedDeleteTodo?.goalTitle}
+    />
 
     {/* ── DEV: cache status overlay (remove when no longer needed) ── */}
     <TodoCacheDebugOverlay />

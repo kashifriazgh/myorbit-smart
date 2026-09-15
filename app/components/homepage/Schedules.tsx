@@ -39,6 +39,7 @@ import { SchedulesProps } from '../../lib/interface';
 import SchedulesModal from './SchedulesModal';
 import { useSchedules } from '../../lib/context/SchedulesContext';
 import ReminderSendButton from '@/app/components/global/ReminderSendButton';
+import LinkedItemDeleteDialog from '@/app/components/global/LinkedItemDeleteDialog';
 import { doc, getDoc, updateDoc, addDoc, collection, Timestamp, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
@@ -213,19 +214,25 @@ const groupSchedulesByHour = (schedulesList: SchedulesProps[]) => {
   const groups: { [key: string]: SchedulesProps[] } = {};
   
   schedulesList.forEach((s) => {
-    if (s.isFlexible) {
+    if (s.isFlexible || !s.startTime || typeof s.startTime !== 'string' || !s.startTime.includes(':')) {
       const key = "Flexible";
       if (!groups[key]) groups[key] = [];
       groups[key].push(s);
     } else {
-      const [hoursStr] = s.startTime.split(':');
-      const hour = parseInt(hoursStr);
-      const ampm = hour >= 12 ? 'PM' : 'AM';
-      const displayHour = hour % 12 || 12;
-      const paddedHour = String(displayHour).padStart(2, '0');
-      const key = `${paddedHour}:00 ${ampm}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(s);
+      const parts = s.startTime.split(':');
+      const hour = parseInt(parts[0], 10);
+      if (isNaN(hour)) {
+        const key = "Flexible";
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(s);
+      } else {
+        const ampm = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = hour % 12 || 12;
+        const paddedHour = String(displayHour).padStart(2, '0');
+        const key = `${paddedHour}:00 ${ampm}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(s);
+      }
     }
   });
   
@@ -855,15 +862,29 @@ const Schedules: React.FC = () => {
     }
   };
 
-  const handleDeleteSchedule = async (scheduleId: string) => {
+  const [linkedDeleteSchedule, setLinkedDeleteSchedule] = useState<SchedulesProps | null>(null);
+
+  const handleDeleteSchedule = async (scheduleId: string, forceConfirm?: boolean) => {
     if (isGuest) {
       setSnackbar({ open: true, message: 'Guest users are not allowed to delete schedules. Please sign up first.', severity: 'warning' });
       return;
     }
+    const sched = allSchedules.find((s) => s.id === scheduleId);
+    if (!forceConfirm && sched?.linkedGoalId) {
+      setLinkedDeleteSchedule(sched);
+      return;
+    }
+
     setIsSaving(true);
     try {
-      await removeSchedule(scheduleId);
+      if (sched?.id) {
+        const { deleteScheduleReminder } = await import('@/app/lib/utils/whatsapp-reminder');
+        await deleteScheduleReminder(sched.id).catch((err) => console.error(err));
+      }
+      await removeSchedule(scheduleId, true);
       setSnackbar({ open: true, message: 'Schedule deleted successfully', severity: 'success' });
+      setSelectedQuickSchedule(null);
+      setLinkedDeleteSchedule(null);
     } catch {
       setSnackbar({ open: true, message: 'Failed to delete schedule', severity: 'error' });
     } finally {
@@ -1024,17 +1045,19 @@ const Schedules: React.FC = () => {
           const cat = (goalData.type || '').toLowerCase();
           const subcat = (goalData.subcategory || '').toLowerCase();
 
-          // Financial Deposit Prompt ONLY for Finance / Saving goals!
+          // Financial Deposit Prompt ONLY for Finance / Saving goals if an assumed amount was set!
           const isFinanceSaving = cat === 'finance' && (subcat.includes('saving') || subcat.includes('fund') || subcat.includes('savings'));
 
           if (isFinanceSaving) {
-            const amt = schedule.contributionAmount || Number(goalData.overallTargetValue || 0);
-            setSchedulePromptItem({
-              schedule,
-              assumedAmount: amt,
-            });
-            setSchedulePromptAmount(amt > 0 ? amt : '');
-            return;
+            const amt = schedule.contributionAmount || 0;
+            if (amt > 0) {
+              setSchedulePromptItem({
+                schedule,
+                assumedAmount: amt,
+              });
+              setSchedulePromptAmount(amt);
+              return;
+            }
           }
 
           // If linked to Fitness goal: update exercise items progress
@@ -1672,6 +1695,20 @@ const Schedules: React.FC = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Linked Goal Schedule Delete Confirmation Dialog */}
+      <LinkedItemDeleteDialog
+        open={Boolean(linkedDeleteSchedule)}
+        onClose={() => setLinkedDeleteSchedule(null)}
+        onConfirmDelete={() => {
+          if (linkedDeleteSchedule?.id) {
+            handleDeleteSchedule(linkedDeleteSchedule.id, true);
+          }
+        }}
+        itemType="Schedule"
+        goalTitle={linkedDeleteSchedule?.goalTitle}
+        isDeleting={isSaving}
+      />
     </Card>
   );
 };

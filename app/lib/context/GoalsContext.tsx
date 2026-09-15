@@ -26,6 +26,7 @@ import { loadGoalsCache, saveGoalsCache, clearGoalsCache } from '../utils/goalsC
 import { deleteSchedule, updateSchedule } from '../functions/schedules';
 import { invalidateTodosCache } from '../utils/todosCache';
 import { invalidateSchedulesCache } from '../utils/schedulesCache';
+import { getExpenseItemProgress } from '../utils/goalProgress';
 
 interface GoalsContextType {
   goals: Goal[];
@@ -51,6 +52,11 @@ interface GoalsContextType {
     linkedItemId: string,
     linkedType: 'schedule' | 'todo' | 'finance_source',
     isCompleted: boolean,
+  ) => Promise<void>;
+  unlinkOrRemoveItemFromGoal: (
+    linkedGoalId: string,
+    linkedItemId: string,
+    linkedType: 'schedule' | 'todo',
   ) => Promise<void>;
   addGoalStep: (goalId: string, step: Partial<GoalStep>) => Promise<void>;
   updateGoalStep: (
@@ -722,33 +728,170 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
       const goal = goals.find((g) => g.id === linkedGoalId);
       if (!goal) return;
 
-      const targetStep = (goal.steps || []).find(
-        (s) => s.linkedItemId === linkedItemId || (s.linkedType === linkedType && s.linkedItemId === linkedItemId)
-      );
+      let hasChanges = false;
+      const updates: Partial<Goal> = {};
 
-      if (!targetStep) return;
+      // 1. Sync in goal.expenseItems (Expense Reduction Goals)
+      if (Array.isArray(goal.expenseItems) && goal.expenseItems.length > 0) {
+        let expenseModified = false;
+        const updatedExpenses = (goal.expenseItems as Array<Record<string, unknown>>).map((item) => {
+          let itemModified = false;
+          const initVal = Number(item.initialValue || item.currentValue) || 0;
+          let newCurrentVal = Number(item.currentValue) || 0;
 
-      const newStatus = isCompleted ? GoalStepStatus.COMPLETED : GoalStepStatus.IN_PROGRESS;
-      if (targetStep.status === newStatus) return;
+          const actions = Array.isArray(item.actions) ? (item.actions as Array<Record<string, unknown>>) : [];
+          const newActions = actions.map((action) => {
+            const matches =
+              action.scheduleId === linkedItemId ||
+              action.todoId === linkedItemId ||
+              action.id === linkedItemId;
 
-      const updatedSteps = goal.steps.map((step) => {
-        if (step.id !== targetStep.id) return step;
-        return {
-          ...step,
-          status: newStatus,
-        };
-      });
+            if (matches && action.done !== isCompleted) {
+              itemModified = true;
+              expenseModified = true;
+              hasChanges = true;
 
-      const progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
+              const assumedAmt = Number(action.assumedContributionValue) || 0;
+              if (isCompleted && assumedAmt > 0) {
+                newCurrentVal = Math.max(0, newCurrentVal - assumedAmt);
+              }
 
-      await updateGoal(linkedGoalId, {
-        steps: updatedSteps,
-        progress,
-        status: deriveStatusFromProgress(progress),
-        completedAt: progress === 100 ? Timestamp.fromDate(new Date()) : null,
-      });
+              return { ...action, done: isCompleted };
+            }
+            return action;
+          });
+
+          if (itemModified) {
+            const itemPct = getExpenseItemProgress({
+              initialValue: initVal,
+              currentValue: newCurrentVal,
+              targetValue: Number(item.targetValue) || 0,
+              actionType: (item.actionType as 'reduce' | 'eliminate') || 'reduce',
+            });
+
+            return {
+              ...item,
+              currentValue: newCurrentVal,
+              reductionPercent: itemPct,
+              actions: newActions,
+            };
+          }
+          return item;
+        });
+
+        if (expenseModified) {
+          let sum = 0;
+          for (const expItem of updatedExpenses) {
+            sum += getExpenseItemProgress(expItem as unknown as Parameters<typeof getExpenseItemProgress>[0]);
+          }
+          const meanPct = updatedExpenses.length > 0
+            ? Math.max(0, Math.min(100, Math.round(sum / updatedExpenses.length)))
+            : 0;
+
+          updates.expenseItems = updatedExpenses as unknown as Goal['expenseItems'];
+          updates.progress = meanPct;
+        }
+      }
+
+      // 2. Sync in goal.steps (Standard Goal Milestones)
+      if (Array.isArray(goal.steps) && goal.steps.length > 0) {
+        let stepModified = false;
+        const newStatus = isCompleted ? GoalStepStatus.COMPLETED : GoalStepStatus.IN_PROGRESS;
+
+        const updatedSteps = goal.steps.map((step) => {
+          const matches =
+            step.linkedItemId === linkedItemId ||
+            (Array.isArray(step.linkedTodoIds) && step.linkedTodoIds.includes(linkedItemId)) ||
+            step.id === linkedItemId;
+
+          if (matches && step.status !== newStatus) {
+            stepModified = true;
+            hasChanges = true;
+            return { ...step, status: newStatus };
+          }
+          return step;
+        });
+
+        if (stepModified) {
+          updates.steps = updatedSteps;
+          if (typeof updates.progress !== 'number') {
+            updates.progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
+          }
+        }
+      }
+
+      if (hasChanges) {
+        if (typeof updates.progress === 'number') {
+          updates.status = deriveStatusFromProgress(updates.progress);
+          if (updates.progress === 100) {
+            updates.completedAt = Timestamp.fromDate(new Date());
+          }
+        }
+        await updateGoal(linkedGoalId, updates);
+      }
     } catch (err) {
       console.warn('Failed to sync linked item status to goal:', err);
+    }
+  };
+
+  const unlinkOrRemoveItemFromGoal = async (
+    linkedGoalId: string,
+    linkedItemId: string,
+    linkedType: 'schedule' | 'todo',
+  ): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === linkedGoalId);
+      if (!goal) return;
+
+      const updates: Partial<Goal> = {};
+      let hasChanges = false;
+
+      // 1. Remove from goal.expenseItems (if Expenses template)
+      if (Array.isArray(goal.expenseItems) && goal.expenseItems.length > 0) {
+        let expenseModified = false;
+        const updatedExpenses = (goal.expenseItems as Array<Record<string, unknown>>).map((item) => {
+          const actions = Array.isArray(item.actions) ? (item.actions as Array<Record<string, unknown>>) : [];
+          const filteredActions = actions.filter((action) => {
+            if (linkedType === 'schedule' && action.scheduleId === linkedItemId) return false;
+            if (linkedType === 'todo' && action.todoId === linkedItemId) return false;
+            if (action.id === linkedItemId) return false;
+            return true;
+          });
+          if (filteredActions.length !== actions.length) {
+            expenseModified = true;
+            hasChanges = true;
+            return { ...item, actions: filteredActions };
+          }
+          return item;
+        });
+
+        if (expenseModified) {
+          updates.expenseItems = updatedExpenses as unknown as Goal['expenseItems'];
+        }
+      }
+
+      // 2. Remove from goal.steps (Standard Goal Milestones)
+      if (Array.isArray(goal.steps) && goal.steps.length > 0) {
+        const updatedSteps = goal.steps.filter((step) => {
+          if (step.linkedItemId === linkedItemId) return false;
+          if (Array.isArray(step.linkedTodoIds) && step.linkedTodoIds.includes(linkedItemId)) return false;
+          if (step.id === linkedItemId) return false;
+          return true;
+        });
+
+        if (updatedSteps.length !== goal.steps.length) {
+          hasChanges = true;
+          updates.steps = updatedSteps;
+          updates.progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
+          updates.status = deriveStatusFromProgress(updates.progress);
+        }
+      }
+
+      if (hasChanges) {
+        await updateGoal(linkedGoalId, updates);
+      }
+    } catch (err) {
+      console.warn('Failed to unlink item from goal:', err);
     }
   };
 
@@ -869,6 +1012,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     updateGoalProgress,
     updateStepStatus,
     updateLinkedItemStatusInGoal,
+    unlinkOrRemoveItemFromGoal,
     updateGoalStep,
     deleteGoalStep,
     addGoalStep,

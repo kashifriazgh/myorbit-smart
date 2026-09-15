@@ -74,9 +74,12 @@ export interface ExpenseProgressItem {
  */
 export function getExpenseItemProgress(item?: ExpenseProgressItem | null): number {
   if (!item) return 0;
-  const current = typeof item.currentValue === 'number' ? item.currentValue : 0;
+  const initial = typeof item.initialValue === 'number' && item.initialValue > 0
+    ? item.initialValue
+    : (typeof item.currentValue === 'number' ? item.currentValue : 0);
   const target = typeof item.targetValue === 'number' ? item.targetValue : 0;
-  const initial = typeof item.initialValue === 'number' ? item.initialValue : (current > 0 ? current : 1);
+  const current = typeof item.currentValue === 'number' ? item.currentValue : initial;
+
   const actionType = item.actionType || (target === 0 ? 'eliminate' : 'reduce');
 
   if (actionType === 'eliminate' || target === 0) {
@@ -85,13 +88,17 @@ export function getExpenseItemProgress(item?: ExpenseProgressItem | null): numbe
     return Math.max(0, Math.min(100, Math.round(((initial - current) / initial) * 100)));
   }
 
-  // Reduce action (target > 0)
-  if (current <= target) return 100;
-  if (current >= initial) return 0;
-  const reductionSpan = initial - target;
-  if (reductionSpan <= 0) return 100;
-  const achievedReduction = initial - current;
-  return Math.max(0, Math.min(100, Math.round((achievedReduction / reductionSpan) * 100)));
+  if (initial <= target) {
+    return current <= target ? 100 : 0;
+  }
+
+  const totalNeeded = initial - target;
+  const achieved = initial - current;
+
+  if (achieved <= 0) return 0;
+  if (achieved >= totalNeeded) return 100;
+
+  return Math.max(0, Math.min(100, Math.round((achieved / totalNeeded) * 100)));
 }
 
 /**

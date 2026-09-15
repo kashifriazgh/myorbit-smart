@@ -547,9 +547,9 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     if (!confirm(`Are you sure you want to delete this ${kind}?`)) return;
     try {
       if (kind === 'schedule') {
-        await removeSchedule(id);
+        await removeSchedule(id, true);
       } else {
-        await deleteTodo(id);
+        await deleteTodo(id, true);
       }
     } catch (err) {
       console.error(`Failed to delete ${kind}:`, err);

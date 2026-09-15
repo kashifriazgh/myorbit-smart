@@ -17,6 +17,7 @@ import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 
 import TotalCashSnapshotComponent from '../components/finance/TotalCashSnapshot';
 import { useAuth } from '../lib/context/userContext';
@@ -33,6 +34,20 @@ export default function Finance() {
   if (!user) return null;
 
   const cardData = [
+    {
+      title: 'Income Sources',
+      href: '/finance/income-sources',
+      description: 'Manage active & proposed income streams',
+      icon: <MonetizationOnIcon sx={{ fontSize: 28 }} />,
+      lightBg: 'linear-gradient(135deg, #dcfce7 0%, #86efac 100%)',
+      darkBg: 'linear-gradient(135deg, #064e3b 0%, #022c22 100%)',
+      lightBubble: '#86efac',
+      darkBubble: '#022c22',
+      lightText: '#0f172a',
+      darkText: '#f1f5f9',
+      lightSubText: '#334155',
+      darkSubText: '#94a3b8',
+    },
     {
       title: 'Loans',
       href: '/finance/loans',

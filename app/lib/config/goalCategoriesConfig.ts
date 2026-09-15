@@ -184,50 +184,7 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
         description: 'Grow your earnings across salary, business, or freelance.',
         units: ['PKR', 'USD', 'EUR'],
         unitMeasurementTypes: { PKR: 'qty', USD: 'qty', EUR: 'qty' },
-        questions: [
-          {
-            id: 'income_target_type',
-            question: 'What do you want to increase?',
-            type: 'single_choice',
-            options: [
-              { label: 'Overall income', value: 'Overall income' },
-              { label: 'Salary', value: 'Salary' },
-              { label: 'Freelance income', value: 'Freelance income' },
-              { label: 'Business income', value: 'Business income' },
-              { label: 'Other income', value: 'Other income' },
-            ],
-          },
-          {
-            id: 'current_income',
-            question: 'What is your current income?',
-            type: 'amount_or_choice',
-            options: [
-              { label: "I don't know", value: 'unknown' },
-              { label: 'Input current amount', value: 'input_amount', isCustomInput: true },
-            ],
-          },
-          {
-            id: 'target_income',
-            question: 'What income do you want to reach?',
-            type: 'amount_or_choice',
-            options: [
-              { label: 'No exact target yet', value: 'flexible' },
-              { label: 'Input target amount', value: 'target_amount', isCustomInput: true },
-            ],
-          },
-          {
-            id: 'deadline',
-            question: 'By when?',
-            type: 'date_or_choice',
-            options: [
-              { label: 'In 3 Months', value: '3_months' },
-              { label: 'In 6 Months', value: '6_months' },
-              { label: 'In 1 Year', value: '1_year' },
-              { label: 'Specific Date', value: 'specific_date', isCustomInput: true },
-              { label: 'No deadline', value: 'no_deadline' },
-            ],
-          },
-        ],
+        questions: [],
       },
       {
         id: 'manage_debt',
