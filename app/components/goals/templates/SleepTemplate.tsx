@@ -13,7 +13,6 @@ import {
   DialogContent,
   DialogActions,
   Stack,
-  InputAdornment,
   Modal,
   Fade,
 } from '@mui/material';
@@ -27,8 +26,9 @@ import {
   RadioButtonUnchecked,
   Checklist as TodoIcon,
   Delete as DeleteIcon,
-  LockClock as LockClockIcon,
   Close as CloseIcon,
+  Remove as RemoveIcon,
+  Hotel as BedDoubleIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -37,12 +37,51 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export interface SleepLogEntry {
   id: string;
   date: string; // YYYY-MM-DD
-  hours: number;
+  objective?: 'sleepBetter' | 'sleepOnTime' | 'wakeUpOnTime' | 'overall' | string;
+  actualSleepHours?: number;
+  targetSleepHours?: number;
+  differenceHours?: number;
+  actualSleepTime?: string;
+  targetSleepTime?: string;
+  sleepDiffMinutes?: number;
+  actualWakeTime?: string;
+  targetWakeTime?: string;
+  wakeDiffMinutes?: number;
+  dailyProgress?: number; // 0 - 100
+  differenceDirection?: 'early' | 'late' | 'less' | 'more' | 'on_target';
+  sleepTimeProgress?: number;
+  wakeTimeProgress?: number;
+  actualValueStr?: string;
+  targetValueStr?: string;
+  differenceFormatted?: string;
+  isUnlogged?: boolean;
+  hours?: number; // legacy fallback
   note?: string;
+  timestamp?: string;
+}
+
+export interface ComputedSleepMetrics {
+  isLogged: boolean;
+  objective: string;
+  actualValueStr: string;
+  targetValueStr: string;
+  actualSleepHours?: number;
+  targetSleepHours?: number;
+  actualSleepTime?: string;
+  targetSleepTime?: string;
+  actualWakeTime?: string;
+  targetWakeTime?: string;
+  differenceVal: number;
+  differenceDirection: 'early' | 'late' | 'less' | 'more' | 'on_target';
+  differenceFormatted: string;
+  dailyProgress: number;
+  sleepTimeProgress?: number;
+  wakeTimeProgress?: number;
 }
 
 export interface SleepActionItem {
@@ -72,7 +111,284 @@ function formatDate(dateStr: string | Date | null | undefined) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-const SLEEP_HOURS_OPTIONS = [5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+// Time & Duration manipulation helpers
+function timeToMinutes(timeStr: string): number {
+  if (!timeStr) return 0;
+  const cleaned = timeStr.trim();
+  const isPM = /pm/i.test(cleaned);
+  const isAM = /am/i.test(cleaned);
+  const parts = cleaned.replace(/(am|pm)/i, '').trim().split(':');
+  let hours = parseInt(parts[0], 10) || 0;
+  const mins = parseInt(parts[1], 10) || 0;
+
+  if (isPM && hours < 12) hours += 12;
+  if (isAM && hours === 12) hours = 0;
+  return hours * 60 + mins;
+}
+
+function minutesTo12HourComponents(totalMins: number) {
+  const m = ((totalMins % 1440) + 1440) % 1440;
+  const h24 = Math.floor(m / 60);
+  const minutes = m % 60;
+  const period = h24 >= 12 ? 'PM' : 'AM';
+  let hours12 = h24 % 12;
+  if (hours12 === 0) hours12 = 12;
+  return {
+    hours: hours12,
+    minutes: minutes.toString().padStart(2, '0'),
+    period,
+    formattedStr: `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`,
+  };
+}
+
+function formatDuration(totalMinutes: number) {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return { h, m };
+}
+
+function calcTimeDiffMinutes(actualStr: string, targetStr: string): number {
+  const act = timeToMinutes(actualStr);
+  const tgt = timeToMinutes(targetStr);
+  let diff = act - tgt;
+  if (diff > 720) diff -= 1440;
+  if (diff < -720) diff += 1440;
+  return diff;
+}
+
+function formatDiffBadge(diffMins: number): string {
+  if (diffMins === 0) return 'On time ✓';
+  const abs = Math.abs(diffMins);
+  const hrs = Math.floor(abs / 60);
+  const mins = abs % 60;
+  const formatted = hrs > 0 ? `${hrs}h ${mins > 0 ? `${mins}m` : ''}` : `${mins}m`;
+  return diffMins > 0 ? `+${formatted} late` : `-${formatted} early`;
+}
+
+/**
+ * Calculates sleep daily metrics & progress strictly based on objective
+ */
+export function computeSleepMetrics(
+  log: SleepLogEntry | undefined | null,
+  objective: string,
+  targets: {
+    targetSleepHours?: number | null;
+    targetSleepTime?: string | null;
+    targetWakeTime?: string | null;
+  },
+  acceptableDeviationMinutes = 60,
+  toleranceMinutes = 15
+): ComputedSleepMetrics {
+  if (!log) {
+    return {
+      isLogged: false,
+      objective,
+      actualValueStr: '—',
+      targetValueStr: '—',
+      differenceVal: 0,
+      differenceDirection: 'on_target',
+      differenceFormatted: 'Unlogged',
+      dailyProgress: 0,
+    };
+  }
+
+  if (objective === 'sleep_better' || objective === 'sleepBetter') {
+    const actHours = log.actualSleepHours ?? log.hours;
+    if (actHours === undefined || actHours === null) {
+      return {
+        isLogged: false,
+        objective,
+        actualValueStr: '—',
+        targetValueStr: '—',
+        differenceVal: 0,
+        differenceDirection: 'on_target',
+        differenceFormatted: 'Unlogged',
+        dailyProgress: 0,
+      };
+    }
+    const tgtHours = log.targetSleepHours ?? targets.targetSleepHours ?? 7;
+    const actMins = actHours * 60;
+    const tgtMins = tgtHours * 60;
+    const durationProgress = Math.min(100, Math.max(0, Math.round((actMins / tgtMins) * 100)));
+    const diffMins = Math.round(actMins - tgtMins);
+    const diffHours = Number((actHours - tgtHours).toFixed(2));
+    const dir = diffHours > 0 ? 'more' : diffHours < 0 ? 'less' : 'on_target';
+    const formatted =
+      diffHours === 0
+        ? 'On target ✓'
+        : diffHours > 0
+        ? `+${diffHours}h more than target`
+        : `${diffHours}h less than target`;
+
+    return {
+      isLogged: true,
+      objective,
+      actualValueStr: `${actHours}h`,
+      targetValueStr: `${tgtHours}h`,
+      actualSleepHours: actHours,
+      targetSleepHours: tgtHours,
+      differenceVal: diffMins,
+      differenceDirection: dir,
+      differenceFormatted: formatted,
+      dailyProgress: durationProgress,
+    };
+  }
+
+  if (objective === 'sleep_on_time' || objective === 'sleepOnTime') {
+    const actSleep = log.actualSleepTime;
+    if (!actSleep) {
+      return {
+        isLogged: false,
+        objective,
+        actualValueStr: '—',
+        targetValueStr: '—',
+        differenceVal: 0,
+        differenceDirection: 'on_target',
+        differenceFormatted: 'Unlogged',
+        dailyProgress: 0,
+      };
+    }
+    const tgtSleep = log.targetSleepTime ?? targets.targetSleepTime ?? '10:00 PM';
+    const diffMins = calcTimeDiffMinutes(actSleep, tgtSleep);
+    const absDiff = Math.abs(diffMins);
+    const dir = diffMins > 0 ? 'late' : diffMins < 0 ? 'early' : 'on_target';
+
+    let progress = 100;
+    if (absDiff > toleranceMinutes) {
+      const devRange = Math.max(1, acceptableDeviationMinutes - toleranceMinutes);
+      progress = Math.max(0, Math.min(100, Math.round(100 - ((absDiff - toleranceMinutes) / devRange) * 100)));
+    }
+
+    const formatted =
+      diffMins === 0
+        ? 'On time ✓'
+        : diffMins > 0
+        ? `+${Math.floor(absDiff / 60) > 0 ? `${Math.floor(absDiff / 60)}h ` : ''}${absDiff % 60}m late`
+        : `-${Math.floor(absDiff / 60) > 0 ? `${Math.floor(absDiff / 60)}h ` : ''}${absDiff % 60}m early`;
+
+    return {
+      isLogged: true,
+      objective,
+      actualValueStr: actSleep,
+      targetValueStr: tgtSleep,
+      actualSleepTime: actSleep,
+      targetSleepTime: tgtSleep,
+      differenceVal: diffMins,
+      differenceDirection: dir,
+      differenceFormatted: formatted,
+      dailyProgress: progress,
+    };
+  }
+
+  if (objective === 'wake_up_on_time' || objective === 'wakeUpOnTime') {
+    const actWake = log.actualWakeTime;
+    if (!actWake) {
+      return {
+        isLogged: false,
+        objective,
+        actualValueStr: '—',
+        targetValueStr: '—',
+        differenceVal: 0,
+        differenceDirection: 'on_target',
+        differenceFormatted: 'Unlogged',
+        dailyProgress: 0,
+      };
+    }
+    const tgtWake = log.targetWakeTime ?? targets.targetWakeTime ?? '06:00 AM';
+    const diffMins = calcTimeDiffMinutes(actWake, tgtWake);
+    const absDiff = Math.abs(diffMins);
+    const dir = diffMins > 0 ? 'late' : diffMins < 0 ? 'early' : 'on_target';
+
+    let progress = 100;
+    if (absDiff > toleranceMinutes) {
+      const devRange = Math.max(1, acceptableDeviationMinutes - toleranceMinutes);
+      progress = Math.max(0, Math.min(100, Math.round(100 - ((absDiff - toleranceMinutes) / devRange) * 100)));
+    }
+
+    const formatted =
+      diffMins === 0
+        ? 'On time ✓'
+        : diffMins > 0
+        ? `+${Math.floor(absDiff / 60) > 0 ? `${Math.floor(absDiff / 60)}h ` : ''}${absDiff % 60}m late`
+        : `-${Math.floor(absDiff / 60) > 0 ? `${Math.floor(absDiff / 60)}h ` : ''}${absDiff % 60}m early`;
+
+    return {
+      isLogged: true,
+      objective,
+      actualValueStr: actWake,
+      targetValueStr: tgtWake,
+      actualWakeTime: actWake,
+      targetWakeTime: tgtWake,
+      differenceVal: diffMins,
+      differenceDirection: dir,
+      differenceFormatted: formatted,
+      dailyProgress: progress,
+    };
+  }
+
+  // sleep_and_wake_on_time or overall (Sleep & Wake Up on Time)
+  const actSleep = log.actualSleepTime;
+  const actWake = log.actualWakeTime;
+  if (!actSleep || !actWake) {
+    return {
+      isLogged: false,
+      objective,
+      actualValueStr: '—',
+      targetValueStr: '—',
+      differenceVal: 0,
+      differenceDirection: 'on_target',
+      differenceFormatted: 'Unlogged',
+      dailyProgress: 0,
+    };
+  }
+  const tgtSleep = log.targetSleepTime ?? targets.targetSleepTime ?? '10:00 PM';
+  const tgtWake = log.targetWakeTime ?? targets.targetWakeTime ?? '06:00 AM';
+
+  const sleepDiff = calcTimeDiffMinutes(actSleep, tgtSleep);
+  const wakeDiff = calcTimeDiffMinutes(actWake, tgtWake);
+  const absSleep = Math.abs(sleepDiff);
+  const absWake = Math.abs(wakeDiff);
+
+  let sleepProg = 100;
+  if (absSleep > toleranceMinutes) {
+    const devRange = Math.max(1, acceptableDeviationMinutes - toleranceMinutes);
+    sleepProg = Math.max(0, Math.min(100, Math.round(100 - ((absSleep - toleranceMinutes) / devRange) * 100)));
+  }
+
+  let wakeProg = 100;
+  if (absWake > toleranceMinutes) {
+    const devRange = Math.max(1, acceptableDeviationMinutes - toleranceMinutes);
+    wakeProg = Math.max(0, Math.min(100, Math.round(100 - ((absWake - toleranceMinutes) / devRange) * 100)));
+  }
+
+  const dailyProgress = Math.round((sleepProg + wakeProg) / 2);
+
+  // Elapsed sleep duration calculation crossing midnight
+  const sleepMins = timeToMinutes(actSleep);
+  const wakeMins = timeToMinutes(actWake);
+  const elapsedMins = ((wakeMins - sleepMins + 1440) % 1440);
+  const actualSleepHours = Number((elapsedMins / 60).toFixed(1));
+
+  return {
+    isLogged: true,
+    objective,
+    actualValueStr: `${actSleep} - ${actWake}`,
+    targetValueStr: `${tgtSleep} - ${tgtWake}`,
+    actualSleepTime: actSleep,
+    targetSleepTime: tgtSleep,
+    actualWakeTime: actWake,
+    targetWakeTime: tgtWake,
+    actualSleepHours,
+    differenceVal: sleepDiff,
+    differenceDirection: sleepDiff > 0 ? 'late' : sleepDiff < 0 ? 'early' : 'on_target',
+    differenceFormatted: `Bed: ${formatDiffBadge(sleepDiff)} | Wake: ${formatDiffBadge(wakeDiff)}`,
+    dailyProgress,
+    sleepTimeProgress: sleepProg,
+    wakeTimeProgress: wakeProg,
+  };
+}
+
+const DURATION_PRESETS = [6, 6.5, 7, 7.5, 8];
 
 export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps) {
   const { theme } = useCustomTheme();
@@ -80,6 +396,108 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
   const { user } = useAuth();
   const { todos, addTodo, updateTodo, deleteTodo } = useTodoContext();
   const { allSchedules, addSchedule, editSchedule, removeSchedule } = useSchedules();
+
+  const answers = (goal.questionnaireAnswers as Record<string, unknown>) || {};
+
+  // Determine sleep objective
+  const rawObj = String(answers.sleepObjective || answers.objective || answers.sleep_objective || (goal as unknown as Record<string, unknown>).sleepObjective || '').trim();
+  const sleepObjective = useMemo(() => {
+    if (rawObj === 'sleep_better' || rawObj === 'sleepBetter') return 'sleep_better';
+    if (rawObj === 'sleep_on_time' || rawObj === 'sleepOnTime') return 'sleep_on_time';
+    if (rawObj === 'wake_up_on_time' || rawObj === 'wakeUpOnTime') return 'wake_up_on_time';
+    if (rawObj === 'sleep_and_wake_on_time' || rawObj === 'overall') return 'sleep_and_wake_on_time';
+
+    if (rawObj.toLowerCase().includes('wake')) return 'wake_up_on_time';
+    if (rawObj.toLowerCase().includes('sleep time') || rawObj.toLowerCase().includes('bed') || rawObj.toLowerCase().includes('on_time')) return 'sleep_on_time';
+    if (rawObj.toLowerCase().includes('overall') || rawObj.toLowerCase().includes('consistency') || rawObj.toLowerCase().includes('routine') || rawObj.toLowerCase().includes('and_wake')) return 'sleep_and_wake_on_time';
+    return 'sleep_better';
+  }, [rawObj]);
+
+  // Target Preferences State
+  const goalRecord = goal as unknown as Record<string, unknown>;
+  const [targetSleepHours, setTargetSleepHours] = useState<number | null>(() => {
+    if (typeof goalRecord.targetSleepHours === 'number') return goalRecord.targetSleepHours;
+    if (answers.target_hours) return Number(answers.target_hours);
+    return null;
+  });
+
+  const [targetSleepTime, setTargetSleepTime] = useState<string | null>(() => {
+    if (typeof goalRecord.targetSleepTime === 'string' && goalRecord.targetSleepTime) return goalRecord.targetSleepTime;
+    if (answers.sleep_time) return String(answers.sleep_time);
+    return null;
+  });
+
+  const [targetWakeTime, setTargetWakeTime] = useState<string | null>(() => {
+    if (typeof goalRecord.targetWakeTime === 'string' && goalRecord.targetWakeTime) return goalRecord.targetWakeTime;
+    if (answers.wake_time) return String(answers.wake_time);
+    return null;
+  });
+
+  // Check if preferences setup is complete
+  const isPreferencesConfigured = useMemo(() => {
+    if (sleepObjective === 'sleep_better') return targetSleepHours !== null && targetSleepHours > 0;
+    if (sleepObjective === 'sleep_on_time') return Boolean(targetSleepTime);
+    if (sleepObjective === 'wake_up_on_time') return Boolean(targetWakeTime);
+    if (sleepObjective === 'sleep_and_wake_on_time') return Boolean(targetSleepTime) && Boolean(targetWakeTime);
+    return true;
+  }, [sleepObjective, targetSleepHours, targetSleepTime, targetWakeTime]);
+
+  // Preference Setup Form Temp States
+  const [setupDurationMins, setSetupDurationMins] = useState<number>(Math.round((targetSleepHours || 7) * 60));
+  const [setupSleepTimeMins, setSetupSleepTimeMins] = useState<number>(() => timeToMinutes(targetSleepTime || '10:00 PM'));
+  const [setupWakeTimeMins, setSetupWakeTimeMins] = useState<number>(() => timeToMinutes(targetWakeTime || '05:00 AM'));
+  const [savingSetup, setSavingSetup] = useState(false);
+
+  // Daily Check-In States
+  const [durationMins, setDurationMins] = useState<number>(Math.round(7 * 60));
+  const [sleepTimeMins, setSleepTimeMins] = useState<number>(() => timeToMinutes(targetSleepTime || '10:00 PM'));
+  const [wakeTimeMins, setWakeTimeMins] = useState<number>(() => timeToMinutes(targetWakeTime || '06:00 AM'));
+
+  // Pulse animation states for time/duration pickers
+  const [durationPulse, setDurationPulse] = useState(false);
+  const [sleepPulse, setSleepPulse] = useState(false);
+  const [wakePulse, setWakePulse] = useState(false);
+
+  // Setup pulse animation states
+  const [setupDurationPulse, setSetupDurationPulse] = useState(false);
+  const [setupSleepPulse, setSetupSleepPulse] = useState(false);
+  const [setupWakePulse, setSetupWakePulse] = useState(false);
+
+  const stepDuration = (delta: number) => {
+    setDurationMins((prev) => Math.min(24 * 60, Math.max(0, prev + delta)));
+    setDurationPulse(true);
+    setTimeout(() => setDurationPulse(false), 150);
+  };
+
+  const stepSetupDuration = (delta: number) => {
+    setSetupDurationMins((prev) => Math.min(24 * 60, Math.max(0, prev + delta)));
+    setSetupDurationPulse(true);
+    setTimeout(() => setSetupDurationPulse(false), 150);
+  };
+
+  const stepSleepTime = (delta: number) => {
+    setSleepTimeMins((prev) => (((prev + delta) % 1440) + 1440) % 1440);
+    setSleepPulse(true);
+    setTimeout(() => setSleepPulse(false), 150);
+  };
+
+  const stepSetupSleepTime = (delta: number) => {
+    setSetupSleepTimeMins((prev) => (((prev + delta) % 1440) + 1440) % 1440);
+    setSetupSleepPulse(true);
+    setTimeout(() => setSetupSleepPulse(false), 150);
+  };
+
+  const stepWakeTime = (delta: number) => {
+    setWakeTimeMins((prev) => (((prev + delta) % 1440) + 1440) % 1440);
+    setWakePulse(true);
+    setTimeout(() => setWakePulse(false), 150);
+  };
+
+  const stepSetupWakeTime = (delta: number) => {
+    setSetupWakeTimeMins((prev) => (((prev + delta) % 1440) + 1440) % 1440);
+    setSetupWakePulse(true);
+    setTimeout(() => setSetupWakePulse(false), 150);
+  };
 
   // Strategic Action Tasks State
   const [actions, setActions] = useState<SleepActionItem[]>(() => {
@@ -96,13 +514,100 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
   const [taskEditText, setTaskEditText] = useState('');
   const [taskEditAssumedVal, setTaskEditAssumedVal] = useState<number | ''>('');
   const [taskEditKind, setTaskEditKind] = useState<'none' | 'schedule' | 'todo'>('none');
-  const [showConvertOptions, setShowConvertOptions] = useState(false);
+  const [_showConvertOptions, setShowConvertOptions] = useState(false);
   const [taskEditDate, setTaskEditDate] = useState(new Date().toISOString().split('T')[0]);
   const [taskEditStartTime, setTaskEditStartTime] = useState('22:30');
   const [taskEditEndTime, setTaskEditEndTime] = useState('23:00');
   const [taskEditTodoTime, setTaskEditTodoTime] = useState('');
   const [taskEditAssignee, setTaskEditAssignee] = useState('');
   const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+
+  // Animated step-by-step states for overall objective
+  const [overallSetupStep, setOverallSetupStep] = useState<1 | 2>(1);
+  const [overallDailyStep, setOverallDailyStep] = useState<1 | 2>(1);
+
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // Sleep logs stored on goal.sleepLogs
+  const [logs, setLogs] = useState<SleepLogEntry[]>(() => {
+    if (Array.isArray(goal.sleepLogs) && goal.sleepLogs.length > 0) {
+      return goal.sleepLogs as unknown as SleepLogEntry[];
+    }
+    return [];
+  });
+
+  // Check if today's sleep has been logged
+  const todayLog = useMemo(() => logs.find((l) => l.date === todayStr), [logs, todayStr]);
+  const hasLoggedToday = Boolean(todayLog);
+
+  const targetHours = targetSleepHours || goal.overallTargetValue || Number(answers.target_hours || 8);
+  const bedTime = targetSleepTime || String(answers.bedtime || answers.bed_time || '10:30 PM');
+  const wakeTime = targetWakeTime || String(answers.wake_time || answers.wake_up_time || '06:30 AM');
+
+  // Compute exact today metrics
+  const todayMetrics = useMemo(() => {
+    return computeSleepMetrics(todayLog, sleepObjective, {
+      targetSleepHours: targetHours,
+      targetSleepTime: bedTime,
+      targetWakeTime: wakeTime,
+    });
+  }, [todayLog, sleepObjective, targetHours, bedTime, wakeTime]);
+
+  const [savingLog, setSavingLog] = useState(false);
+
+  const progress = todayMetrics.isLogged ? todayMetrics.dailyProgress : 0;
+
+  // Arc geometry
+  const radius = 80;
+  const circumference = Math.PI * radius;
+  const dashOffset = circumference - (progress / 100) * circumference;
+
+  // Real-time schedule / todo completion status helper
+  const getIsStepDone = (step: SleepActionItem): boolean => {
+    if (step.scheduleId) {
+      const sched = allSchedules.find((s) => s.id === step.scheduleId);
+      if (sched) return sched.status === 'completed';
+    }
+    if (step.todoId) {
+      const td = todos.find((t) => t.id === step.todoId);
+      if (td) return td.status === 'completed';
+    }
+    return step.done;
+  };
+
+  // Compute real consistency streak
+  const streakCount = useMemo(() => {
+    if (logs.length === 0) return 0;
+    const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
+    const latestDate = new Date(sorted[0].date);
+    const diffDays = Math.floor((new Date().getTime() - latestDate.getTime()) / (1000 * 3600 * 24));
+    if (diffDays > 1) return 0; // Streak broken
+
+    let prevDateStr = sorted[0].date;
+    let streak = 1;
+    for (let i = 1; i < sorted.length; i++) {
+      const p = new Date(prevDateStr);
+      const curr = new Date(sorted[i].date);
+      const dayDiff = Math.round((p.getTime() - curr.getTime()) / (1000 * 3600 * 24));
+      if (dayDiff === 1) {
+        streak++;
+        prevDateStr = sorted[i].date;
+      } else if (dayDiff === 0) {
+        continue;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }, [logs]);
+
+  // Schedule modal states
+  const [schedModalOpen, setSchedModalOpen] = useState(false);
+  const [schedKind, setSchedKind] = useState<'schedule' | 'todo'>('schedule');
+  const [schedTitle, setSchedTitle] = useState('Bedtime Wind-down Routine');
+  const [schedTime, setSchedTime] = useState('22:30');
+  const [schedDate, setSchedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [savingSched, setSavingSched] = useState(false);
 
   // Helper: Persist Actions list to Goal
   const saveActionsList = async (updated: SleepActionItem[]) => {
@@ -164,8 +669,8 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
     setTaskEditKind(kind as 'none' | 'schedule' | 'todo');
     setShowConvertOptions(kind === 'schedule' || kind === 'todo');
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    setTaskEditDate(step.dueDate || todayStr);
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    setTaskEditDate(step.dueDate || todayDateStr);
     setTaskEditStartTime(step.time || '22:30');
     setTaskEditEndTime('23:00');
     setTaskEditTodoTime(step.time || '');
@@ -279,105 +784,183 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
     }
   };
 
-  const answers = goal.questionnaireAnswers || {};
-
-  const targetHours = goal.overallTargetValue || Number(answers.target_hours || answers.hours || 8);
-  const bedTime = String(answers.bedtime || answers.bed_time || '10:30 PM');
-  const wakeTime = String(answers.wake_time || answers.wake_up_time || '06:30 AM');
-
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-
-  // Sleep logs stored on goal.sleepLogs (reset dummy data: no fake 12 day streak or default 7.5h)
-  const [logs, setLogs] = useState<SleepLogEntry[]>(() => {
-    if (Array.isArray(goal.sleepLogs) && goal.sleepLogs.length > 0) {
-      return goal.sleepLogs as unknown as SleepLogEntry[];
-    }
-    return [];
-  });
-
-  // Check if today's sleep duration has already been logged
-  const todayLog = useMemo(() => logs.find((l) => l.date === todayStr), [logs, todayStr]);
-  const hasLoggedToday = Boolean(todayLog);
-  const hours = todayLog ? todayLog.hours : (goal.currentValue || 0);
-
-  // Compute real consistency streak (0 initially when no logs exist)
-  const streakCount = useMemo(() => {
-    if (logs.length === 0) return Number(answers.streak_count || 0);
-    const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
-    const latestDate = new Date(sorted[0].date);
-    const diffDays = Math.floor((new Date().getTime() - latestDate.getTime()) / (1000 * 3600 * 24));
-    if (diffDays > 1) return 0; // Streak broken
-
-    let prevDateStr = sorted[0].date;
-    let streak = 1;
-    for (let i = 1; i < sorted.length; i++) {
-      const p = new Date(prevDateStr);
-      const curr = new Date(sorted[i].date);
-      const dayDiff = Math.round((p.getTime() - curr.getTime()) / (1000 * 3600 * 24));
-      if (dayDiff === 1) {
-        streak++;
-        prevDateStr = sorted[i].date;
-      } else if (dayDiff === 0) {
-        continue;
+  // Save One-Time Preferences
+  const handleSaveSetupPreferences = async () => {
+    if (!goal.id) return;
+    setSavingSetup(true);
+    try {
+      const updates: Record<string, unknown> = {};
+      if (sleepObjective === 'sleep_better') {
+        const hrs = setupDurationMins / 60;
+        updates.targetSleepHours = hrs;
+        setTargetSleepHours(hrs);
+      } else if (sleepObjective === 'sleep_on_time') {
+        const str = minutesTo12HourComponents(setupSleepTimeMins).formattedStr;
+        updates.targetSleepTime = str;
+        setTargetSleepTime(str);
+      } else if (sleepObjective === 'wake_up_on_time') {
+        const str = minutesTo12HourComponents(setupWakeTimeMins).formattedStr;
+        updates.targetWakeTime = str;
+        setTargetWakeTime(str);
       } else {
-        break;
+        const sleepStr = minutesTo12HourComponents(setupSleepTimeMins).formattedStr;
+        const wakeStr = minutesTo12HourComponents(setupWakeTimeMins).formattedStr;
+        updates.targetSleepTime = sleepStr;
+        updates.targetWakeTime = wakeStr;
+        setTargetSleepTime(sleepStr);
+        setTargetWakeTime(wakeStr);
       }
+
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, updates);
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), updates);
+      }
+    } catch (err) {
+      console.error('Failed to save target preferences:', err);
+    } finally {
+      setSavingSetup(false);
     }
-    return streak;
-  }, [logs, answers.streak_count]);
+  };
 
-  // Dialog state for Custom Sleep Log
-  const [logModalOpen, setLogModalOpen] = useState(false);
-  const [customHours, setCustomHours] = useState<number | ''>('');
-  const [customNote, setCustomNote] = useState('');
-  const [savingLog, setSavingLog] = useState(false);
-
-  // Schedule modal states
-  const [schedModalOpen, setSchedModalOpen] = useState(false);
-  const [schedKind, setSchedKind] = useState<'schedule' | 'todo'>('schedule');
-  const [schedTitle, setSchedTitle] = useState('Bedtime Wind-down Routine');
-  const [schedTime, setSchedTime] = useState('22:30');
-  const [schedDate, setSchedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [savingSched, setSavingSched] = useState(false);
-
-  const progress = useMemo(() => {
-    if (!targetHours || targetHours <= 0) return 0;
-    return Math.max(0, Math.min(100, Math.round((hours / targetHours) * 100)));
-  }, [hours, targetHours]);
-
-  // Arc geometry
-  const radius = 80;
-  const circumference = Math.PI * radius;
-  const dashOffset = circumference - (progress / 100) * circumference;
-
-  // Filter linked schedules and todos
-  const linkedSleepSchedules = useMemo(() => {
-    if (!goal.id) return [];
-    return allSchedules.filter((s) => (s as { linkedGoalId?: string }).linkedGoalId === goal.id);
-  }, [allSchedules, goal.id]);
-
-  const linkedSleepTodos = useMemo(() => {
-    if (!goal.id) return [];
-    return todos.filter((t) => (t as { linkedGoalId?: string }).linkedGoalId === goal.id);
-  }, [todos, goal.id]);
-
-  const handleLogSleep = async (value: number, noteTxt?: string) => {
-    if (typeof value !== 'number' || value <= 0 || !goal.id) return;
+  // Log Daily Check-In Entry
+  const handleSaveDailyCheckIn = async () => {
+    if (!goal.id) return;
     setSavingLog(true);
     try {
-      const newEntry: SleepLogEntry = {
-        id: String(Date.now()),
-        date: todayStr,
-        hours: value,
-        note: noteTxt ? noteTxt.trim() : undefined,
-      };
+      let newEntry: SleepLogEntry;
+
+      const formattedSleepTime = minutesTo12HourComponents(sleepTimeMins).formattedStr;
+      const formattedWakeTime = minutesTo12HourComponents(wakeTimeMins).formattedStr;
+      const actualHoursVal = Number((durationMins / 60).toFixed(1));
+
+      if (sleepObjective === 'sleep_better') {
+        const tgt = targetSleepHours || 7;
+        const actMins = actualHoursVal * 60;
+        const tgtMins = tgt * 60;
+        const prog = Math.min(100, Math.max(0, Math.round((actMins / tgtMins) * 100)));
+        const diffHours = Number((actualHoursVal - tgt).toFixed(2));
+        const diffMins = Math.round(actMins - tgtMins);
+        const dir = diffHours > 0 ? 'more' : diffHours < 0 ? 'less' : 'on_target';
+
+        newEntry = {
+          id: String(Date.now()),
+          date: todayStr,
+          objective: 'sleep_better',
+          actualSleepHours: actualHoursVal,
+          targetSleepHours: tgt,
+          differenceHours: diffHours,
+          sleepDiffMinutes: diffMins,
+          differenceDirection: dir,
+          dailyProgress: prog,
+          actualValueStr: `${actualHoursVal}h`,
+          targetValueStr: `${tgt}h`,
+          differenceFormatted: diffHours === 0 ? 'On target ✓' : diffHours > 0 ? `+${diffHours}h more than target` : `${diffHours}h less than target`,
+          hours: actualHoursVal,
+          timestamp: new Date().toISOString(),
+        };
+      } else if (sleepObjective === 'sleep_on_time') {
+        const tgt = targetSleepTime || '10:00 PM';
+        const diff = calcTimeDiffMinutes(formattedSleepTime, tgt);
+        const absDiff = Math.abs(diff);
+        const dir = diff > 0 ? 'late' : diff < 0 ? 'early' : 'on_target';
+        let prog = 100;
+        if (absDiff > 15) {
+          prog = Math.max(0, Math.min(100, Math.round(100 - ((absDiff - 15) / 45) * 100)));
+        }
+
+        newEntry = {
+          id: String(Date.now()),
+          date: todayStr,
+          objective: 'sleep_on_time',
+          actualSleepTime: formattedSleepTime,
+          targetSleepTime: tgt,
+          sleepDiffMinutes: diff,
+          differenceDirection: dir,
+          dailyProgress: prog,
+          actualValueStr: formattedSleepTime,
+          targetValueStr: tgt,
+          differenceFormatted: formatDiffBadge(diff),
+          timestamp: new Date().toISOString(),
+        };
+      } else if (sleepObjective === 'wake_up_on_time') {
+        const tgt = targetWakeTime || '05:00 AM';
+        const diff = calcTimeDiffMinutes(formattedWakeTime, tgt);
+        const absDiff = Math.abs(diff);
+        const dir = diff > 0 ? 'late' : diff < 0 ? 'early' : 'on_target';
+        let prog = 100;
+        if (absDiff > 15) {
+          prog = Math.max(0, Math.min(100, Math.round(100 - ((absDiff - 15) / 45) * 100)));
+        }
+
+        newEntry = {
+          id: String(Date.now()),
+          date: todayStr,
+          objective: 'wake_up_on_time',
+          actualWakeTime: formattedWakeTime,
+          targetWakeTime: tgt,
+          wakeDiffMinutes: diff,
+          differenceDirection: dir,
+          dailyProgress: prog,
+          actualValueStr: formattedWakeTime,
+          targetValueStr: tgt,
+          differenceFormatted: formatDiffBadge(diff),
+          timestamp: new Date().toISOString(),
+        };
+      } else {
+        // sleep_and_wake_on_time or overall
+        const tgtSleep = targetSleepTime || '10:00 PM';
+        const tgtWake = targetWakeTime || '05:00 AM';
+        const sleepDiff = calcTimeDiffMinutes(formattedSleepTime, tgtSleep);
+        const wakeDiff = calcTimeDiffMinutes(formattedWakeTime, tgtWake);
+        const absSleep = Math.abs(sleepDiff);
+        const absWake = Math.abs(wakeDiff);
+
+        let sleepProg = 100;
+        if (absSleep > 15) {
+          sleepProg = Math.max(0, Math.min(100, Math.round(100 - ((absSleep - 15) / 45) * 100)));
+        }
+
+        let wakeProg = 100;
+        if (absWake > 15) {
+          wakeProg = Math.max(0, Math.min(100, Math.round(100 - ((absWake - 15) / 45) * 100)));
+        }
+
+        const overallProg = Math.round((sleepProg + wakeProg) / 2);
+
+        // Calculate actual sleep duration elapsed between actual sleep time and actual wake time crossing midnight
+        const sleepMins = timeToMinutes(formattedSleepTime);
+        const wakeMins = timeToMinutes(formattedWakeTime);
+        const elapsedMins = ((wakeMins - sleepMins + 1440) % 1440);
+        const calcActualHours = Number((elapsedMins / 60).toFixed(1));
+
+        newEntry = {
+          id: String(Date.now()),
+          date: todayStr,
+          objective: 'sleep_and_wake_on_time',
+          actualSleepTime: formattedSleepTime,
+          targetSleepTime: tgtSleep,
+          sleepDiffMinutes: sleepDiff,
+          actualWakeTime: formattedWakeTime,
+          targetWakeTime: tgtWake,
+          wakeDiffMinutes: wakeDiff,
+          actualSleepHours: calcActualHours,
+          dailyProgress: overallProg,
+          sleepTimeProgress: sleepProg,
+          wakeTimeProgress: wakeProg,
+          actualValueStr: `${formattedSleepTime} - ${formattedWakeTime}`,
+          targetValueStr: `${tgtSleep} - ${tgtWake}`,
+          differenceFormatted: `Bed: ${formatDiffBadge(sleepDiff)} | Wake: ${formatDiffBadge(wakeDiff)}`,
+          timestamp: new Date().toISOString(),
+        };
+      }
 
       const updatedLogs = [newEntry, ...logs.filter((l) => l.date !== todayStr)];
       setLogs(updatedLogs);
 
-      const updates = {
+      const updates: Record<string, unknown> = {
         sleepLogs: updatedLogs,
-        currentValue: value,
+        currentValue: newEntry.actualSleepHours || actualHoursVal,
       };
 
       if (onUpdateGoal) {
@@ -385,12 +968,8 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
       } else {
         await updateDoc(doc(db, 'goals', goal.id), updates);
       }
-
-      setCustomHours('');
-      setCustomNote('');
-      setLogModalOpen(false);
     } catch (err) {
-      console.error('Failed to log sleep:', err);
+      console.error('Failed to log daily sleep:', err);
     } finally {
       setSavingLog(false);
     }
@@ -401,11 +980,8 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
     const updatedLogs = logs.filter((l) => l.id !== logId);
     setLogs(updatedLogs);
 
-    const newTodayLog = updatedLogs.find((l) => l.date === todayStr);
-    const newCurrent = newTodayLog ? newTodayLog.hours : (updatedLogs[0]?.hours || 0);
-
     if (goal.id) {
-      const updates = { sleepLogs: updatedLogs, currentValue: newCurrent };
+      const updates = { sleepLogs: updatedLogs };
       if (onUpdateGoal) {
         await onUpdateGoal(goal.id, updates);
       } else {
@@ -460,14 +1036,43 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
     }
   };
 
+  const linkedSleepSchedules = useMemo(() => {
+    if (!goal.id) return [];
+    return allSchedules.filter((s) => (s as { linkedGoalId?: string }).linkedGoalId === goal.id);
+  }, [allSchedules, goal.id]);
+
+  const linkedSleepTodos = useMemo(() => {
+    if (!goal.id) return [];
+    return todos.filter((t) => (t as { linkedGoalId?: string }).linkedGoalId === goal.id);
+  }, [todos, goal.id]);
+
   const surfaceBg = isDark ? '#1e293b' : '#ffffff';
   const cardBorder = isDark ? '#334155' : '#e2e8f0';
   const textPrimary = isDark ? '#f1f5f9' : '#1e293b';
   const textMuted = isDark ? '#94a3b8' : '#64748b';
 
+  const sleepTimeObj = minutesTo12HourComponents(sleepTimeMins);
+  const wakeTimeObj = minutesTo12HourComponents(wakeTimeMins);
+  const setupSleepTimeObj = minutesTo12HourComponents(setupSleepTimeMins);
+  const setupWakeTimeObj = minutesTo12HourComponents(setupWakeTimeMins);
+
+  const durationObj = formatDuration(durationMins);
+  const setupDurationObj = formatDuration(setupDurationMins);
+  const setupActivePreset = DURATION_PRESETS.find((p) => Math.round(p * 60) === setupDurationMins);
+  const activeDurationPreset = DURATION_PRESETS.find((p) => Math.round(p * 60) === durationMins);
+
+  const objectiveLabel =
+    sleepObjective === 'sleep_better'
+      ? 'Sleep Better'
+      : sleepObjective === 'sleep_on_time'
+      ? 'Sleep On Time'
+      : sleepObjective === 'wake_up_on_time'
+      ? 'Wake Up On Time'
+      : 'Sleep and wakeup on time (overall)';
+
   return (
     <Box sx={{ width: '100%' }}>
-      {/* Dusk-to-Dawn Arc Card */}
+      {/* 🌟 1. DUSK-TO-DAWN ARC GRAPHIC & SCHEDULE PILLS CARD (KEPT AS REQUESTED) */}
       <Box
         sx={{
           borderRadius: '24px',
@@ -488,7 +1093,7 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
             </Typography>
           </Box>
           <Chip
-            label={`Goal: ${targetHours}h / night`}
+            label={objectiveLabel}
             size="small"
             sx={{ bgcolor: isDark ? '#312e81' : '#e0e7ff', color: '#6366f1', fontWeight: 700, fontSize: 11 }}
           />
@@ -531,23 +1136,25 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
             </g>
           </svg>
 
-          <Box sx={{ position: 'absolute', top: 52, left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <Typography sx={{ fontSize: 32, fontWeight: 800, color: textPrimary, fontFamily: 'monospace', lineHeight: 1 }}>
-              {hours}<span style={{ fontSize: 18, color: textMuted }}>h</span>
+          <Box sx={{ position: 'absolute', top: 48, left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 2, textAlign: 'center' }}>
+            <Typography sx={{ fontSize: hasLoggedToday ? 28 : 22, fontWeight: 800, color: textPrimary, fontFamily: 'monospace', lineHeight: 1 }}>
+              {hasLoggedToday ? todayMetrics.dailyProgress + '%' : 'Unlogged'}
             </Typography>
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: textMuted, mt: 0.5 }}>
-              {progress}% of goal
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: textMuted, mt: 0.75, maxWidth: 220 }}>
+              {hasLoggedToday
+                ? `${todayMetrics.actualValueStr} vs ${todayMetrics.targetValueStr} (${todayMetrics.differenceFormatted})`
+                : 'No check-in today · Log below'}
             </Typography>
           </Box>
         </Box>
 
-        {/* Schedule Pills */}
+        {/* 🌟 Bedtime & Wake-Up Schedule Pills (KEPT AS REQUESTED) */}
         <Box sx={{ mt: 4, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: '16px', bgcolor: isDark ? '#312e81' : '#e0e7ff' }}>
             <MoonIcon sx={{ color: '#6366f1', fontSize: 22 }} />
             <Box>
               <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase' }}>
-                Bedtime
+                Bedtime Target
               </Typography>
               <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
                 {bedTime}
@@ -559,7 +1166,7 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
             <SunIcon sx={{ color: '#f59e0b', fontSize: 22 }} />
             <Box>
               <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase' }}>
-                Wake Up
+                Wake Up Target
               </Typography>
               <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
                 {wakeTime}
@@ -568,7 +1175,7 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           </Box>
         </Box>
 
-        {/* Streak Row (Derived strictly from logs - 0 initially) */}
+        {/* Consistency Streak Row */}
         <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, borderRadius: '16px', bgcolor: isDark ? 'rgba(51,65,85,0.3)' : '#f8fafc' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <FlameIcon sx={{ color: '#f97316', fontSize: 20 }} />
@@ -577,331 +1184,773 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
             </Typography>
           </Box>
           <Typography sx={{ fontSize: 12, color: textMuted }}>
-            Logged for today: <strong>{hours > 0 ? `${hours}h` : 'No log yet'}</strong>
+            Logged for today: <strong>{hasLoggedToday ? todayMetrics.actualValueStr : 'No log yet'}</strong>
           </Typography>
         </Box>
+      </Box>
 
-        {/* Expanded Sleep Duration Options */}
-        <Box sx={{ mt: 3 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', mb: 1, letterSpacing: '.05em' }}>
-            Mark Tonight&apos;s Sleep Duration ({targetHours}h Goal)
-          </Typography>
+      {/* ── STEP A: ONE-TIME TARGET PREFERENCES SETUP CARD ── */}
+      {!isPreferencesConfigured ? (
+        <Box sx={{ mb: 3 }}>
+          {/* Target Setup for sleep_better / sleepBetter */}
+          {sleepObjective === 'sleep_better' && (
+            <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl">
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <BedDoubleIcon className="w-5 h-5 text-teal-600/70 dark:text-teal-300/70" />
+                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                  How much sleep do you want each night?
+                </span>
+              </div>
 
-          {/* Quick Preset Buttons (5h to 10h) */}
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
-            {SLEEP_HOURS_OPTIONS.map((h) => {
-              const isSelected = hours === h;
-              return (
-                <Button
-                  key={h}
-                  variant={isSelected ? 'contained' : 'outlined'}
-                  disabled={hasLoggedToday}
-                  onClick={() => handleLogSleep(h)}
-                  size="small"
-                  sx={{
-                    borderRadius: '12px',
-                    textTransform: 'none',
-                    fontWeight: 700,
-                    fontSize: 12,
-                    minWidth: 48,
-                    bgcolor: isSelected ? '#6366f1' : 'transparent',
-                    borderColor: isSelected ? '#6366f1' : cardBorder,
-                    color: isSelected ? '#ffffff' : textPrimary,
-                    '&:hover': { bgcolor: isSelected ? '#4f46e5' : 'rgba(99,102,241,0.08)' },
-                    '&.Mui-disabled': {
-                      bgcolor: isSelected ? 'rgba(99,102,241,0.5)' : 'transparent',
-                      color: isSelected ? '#ffffff' : textMuted,
-                      borderColor: cardBorder,
-                    },
-                  }}
+              {/* Time readout */}
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <button
+                  type="button"
+                  onClick={() => stepSetupDuration(-15)}
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
                 >
-                  {h}h
-                </Button>
-              );
-            })}
-          </Box>
+                  <RemoveIcon className="w-6 h-6" />
+                </button>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mt: 1.5 }}>
-            <Button
-              size="small"
-              disabled={hasLoggedToday}
-              onClick={() => {
-                setCustomHours(hours > 0 ? hours : '');
-                setCustomNote('');
-                setLogModalOpen(true);
-              }}
-              startIcon={hasLoggedToday ? <LockClockIcon sx={{ fontSize: 16 }} /> : <AddIcon sx={{ fontSize: 16 }} />}
-              sx={{
-                borderRadius: '10px',
-                textTransform: 'none',
-                fontWeight: 700,
-                fontSize: 12,
-                color: hasLoggedToday ? textMuted : '#6366f1',
-                bgcolor: hasLoggedToday ? (isDark ? '#334155' : '#e2e8f0') : isDark ? 'rgba(99,102,241,0.15)' : '#e0e7ff',
-                '&:hover': { bgcolor: isDark ? 'rgba(99,102,241,0.25)' : '#c7d2fe' },
-              }}
-            >
-              {hasLoggedToday ? 'Logged for Today' : '+ Custom Hours / Note'}
-            </Button>
+                <div className={`flex-1 text-center transition-transform duration-150 ${setupDurationPulse ? 'scale-105' : 'scale-100'}`}>
+                  <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                    <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                      {setupDurationObj.h}
+                    </span>
+                    <span className="text-lg font-medium text-emerald-600 dark:text-emerald-300/80">
+                      hr
+                    </span>
+                    {setupDurationObj.m > 0 && (
+                      <>
+                        <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                          {setupDurationObj.m}
+                        </span>
+                        <span className="text-lg font-medium text-emerald-600 dark:text-emerald-300/80">
+                          min
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
 
-            {hasLoggedToday ? (
-              <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                ✅ Tonight&apos;s sleep logged: {hours}h · Disabled until tomorrow
-              </Typography>
-            ) : (
-              <Typography sx={{ fontSize: 11.5, color: textMuted }}>
-                Log once per day. Option disables after logging until tomorrow.
-              </Typography>
-            )}
-          </Box>
-        </Box>
-      </Box>
+                <button
+                  type="button"
+                  onClick={() => stepSetupDuration(15)}
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                >
+                  <AddIcon className="w-6 h-6" />
+                </button>
+              </div>
 
-      {/* Bedtime / Wake-up Schedules */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
-          <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-            Scheduled Sleep Routines ({linkedSleepSchedules.length + linkedSleepTodos.length})
-          </Typography>
-          <Button
-            size="small"
-            onClick={() => setSchedModalOpen(true)}
-            startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#6366f1' }}
-          >
-            + Schedule Routine
-          </Button>
-        </Box>
+              {/* Presets */}
+              <div className="flex items-center justify-center gap-2 mb-2 flex-wrap">
+                {DURATION_PRESETS.map((p) => {
+                  const active = setupActivePreset === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setSetupDurationMins(Math.round(p * 60))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150 border ${
+                        active
+                          ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white border-transparent shadow-sm'
+                          : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300'
+                      }`}
+                    >
+                      {p} hrs
+                    </button>
+                  );
+                })}
+              </div>
 
-        <Stack spacing={1.25}>
-          {linkedSleepSchedules.map((s) => (
-            <Box
-              key={s.id}
-              sx={{
-                p: 2,
-                borderRadius: '16px',
-                bgcolor: surfaceBg,
-                border: `1px solid ${cardBorder}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <MoonIcon sx={{ color: '#6366f1', fontSize: 20 }} />
-                <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-                    {s.title}
-                  </Typography>
-                  <Typography sx={{ fontSize: 11, color: textMuted }}>
-                    Time: {s.startTime || '10:30 PM'} · Daily Sleep Routine
-                  </Typography>
-                </Box>
-              </Box>
-              <Chip label="Routine" size="small" sx={{ bgcolor: isDark ? '#312e81' : '#e0e7ff', color: '#6366f1', fontSize: 10, fontWeight: 700 }} />
-            </Box>
-          ))}
+              <p className="text-center text-[11px] mt-4 mb-4 text-slate-400 dark:text-slate-500">
+                Tap a preset, or use − / + to fine-tune in 15 minute steps
+              </p>
 
-          {linkedSleepTodos.map((todo) => {
-            const isDone = todo.status === 'completed';
-            return (
-              <Box
-                key={todo.id}
-                onClick={() => todo.id && updateTodo(todo.id, { status: isDone ? 'in_progress' : 'completed' })}
-                sx={{
-                  p: 2,
-                  borderRadius: '16px',
-                  bgcolor: surfaceBg,
-                  border: `1px solid ${cardBorder}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.5,
-                  cursor: 'pointer',
-                }}
+              <button
+                type="button"
+                disabled={savingSetup}
+                onClick={handleSaveSetupPreferences}
+                className="w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a]"
               >
-                <IconButton size="small" sx={{ p: 0, color: isDone ? '#10b981' : textMuted }}>
-                  {isDone ? <CheckCircle sx={{ fontSize: 20 }} /> : <RadioButtonUnchecked sx={{ fontSize: 20 }} />}
-                </IconButton>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: isDone ? textMuted : textPrimary, textDecoration: isDone ? 'line-through' : 'none' }}>
-                  {todo.title}
-                </Typography>
-              </Box>
-            );
-          })}
-
-          {linkedSleepSchedules.length === 0 && linkedSleepTodos.length === 0 && (
-            <Typography sx={{ fontSize: 12, color: textMuted, fontStyle: 'italic', textAlign: 'center', py: 2 }}>
-              No sleep routines scheduled yet. Click &quot;+ Schedule Routine&quot; to set bedtime or wind-down alarms.
-            </Typography>
+                {savingSetup ? 'Saving Preference...' : 'Save Target Sleep Duration'}
+              </button>
+            </div>
           )}
-        </Stack>
-      </Box>
 
-      {/* Sleep History Logs */}
+          {/* Target Setup for sleep_on_time / sleepOnTime */}
+          {sleepObjective === 'sleep_on_time' && (
+            <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl">
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <MoonIcon className="w-4 h-4 text-teal-600/70 dark:text-teal-300/70" />
+                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                  What time do you want to sleep daily?
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => stepSetupSleepTime(-15)}
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                >
+                  <RemoveIcon className="w-6 h-6" />
+                </button>
+
+                <div className={`flex-1 text-center transition-transform duration-150 ${setupSleepPulse ? 'scale-105' : 'scale-100'}`}>
+                  <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                    <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                      {setupSleepTimeObj.hours}:{setupSleepTimeObj.minutes}
+                    </span>
+                    <span className="text-lg font-medium text-emerald-600 dark:text-emerald-300/80">
+                      {setupSleepTimeObj.period}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => stepSetupSleepTime(15)}
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                >
+                  <AddIcon className="w-6 h-6" />
+                </button>
+              </div>
+
+              <p className="text-center text-[11px] mt-4 mb-4 text-slate-400 dark:text-slate-500">
+                Tap − / + to adjust in 15 minute steps
+              </p>
+
+              <button
+                type="button"
+                disabled={savingSetup}
+                onClick={handleSaveSetupPreferences}
+                className="w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a]"
+              >
+                {savingSetup ? 'Saving Preference...' : 'Save Target Sleep Time'}
+              </button>
+            </div>
+          )}
+
+          {/* Target Setup for wake_up_on_time / wakeUpOnTime */}
+          {sleepObjective === 'wake_up_on_time' && (
+            <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl">
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <SunIcon className="w-4 h-4 text-amber-600/70 dark:text-amber-300/70" />
+                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                  What time do you want to wake up?
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => stepSetupWakeTime(-15)}
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                >
+                  <RemoveIcon className="w-6 h-6" />
+                </button>
+
+                <div className={`flex-1 text-center transition-transform duration-150 ${setupWakePulse ? 'scale-105' : 'scale-100'}`}>
+                  <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                    <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                      {setupWakeTimeObj.hours}:{setupWakeTimeObj.minutes}
+                    </span>
+                    <span className="text-lg font-medium text-amber-600 dark:text-amber-300/80">
+                      {setupWakeTimeObj.period}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => stepSetupWakeTime(15)}
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                >
+                  <AddIcon className="w-6 h-6" />
+                </button>
+              </div>
+
+              <p className="text-center text-[11px] mt-4 mb-4 text-slate-400 dark:text-slate-500">
+                Tap − / + to adjust in 15 minute steps
+              </p>
+
+              <button
+                type="button"
+                disabled={savingSetup}
+                onClick={handleSaveSetupPreferences}
+                className="w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a]"
+              >
+                {savingSetup ? 'Saving Preference...' : 'Save Target Wake Time'}
+              </button>
+            </div>
+          )}
+
+          {/* Target Setup for overall */}
+          {sleepObjective === 'sleep_and_wake_on_time' && (
+            <AnimatePresence mode="wait">
+              {overallSetupStep === 1 ? (
+                <motion.div
+                  key="setup-step-1"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl"
+                >
+                  <div className="flex items-center justify-center gap-2 mb-6">
+                    <MoonIcon className="w-5 h-5 text-teal-600/70 dark:text-teal-300/70" />
+                    <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                      Step 1 of 2: What time do you want to sleep daily?
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 mb-6">
+                    <button
+                      type="button"
+                      onClick={() => stepSetupSleepTime(-15)}
+                      className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                    >
+                      <RemoveIcon className="w-6 h-6" />
+                    </button>
+
+                    <div className={`flex-1 text-center transition-transform duration-150 ${setupSleepPulse ? 'scale-105' : 'scale-100'}`}>
+                      <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                        <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                          {setupSleepTimeObj.hours}:{setupSleepTimeObj.minutes}
+                        </span>
+                        <span className="text-lg font-medium text-emerald-600 dark:text-emerald-300/80">
+                          {setupSleepTimeObj.period}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => stepSetupSleepTime(15)}
+                      className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                    >
+                      <AddIcon className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  <p className="text-center text-[11px] mb-6 text-slate-400 dark:text-slate-500">
+                    Tap − / + to adjust target bedtime in 15 minute steps
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => setOverallSetupStep(2)}
+                    className="w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 via-indigo-500 to-emerald-500 hover:opacity-95 active:scale-[0.98] transition-all duration-150 shadow-md"
+                  >
+                    Next: Set Wake Up Time →
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="setup-step-2"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl"
+                >
+                  <div className="flex items-center justify-center gap-2 mb-6">
+                    <SunIcon className="w-5 h-5 text-amber-600/70 dark:text-amber-300/70" />
+                    <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                      Step 2 of 2: What time do you want to wake up?
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 mb-6">
+                    <button
+                      type="button"
+                      onClick={() => stepSetupWakeTime(-15)}
+                      className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                    >
+                      <RemoveIcon className="w-6 h-6" />
+                    </button>
+
+                    <div className={`flex-1 text-center transition-transform duration-150 ${setupWakePulse ? 'scale-105' : 'scale-100'}`}>
+                      <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                        <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                          {setupWakeTimeObj.hours}:{setupWakeTimeObj.minutes}
+                        </span>
+                        <span className="text-lg font-medium text-amber-600 dark:text-amber-300/80">
+                          {setupWakeTimeObj.period}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => stepSetupWakeTime(15)}
+                      className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300"
+                    >
+                      <AddIcon className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  <p className="text-center text-[11px] mb-6 text-slate-400 dark:text-slate-500">
+                    Tap − / + to adjust target wake time in 15 minute steps
+                  </p>
+
+                  <div className="flex gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setOverallSetupStep(1)}
+                      className="px-4 py-3.5 rounded-2xl font-semibold text-sm border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 transition-all"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="button"
+                      disabled={savingSetup}
+                      onClick={handleSaveSetupPreferences}
+                      className="flex-1 py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 via-indigo-500 to-amber-500 hover:opacity-95 active:scale-[0.98] transition-all duration-150 shadow-md"
+                    >
+                      {savingSetup ? 'Saving Preference...' : 'Save Target Preferences ✓'}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
+        </Box>
+      ) : (
+        /* ── STEP B: ELEGANT DAILY CHECK-IN CARDS (SAMPLE SLEEP DURATION & TIME PICKER DESIGN) ── */
+        <Box sx={{ mb: 3 }}>
+          {/* 1. sleep_better / sleepBetter Daily Check-In */}
+          {sleepObjective === 'sleep_better' && (
+            <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(45,212,191,0.25)]">
+              {/* Header */}
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <BedDoubleIcon className="w-5 h-5 text-teal-600/70 dark:text-teal-300/70" />
+                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                  How many hours did you sleep last night? (Target: {targetSleepHours} hrs)
+                </span>
+              </div>
+
+              {/* Time display + controls */}
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <button
+                  type="button"
+                  disabled={hasLoggedToday}
+                  onClick={() => stepDuration(-15)}
+                  aria-label="Decrease by 15 minutes"
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-teal-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-teal-400/40 disabled:opacity-40"
+                >
+                  <RemoveIcon className="w-6 h-6" />
+                </button>
+
+                <div className={`flex-1 text-center transition-transform duration-150 ${durationPulse ? 'scale-105' : 'scale-100'}`}>
+                  <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                    <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                      {durationObj.h}
+                    </span>
+                    <span className="text-lg font-medium text-emerald-600 dark:text-emerald-300/80">
+                      hr
+                    </span>
+                    {durationObj.m > 0 && (
+                      <>
+                        <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                          {durationObj.m}
+                        </span>
+                        <span className="text-lg font-medium text-emerald-600 dark:text-emerald-300/80">
+                          min
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={hasLoggedToday}
+                  onClick={() => stepDuration(15)}
+                  aria-label="Increase by 15 minutes"
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-emerald-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-emerald-400/40 disabled:opacity-40"
+                >
+                  <AddIcon className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Preset chips */}
+              <div className="flex items-center justify-center gap-2 mb-2 flex-wrap">
+                {DURATION_PRESETS.map((p) => {
+                  const active = activeDurationPreset === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      disabled={hasLoggedToday}
+                      onClick={() => setDurationMins(Math.round(p * 60))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150 border ${
+                        active
+                          ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white border-transparent shadow-sm'
+                          : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white'
+                      } disabled:opacity-40`}
+                    >
+                      {p} hrs
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Helper hint */}
+              <p className="text-center text-[11px] mt-4 text-slate-400 dark:text-slate-500">
+                Tap a preset, or use − / + to fine-tune in 15 minute steps · Diff: <strong className="text-teal-600 dark:text-teal-400">{durationMins / 60 - (targetSleepHours || 7) >= 0 ? `+${durationMins / 60 - (targetSleepHours || 7)}h` : `${durationMins / 60 - (targetSleepHours || 7)}h`}</strong>
+              </p>
+
+              {/* Confirm button */}
+              <button
+                type="button"
+                disabled={hasLoggedToday || savingLog}
+                onClick={handleSaveDailyCheckIn}
+                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40"
+              >
+                {hasLoggedToday ? 'Already Logged Today' : savingLog ? 'Saving Log...' : 'Confirm sleep duration'}
+              </button>
+            </div>
+          )}
+
+          {/* 2. sleep_on_time / sleepOnTime Daily Check-In */}
+          {sleepObjective === 'sleep_on_time' && (
+            <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(45,212,191,0.25)]">
+              {/* Header */}
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <MoonIcon className="w-4 h-4 text-teal-600/70 dark:text-teal-300/70" />
+                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                  When did you fall asleep last night? (Target: {targetSleepTime})
+                </span>
+              </div>
+
+              {/* Time display + controls */}
+              <div className="flex items-center justify-between gap-3">
+                {/* Minus button */}
+                <button
+                  type="button"
+                  disabled={hasLoggedToday}
+                  onClick={() => stepSleepTime(-15)}
+                  aria-label="Decrease by 15 minutes"
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-teal-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-teal-400/40 disabled:opacity-40"
+                >
+                  <RemoveIcon className="w-6 h-6" />
+                </button>
+
+                {/* Time readout */}
+                <div className={`flex-1 text-center transition-transform duration-150 ${sleepPulse ? 'scale-105' : 'scale-100'}`}>
+                  <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                    <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                      {sleepTimeObj.hours}:{sleepTimeObj.minutes}
+                    </span>
+                    <span className="text-lg font-medium mb-1 text-emerald-600 dark:text-emerald-300/80">
+                      {sleepTimeObj.period}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Plus button */}
+                <button
+                  type="button"
+                  disabled={hasLoggedToday}
+                  onClick={() => stepSleepTime(15)}
+                  aria-label="Increase by 15 minutes"
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-emerald-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-emerald-400/40 disabled:opacity-40"
+                >
+                  <AddIcon className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Helper hint */}
+              <p className="text-center text-[11px] mt-4 text-slate-400 dark:text-slate-500">
+                Tap − / + to adjust in 15 minute steps · Diff vs Target: <strong className="text-teal-600 dark:text-teal-400">{formatDiffBadge(calcTimeDiffMinutes(sleepTimeObj.formattedStr, targetSleepTime || '10:00 PM'))}</strong>
+              </p>
+
+              {/* Confirm button */}
+              <button
+                type="button"
+                disabled={hasLoggedToday || savingLog}
+                onClick={handleSaveDailyCheckIn}
+                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40"
+              >
+                {hasLoggedToday ? 'Already Logged Today' : savingLog ? 'Saving...' : 'Confirm sleep time'}
+              </button>
+            </div>
+          )}
+
+          {/* 3. wake_up_on_time / wakeUpOnTime Daily Check-In */}
+          {sleepObjective === 'wake_up_on_time' && (
+            <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(245,158,11,0.25)]">
+              {/* Header */}
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <SunIcon className="w-4 h-4 text-amber-600/70 dark:text-amber-300/70" />
+                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                  When did you wake up today? (Target: {targetWakeTime})
+                </span>
+              </div>
+
+              {/* Time display + controls */}
+              <div className="flex items-center justify-between gap-3">
+                {/* Minus button */}
+                <button
+                  type="button"
+                  disabled={hasLoggedToday}
+                  onClick={() => stepWakeTime(-15)}
+                  aria-label="Decrease by 15 minutes"
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-amber-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-amber-400/40 disabled:opacity-40"
+                >
+                  <RemoveIcon className="w-6 h-6" />
+                </button>
+
+                {/* Time readout */}
+                <div className={`flex-1 text-center transition-transform duration-150 ${wakePulse ? 'scale-105' : 'scale-100'}`}>
+                  <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                    <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                      {wakeTimeObj.hours}:{wakeTimeObj.minutes}
+                    </span>
+                    <span className="text-lg font-medium mb-1 text-amber-600 dark:text-amber-300/80">
+                      {wakeTimeObj.period}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Plus button */}
+                <button
+                  type="button"
+                  disabled={hasLoggedToday}
+                  onClick={() => stepWakeTime(15)}
+                  aria-label="Increase by 15 minutes"
+                  className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-amber-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-amber-400/40 disabled:opacity-40"
+                >
+                  <AddIcon className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Helper hint */}
+              <p className="text-center text-[11px] mt-4 text-slate-400 dark:text-slate-500">
+                Tap − / + to adjust in 15 minute steps · Diff vs Target: <strong className="text-amber-600 dark:text-amber-400">{formatDiffBadge(calcTimeDiffMinutes(wakeTimeObj.formattedStr, targetWakeTime || '05:00 AM'))}</strong>
+              </p>
+
+              {/* Confirm button */}
+              <button
+                type="button"
+                disabled={hasLoggedToday || savingLog}
+                onClick={handleSaveDailyCheckIn}
+                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40"
+              >
+                {hasLoggedToday ? 'Already Logged Today' : savingLog ? 'Saving...' : 'Confirm wake-up time'}
+              </button>
+            </div>
+          )}
+
+          {/* 4. overall Step-by-Step Daily Check-In */}
+          {sleepObjective === 'sleep_and_wake_on_time' && (
+            <AnimatePresence mode="wait">
+              {overallDailyStep === 1 ? (
+                <motion.div
+                  key="daily-step-1"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(45,212,191,0.25)]"
+                >
+                  <div className="flex items-center justify-center gap-2 mb-6">
+                    <MoonIcon className="w-5 h-5 text-teal-600/70 dark:text-teal-300/70" />
+                    <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                      Step 1 of 2: When did you fall asleep last night? (Target: {targetSleepTime})
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 mb-6">
+                    <button
+                      type="button"
+                      disabled={hasLoggedToday}
+                      onClick={() => stepSleepTime(-15)}
+                      aria-label="Decrease by 15 minutes"
+                      className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-teal-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-teal-400/40 disabled:opacity-40"
+                    >
+                      <RemoveIcon className="w-6 h-6" />
+                    </button>
+
+                    <div className={`flex-1 text-center transition-transform duration-150 ${sleepPulse ? 'scale-105' : 'scale-100'}`}>
+                      <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                        <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                          {sleepTimeObj.hours}:{sleepTimeObj.minutes}
+                        </span>
+                        <span className="text-lg font-medium text-emerald-600 dark:text-emerald-300/80">
+                          {sleepTimeObj.period}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={hasLoggedToday}
+                      onClick={() => stepSleepTime(15)}
+                      aria-label="Increase by 15 minutes"
+                      className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-emerald-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-emerald-400/40 disabled:opacity-40"
+                    >
+                      <AddIcon className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  <p className="text-center text-[11px] mb-6 text-slate-400 dark:text-slate-500">
+                    Tap − / + to adjust in 15 minute steps · Diff: <strong className="text-teal-600 dark:text-teal-400">{formatDiffBadge(calcTimeDiffMinutes(sleepTimeObj.formattedStr, targetSleepTime || '10:00 PM'))}</strong>
+                  </p>
+
+                  <button
+                    type="button"
+                    disabled={hasLoggedToday}
+                    onClick={() => setOverallDailyStep(2)}
+                    className="w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 via-indigo-500 to-emerald-500 hover:opacity-95 active:scale-[0.98] transition-all duration-150 shadow-md disabled:opacity-40"
+                  >
+                    Next: Log Wake Up Time →
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="daily-step-2"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(245,158,11,0.25)]"
+                >
+                  <div className="flex items-center justify-center gap-2 mb-6">
+                    <SunIcon className="w-5 h-5 text-amber-600/70 dark:text-amber-300/70" />
+                    <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
+                      Step 2 of 2: When did you wake up today? (Target: {targetWakeTime})
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 mb-6">
+                    <button
+                      type="button"
+                      disabled={hasLoggedToday}
+                      onClick={() => stepWakeTime(-15)}
+                      aria-label="Decrease by 15 minutes"
+                      className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-amber-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-amber-400/40 disabled:opacity-40"
+                    >
+                      <RemoveIcon className="w-6 h-6" />
+                    </button>
+
+                    <div className={`flex-1 text-center transition-transform duration-150 ${wakePulse ? 'scale-105' : 'scale-100'}`}>
+                      <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                        <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
+                          {wakeTimeObj.hours}:{wakeTimeObj.minutes}
+                        </span>
+                        <span className="text-lg font-medium text-amber-600 dark:text-amber-300/80">
+                          {wakeTimeObj.period}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={hasLoggedToday}
+                      onClick={() => stepWakeTime(15)}
+                      aria-label="Increase by 15 minutes"
+                      className="shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-150 active:scale-90 bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-900 hover:border-amber-400/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-amber-400/40 disabled:opacity-40"
+                    >
+                      <AddIcon className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  <p className="text-center text-[11px] mb-6 text-slate-400 dark:text-slate-500">
+                    Tap − / + to adjust in 15 minute steps · Diff: <strong className="text-amber-600 dark:text-amber-400">{formatDiffBadge(calcTimeDiffMinutes(wakeTimeObj.formattedStr, targetWakeTime || '05:00 AM'))}</strong>
+                  </p>
+
+                  <div className="flex gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setOverallDailyStep(1)}
+                      className="px-4 py-3.5 rounded-2xl font-semibold text-sm border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 transition-all"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="button"
+                      disabled={hasLoggedToday || savingLog}
+                      onClick={handleSaveDailyCheckIn}
+                      className="flex-1 py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 via-indigo-500 to-amber-500 hover:opacity-95 active:scale-[0.98] transition-all duration-150 shadow-md disabled:opacity-40"
+                    >
+                      {hasLoggedToday ? 'Already Logged Today' : savingLog ? 'Saving Routine Log...' : 'Confirm Sleep & Wake Log ✓'}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
+        </Box>
+      )}
+
+      {/* ── RECORDED SLEEP HISTORY LOGS ── */}
       {logs.length > 0 && (
         <Box sx={{ mb: 3 }}>
           <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em', mb: 1.5, px: 0.5 }}>
-            Recorded Sleep History ({logs.length})
+            Recorded Sleep Logs ({logs.length})
           </Typography>
 
           <Stack spacing={1.25}>
-            {logs.map((entry) => (
-              <Box
-                key={entry.id}
-                sx={{
-                  p: 2,
-                  borderRadius: '16px',
-                  bgcolor: surfaceBg,
-                  border: `1px solid ${cardBorder}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                  <MoonIcon sx={{ color: '#6366f1', fontSize: 20 }} />
-                  <Box>
-                    <Typography sx={{ fontSize: 14, fontWeight: 700, color: textPrimary, fontFamily: 'monospace' }}>
-                      {entry.hours} hours
-                    </Typography>
-                    {entry.note && (
-                      <Typography sx={{ fontSize: 11, color: textMuted }}>
-                        {entry.note}
+            {logs.map((entry) => {
+              const m = computeSleepMetrics(entry, entry.objective || sleepObjective, {
+                targetSleepHours: targetHours,
+                targetSleepTime: bedTime,
+                targetWakeTime: wakeTime,
+              });
+
+              return (
+                <Box
+                  key={entry.id}
+                  sx={{
+                    p: 2,
+                    borderRadius: '16px',
+                    bgcolor: surfaceBg,
+                    border: `1px solid ${cardBorder}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <MoonIcon sx={{ color: '#6366f1', fontSize: 22 }} />
+                    <Box>
+                      <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: textPrimary }}>
+                        Actual: <span className="font-mono text-indigo-600 dark:text-indigo-400">{m.actualValueStr}</span> <span className="text-xs text-slate-500">(Target: {m.targetValueStr})</span>
                       </Typography>
-                    )}
+
+                      <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.2 }}>
+                        Date: {formatDate(entry.date)} · Diff: <strong className="text-teal-600 dark:text-teal-400">{m.differenceFormatted}</strong>
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Chip
+                      label={`${m.dailyProgress}% progress`}
+                      size="small"
+                      sx={{
+                        bgcolor: m.dailyProgress >= 90 ? (isDark ? '#042f2e' : '#ccfbf1') : (isDark ? '#312e81' : '#e0e7ff'),
+                        color: m.dailyProgress >= 90 ? '#0d9488' : '#6366f1',
+                        fontWeight: 700,
+                        fontSize: 10,
+                      }}
+                    />
+
+                    <IconButton size="small" onClick={() => handleDeleteLog(entry.id)} sx={{ color: '#ef4444' }}>
+                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
                   </Box>
                 </Box>
-
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography sx={{ fontSize: 11, color: textMuted }}>
-                    {formatDate(entry.date)}
-                  </Typography>
-                  <IconButton size="small" onClick={() => handleDeleteLog(entry.id)} sx={{ color: '#ef4444' }}>
-                    <DeleteIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Box>
-              </Box>
-            ))}
+              );
+            })}
           </Stack>
         </Box>
       )}
 
-      {/* Custom Sleep Duration Modal */}
-      <Dialog open={logModalOpen} onClose={() => setLogModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
-        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Log Today&apos;s Sleep Duration</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <TextField
-              label="Sleep Duration (Hours)"
-              type="number"
-              fullWidth
-              size="small"
-              value={customHours}
-              onChange={(e) => setCustomHours(e.target.value !== '' ? Number(e.target.value) : '')}
-              InputProps={{
-                endAdornment: <InputAdornment position="end">hours</InputAdornment>,
-              }}
-              placeholder="e.g. 7.5"
-            />
-
-            <TextField
-              label="Notes (Optional)"
-              placeholder="e.g. Slept deeply, woke up refreshed"
-              fullWidth
-              size="small"
-              value={customNote}
-              onChange={(e) => setCustomNote(e.target.value)}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setLogModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={savingLog || typeof customHours !== 'number' || customHours <= 0}
-            onClick={() => typeof customHours === 'number' && handleLogSleep(customHours, customNote)}
-            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
-          >
-            {savingLog ? 'Saving...' : 'Save Log'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Schedule Sleep Routine Modal */}
-      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
-        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Schedule Sleep Routine</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                fullWidth
-                variant={schedKind === 'schedule' ? 'contained' : 'outlined'}
-                onClick={() => setSchedKind('schedule')}
-                startIcon={<EventIcon />}
-                size="small"
-                sx={{ textTransform: 'none', borderRadius: '10px' }}
-              >
-                Schedule Alarm / Event
-              </Button>
-              <Button
-                fullWidth
-                variant={schedKind === 'todo' ? 'contained' : 'outlined'}
-                onClick={() => setSchedKind('todo')}
-                startIcon={<TodoIcon />}
-                size="small"
-                sx={{ textTransform: 'none', borderRadius: '10px' }}
-              >
-                Task Reminder
-              </Button>
-            </Box>
-
-            <TextField
-              label="Routine Title"
-              placeholder="e.g. Bedtime Wind-down or Turn off screens"
-              fullWidth
-              size="small"
-              value={schedTitle}
-              onChange={(e) => setSchedTitle(e.target.value)}
-            />
-
-            <TextField
-              label="Time"
-              type="time"
-              fullWidth
-              size="small"
-              value={schedTime}
-              onChange={(e) => setSchedTime(e.target.value)}
-            />
-
-            <TextField
-              label="Start Date"
-              type="date"
-              fullWidth
-              size="small"
-              InputLabelProps={{ shrink: true }}
-              value={schedDate}
-              onChange={(e) => setSchedDate(e.target.value)}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={savingSched || !schedTitle.trim()}
-            onClick={handleScheduleRoutine}
-            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
-          >
-            {savingSched ? 'Saving...' : 'Save Routine'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* ── STRATEGIC TASKS SECTION FOR SLEEP GOAL ── */}
+      {/* ── STRATEGY TASKS SECTION FOR SLEEP GOAL ── */}
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
           <Box>
@@ -909,7 +1958,7 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
               🎯 Strategy Tasks ({actions.length})
             </Typography>
             <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.2 }}>
-              Action steps, bedtime habits, and wind-down routines to achieve your sleep target
+              Action steps, bedtime routines, and sleep hygiene tasks to fulfill your goal
             </Typography>
           </Box>
         </Box>
@@ -919,6 +1968,7 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           {actions.map((step) => {
             const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
             const hasLink = kind === 'schedule' || kind === 'todo';
+            const isDone = getIsStepDone(step);
 
             return (
               <div
@@ -934,12 +1984,12 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                       handleToggleStepCompletion(step);
                     }}
                     className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
-                      step.done
+                      isDone
                         ? 'bg-indigo-500 border-indigo-500 text-white'
                         : 'border-slate-300 dark:border-slate-600 hover:border-indigo-400'
                     }`}
                   >
-                    {step.done && (
+                    {isDone && (
                       <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
                         <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -948,12 +1998,12 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
 
                   <span
                     className={`text-xs font-bold truncate ${
-                      step.done
+                      isDone
                         ? 'line-through text-slate-400 dark:text-slate-500'
                         : 'text-slate-800 dark:text-slate-100'
                     }`}
                   >
-                    {step.task}
+                    {step.task} {step.sourceName ? `(${step.sourceName})` : ''}
                   </span>
                 </div>
 
@@ -1020,81 +2070,224 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
         </div>
       </Box>
 
-      {/* ── Dialog: STRATEGY TASK DETAIL MODAL ── */}
+      {/* Scheduled Routines */}
+      <Box sx={{ mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            Scheduled Routines ({linkedSleepSchedules.length + linkedSleepTodos.length})
+          </Typography>
+          <Button
+            size="small"
+            onClick={() => setSchedModalOpen(true)}
+            startIcon={<AddIcon sx={{ fontSize: 15 }} />}
+            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#6366f1' }}
+          >
+            + Schedule Routine
+          </Button>
+        </Box>
+
+        <Stack spacing={1.25}>
+          {linkedSleepSchedules.map((s) => (
+            <Box
+              key={s.id}
+              sx={{
+                p: 2,
+                borderRadius: '16px',
+                bgcolor: surfaceBg,
+                border: `1px solid ${cardBorder}`,
+                display: 'flex',
+                alignItems: 'center',
+                justify: 'space-between',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <MoonIcon sx={{ color: '#6366f1', fontSize: 20 }} />
+                <Box>
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
+                    {s.title}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: textMuted }}>
+                    Time: {s.startTime || '10:30 PM'} · Daily Sleep Routine
+                  </Typography>
+                </Box>
+              </Box>
+              <Chip label="Routine" size="small" sx={{ bgcolor: isDark ? '#312e81' : '#e0e7ff', color: '#6366f1', fontSize: 10, fontWeight: 700 }} />
+            </Box>
+          ))}
+
+          {linkedSleepTodos.map((todo) => {
+            const isDone = todo.status === 'completed';
+            return (
+              <Box
+                key={todo.id}
+                onClick={() => todo.id && updateTodo(todo.id, { status: isDone ? 'in_progress' : 'completed' })}
+                sx={{
+                  p: 2,
+                  borderRadius: '16px',
+                  bgcolor: surfaceBg,
+                  border: `1px solid ${cardBorder}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  cursor: 'pointer',
+                }}
+              >
+                <IconButton size="small" sx={{ p: 0, color: isDone ? '#10b981' : textMuted }}>
+                  {isDone ? <CheckCircle sx={{ fontSize: 20 }} /> : <RadioButtonUnchecked sx={{ fontSize: 20 }} />}
+                </IconButton>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: isDone ? textMuted : textPrimary, textDecoration: isDone ? 'line-through' : 'none' }}>
+                  {todo.title}
+                </Typography>
+              </Box>
+            );
+          })}
+
+          {linkedSleepSchedules.length === 0 && linkedSleepTodos.length === 0 && (
+            <Typography sx={{ fontSize: 12, color: textMuted, fontStyle: 'italic', textAlign: 'center', py: 2 }}>
+              No sleep routines scheduled yet. Click &quot;+ Schedule Routine&quot; to set bedtime or wind-down alarms.
+            </Typography>
+          )}
+        </Stack>
+      </Box>
+
+      {/* Schedule Modal */}
+      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Schedule Sleep Routine</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                fullWidth
+                variant={schedKind === 'schedule' ? 'contained' : 'outlined'}
+                onClick={() => setSchedKind('schedule')}
+                startIcon={<EventIcon />}
+                size="small"
+                sx={{ textTransform: 'none', borderRadius: '10px' }}
+              >
+                Schedule Visit
+              </Button>
+              <Button
+                fullWidth
+                variant={schedKind === 'todo' ? 'contained' : 'outlined'}
+                onClick={() => setSchedKind('todo')}
+                startIcon={<TodoIcon />}
+                size="small"
+                sx={{ textTransform: 'none', borderRadius: '10px' }}
+              >
+                Task Reminder
+              </Button>
+            </Box>
+
+            <TextField
+              label="Reminder Title"
+              placeholder="e.g. Bedtime Wind-down Routine"
+              fullWidth
+              size="small"
+              value={schedTitle}
+              onChange={(e) => setSchedTitle(e.target.value)}
+            />
+
+            <TextField
+              label="Time"
+              type="time"
+              fullWidth
+              size="small"
+              value={schedTime}
+              onChange={(e) => setSchedTime(e.target.value)}
+            />
+
+            <TextField
+              label="Date"
+              type="date"
+              fullWidth
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={schedDate}
+              onChange={(e) => setSchedDate(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={savingSched || !schedTitle.trim()}
+            onClick={handleScheduleRoutine}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' } }}
+          >
+            {savingSched ? 'Saving...' : 'Save Routine'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── STRATEGY TASK DETAIL MODAL ── */}
       <Modal
         open={taskModalOpen}
         onClose={() => setTaskModalOpen(false)}
         closeAfterTransition
+        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}
       >
         <Fade in={taskModalOpen}>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[440px] shadow-2xl overflow-hidden border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800">
-            {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
-              <p className="text-[1.05rem] font-extrabold text-slate-800 dark:text-slate-100">
-                Task Details
-              </p>
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden outline-none">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                  🎯
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                    Edit Strategy Task
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Customize task details, schedule, or link to Schedule/Todo
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setTaskModalOpen(false)}
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                <CloseIcon sx={{ fontSize: 18 }} />
+                <CloseIcon sx={{ fontSize: 20 }} />
               </button>
             </div>
 
-            <div className="p-5 space-y-4 max-h-[78vh] overflow-y-auto">
-              {/* Task Title Input */}
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                  Task Title / Strategy Step
+                  Task Title *
                 </label>
                 <input
                   type="text"
                   value={taskEditText}
                   onChange={(e) => setTaskEditText(e.target.value)}
-                  placeholder="e.g. Turn off screens by 10 PM"
-                  className="w-full text-sm font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="w-full text-xs font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              {/* Toggle Convert Options Button */}
+              {/* Conversion selector */}
               <div>
                 <button
                   type="button"
-                  onClick={() => setShowConvertOptions(!showConvertOptions)}
-                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 hover:border-indigo-400 text-left transition-colors"
+                  onClick={() => setShowConvertOptions((prev) => !prev)}
+                  className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🗓️</span>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        {taskEditKind === 'schedule'
-                          ? 'Converted to Schedule'
-                          : taskEditKind === 'todo'
-                          ? 'Converted to Todo'
-                          : 'Convert to Schedule or Todo'}
-                      </p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        {taskEditKind === 'none'
-                          ? 'Appears in Schedules or Todo lists across app'
-                          : `Currently synced as ${taskEditKind}`}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                    {showConvertOptions ? 'Hide' : 'Configure'}
-                  </span>
+                  {taskEditKind !== 'none' ? 'Change Schedule/Todo Link ▾' : '+ Convert to Schedule or Todo ▾'}
                 </button>
 
-                {showConvertOptions && (
-                  <div className="mt-2.5 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 space-y-3">
+                {(taskEditKind !== 'none' || true) && (
+                  <div className="mt-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-2.5">
                     <div className="grid grid-cols-3 gap-1.5">
                       <button
                         type="button"
                         onClick={() => setTaskEditKind('none')}
                         className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
                           taskEditKind === 'none'
-                            ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
+                            ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-transparent shadow-sm'
                             : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
                         }`}
                       >

@@ -31,7 +31,6 @@ import {
   CheckCircle,
   RadioButtonUnchecked,
   Event as EventIcon,
-  Checklist as TodoIcon,
   ExpandMore,
   ExpandLess,
   Delete as DeleteIcon,
@@ -169,6 +168,41 @@ const PREDEFINED_MEDICINE_FREQUENCIES = [
   'Custom...',
 ];
 
+function calculateMedicineStreak(history?: Array<{ date: string }>): number {
+  if (!history || history.length === 0) return 0;
+  const uniqueDates = Array.from(new Set(history.map((h) => (h.date || '').slice(0, 10)).filter(Boolean))).sort().reverse();
+  if (uniqueDates.length === 0) return 0;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const getDaysDiff = (d1: Date, d2Str: string) => {
+    const d2 = new Date(d2Str + 'T00:00:00');
+    if (isNaN(d2.getTime())) return 999;
+    return Math.round((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const firstDiff = getDaysDiff(today, uniqueDates[0]);
+  if (firstDiff > 1) return 0;
+
+  let streak = 0;
+  const expectedDate = new Date(uniqueDates[0] + 'T00:00:00');
+
+  for (const dateStr of uniqueDates) {
+    const currentDate = new Date(dateStr + 'T00:00:00');
+    if (isNaN(currentDate.getTime())) break;
+    const diff = Math.round((expectedDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (diff === 0) {
+      streak++;
+      expectedDate.setDate(expectedDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  return streak;
+}
+
 function ItemStrategyTaskBox({
   sourceId,
   sourceName,
@@ -178,6 +212,7 @@ function ItemStrategyTaskBox({
   onOpenModal,
   onDeleteStep,
   onAddStep,
+  getIsStepDone,
 }: {
   sourceId: string;
   sourceName: string;
@@ -187,8 +222,10 @@ function ItemStrategyTaskBox({
   onOpenModal: (step: MedicalActionItem) => void;
   onDeleteStep: (stepId: string) => void;
   onAddStep: (taskText: string, sourceId?: string, sourceName?: string) => void;
+  getIsStepDone: (step: MedicalActionItem) => boolean;
 }) {
   const [inputVal, setInputVal] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
   const itemActions = useMemo(() => actions.filter((a) => a.sourceId === sourceId), [actions, sourceId]);
 
   const handleAdd = () => {
@@ -197,113 +234,145 @@ function ItemStrategyTaskBox({
     setInputVal('');
   };
 
+  const doneCount = useMemo(() => itemActions.filter((a) => getIsStepDone(a)).length, [itemActions, getIsStepDone]);
+
   return (
-    <Box sx={{ mt: 2, pt: 2, borderTop: `1px dashed ${isDark ? '#334155' : '#e2e8f0'}` }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-        <Typography sx={{ fontSize: 11, fontWeight: 800, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-          🎯 Strategy Tasks for {sourceName} ({itemActions.length})
-        </Typography>
+    <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px dashed ${isDark ? '#334155' : '#e2e8f0'}` }}>
+      <Box
+        onClick={() => setIsExpanded(!isExpanded)}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          cursor: 'pointer',
+          py: 0.5,
+          userSelect: 'none',
+          '&:hover': { opacity: 0.85 },
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 800, color: isDark ? '#38bdf8' : '#0284c7', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            🎯 Strategy Tasks ({itemActions.length})
+          </Typography>
+          {itemActions.length > 0 && (
+            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-300 dark:border-sky-800">
+              {doneCount}/{itemActions.length} done
+            </span>
+          )}
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.secondary' }}>
+            {isExpanded ? 'Hide tasks' : itemActions.length > 0 ? 'View tasks' : '+ Add task'}
+          </Typography>
+          {isExpanded ? <ExpandLess sx={{ fontSize: 16, color: 'text.secondary' }} /> : <ExpandMore sx={{ fontSize: 16, color: 'text.secondary' }} />}
+        </Box>
       </Box>
 
-      {itemActions.length > 0 && (
-        <div className="space-y-1.5 mb-2.5">
-          {itemActions.map((step) => {
-            const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
-            const hasLink = kind === 'schedule' || kind === 'todo';
+      {isExpanded && (
+        <Box sx={{ mt: 1.5 }}>
+          {itemActions.length > 0 && (
+            <div className="space-y-1.5 mb-2.5">
+              {itemActions.map((step) => {
+                const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
+                const hasLink = kind === 'schedule' || kind === 'todo';
+                const isDone = getIsStepDone(step);
 
-            return (
-              <div
-                key={step.id}
-                onClick={() => onOpenModal(step)}
-                className="group flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500 shadow-sm"
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleStep(step);
-                    }}
-                    className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${
-                      step.done
-                        ? 'bg-sky-500 border-sky-500 text-white'
-                        : 'border-slate-300 dark:border-slate-600 hover:border-sky-400'
-                    }`}
+                return (
+                  <div
+                    key={step.id}
+                    onClick={() => onOpenModal(step)}
+                    className="group flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-500 shadow-sm"
                   >
-                    {step.done && (
-                      <svg viewBox="0 0 24 24" fill="none" className="w-3 h-3 stroke-current stroke-[3]">
-                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </button>
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleStep(step);
+                        }}
+                        className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${
+                          isDone
+                            ? 'bg-sky-500 border-sky-500 text-white'
+                            : 'border-slate-300 dark:border-slate-600 hover:border-sky-400'
+                        }`}
+                      >
+                        {isDone && (
+                          <svg viewBox="0 0 24 24" fill="none" className="w-3 h-3 stroke-current stroke-[3]">
+                            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </button>
 
-                  <span
-                    className={`text-xs font-semibold truncate ${
-                      step.done
-                        ? 'line-through text-slate-400 dark:text-slate-500'
-                        : 'text-slate-800 dark:text-slate-100'
-                    }`}
-                  >
-                    {step.task}
-                  </span>
-                </div>
+                      <span
+                        className={`text-xs font-semibold truncate ${
+                          isDone
+                            ? 'line-through text-slate-400 dark:text-slate-500'
+                            : 'text-slate-800 dark:text-slate-100'
+                        }`}
+                      >
+                        {step.task}
+                      </span>
+                    </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span
-                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border transition-colors ${
-                      hasLink
-                        ? kind === 'schedule'
-                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                          : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    {kind === 'schedule'
-                      ? '🗓 Schedule'
-                      : kind === 'todo'
-                      ? '✅ Todo'
-                      : '+ Schedule/Todo'}
-                  </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border transition-colors ${
+                          hasLink
+                            ? kind === 'schedule'
+                              ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
+                              : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        {kind === 'schedule'
+                          ? '🗓 Schedule'
+                          : kind === 'todo'
+                          ? '✅ Todo'
+                          : '+ Schedule/Todo'}
+                      </span>
 
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteStep(step.id);
-                    }}
-                    className="p-0.5 text-slate-400 hover:text-rose-500 rounded transition-colors opacity-0 group-hover:opacity-100"
-                    title="Delete step"
-                  >
-                    <DeleteIcon sx={{ fontSize: 14 }} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteStep(step.id);
+                        }}
+                        className="p-0.5 text-slate-400 hover:text-rose-500 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        title="Delete step"
+                      >
+                        <DeleteIcon sx={{ fontSize: 14 }} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Inline Add Task Input */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder={`+ Add strategy task for ${sourceName}…`}
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAdd();
+              }}
+              className="flex-1 text-xs font-medium px-3 py-1.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-sky-400 dark:focus:border-sky-500"
+            />
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={!inputVal.trim()}
+              className="px-2.5 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm shrink-0"
+            >
+              Add Task
+            </button>
+          </div>
+        </Box>
       )}
-
-      {/* Inline Add Task Input */}
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          placeholder={`+ Add strategy task for ${sourceName}…`}
-          value={inputVal}
-          onChange={(e) => setInputVal(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleAdd();
-          }}
-          className="flex-1 text-xs font-medium px-3 py-1.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-sky-400 dark:focus:border-sky-500"
-        />
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={!inputVal.trim()}
-          className="px-2.5 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm shrink-0"
-        >
-          Add Task
-        </button>
-      </div>
     </Box>
   );
 }
@@ -350,8 +419,25 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
     }
   };
 
+  const getIsStepDone = (step: MedicalActionItem): boolean => {
+    if (step.scheduleId) {
+      const linkedSched = allSchedules.find((s) => s.id === step.scheduleId);
+      if (linkedSched) {
+        return linkedSched.status === 'completed';
+      }
+    }
+    if (step.todoId) {
+      const linkedTodo = todos.find((t) => t.id === step.todoId);
+      if (linkedTodo) {
+        return linkedTodo.status === 'completed';
+      }
+    }
+    return !!step.done;
+  };
+
   const handleToggleStepCompletion = async (step: MedicalActionItem) => {
-    const nextDone = !step.done;
+    const currentDone = getIsStepDone(step);
+    const nextDone = !currentDone;
     const updated = actions.map((s) => (s.id === step.id ? { ...s, done: nextDone } : s));
     await saveActionsList(updated);
 
@@ -558,9 +644,6 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
     setExpandedHistory((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Main "+ Add Plan" Picker Dialog State
-  const [addPlanModalOpen, setAddPlanModalOpen] = useState(false);
-
   // Standalone Item Creation Dialog State
   const [addItemType, setAddItemType] = useState<'appointment' | 'test' | 'medicine' | 'followup' | null>(null);
   const [inputTitle, setInputTitle] = useState('');
@@ -599,13 +682,6 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
   // 3. Early / Forced Visit Prompt State
   const [forcedVisitPromptIdx, setForcedVisitPromptIdx] = useState<number | null>(null);
 
-  // 4. Schedule / Task Reminder Dialog
-  const [schedModalOpen, setSchedModalOpen] = useState(false);
-  const [schedKind, setSchedKind] = useState<'schedule' | 'todo'>('schedule');
-  const [schedTitle, setSchedTitle] = useState('');
-  const [schedTime, setSchedTime] = useState('09:00');
-  const [schedDate, setSchedDate] = useState(todayStr);
-  const [savingSched, setSavingSched] = useState(false);
 
   // Total Plan Count
   const totalPlans = appointments.length + tests.length + medicines.length + medSchedule.length + followUps.length;
@@ -835,7 +911,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
         {
           id: String(Date.now()),
           date: dateStr,
-          note: testResultNotes.trim() || `Result recorded for ${parent.name}`,
+          note: testResultNotes.trim() || undefined,
           result: testResultStatus,
           completedAt: completedIso,
         },
@@ -915,7 +991,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
   };
 
   const handleDeleteHistoryLog = async (
-    section: 'appointment' | 'test' | 'followup',
+    section: 'appointment' | 'test' | 'followup' | 'medicine',
     parentIdx: number,
     logId: string
   ) => {
@@ -941,55 +1017,17 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
       updated[parentIdx] = parent;
       setFollowUps(updated);
       await updateMedicalData({ medicalFollowUps: updated });
+    } else if (section === 'medicine') {
+      const updated = [...medicines];
+      const parent = { ...updated[parentIdx] };
+      parent.history = (parent.history || []).filter((h) => h.id !== logId);
+      updated[parentIdx] = parent;
+      setMedicines(updated);
+      await updateMedicalData({ medicalMedicines: updated });
     }
   };
 
-  // Schedule Routine or Task
-  const handleScheduleMedicalEvent = async () => {
-    if (!schedTitle.trim() || !user || !goal.id) return;
-    setSavingSched(true);
-    try {
-      if (schedKind === 'schedule') {
-        await addSchedule({
-          title: schedTitle.trim(),
-          date: schedDate || todayStr,
-          startTime: schedTime || '09:00',
-          endTime: '10:00',
-          projectId: goal.projectId || '',
-          userId: user.uid,
-          status: 'pending',
-          priority: 'high',
-          linkedGoalId: goal.id,
-          goalTitle: goal.title,
-          frequencyMode: 'daily',
-        });
-      } else {
-        await addTodo({
-          title: schedTitle.trim(),
-          status: 'in_progress',
-          priority: 'urgent',
-          projectId: goal.projectId || '',
-          authorId: user.uid,
-          dueDate: schedDate ? new Date(schedDate) : new Date(),
-          steps: [],
-          tags: [],
-          progressPercent: 0,
-          assignedUsers: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          linkedGoalId: goal.id,
-          goalTitle: goal.title,
-        });
-      }
 
-      setSchedTitle('');
-      setSchedModalOpen(false);
-    } catch (err) {
-      console.error('Failed to add medical schedule:', err);
-    } finally {
-      setSavingSched(false);
-    }
-  };
 
   // Linked items
   const linkedMedicalSchedules = useMemo(() => {
@@ -1040,41 +1078,6 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
             sx={{ bgcolor: isDark ? '#0c4a6e' : '#e0f2fe', color: '#0284c7', fontWeight: 700, fontSize: 11 }}
           />
         </Box>
-
-        {/* Action Buttons: Prominent "+ Add Plan" Button */}
-        <Box sx={{ mt: 2.5, display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
-          <Button
-            variant="contained"
-            onClick={() => setAddPlanModalOpen(true)}
-            startIcon={<AddIcon sx={{ fontSize: 18 }} />}
-            sx={{
-              borderRadius: '12px',
-              textTransform: 'none',
-              fontSize: 13,
-              fontWeight: 800,
-              px: 2.5,
-              py: 1,
-              bgcolor: '#0284c7',
-              '&:hover': { bgcolor: '#0369a1' },
-              boxShadow: '0 4px 14px rgba(2,132,199,0.35)',
-            }}
-          >
-            + Add Plan
-          </Button>
-
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => {
-              setSchedTitle(`Medical Checkup: ${goal.title}`);
-              setSchedModalOpen(true);
-            }}
-            startIcon={<EventIcon sx={{ fontSize: 16 }} />}
-            sx={{ borderRadius: '12px', textTransform: 'none', fontSize: 12, fontWeight: 700, borderColor: cardBorder, color: textPrimary }}
-          >
-            + Schedule Reminder
-          </Button>
-        </Box>
       </Box>
 
       {/* Empty State Banner when no plans exist */}
@@ -1093,26 +1096,9 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
           <Typography sx={{ fontSize: 16, fontWeight: 700, color: textPrimary }}>
             No Medical Care Plans Created Yet
           </Typography>
-          <Typography sx={{ fontSize: 13, color: textMuted, mt: 0.5, mb: 2.5, maxWidth: 440, mx: 'auto' }}>
-            Click &quot;+ Add Plan&quot; below to add your doctor appointments, lab tests, prescribed medicines, or follow-up reviews.
+          <Typography sx={{ fontSize: 13, color: textMuted, mt: 0.5, maxWidth: 440, mx: 'auto' }}>
+            Use the &quot;+ Add&quot; buttons in each section below to add doctor appointments, lab tests, prescribed medicines, or follow-up reviews.
           </Typography>
-          <Button
-            variant="contained"
-            onClick={() => setAddPlanModalOpen(true)}
-            startIcon={<AddIcon />}
-            sx={{
-              borderRadius: '14px',
-              textTransform: 'none',
-              fontWeight: 800,
-              fontSize: 14,
-              px: 3,
-              py: 1.2,
-              bgcolor: '#0284c7',
-              '&:hover': { bgcolor: '#0369a1' },
-            }}
-          >
-            + Add Plan
-          </Button>
         </Box>
       )}
 
@@ -1120,11 +1106,37 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
       {/* 1. Appointments Section (DISPLAYED AT THE TOP) */}
       {/* ------------------------------------------------------------- */}
       <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{ width: 8, height: 8, borderRadius: 99, bgcolor: '#0284c7' }} />
-            <StethoscopeIcon sx={{ color: '#0284c7', fontSize: 18 }} />
-            <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justify: 'space-between',
+            alignItems: 'center',
+            mb: 2,
+            p: 1.5,
+            px: 2,
+            borderRadius: '16px',
+            bgcolor: isDark ? 'rgba(2,132,199,0.15)' : '#f0f9ff',
+            border: '1px solid',
+            borderColor: isDark ? 'rgba(2,132,199,0.3)' : '#bae6fd',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '10px',
+                bgcolor: '#0284c7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                boxShadow: '0 2px 8px rgba(2,132,199,0.3)',
+              }}
+            >
+              <StethoscopeIcon sx={{ fontSize: 18 }} />
+            </Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: isDark ? '#38bdf8' : '#0369a1', letterSpacing: '.02em' }}>
               Appointments ({appointments.length})
             </Typography>
           </Box>
@@ -1137,7 +1149,16 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
               setAddItemType('appointment');
             }}
             startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#0284c7' }}
+            sx={{
+              textTransform: 'none',
+              fontSize: 12,
+              fontWeight: 800,
+              bgcolor: isDark ? 'rgba(2,132,199,0.25)' : '#e0f2fe',
+              color: '#0284c7',
+              borderRadius: '10px',
+              px: 1.75,
+              '&:hover': { bgcolor: '#0284c7', color: '#ffffff' },
+            }}
           >
             + New Appointment
           </Button>
@@ -1174,35 +1195,39 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   transition: 'all 250ms ease',
                 }}
               >
-                {/* Header Row */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary }}>
+                {/* Header Row: Dedicated top line for title */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, width: '100%' }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary, wordBreak: 'break-word' }}>
                         {a.doctor}
                       </Typography>
-                      {isFullyDone && (
-                        <Chip
-                          icon={<TaskAltIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
-                          label="Visited & Completed"
-                          size="small"
-                          sx={{ bgcolor: isDark ? '#064e3b' : '#d1fae5', color: '#10b981', fontWeight: 800, fontSize: 10 }}
-                        />
+                      {a.clinic && (
+                        <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.2 }}>
+                          {a.clinic}
+                        </Typography>
                       )}
                     </Box>
-
-                    {a.clinic && (
-                      <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.2 }}>
-                        {a.clinic}
-                      </Typography>
-                    )}
+                    <IconButton size="small" onClick={() => handleDeleteAppointment(idx)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' }, flexShrink: 0 }}>
+                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
                   </Box>
 
-                  {/* Scheduled Date Display + Reschedule Button */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
+                    {isFullyDone ? (
+                      <Chip
+                        icon={<TaskAltIcon sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
+                        label="Visited & Completed"
+                        size="small"
+                        sx={{ bgcolor: isDark ? '#064e3b' : '#d1fae5', color: '#10b981', fontWeight: 800, fontSize: 10 }}
+                      />
+                    ) : (
+                      <Box />
+                    )}
+
                     {hasNextDate ? (
-                      <Box sx={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Box sx={{ textAlign: 'right' }}>
                           <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase' }}>
                             Next Appointment
                           </Typography>
@@ -1227,10 +1252,6 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                         sx={{ bgcolor: isDark ? '#334155' : '#f1f5f9', color: textMuted, fontSize: 10, fontWeight: 600 }}
                       />
                     )}
-
-                    <IconButton size="small" onClick={() => handleDeleteAppointment(idx)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' } }}>
-                      <DeleteIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
                   </Box>
                 </Box>
 
@@ -1397,6 +1418,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   onOpenModal={handleOpenTaskDetailModal}
                   onDeleteStep={handleDeleteStep}
                   onAddStep={handleAddStep}
+                  getIsStepDone={getIsStepDone}
                 />
               </Box>
             );
@@ -1408,11 +1430,37 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
       {/* 2. Diagnostic Tests Section */}
       {/* ------------------------------------------------------------- */}
       <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{ width: 8, height: 8, borderRadius: 99, bgcolor: '#8b5cf6' }} />
-            <FlaskIcon sx={{ color: '#8b5cf6', fontSize: 18 }} />
-            <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justify: 'space-between',
+            alignItems: 'center',
+            mb: 2,
+            p: 1.5,
+            px: 2,
+            borderRadius: '16px',
+            bgcolor: isDark ? 'rgba(139,92,246,0.15)' : '#f5f3ff',
+            border: '1px solid',
+            borderColor: isDark ? 'rgba(139,92,246,0.3)' : '#ddd6fe',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '10px',
+                bgcolor: '#8b5cf6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                boxShadow: '0 2px 8px rgba(139,92,246,0.3)',
+              }}
+            >
+              <FlaskIcon sx={{ fontSize: 18 }} />
+            </Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: isDark ? '#c084fc' : '#6d28d9', letterSpacing: '.02em' }}>
               Diagnostic Tests ({tests.length})
             </Typography>
           </Box>
@@ -1425,7 +1473,16 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
               setAddItemType('test');
             }}
             startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#8b5cf6' }}
+            sx={{
+              textTransform: 'none',
+              fontSize: 12,
+              fontWeight: 800,
+              bgcolor: isDark ? 'rgba(139,92,246,0.25)' : '#f3e8ff',
+              color: '#8b5cf6',
+              borderRadius: '10px',
+              px: 1.75,
+              '&:hover': { bgcolor: '#8b5cf6', color: '#ffffff' },
+            }}
           >
             + New Test Item
           </Button>
@@ -1455,80 +1512,87 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   transition: 'all 250ms ease',
                 }}
               >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary }}>
-                        {t.name}
-                      </Typography>
-                      {isTestRecorded && (
+                {/* 4-Line Card Sequence */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {/* Line 1: Result Recorded label/chip (a line above the title) */}
+                  {isTestRecorded && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Chip
+                        icon={<TaskAltIcon sx={{ fontSize: '14px !important', color: '#8b5cf6 !important' }} />}
+                        label="Result Recorded"
+                        size="small"
+                        sx={{ bgcolor: isDark ? '#4c1d95' : '#f3e8ff', color: '#8b5cf6', fontWeight: 800, fontSize: 10 }}
+                      />
+                      {t.result && (
                         <Chip
-                          icon={<TaskAltIcon sx={{ fontSize: '14px !important', color: '#8b5cf6 !important' }} />}
-                          label="Result Recorded"
+                          label={`Latest Result: ${t.result}`}
                           size="small"
-                          sx={{ bgcolor: isDark ? '#4c1d95' : '#f3e8ff', color: '#8b5cf6', fontWeight: 800, fontSize: 10 }}
+                          sx={{
+                            fontWeight: 700,
+                            fontSize: 10,
+                            bgcolor:
+                              resLower === 'normal'
+                                ? (isDark ? '#064e3b' : '#ecfdf5')
+                                : resLower === 'abnormal'
+                                ? (isDark ? '#4c0519' : '#fff1f2')
+                                : (isDark ? '#451a03' : '#fff7ed'),
+                            color:
+                              resLower === 'normal'
+                                ? '#10b981'
+                                : resLower === 'abnormal'
+                                ? '#f43f5e'
+                                : '#f59e0b',
+                          }}
                         />
                       )}
                     </Box>
+                  )}
 
-                    {t.lastDate && (
-                      <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.2 }}>
-                        Last done: {formatDate(t.lastDate)}
-                      </Typography>
-                    )}
+                  {/* Line 2: Title (dedicated line on small screens) + Delete button at right */}
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, width: '100%' }}>
+                    <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary, wordBreak: 'break-word', flex: 1 }}>
+                      {t.name}
+                    </Typography>
+                    <IconButton size="small" onClick={() => handleDeleteTest(idx)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' }, flexShrink: 0 }}>
+                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
                   </Box>
 
-                  {/* Next Test Date with Reschedule Button */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box sx={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                      <Box>
-                        <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#8b5cf6', textTransform: 'uppercase' }}>
-                          Next Test Date
+                  {/* Line 3: Last done: xxx (if applicable) */}
+                  {t.lastDate && (
+                    <Typography sx={{ fontSize: 12, color: textMuted }}>
+                      Last done: {formatDate(t.lastDate)}
+                    </Typography>
+                  )}
+
+                  {/* Line 4: Next Test Date (if not fresh) otherwise only "Test Date scheduled" */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 0.5 }}>
+                    {t.nextDate ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#8b5cf6', textTransform: 'uppercase' }}>
+                          Next Test Date:
                         </Typography>
                         <Typography sx={{ fontSize: 13, fontWeight: 800, color: textPrimary }}>
                           {formatDate(t.nextDate)}
                         </Typography>
+                        <Tooltip title="Reschedule Next Test Date">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleOpenReschedule('test', idx, t.nextDate)}
+                            sx={{ color: '#8b5cf6', bgcolor: isDark ? 'rgba(139,92,246,0.15)' : '#f3e8ff', p: 0.6 }}
+                          >
+                            <EditCalendarIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Tooltip>
                       </Box>
-                      <Tooltip title="Reschedule Next Test Date">
-                        <IconButton
-                          size="small"
-                          onClick={() => handleOpenReschedule('test', idx, t.nextDate)}
-                          sx={{ color: '#8b5cf6', bgcolor: isDark ? 'rgba(139,92,246,0.15)' : '#f3e8ff', p: 0.6 }}
-                        >
-                          <EditCalendarIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-
-                    <IconButton size="small" onClick={() => handleDeleteTest(idx)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' } }}>
-                      <DeleteIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
+                    ) : (
+                      <Chip
+                        label="Test Date scheduled"
+                        size="small"
+                        sx={{ bgcolor: isDark ? '#334155' : '#f1f5f9', color: textMuted, fontSize: 10, fontWeight: 600 }}
+                      />
+                    )}
                   </Box>
-                </Box>
-
-                <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {t.result && (
-                    <Chip
-                      label={`Latest Result: ${t.result}`}
-                      size="small"
-                      sx={{
-                        fontWeight: 700,
-                        fontSize: 11,
-                        bgcolor:
-                          resLower === 'normal'
-                            ? (isDark ? '#064e3b' : '#ecfdf5')
-                            : resLower === 'abnormal'
-                            ? (isDark ? '#4c0519' : '#fff1f2')
-                            : (isDark ? '#451a03' : '#fff7ed'),
-                        color:
-                          resLower === 'normal'
-                            ? '#10b981'
-                            : resLower === 'abnormal'
-                            ? '#f43f5e'
-                            : '#f59e0b',
-                      }}
-                    />
-                  )}
                 </Box>
 
                 {/* Nested In-Item Action Buttons: "+ Add Test Result" (REMOVED word 'log') */}
@@ -1574,36 +1638,39 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                         No past test history logged for {t.name}.
                       </Typography>
                     ) : (
-                      histList.map((h) => (
-                        <Box key={h.id} sx={{ mb: 1.25, pb: 0.5, borderBottom: `1px dashed ${cardBorder}` }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <Box>
-                              <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: textPrimary }}>
-                                Result: <span style={{ color: '#8b5cf6' }}>{h.result || 'Logged'}</span>
-                              </Typography>
-                              {h.note && (
-                                <Typography sx={{ fontSize: 11, color: textMuted }}>
-                                  {h.note}
+                      histList.map((h) => {
+                        const noteClean = h.note && !h.note.startsWith('Result recorded for') ? h.note : null;
+                        return (
+                          <Box key={h.id} sx={{ mb: 1.25, pb: 0.5, borderBottom: `1px dashed ${cardBorder}` }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <Box>
+                                <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: textPrimary }}>
+                                  Result: <span style={{ color: '#8b5cf6' }}>{h.result || 'Logged'}</span>
                                 </Typography>
-                              )}
-                              {h.completedAt && (
-                                <Typography sx={{ fontSize: 10, color: textMuted, fontStyle: 'italic' }}>
-                                  Logged at: {formatDateTime(h.completedAt)}
-                                </Typography>
-                              )}
-                            </Box>
+                                {noteClean && (
+                                  <Typography sx={{ fontSize: 11, color: textMuted }}>
+                                    {noteClean}
+                                  </Typography>
+                                )}
+                                {h.completedAt && (
+                                  <Typography sx={{ fontSize: 10, color: textMuted, fontStyle: 'italic' }}>
+                                    {formatDateTime(h.completedAt)}
+                                  </Typography>
+                                )}
+                              </Box>
 
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <Typography sx={{ fontSize: 11, color: textMuted }}>
-                                {formatDate(h.date)}
-                              </Typography>
-                              <IconButton size="small" onClick={() => handleDeleteHistoryLog('test', idx, h.id)} sx={{ p: 0.2, color: textMuted }}>
-                                <DeleteIcon sx={{ fontSize: 14 }} />
-                              </IconButton>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography sx={{ fontSize: 11, color: textMuted }}>
+                                  {formatDate(h.date)}
+                                </Typography>
+                                <IconButton size="small" onClick={() => handleDeleteHistoryLog('test', idx, h.id)} sx={{ p: 0.2, color: textMuted }}>
+                                  <DeleteIcon sx={{ fontSize: 14 }} />
+                                </IconButton>
+                              </Box>
                             </Box>
                           </Box>
-                        </Box>
-                      ))
+                        );
+                      })
                     )}
                   </Box>
                 )}
@@ -1618,6 +1685,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   onOpenModal={handleOpenTaskDetailModal}
                   onDeleteStep={handleDeleteStep}
                   onAddStep={handleAddStep}
+                  getIsStepDone={getIsStepDone}
                 />
               </Box>
             );
@@ -1629,11 +1697,37 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
       {/* 3. Prescribed Medicines List (ENHANCED ATTRACTIVE UI)          */}
       {/* ------------------------------------------------------------- */}
       <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{ width: 8, height: 8, borderRadius: 99, bgcolor: '#f59e0b' }} />
-            <PillIcon sx={{ color: '#f59e0b', fontSize: 18 }} />
-            <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justify: 'space-between',
+            alignItems: 'center',
+            mb: 2,
+            p: 1.5,
+            px: 2,
+            borderRadius: '16px',
+            bgcolor: isDark ? 'rgba(245,158,11,0.15)' : '#fffbeb',
+            border: '1px solid',
+            borderColor: isDark ? 'rgba(245,158,11,0.3)' : '#fde68a',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '10px',
+                bgcolor: '#f59e0b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                boxShadow: '0 2px 8px rgba(245,158,11,0.3)',
+              }}
+            >
+              <PillIcon sx={{ fontSize: 18 }} />
+            </Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: isDark ? '#fbbf24' : '#b45309', letterSpacing: '.02em' }}>
               Prescribed Medicines ({medicines.length})
             </Typography>
           </Box>
@@ -1648,7 +1742,16 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
               setAddItemType('medicine');
             }}
             startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#f59e0b' }}
+            sx={{
+              textTransform: 'none',
+              fontSize: 12,
+              fontWeight: 800,
+              bgcolor: isDark ? 'rgba(245,158,11,0.25)' : '#fef3c7',
+              color: '#d97706',
+              borderRadius: '10px',
+              px: 1.75,
+              '&:hover': { bgcolor: '#f59e0b', color: '#ffffff' },
+            }}
           >
             + Add Medicine
           </Button>
@@ -1656,8 +1759,11 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
 
         <Stack spacing={1.75}>
           {medicines.map((m, idx) => {
+            const expKey = `med_${idx}`;
+            const isExp = !!expandedHistory[expKey];
             const histList = m.history || [];
-            const hasDoseLoggedToday = histList.some((h) => h.date === todayStr);
+            const hasDoseLoggedToday = histList.some((h) => (h.date || '').slice(0, 10) === todayStr);
+            const streak = calculateMedicineStreak(histList);
 
             return (
               <Box
@@ -1675,47 +1781,62 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   transition: 'all 250ms ease',
                 }}
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.75 }}>
-                    <Box
-                      sx={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: '14px',
-                        bgcolor: isDark ? 'rgba(245,158,11,0.15)' : '#fef3c7',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <PillIcon sx={{ color: '#f59e0b', fontSize: 24 }} />
-                    </Box>
-                    <Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary }}>
+                {/* Header Container: Dedicated Title Line on Small Screens */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {/* Dedicated Title Line */}
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, width: '100%' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1, minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: '12px',
+                          bgcolor: isDark ? 'rgba(245,158,11,0.15)' : '#fef3c7',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <PillIcon sx={{ color: '#f59e0b', fontSize: 22 }} />
+                      </Box>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary, wordBreak: 'break-word' }}>
                           {m.name}
                         </Typography>
-                        <Chip
-                          label={m.dosage}
-                          size="small"
-                          sx={{ bgcolor: isDark ? '#451a03' : '#fef3c7', color: '#d97706', fontWeight: 800, fontSize: 10 }}
-                        />
-                      </Box>
-
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.3 }}>
-                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#f59e0b' }}>
-                          {m.frequency}
-                        </Typography>
-                        {m.prescribedBy && (
-                          <Typography sx={{ fontSize: 11, color: textMuted }}>
-                            · Prescribed by {m.prescribedBy}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mt: 0.2 }}>
+                          <Chip
+                            label={m.dosage}
+                            size="small"
+                            sx={{ bgcolor: isDark ? '#451a03' : '#fef3c7', color: '#d97706', fontWeight: 800, fontSize: 10 }}
+                          />
+                          <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#f59e0b' }}>
+                            {m.frequency}
                           </Typography>
-                        )}
+                          {m.prescribedBy && (
+                            <Typography sx={{ fontSize: 11, color: textMuted }}>
+                              · Prescribed by {m.prescribedBy}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
                     </Box>
+
+                    <IconButton size="small" onClick={() => handleDeleteMedicine(idx)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' }, flexShrink: 0 }}>
+                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
                   </Box>
 
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {/* Daily Streak Phrase & Action Button Line */}
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                        {streak > 0
+                          ? `🔥 taking daily from last ${streak} ${streak === 1 ? 'day' : 'days'}`
+                          : '⚡ Start daily streak today'}
+                      </span>
+                    </Box>
+
                     <Button
                       size="small"
                       variant={hasDoseLoggedToday ? 'contained' : 'outlined'}
@@ -1732,14 +1853,58 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                         '&:hover': { bgcolor: hasDoseLoggedToday ? '#d97706' : 'rgba(245,158,11,0.08)' },
                       }}
                     >
-                      {hasDoseLoggedToday ? 'Dose Taken Today' : '+ Log Dose Taken'}
+                      {hasDoseLoggedToday ? 'Dose Taken Today' : '+ Dose Taken'}
                     </Button>
-
-                    <IconButton size="small" onClick={() => handleDeleteMedicine(idx)} sx={{ color: textMuted, '&:hover': { color: '#ef4444' } }}>
-                      <DeleteIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
                   </Box>
                 </Box>
+
+                {/* Collapsible History Section for Medicine */}
+                <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Button
+                    size="small"
+                    onClick={() => toggleHistory(expKey)}
+                    endIcon={isExp ? <ExpandLess sx={{ fontSize: 16 }} /> : <ExpandMore sx={{ fontSize: 16 }} />}
+                    sx={{ textTransform: 'none', fontSize: 12, color: textMuted, p: 0, '&:hover': { bgcolor: 'transparent', color: textPrimary } }}
+                  >
+                    {isExp ? 'Hide history' : `View history (${histList.length})`}
+                  </Button>
+                </Box>
+
+                {isExp && (
+                  <Box sx={{ mt: 2, pl: 1.5, borderLeft: '3px solid #f59e0b' }}>
+                    {histList.length === 0 ? (
+                      <Typography sx={{ fontSize: 11, color: textMuted, fontStyle: 'italic' }}>
+                        No past dose records logged for {m.name}.
+                      </Typography>
+                    ) : (
+                      histList.map((h) => (
+                        <Box key={h.id} sx={{ mb: 1.25, pb: 0.5, borderBottom: `1px dashed ${cardBorder}` }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <Box>
+                              <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: textPrimary }}>
+                                {h.action || 'Dose Taken'}
+                              </Typography>
+                              {h.note && (
+                                <Typography sx={{ fontSize: 11, color: textMuted }}>
+                                  {h.note}
+                                </Typography>
+                              )}
+                            </Box>
+
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Typography sx={{ fontSize: 11, color: textMuted }}>
+                                {formatDate(h.date)}
+                              </Typography>
+                              <IconButton size="small" onClick={() => handleDeleteHistoryLog('medicine', idx, h.id)} sx={{ p: 0.2, color: textMuted }}>
+                                <DeleteIcon sx={{ fontSize: 14 }} />
+                              </IconButton>
+                            </Box>
+                          </Box>
+                        </Box>
+                      ))
+                    )}
+                  </Box>
+                )}
 
                 {/* 🌟 EMBEDDED PER-ITEM STRATEGY TASKS SECTION */}
                 <ItemStrategyTaskBox
@@ -1751,6 +1916,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   onOpenModal={handleOpenTaskDetailModal}
                   onDeleteStep={handleDeleteStep}
                   onAddStep={handleAddStep}
+                  getIsStepDone={getIsStepDone}
                 />
               </Box>
             );
@@ -1761,16 +1927,63 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
       {/* ------------------------------------------------------------- */}
       {/* 4. Medication Schedule Checklist */}
       {/* ------------------------------------------------------------- */}
-      {medSchedule.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, px: 0.5 }}>
-            <Box sx={{ width: 8, height: 8, borderRadius: 99, bgcolor: '#14b8a6' }} />
-            <ClockIcon sx={{ color: '#14b8a6', fontSize: 18 }} />
-            <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-              Medication Schedule (Daily Timing)
+      <Box sx={{ mb: 3 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justify: 'space-between',
+            alignItems: 'center',
+            mb: 2,
+            p: 1.5,
+            px: 2,
+            borderRadius: '16px',
+            bgcolor: isDark ? 'rgba(20,184,166,0.15)' : '#f0fdf4',
+            border: '1px solid',
+            borderColor: isDark ? 'rgba(20,184,166,0.3)' : '#99f6e4',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '10px',
+                bgcolor: '#14b8a6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                boxShadow: '0 2px 8px rgba(20,184,166,0.3)',
+              }}
+            >
+              <ClockIcon sx={{ fontSize: 18 }} />
+            </Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: isDark ? '#2dd4bf' : '#0f766e', letterSpacing: '.02em' }}>
+              Medication Schedule ({medSchedule.length})
             </Typography>
           </Box>
 
+          {medSchedule.length === 0 && (
+            <Button
+              size="small"
+              onClick={handleInitializeMedSchedule}
+              startIcon={<AddIcon sx={{ fontSize: 15 }} />}
+              sx={{
+                borderRadius: '10px',
+                textTransform: 'none',
+                fontSize: 11,
+                fontWeight: 800,
+                color: '#14b8a6',
+                border: '1px solid #14b8a6',
+                '&:hover': { bgcolor: 'rgba(20,184,166,0.1)' },
+              }}
+            >
+              + Setup Default Slots
+            </Button>
+          )}
+        </Box>
+
+        {medSchedule.length > 0 ? (
           <Box
             sx={{
               p: 2,
@@ -1812,18 +2025,48 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
               ))}
             </Box>
           </Box>
-        </Box>
-      )}
+        ) : (
+          <Typography sx={{ fontSize: 12, color: textMuted, fontStyle: 'italic', px: 1 }}>
+            No daily medication slots setup yet. Click &quot;+ Setup Default Slots&quot; above to add Morning, Afternoon, Evening & Night checklist times.
+          </Typography>
+        )}
+      </Box>
 
       {/* ------------------------------------------------------------- */}
       {/* 5. Follow-ups Section */}
       {/* ------------------------------------------------------------- */}
       <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{ width: 8, height: 8, borderRadius: 99, bgcolor: '#6366f1' }} />
-            <CalendarIcon sx={{ color: '#6366f1', fontSize: 18 }} />
-            <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justify: 'space-between',
+            alignItems: 'center',
+            mb: 2,
+            p: 1.5,
+            px: 2,
+            borderRadius: '16px',
+            bgcolor: isDark ? 'rgba(99,102,241,0.15)' : '#eef2ff',
+            border: '1px solid',
+            borderColor: isDark ? 'rgba(99,102,241,0.3)' : '#c7d2fe',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '10px',
+                bgcolor: '#6366f1',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                boxShadow: '0 2px 8px rgba(99,102,241,0.3)',
+              }}
+            >
+              <CalendarIcon sx={{ fontSize: 18 }} />
+            </Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: isDark ? '#818cf8' : '#4338ca', letterSpacing: '.02em' }}>
               Follow-ups & Reviews ({followUps.length})
             </Typography>
           </Box>
@@ -1836,7 +2079,16 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
               setAddItemType('followup');
             }}
             startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#6366f1' }}
+            sx={{
+              textTransform: 'none',
+              fontSize: 12,
+              fontWeight: 800,
+              bgcolor: isDark ? 'rgba(99,102,241,0.25)' : '#e0e7ff',
+              color: '#6366f1',
+              borderRadius: '10px',
+              px: 1.75,
+              '&:hover': { bgcolor: '#6366f1', color: '#ffffff' },
+            }}
           >
             + Add Follow-up Item
           </Button>
@@ -2008,6 +2260,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   onOpenModal={handleOpenTaskDetailModal}
                   onDeleteStep={handleDeleteStep}
                   onAddStep={handleAddStep}
+                  getIsStepDone={getIsStepDone}
                 />
               </Box>
             );
@@ -2080,193 +2333,6 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
           </Stack>
         </Box>
       )}
-
-      {/* ============================================================= */}
-      {/* DIALOG 1: Main "+ Add Plan" Picker Dialog (5 Options Grid)    */}
-      {/* ============================================================= */}
-      <Dialog
-        open={addPlanModalOpen}
-        onClose={() => setAddPlanModalOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: '24px', p: 1 } }}
-      >
-        <DialogTitle sx={{ fontWeight: 800, fontSize: 18, pb: 0.5 }}>
-          Add Medical Care Plan
-        </DialogTitle>
-        <DialogContent>
-          <Typography sx={{ fontSize: 13, color: textMuted, mb: 2.5 }}>
-            Select the type of medical plan item you want to create:
-          </Typography>
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 2 }}>
-            {/* Option 1: Appointment */}
-            <Box
-              onClick={() => {
-                setAddPlanModalOpen(false);
-                setInputTitle('');
-                setInputSub('');
-                setInputDate(todayStr);
-                setAddItemType('appointment');
-              }}
-              sx={{
-                p: 2.5,
-                borderRadius: '18px',
-                border: `1px solid ${cardBorder}`,
-                bgcolor: isDark ? '#1e293b' : '#f0f9ff',
-                cursor: 'pointer',
-                transition: 'all 200ms ease',
-                '&:hover': {
-                  borderColor: '#0284c7',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 4px 16px rgba(2,132,199,0.15)',
-                },
-              }}
-            >
-              <StethoscopeIcon sx={{ color: '#0284c7', fontSize: 28, mb: 1 }} />
-              <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary }}>
-                Appointment
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.5 }}>
-                Doctor consultation, specialist visit, or clinic appointment
-              </Typography>
-            </Box>
-
-            {/* Option 2: Test */}
-            <Box
-              onClick={() => {
-                setAddPlanModalOpen(false);
-                setInputTitle('');
-                setInputSub('');
-                setInputDate(todayStr);
-                setAddItemType('test');
-              }}
-              sx={{
-                p: 2.5,
-                borderRadius: '18px',
-                border: `1px solid ${cardBorder}`,
-                bgcolor: isDark ? '#1e293b' : '#f5f3ff',
-                cursor: 'pointer',
-                transition: 'all 200ms ease',
-                '&:hover': {
-                  borderColor: '#8b5cf6',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 4px 16px rgba(139,92,246,0.15)',
-                },
-              }}
-            >
-              <FlaskIcon sx={{ color: '#8b5cf6', fontSize: 28, mb: 1 }} />
-              <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary }}>
-                Diagnostic Test
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.5 }}>
-                Blood panel, MRI, X-Ray, CBC, or lab test screening
-              </Typography>
-            </Box>
-
-            {/* Option 3: Medicine */}
-            <Box
-              onClick={() => {
-                setAddPlanModalOpen(false);
-                setInputTitle('');
-                setInputSub('');
-                setInputExtra('');
-                setMedFreqSelect('Once a day');
-                setCustomMedFreq('');
-                setAddItemType('medicine');
-              }}
-              sx={{
-                p: 2.5,
-                borderRadius: '18px',
-                border: `1px solid ${cardBorder}`,
-                bgcolor: isDark ? '#1e293b' : '#fffbeb',
-                cursor: 'pointer',
-                transition: 'all 200ms ease',
-                '&:hover': {
-                  borderColor: '#f59e0b',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 4px 16px rgba(245,158,11,0.15)',
-                },
-              }}
-            >
-              <PillIcon sx={{ color: '#f59e0b', fontSize: 28, mb: 1 }} />
-              <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary }}>
-                Medicine
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.5 }}>
-                Prescribed medication, daily dosage, or vitamins
-              </Typography>
-            </Box>
-
-            {/* Option 4: Medication Schedule */}
-            <Box
-              onClick={() => {
-                setAddPlanModalOpen(false);
-                handleInitializeMedSchedule();
-              }}
-              sx={{
-                p: 2.5,
-                borderRadius: '18px',
-                border: `1px solid ${cardBorder}`,
-                bgcolor: isDark ? '#1e293b' : '#f0fdf4',
-                cursor: 'pointer',
-                transition: 'all 200ms ease',
-                '&:hover': {
-                  borderColor: '#14b8a6',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 4px 16px rgba(20,184,166,0.15)',
-                },
-              }}
-            >
-              <ClockIcon sx={{ color: '#14b8a6', fontSize: 28, mb: 1 }} />
-              <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary }}>
-                Medication Schedule
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.5 }}>
-                Daily timing checklist (Morning, Afternoon, Evening, Night)
-              </Typography>
-            </Box>
-
-            {/* Option 5: Follow-up */}
-            <Box
-              onClick={() => {
-                setAddPlanModalOpen(false);
-                setInputTitle('');
-                setInputSub('');
-                setInputDate(todayStr);
-                setAddItemType('followup');
-              }}
-              sx={{
-                gridColumn: '1 / -1',
-                p: 2.5,
-                borderRadius: '18px',
-                border: `1px solid ${cardBorder}`,
-                bgcolor: isDark ? '#1e293b' : '#eef2ff',
-                cursor: 'pointer',
-                transition: 'all 200ms ease',
-                '&:hover': {
-                  borderColor: '#6366f1',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 4px 16px rgba(99,102,241,0.15)',
-                },
-              }}
-            >
-              <CalendarIcon sx={{ color: '#6366f1', fontSize: 28, mb: 1 }} />
-              <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary }}>
-                Follow-up & Review
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: textMuted, mt: 0.5 }}>
-                Post-checkup discussion, report review date, or routine follow-up
-              </Typography>
-            </Box>
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setAddPlanModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* ============================================================= */}
       {/* DIALOG 2: Add Standalone Top-Level Item                       */}
@@ -2550,79 +2616,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
         </DialogActions>
       </Dialog>
 
-      {/* ============================================================= */}
-      {/* DIALOG 6: Schedule Medical Reminder / Task                    */}
-      {/* ============================================================= */}
-      <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px' } }}>
-        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>Schedule Medical Reminder</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                fullWidth
-                variant={schedKind === 'schedule' ? 'contained' : 'outlined'}
-                onClick={() => setSchedKind('schedule')}
-                startIcon={<EventIcon />}
-                size="small"
-                sx={{ textTransform: 'none', borderRadius: '10px' }}
-              >
-                Schedule Visit
-              </Button>
-              <Button
-                fullWidth
-                variant={schedKind === 'todo' ? 'contained' : 'outlined'}
-                onClick={() => setSchedKind('todo')}
-                startIcon={<TodoIcon />}
-                size="small"
-                sx={{ textTransform: 'none', borderRadius: '10px' }}
-              >
-                Task Reminder
-              </Button>
-            </Box>
 
-            <TextField
-              label="Reminder Title"
-              placeholder="e.g. Doctor Consultation or Take Blood Test"
-              fullWidth
-              size="small"
-              value={schedTitle}
-              onChange={(e) => setSchedTitle(e.target.value)}
-            />
-
-            <TextField
-              label="Time"
-              type="time"
-              fullWidth
-              size="small"
-              value={schedTime}
-              onChange={(e) => setSchedTime(e.target.value)}
-            />
-
-            <TextField
-              label="Date"
-              type="date"
-              fullWidth
-              size="small"
-              InputLabelProps={{ shrink: true }}
-              value={schedDate}
-              onChange={(e) => setSchedDate(e.target.value)}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSchedModalOpen(false)} sx={{ textTransform: 'none', color: textMuted }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={savingSched || !schedTitle.trim()}
-            onClick={handleScheduleMedicalEvent}
-            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
-          >
-            {savingSched ? 'Saving...' : 'Save Reminder'}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* ── STRATEGIC TASKS SECTION FOR MEDICAL CARE GOAL ── */}
       <Box sx={{ mb: 4 }}>
@@ -2642,6 +2636,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
           {actions.map((step) => {
             const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
             const hasLink = kind === 'schedule' || kind === 'todo';
+            const isDone = getIsStepDone(step);
 
             return (
               <div
@@ -2657,12 +2652,12 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                       handleToggleStepCompletion(step);
                     }}
                     className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
-                      step.done
+                      isDone
                         ? 'bg-sky-500 border-sky-500 text-white'
                         : 'border-slate-300 dark:border-slate-600 hover:border-sky-400'
                     }`}
                   >
-                    {step.done && (
+                    {isDone && (
                       <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
                         <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -2671,7 +2666,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
 
                   <span
                     className={`text-xs font-bold truncate ${
-                      step.done
+                      isDone
                         ? 'line-through text-slate-400 dark:text-slate-500'
                         : 'text-slate-800 dark:text-slate-100'
                     }`}

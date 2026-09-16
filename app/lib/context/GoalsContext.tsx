@@ -820,6 +820,28 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         }
       }
 
+      // 3. Sync in goal.actions (Strategy Action Tasks across Weight, QuitHabit, Sleep, Fitness, etc.)
+      if (Array.isArray(goal.actions) && goal.actions.length > 0) {
+        let actionsModified = false;
+        const updatedActions = (goal.actions as Array<Record<string, unknown>>).map((action) => {
+          const matches =
+            action.scheduleId === linkedItemId ||
+            action.todoId === linkedItemId ||
+            action.id === linkedItemId;
+
+          if (matches && action.done !== isCompleted) {
+            actionsModified = true;
+            hasChanges = true;
+            return { ...action, done: isCompleted };
+          }
+          return action;
+        });
+
+        if (actionsModified) {
+          updates.actions = updatedActions as unknown as Goal['actions'];
+        }
+      }
+
       if (hasChanges) {
         if (typeof updates.progress === 'number') {
           updates.status = deriveStatusFromProgress(updates.progress);
@@ -884,6 +906,31 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
           updates.steps = updatedSteps;
           updates.progress = calculateGoalProgress({ ...goal, steps: updatedSteps });
           updates.status = deriveStatusFromProgress(updates.progress);
+        }
+      }
+
+      // 3. Remove/Unlink from goal.actions (Strategy Action Tasks)
+      if (Array.isArray(goal.actions) && goal.actions.length > 0) {
+        const updatedActions = (goal.actions as Array<Record<string, unknown>>).map((action) => {
+          if (linkedType === 'schedule' && action.scheduleId === linkedItemId) {
+            hasChanges = true;
+            const copy = { ...action };
+            delete copy.scheduleId;
+            if (copy.kind === 'schedule') copy.kind = undefined;
+            return copy;
+          }
+          if (linkedType === 'todo' && action.todoId === linkedItemId) {
+            hasChanges = true;
+            const copy = { ...action };
+            delete copy.todoId;
+            if (copy.kind === 'todo') copy.kind = undefined;
+            return copy;
+          }
+          return action;
+        });
+
+        if (hasChanges) {
+          updates.actions = updatedActions as unknown as Goal['actions'];
         }
       }
 
