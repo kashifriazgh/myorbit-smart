@@ -14,6 +14,8 @@ import {
   DialogActions,
   Stack,
   InputAdornment,
+  Modal,
+  Fade,
 } from '@mui/material';
 import {
   NightsStay as MoonIcon,
@@ -26,6 +28,7 @@ import {
   Checklist as TodoIcon,
   Delete as DeleteIcon,
   LockClock as LockClockIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -40,6 +43,21 @@ export interface SleepLogEntry {
   date: string; // YYYY-MM-DD
   hours: number;
   note?: string;
+}
+
+export interface SleepActionItem {
+  id: string;
+  task: string;
+  done: boolean;
+  sourceId?: string;
+  sourceName?: string;
+  assumedContributionValue?: number;
+  kind?: 'schedule' | 'todo';
+  dueDate?: string;
+  time?: string;
+  assignee?: string;
+  scheduleId?: string;
+  todoId?: string;
 }
 
 interface SleepTemplateProps {
@@ -60,8 +78,206 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
   const { user } = useAuth();
-  const { todos, addTodo, updateTodo } = useTodoContext();
-  const { allSchedules, addSchedule } = useSchedules();
+  const { todos, addTodo, updateTodo, deleteTodo } = useTodoContext();
+  const { allSchedules, addSchedule, editSchedule, removeSchedule } = useSchedules();
+
+  // Strategic Action Tasks State
+  const [actions, setActions] = useState<SleepActionItem[]>(() => {
+    if (Array.isArray(goal.actions) && goal.actions.length > 0) {
+      return goal.actions as unknown as SleepActionItem[];
+    }
+    return [];
+  });
+  const [newGeneralStepInput, setNewGeneralStepInput] = useState('');
+
+  // Task Details Modal States
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [activeStep, setActiveStep] = useState<SleepActionItem | null>(null);
+  const [taskEditText, setTaskEditText] = useState('');
+  const [taskEditAssumedVal, setTaskEditAssumedVal] = useState<number | ''>('');
+  const [taskEditKind, setTaskEditKind] = useState<'none' | 'schedule' | 'todo'>('none');
+  const [showConvertOptions, setShowConvertOptions] = useState(false);
+  const [taskEditDate, setTaskEditDate] = useState(new Date().toISOString().split('T')[0]);
+  const [taskEditStartTime, setTaskEditStartTime] = useState('22:30');
+  const [taskEditEndTime, setTaskEditEndTime] = useState('23:00');
+  const [taskEditTodoTime, setTaskEditTodoTime] = useState('');
+  const [taskEditAssignee, setTaskEditAssignee] = useState('');
+  const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+
+  // Helper: Persist Actions list to Goal
+  const saveActionsList = async (updated: SleepActionItem[]) => {
+    setActions(updated);
+    if (goal.id) {
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, { actions: updated as unknown as Goal['actions'] });
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), { actions: updated });
+      }
+    }
+  };
+
+  const handleToggleStepCompletion = async (step: SleepActionItem) => {
+    const nextDone = !step.done;
+    const updated = actions.map((s) => (s.id === step.id ? { ...s, done: nextDone } : s));
+    await saveActionsList(updated);
+
+    if (step.scheduleId && editSchedule) {
+      await editSchedule(step.scheduleId, { status: nextDone ? 'completed' : 'pending' }).catch((e) => console.warn(e));
+    }
+    if (step.todoId && updateTodo) {
+      await updateTodo(step.todoId, { status: nextDone ? 'completed' : 'in_progress' }).catch((e) => console.warn(e));
+    }
+  };
+
+  const handleAddStep = async (taskText: string, sourceId?: string, sourceName?: string) => {
+    const text = taskText.trim();
+    if (!text) return;
+
+    const newStep: SleepActionItem = {
+      id: 'step_' + Date.now(),
+      task: text,
+      done: false,
+      sourceId: sourceId || undefined,
+      sourceName: sourceName || undefined,
+    };
+    const updated = [...actions, newStep];
+    await saveActionsList(updated);
+  };
+
+  const handleDeleteStep = async (stepId: string) => {
+    const step = actions.find((s) => s.id === stepId);
+    if (step?.scheduleId && removeSchedule) {
+      await removeSchedule(step.scheduleId, true).catch((err) => console.error(err));
+    }
+    if (step?.todoId && deleteTodo) {
+      await deleteTodo(step.todoId, true).catch((err) => console.error(err));
+    }
+    const updated = actions.filter((s) => s.id !== stepId);
+    await saveActionsList(updated);
+  };
+
+  const handleOpenTaskDetailModal = (step: SleepActionItem) => {
+    setActiveStep(step);
+    setTaskEditText(step.task);
+    setTaskEditAssumedVal(step.assumedContributionValue || '');
+    const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
+    setTaskEditKind(kind as 'none' | 'schedule' | 'todo');
+    setShowConvertOptions(kind === 'schedule' || kind === 'todo');
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    setTaskEditDate(step.dueDate || todayStr);
+    setTaskEditStartTime(step.time || '22:30');
+    setTaskEditEndTime('23:00');
+    setTaskEditTodoTime(step.time || '');
+    setTaskEditAssignee(step.assignee || '');
+    setTaskModalOpen(true);
+  };
+
+  const handleSaveTaskDetail = async () => {
+    if (!activeStep || !taskEditText.trim()) return;
+    setSavingTaskEdit(true);
+    try {
+      let updatedScheduleId = activeStep.scheduleId;
+      let updatedTodoId = activeStep.todoId;
+      const rawDate = taskEditDate || new Date().toISOString().split('T')[0];
+      const targetDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
+
+      if (taskEditKind === 'schedule') {
+        if (updatedTodoId && deleteTodo) {
+          await deleteTodo(updatedTodoId, true).catch((err) => console.error(err));
+          updatedTodoId = undefined;
+        }
+        if (!updatedScheduleId) {
+          if (addSchedule) {
+            const created = await addSchedule({
+              userId: user?.uid || '',
+              title: taskEditText.trim(),
+              date: targetDate,
+              startTime: taskEditStartTime || '22:30',
+              endTime: taskEditEndTime || '23:00',
+              status: activeStep.done ? 'completed' : 'pending',
+              linkedGoalId: goal.id,
+              goalTitle: goal.title,
+            });
+            if (typeof created === 'string') updatedScheduleId = created;
+            else if (created && typeof (created as { id?: string }).id === 'string') updatedScheduleId = (created as { id: string }).id;
+          }
+        } else if (editSchedule) {
+          await editSchedule(updatedScheduleId, {
+            title: taskEditText.trim(),
+            date: targetDate,
+            startTime: taskEditStartTime || '22:30',
+            endTime: taskEditEndTime || '23:00',
+          });
+        }
+      } else if (taskEditKind === 'todo') {
+        if (updatedScheduleId && removeSchedule) {
+          await removeSchedule(updatedScheduleId, true).catch((err) => console.error(err));
+          updatedScheduleId = undefined;
+        }
+        if (!updatedTodoId) {
+          if (addTodo) {
+            const created = await addTodo({
+              title: taskEditText.trim(),
+              status: activeStep.done ? 'completed' : 'in_progress',
+              priority: 'urgent',
+              projectId: goal.projectId || '',
+              authorId: user?.uid || '',
+              dueDate: new Date(targetDate),
+              steps: [],
+              tags: [],
+              progressPercent: 0,
+              assignedUsers: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              linkedGoalId: goal.id,
+              goalTitle: goal.title,
+            });
+            if (typeof created === 'string') updatedTodoId = created;
+            else if (created && typeof (created as { id?: string }).id === 'string') updatedTodoId = (created as { id: string }).id;
+          }
+        } else if (updateTodo) {
+          await updateTodo(updatedTodoId, {
+            title: taskEditText.trim(),
+            dueDate: new Date(targetDate),
+          });
+        }
+      } else {
+        if (updatedScheduleId && removeSchedule) {
+          await removeSchedule(updatedScheduleId, true).catch((err) => console.error(err));
+          updatedScheduleId = undefined;
+        }
+        if (updatedTodoId && deleteTodo) {
+          await deleteTodo(updatedTodoId, true).catch((err) => console.error(err));
+          updatedTodoId = undefined;
+        }
+      }
+
+      const updatedActions = actions.map((s) => {
+        if (s.id === activeStep.id) {
+          return {
+            ...s,
+            task: taskEditText.trim(),
+            assumedContributionValue: typeof taskEditAssumedVal === 'number' ? taskEditAssumedVal : undefined,
+            kind: taskEditKind === 'none' ? undefined : taskEditKind,
+            dueDate: targetDate,
+            time: taskEditKind === 'schedule' ? taskEditStartTime : taskEditKind === 'todo' ? taskEditTodoTime : undefined,
+            assignee: taskEditAssignee.trim() || undefined,
+            scheduleId: updatedScheduleId,
+            todoId: updatedTodoId,
+          };
+        }
+        return s;
+      });
+
+      await saveActionsList(updatedActions);
+      setTaskModalOpen(false);
+    } catch (err) {
+      console.error('Failed to save task detail:', err);
+    } finally {
+      setSavingTaskEdit(false);
+    }
+  };
 
   const answers = goal.questionnaireAnswers || {};
 
@@ -684,6 +900,335 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ── STRATEGIC TASKS SECTION FOR SLEEP GOAL ── */}
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
+          <Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              🎯 Strategy Tasks ({actions.length})
+            </Typography>
+            <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.2 }}>
+              Action steps, bedtime habits, and wind-down routines to achieve your sleep target
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Strategic Tasks List */}
+        <div className="space-y-2 mb-3">
+          {actions.map((step) => {
+            const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
+            const hasLink = kind === 'schedule' || kind === 'todo';
+
+            return (
+              <div
+                key={step.id}
+                onClick={() => handleOpenTaskDetailModal(step)}
+                className="group flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 shadow-sm"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStepCompletion(step);
+                    }}
+                    className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
+                      step.done
+                        ? 'bg-indigo-500 border-indigo-500 text-white'
+                        : 'border-slate-300 dark:border-slate-600 hover:border-indigo-400'
+                    }`}
+                  >
+                    {step.done && (
+                      <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
+                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+
+                  <span
+                    className={`text-xs font-bold truncate ${
+                      step.done
+                        ? 'line-through text-slate-400 dark:text-slate-500'
+                        : 'text-slate-800 dark:text-slate-100'
+                    }`}
+                  >
+                    {step.task}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
+                      hasLink
+                        ? kind === 'schedule'
+                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
+                          : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {kind === 'schedule'
+                      ? '🗓 Schedule'
+                      : kind === 'todo'
+                      ? '✅ Todo'
+                      : '+ Schedule/Todo'}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteStep(step.id);
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                    title="Delete step"
+                  >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Quick Task Creation Box */}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="+ Quickly add a strategy task for your sleep goal…"
+            value={newGeneralStepInput}
+            onChange={(e) => setNewGeneralStepInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newGeneralStepInput.trim()) {
+                handleAddStep(newGeneralStepInput);
+                setNewGeneralStepInput('');
+              }
+            }}
+            className="flex-1 text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400 dark:focus:border-indigo-500"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              handleAddStep(newGeneralStepInput);
+              setNewGeneralStepInput('');
+            }}
+            disabled={!newGeneralStepInput.trim()}
+            className="px-3.5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm"
+          >
+            Add Task
+          </button>
+        </div>
+      </Box>
+
+      {/* ── Dialog: STRATEGY TASK DETAIL MODAL ── */}
+      <Modal
+        open={taskModalOpen}
+        onClose={() => setTaskModalOpen(false)}
+        closeAfterTransition
+      >
+        <Fade in={taskModalOpen}>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[440px] shadow-2xl overflow-hidden border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+              <p className="text-[1.05rem] font-extrabold text-slate-800 dark:text-slate-100">
+                Task Details
+              </p>
+              <button
+                type="button"
+                onClick={() => setTaskModalOpen(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[78vh] overflow-y-auto">
+              {/* Task Title Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
+                  Task Title / Strategy Step
+                </label>
+                <input
+                  type="text"
+                  value={taskEditText}
+                  onChange={(e) => setTaskEditText(e.target.value)}
+                  placeholder="e.g. Turn off screens by 10 PM"
+                  className="w-full text-sm font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Toggle Convert Options Button */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowConvertOptions(!showConvertOptions)}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 hover:border-indigo-400 text-left transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">🗓️</span>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        {taskEditKind === 'schedule'
+                          ? 'Converted to Schedule'
+                          : taskEditKind === 'todo'
+                          ? 'Converted to Todo'
+                          : 'Convert to Schedule or Todo'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {taskEditKind === 'none'
+                          ? 'Appears in Schedules or Todo lists across app'
+                          : `Currently synced as ${taskEditKind}`}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                    {showConvertOptions ? 'Hide' : 'Configure'}
+                  </span>
+                </button>
+
+                {showConvertOptions && (
+                  <div className="mt-2.5 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 space-y-3">
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setTaskEditKind('none')}
+                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
+                          taskEditKind === 'none'
+                            ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        Plain Step
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaskEditKind('schedule')}
+                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
+                          taskEditKind === 'schedule'
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        🗓 Schedule
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaskEditKind('todo')}
+                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
+                          taskEditKind === 'todo'
+                            ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        ✅ Todo
+                      </button>
+                    </div>
+
+                    {taskEditKind !== 'none' && (
+                      <div className="space-y-2.5 pt-1">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                            {taskEditKind === 'schedule' ? 'Schedule Date' : 'Due Date'}
+                          </label>
+                          <input
+                            type="date"
+                            value={taskEditDate}
+                            onChange={(e) => setTaskEditDate(e.target.value)}
+                            className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
+                          />
+                        </div>
+
+                        {taskEditKind === 'schedule' && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                                Start Time
+                              </label>
+                              <input
+                                type="time"
+                                value={taskEditStartTime}
+                                onChange={(e) => setTaskEditStartTime(e.target.value)}
+                                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                                End Time
+                              </label>
+                              <input
+                                type="time"
+                                value={taskEditEndTime}
+                                onChange={(e) => setTaskEditEndTime(e.target.value)}
+                                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Assignee Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
+                  Assignee (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={taskEditAssignee}
+                  onChange={(e) => setTaskEditAssignee(e.target.value)}
+                  placeholder="e.g. Self"
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeStep) {
+                    handleDeleteStep(activeStep.id);
+                    setTaskModalOpen(false);
+                  }
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+              >
+                Delete Task
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTaskModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <Button
+                  variant="contained"
+                  disabled={savingTaskEdit || !taskEditText.trim()}
+                  onClick={handleSaveTaskDetail}
+                  sx={{
+                    borderRadius: '12px',
+                    px: 3,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    bgcolor: '#6366f1',
+                    color: '#fff',
+                    '&:hover': { bgcolor: '#4f46e5' },
+                  }}
+                >
+                  {savingTaskEdit ? 'Saving...' : 'Save Task'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Fade>
+      </Modal>
     </Box>
   );
 }
