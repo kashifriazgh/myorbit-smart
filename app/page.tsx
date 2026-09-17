@@ -13,7 +13,7 @@ import QuickLinks from './components/homepage/QuickLinks';
 import OnBoardingInitializer from './components/global/initial-on-boarding/OnBoardingInitializer';
 import InstallShortcutBanner from './components/global/InstallShortcutBanner';
 
-import DailyChecks from './components/global/DailyChecks';
+// import DailyChecks from './components/global/DailyChecks';
 
 // Lazy load components
 const ImportantTasks = lazy(
@@ -76,7 +76,7 @@ export default function Homepage() {
         <Suspense fallback={<SkeletonLoader variant="card" height={120} />}>
           <HomepageHeader />
         </Suspense>
-        <DailyChecks />
+        {/* <DailyChecks /> */}
       </div>
 
       {/* Updated Three Column Layout */}

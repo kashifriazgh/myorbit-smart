@@ -26,7 +26,7 @@ import { useCustomTheme } from '../lib/context/themeContext';
 import { GoalType, GoalPriority, GoalStatus } from '../lib/interface';
 import GoalModal from '../components/goals/GoalModal';
 import GoalSimpleCard from '../components/goals/GoalSimpleCard';
-import DailyChecks from '../components/global/DailyChecks';
+// import DailyChecks from '../components/global/DailyChecks';
 import { useRouter } from 'next/navigation';
 import moment from 'moment';
 
@@ -157,7 +157,7 @@ const GoalsPageInner: React.FC = () => {
           </Button>
         </Box>
 
-        <DailyChecks />
+        {/* <DailyChecks /> */}
 
         {/* STATS + FILTER BAR */}
         <Card

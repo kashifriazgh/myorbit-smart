@@ -414,7 +414,7 @@ export default function GoalModal({
         progressMode: 'cumulative',
         goalFurnished: true,
         progress: goal?.progress || 0,
-        status: goal?.status || 'Not Started',
+        status: (goal?.status && goal.status !== 'Not Started') ? goal.status : 'In Progress',
         userId: user.uid,
         createdAt: goal?.createdAt || Timestamp.fromDate(nowTs),
         updatedAt: Timestamp.fromDate(nowTs),

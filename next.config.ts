@@ -9,14 +9,17 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
-  reactStrictMode: true,
-  // Optimize for development
+  // Disable strict mode in development to prevent double-rendering and double-effect execution on every page navigation
+  reactStrictMode: false,
+  
+  // Package import optimization for ultra-fast dev compilation
   experimental: {
     optimizePackageImports: [
       '@mui/material',
       '@mui/icons-material',
       '@mui/lab',
       '@mui/x-date-pickers',
+      'lucide-react',
       'recharts',
       'chart.js',
       'framer-motion',
@@ -27,6 +30,8 @@ const nextConfig: NextConfig = {
       'dexie',
     ],
   },
+
+  
   turbopack: {
     rules: {
       '*.svg': {
@@ -35,8 +40,10 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  
   // Disable source maps in development for faster builds
   productionBrowserSourceMaps: false,
+  
   // Optimize webpack for development
   webpack: (config, { dev }) => {
     if (dev) {

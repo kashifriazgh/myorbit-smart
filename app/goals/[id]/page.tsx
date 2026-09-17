@@ -19,6 +19,7 @@ import {
   CircularProgress,
   Skeleton,
   Divider,
+  Collapse,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -28,16 +29,14 @@ import {
   Edit,
   Delete,
   AutoAwesome,
-  Add as AddIcon,
   CalendarMonth,
-  CalendarToday as CalendarIcon,
-  Checklist as TodoIcon,
   CheckCircle,
   AccountBalanceWallet,
   TrackChanges,
   ArrowForward,
-  RadioButtonUnchecked,
   TrendingUp,
+  KeyboardArrowDown,
+  KeyboardArrowUp,
 } from '@mui/icons-material';
 
 import { doc, getDoc, updateDoc, addDoc, collection, Timestamp } from 'firebase/firestore';
@@ -747,7 +746,7 @@ const GoalDetailInner: React.FC = () => {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
-  const { todos, addTodo, updateTodo } = useTodoContext();
+  const { todos, addTodo } = useTodoContext();
   const { allSchedules, addSchedule } = useSchedules();
   const { goals, deleteGoal, addGoalStep, updateGoal: _updateGoal, saveGoalTracker: _saveGoalTracker, removeGoalTracker: _removeGoalTracker, addTrackerCheckIn: _addTrackerCheckIn, loading: goalsLoading } = useGoals();
   const { theme } = useCustomTheme();
@@ -775,6 +774,7 @@ const GoalDetailInner: React.FC = () => {
     }
   }, [goal, goalsLoading, params?.id]);
 
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -943,20 +943,6 @@ const GoalDetailInner: React.FC = () => {
     }
     return `${diffDays} day${diffDays === 1 ? '' : 's'}`;
   }, [createdDate]);
-
-  const linkedTodos = useMemo(() => {
-    if (!goal?.id) return [];
-    return todos.filter(
-      (t) => (t as { linkedGoalId?: string }).linkedGoalId === goal.id,
-    );
-  }, [todos, goal?.id]);
-
-  const linkedSchedules = useMemo(() => {
-    if (!goal?.id) return [];
-    return allSchedules.filter(
-      (s) => (s as { linkedGoalId?: string }).linkedGoalId === goal.id,
-    );
-  }, [allSchedules, goal?.id]);
 
   const daysLeft = useMemo(() => {
     if (!dueDateDate) return 0;
@@ -1780,89 +1766,117 @@ const GoalDetailInner: React.FC = () => {
 
         {/* Details grid */}
         <Box sx={{ mt: 1.5, mb: 2.5 }}>
-          <SectionTitle isDark={isDark}>Details</SectionTitle>
           <Box
+            onClick={() => setDetailsOpen(!detailsOpen)}
             sx={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              userSelect: 'none',
+              mb: detailsOpen ? 1.5 : 0,
             }}
           >
-            {[
-              {
-                label: 'Due date',
-                value: fmtDate(dueDateDate),
-                sub: dueDateDate
-                  ? daysLeft < 0
-                    ? `${Math.abs(daysLeft)} days overdue`
-                    : `${daysLeft} days left`
-                  : null,
-                subColor:
-                  daysLeft < 0
-                    ? '#EF4444'
-                    : daysLeft <= 7
-                      ? '#F59E0B'
-                      : typeColor,
-              },
-              {
-                label: 'Time spent',
-                value: timeSpentDisplay,
-                sub: createdDate ? `Created ${fmtDate(createdDate)}` : null,
-                subColor: typeColor,
-              },
-              {
-                label: 'Status',
-                value: goal.status ?? 'In Progress',
-                sub: null,
-                subColor: typeColor,
-              },
-              {
-                label: 'Progress',
-                value: `${goal.progress ?? 0}%`,
-                sub: null,
-                subColor: typeColor,
-              },
-            ].map((cell) => (
-              <Box
-                key={cell.label}
-                sx={{
-                  background: surfaceBg,
-                  borderRadius: '12px',
-                  p: '12px 14px',
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: mutedText,
-                    letterSpacing: '.06em',
-                    textTransform: 'uppercase',
-                    mb: '4px',
-                  }}
-                >
-                  {cell.label}
-                </Typography>
-                <Typography
-                  sx={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: bodyText,
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  {cell.value}
-                </Typography>
-                {cell.sub && (
-                  <Typography
-                    sx={{ fontSize: 11, color: cell.subColor, mt: '2px' }}
-                  >
-                    {cell.sub}
-                  </Typography>
-                )}
-              </Box>
-            ))}
+            <Typography
+              sx={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '.08em',
+                textTransform: 'uppercase',
+                color: isDark ? '#475569' : '#94a3b8',
+              }}
+            >
+              Details
+            </Typography>
+            <IconButton size="small" sx={{ p: 0.25, color: isDark ? '#64748b' : '#94a3b8' }}>
+              {detailsOpen ? <KeyboardArrowUp fontSize="small" /> : <KeyboardArrowDown fontSize="small" />}
+            </IconButton>
           </Box>
+
+          <Collapse in={detailsOpen}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '10px',
+              }}
+            >
+              {[
+                {
+                  label: 'Due date',
+                  value: fmtDate(dueDateDate),
+                  sub: dueDateDate
+                    ? daysLeft < 0
+                      ? `${Math.abs(daysLeft)} days overdue`
+                      : `${daysLeft} days left`
+                    : null,
+                  subColor:
+                    daysLeft < 0
+                      ? '#EF4444'
+                      : daysLeft <= 7
+                        ? '#F59E0B'
+                        : typeColor,
+                },
+                {
+                  label: 'Time spent',
+                  value: timeSpentDisplay,
+                  sub: createdDate ? `Created ${fmtDate(createdDate)}` : null,
+                  subColor: typeColor,
+                },
+                {
+                  label: 'Status',
+                  value: (goal.status && goal.status !== 'Not Started') ? goal.status : 'In Progress',
+                  sub: null,
+                  subColor: typeColor,
+                },
+                {
+                  label: 'Progress',
+                  value: `${goal.progress ?? 0}%`,
+                  sub: null,
+                  subColor: typeColor,
+                },
+              ].map((cell) => (
+                <Box
+                  key={cell.label}
+                  sx={{
+                    background: surfaceBg,
+                    borderRadius: '12px',
+                    p: '12px 14px',
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: mutedText,
+                      letterSpacing: '.06em',
+                      textTransform: 'uppercase',
+                      mb: '4px',
+                    }}
+                  >
+                    {cell.label}
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: bodyText,
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    {cell.value}
+                  </Typography>
+                  {cell.sub && (
+                    <Typography
+                      sx={{ fontSize: 11, color: cell.subColor, mt: '2px' }}
+                    >
+                      {cell.sub}
+                    </Typography>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          </Collapse>
         </Box>
 
         {/* Tags */}
@@ -1909,284 +1923,6 @@ const GoalDetailInner: React.FC = () => {
             </Box>
           </>
         )}
-        {/* Tasks & Schedules section */}
-        <Box sx={{ mt: 3.5 }}>
-          <SectionTitle isDark={isDark}>Linked Tasks & Schedules</SectionTitle>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-              gap: 2.5,
-              mt: 1.5,
-            }}
-          >
-            {/* Tasks Block */}
-            <Box
-              sx={{
-                background: surfaceBg,
-                borderRadius: '16px',
-                p: 2,
-                border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-              }}
-            >
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  mb: 1.5,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: bodyText,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.75,
-                  }}
-                >
-                  <TodoIcon sx={{ fontSize: 16, color: typeColor }} /> Tasks (
-                  {linkedTodos.filter((t) => t.status === 'completed').length}/
-                  {linkedTodos.length})
-                </Typography>
-                <Button
-                  size="small"
-                  onClick={() => {
-                    setNewTodoTitle('');
-                    setNewTodoDueDate(new Date().toISOString().split('T')[0]);
-                    setAddTaskDialogOpen(true);
-                  }}
-                  startIcon={<AddIcon sx={{ fontSize: 14 }} />}
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                  }}
-                >
-                  Add Task
-                </Button>
-              </Box>
-
-              {linkedTodos.length === 0 ? (
-                <Typography
-                  sx={{
-                    fontSize: 12,
-                    color: mutedText,
-                    textAlign: 'center',
-                    py: 3,
-                    fontStyle: 'italic',
-                  }}
-                >
-                  No tasks linked to this goal yet.
-                </Typography>
-              ) : (
-                <Stack
-                  spacing={1}
-                  sx={{ maxHeight: 240, overflowY: 'auto', pr: 0.5 }}
-                >
-                  {linkedTodos.map((todo) => {
-                    const isTodoCompleted = todo.status === 'completed';
-                    const dueDate = todo.dueDate
-                      ? toPlainDate(todo.dueDate)
-                      : null;
-                    return (
-                      <Box
-                        key={todo.id}
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1,
-                          p: 1.25,
-                          borderRadius: '10px',
-                          bgcolor: isDark
-                            ? 'rgba(255,255,255,0.02)'
-                            : '#ffffff',
-                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9'}`,
-                        }}
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            if (todo.id) {
-                              updateTodo(todo.id, {
-                                status: isTodoCompleted
-                                  ? 'in_progress'
-                                  : 'completed',
-                              });
-                            }
-                          }}
-                          sx={{
-                            p: 0.25,
-                            color: isTodoCompleted ? '#10b981' : mutedText,
-                          }}
-                        >
-                          {isTodoCompleted ? (
-                            <CheckCircle sx={{ fontSize: 18 }} />
-                          ) : (
-                            <RadioButtonUnchecked sx={{ fontSize: 18 }} />
-                          )}
-                        </IconButton>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography
-                            sx={{
-                              fontSize: 12.5,
-                              fontWeight: 600,
-                              color: isTodoCompleted ? mutedText : bodyText,
-                              textDecoration: isTodoCompleted
-                                ? 'line-through'
-                                : 'none',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {todo.title}
-                          </Typography>
-                          {dueDate && (
-                            <Typography
-                              sx={{
-                                fontSize: 10,
-                                color: '#ef4444',
-                                fontWeight: 500,
-                              }}
-                            >
-                              Due:{' '}
-                              {dueDate.toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                            </Typography>
-                          )}
-                        </Box>
-                      </Box>
-                    );
-                  })}
-                </Stack>
-              )}
-            </Box>
-
-            {/* Schedules Block */}
-            <Box
-              sx={{
-                background: surfaceBg,
-                borderRadius: '16px',
-                p: 2,
-                border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-              }}
-            >
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  mb: 1.5,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: bodyText,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.75,
-                  }}
-                >
-                  <CalendarIcon sx={{ fontSize: 16, color: typeColor }} />{' '}
-                  Schedules ({linkedSchedules.length})
-                </Typography>
-                <Button
-                  size="small"
-                  onClick={() => {
-                    setNewEventTitle('');
-                    setNewEventDate(new Date().toISOString().split('T')[0]);
-                    setNewEventStartTime('09:00');
-                    setNewEventEndTime('10:00');
-                    setAddEventDialogOpen(true);
-                  }}
-                  startIcon={<AddIcon sx={{ fontSize: 14 }} />}
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                  }}
-                >
-                  Add Event
-                </Button>
-              </Box>
-
-              {linkedSchedules.length === 0 ? (
-                <Typography
-                  sx={{
-                    fontSize: 12,
-                    color: mutedText,
-                    textAlign: 'center',
-                    py: 3,
-                    fontStyle: 'italic',
-                  }}
-                >
-                  No events scheduled for this goal yet.
-                </Typography>
-              ) : (
-                <Stack
-                  spacing={1}
-                  sx={{ maxHeight: 240, overflowY: 'auto', pr: 0.5 }}
-                >
-                  {linkedSchedules.map((event) => (
-                    <Box
-                      key={event.id}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        p: 1.25,
-                        borderRadius: '10px',
-                        bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#ffffff',
-                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9'}`,
-                      }}
-                    >
-                      <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Typography
-                          sx={{
-                            fontSize: 12.5,
-                            fontWeight: 600,
-                            color: bodyText,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {event.title}
-                        </Typography>
-                        <Typography
-                          sx={{
-                            fontSize: 10,
-                            color: mutedText,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 0.5,
-                            mt: 0.25,
-                          }}
-                        >
-                          📅{' '}
-                          {new Date(event.date).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                          })}{' '}
-                          ({event.startTime} - {event.endTime})
-                        </Typography>
-                      </Box>
-                    </Box>
-                  ))}
-                </Stack>
-              )}
-            </Box>
-          </Box>
-        </Box>
       </Box>
 
       <MilestoneDetailSheet

@@ -537,28 +537,6 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
             ],
           },
           {
-            id: 'total_pages',
-            question: 'How many pages are there in total?',
-            type: 'number_input',
-            placeholder: 'e.g. 300 (leave blank if unknown)',
-            dependsOnField: 'track_by',
-            dependsOnValue: 'pages',
-          },
-          {
-            id: 'total_chapters',
-            question: 'How many chapters are there in total?',
-            type: 'number_input',
-            placeholder: 'e.g. 20 (leave blank if unknown)',
-            dependsOnField: 'track_by',
-            dependsOnValue: 'chapters',
-          },
-          {
-            id: 'daily_target_qty',
-            question: 'How many pages/chapters do you plan to read per session?',
-            type: 'number_input',
-            placeholder: 'e.g. 10 pages or 1 chapter (leave blank for flexible)',
-          },
-          {
             id: 'frequency',
             question: 'How often do you want to read?',
             type: 'single_choice',
