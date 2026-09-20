@@ -266,7 +266,7 @@ interface HourlySchedulesGroupedListProps {
   handleToggleStatus: (schedule: SchedulesProps) => void;
   handleEditSchedule: (scheduleId: string) => void;
   getPriorityColor: (priority: string) => string;
-  viewMode?: 'quick' | 'daily' | 'future';
+  viewMode?: 'quick' | 'detail' | 'future';
   onOpen?: (schedule: SchedulesProps) => void;
 }
 
@@ -277,7 +277,7 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
   handleToggleStatus,
   handleEditSchedule,
   getPriorityColor,
-  viewMode = 'daily',
+  viewMode = 'detail',
   onOpen,
 }) => {
   const hourlyGroups = groupSchedulesByHour(items);
@@ -713,7 +713,7 @@ const QuickAddScheduleRow = ({ isDark, schedules, onAdd }: QuickAddScheduleRowPr
 const Schedules: React.FC = () => {
   const { user, isGuest } = useAuth();
   const { theme } = useCustomTheme();
-  const [viewMode, setViewMode] = useState<'quick' | 'daily' | 'future'>('quick');
+  const [viewMode, setViewMode] = useState<'quick' | 'detail' | 'future'>('quick');
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Use new context provider
@@ -731,7 +731,7 @@ const Schedules: React.FC = () => {
   // Load view mode from localStorage on mount
   useEffect(() => {
     const savedMode = localStorage.getItem('schedules_view_mode');
-    if (savedMode === 'quick' || savedMode === 'daily' || savedMode === 'future') {
+    if (savedMode === 'quick' || savedMode === 'detail' || savedMode === 'future') {
       setViewMode(savedMode);
     }
     setIsLoaded(true);
@@ -1192,7 +1192,7 @@ const Schedules: React.FC = () => {
               borderRadius: '10px',
             }}
           >
-            {(['quick', 'daily', 'future'] as const).map((mode) => (
+            {(['quick', 'detail', 'future'] as const).map((mode) => (
               <Button
                 key={mode}
                 size="small"
@@ -1220,7 +1220,7 @@ const Schedules: React.FC = () => {
                   },
                 }}
               >
-                {mode === 'quick' ? '⚡ Quick' : mode === 'daily' ? '📋 Daily' : '🗓 Future'}
+                {mode === 'quick' ? '⚡ Quick' : mode === 'detail' ? '📋 Detail' : '🗓 Future'}
               </Button>
             ))}
           </Box>
@@ -1281,7 +1281,7 @@ const Schedules: React.FC = () => {
               <Button
                 variant="text"
                 size="small"
-                onClick={() => setViewMode('daily')}
+                onClick={() => setViewMode('detail')}
                 sx={{ textTransform: 'none', fontSize: '0.75rem', color: isDark ? '#64748b' : '#94a3b8' }}
               >
                 Full View →
@@ -1290,7 +1290,7 @@ const Schedules: React.FC = () => {
           </>
         )}
 
-        {viewMode === 'daily' && (
+        {viewMode === 'detail' && (
           <>
             <DateTabStrip />
             <DayTimeline schedulesList={schedules} theme={theme} />
@@ -1327,7 +1327,7 @@ const Schedules: React.FC = () => {
               ) : (
                 <ScheduleDetailList
                   schedules={schedules}
-                  viewMode="daily"
+                  viewMode="detail"
                   theme={theme}
                   getTimeRange={getTimeRange}
                   getPriorityColor={getPriorityColor}
@@ -1396,11 +1396,11 @@ const Schedules: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, gap: 2 }}>
               <Button
                 variant="outlined"
-                onClick={() => setViewMode('daily')}
+                onClick={() => setViewMode('detail')}
                 startIcon={<ArrowIcon sx={{ transform: 'rotate(180deg)' }} />}
                 sx={{ borderRadius: 2, textTransform: 'none' }}
               >
-                Back to Daily
+                Back to Detail
               </Button>
               <Button
                 variant="contained"
@@ -1716,7 +1716,7 @@ const Schedules: React.FC = () => {
 // ─── Shared Detail List (used by Daily + Future views) ──────────────────────
 interface ScheduleDetailListProps {
   schedules: SchedulesProps[];
-  viewMode: 'daily' | 'future';
+  viewMode: 'detail' | 'future';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   theme: any;
   getTimeRange: (startTime: string, endTime: string, isFlexible?: boolean) => string;
