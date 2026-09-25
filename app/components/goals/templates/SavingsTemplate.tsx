@@ -1068,7 +1068,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
       </Box>
 
       {/* 🌟 2. STRATEGY TASKS SECTION (Matching ExpensesTemplate style) */}
-      <Box sx={{ mb: 4 }}>
+      <Box sx={{ mt: 3, pt: 3, mb: 4, borderTop: `1px solid ${cardBorder}` }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
           <Box>
             <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, textTransform: 'uppercase', letterSpacing: '.06em' }}>

@@ -277,6 +277,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     }
     return [];
   });
+  const [newGeneralStepInput, setNewGeneralStepInput] = useState('');
 
   // Task Details Modal States
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -1045,18 +1046,6 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
                       }}
                     />
                   </Box>
-
-                  {/* 🌟 EMBEDDED PER-ITEM STRATEGY TASKS SECTION */}
-                  <ItemStrategyTaskBox
-                    sourceId={ex.id}
-                    sourceName={ex.name}
-                    actions={actions}
-                    isDark={isDark}
-                    onToggleStep={handleToggleStepCompletion}
-                    onOpenModal={handleOpenTaskDetailModal}
-                    onDeleteStep={handleDeleteStep}
-                    onAddStep={handleAddStep}
-                  />
                 </Box>
               );
             })}
@@ -1216,7 +1205,133 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
         )}
       </Box>
 
-      {/* ── 4. STEP-BY-STEP EXERCISE QUESTIONNAIRE DIALOG (With Tailored Unit Selection) ── */}
+      {/* ── 4. STRATEGY TASKS SECTION ── */}
+      <Box sx={{ mb: 4, pt: 3, borderTop: `1px solid ${cardBorder}` }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
+          <Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              🎯 Strategy Tasks ({actions.length})
+            </Typography>
+            <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.2 }}>
+              Overview of all fitness action steps & habits
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Strategic Tasks List */}
+        <div className="space-y-2 mb-3">
+          {actions.map((step) => {
+            const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
+            const hasLink = kind === 'schedule' || kind === 'todo';
+
+            return (
+              <div
+                key={step.id}
+                onClick={() => handleOpenTaskDetailModal(step)}
+                className="group flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500 shadow-sm"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStepCompletion(step);
+                    }}
+                    className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
+                      step.done
+                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                        : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400'
+                    }`}
+                  >
+                    {step.done && (
+                      <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
+                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+
+                  <div className="flex flex-col min-w-0">
+                    <span
+                      className={`text-sm font-semibold truncate ${
+                        step.done
+                          ? 'line-through text-slate-400 dark:text-slate-500'
+                          : 'text-slate-800 dark:text-slate-100'
+                      }`}
+                    >
+                      {step.task}
+                    </span>
+                    {step.sourceName && (
+                      <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
+                        Exercise: {step.sourceName}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
+                      hasLink
+                        ? kind === 'schedule'
+                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
+                          : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {kind === 'schedule'
+                      ? '🗓 Schedule'
+                      : kind === 'todo'
+                      ? '✅ Todo'
+                      : 'Add to Schedule/Todo →'}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteStep(step.id);
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                    title="Delete step"
+                  >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Inline Add General Strategic Action Step Input */}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="+ Quickly add a strategy task for your fitness goal…"
+            value={newGeneralStepInput}
+            onChange={(e) => setNewGeneralStepInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleAddStep(newGeneralStepInput);
+                setNewGeneralStepInput('');
+              }
+            }}
+            className="flex-1 text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 dark:focus:border-emerald-500"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              handleAddStep(newGeneralStepInput);
+              setNewGeneralStepInput('');
+            }}
+            disabled={!newGeneralStepInput.trim()}
+            className="px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm"
+          >
+            Add Task
+          </button>
+        </div>
+      </Box>
+
+      {/* ── 5. STEP-BY-STEP EXERCISE QUESTIONNAIRE DIALOG (With Tailored Unit Selection) ── */}
       <Dialog
         open={exerciseModalOpen}
         onClose={() => setExerciseModalOpen(false)}
@@ -1934,146 +2049,6 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
           </div>
         </Fade>
       </Modal>
-    </Box>
-  );
-}
-
-// 🌟 PER-ITEM STRATEGY TASK BOX COMPONENT FOR FITNESS EXERCISES
-function ItemStrategyTaskBox({
-  sourceId,
-  sourceName,
-  actions,
-  isDark,
-  onToggleStep,
-  onOpenModal,
-  onDeleteStep,
-  onAddStep,
-}: {
-  sourceId: string;
-  sourceName: string;
-  actions: FitnessActionItem[];
-  isDark: boolean;
-  onToggleStep: (step: FitnessActionItem) => void;
-  onOpenModal: (step: FitnessActionItem) => void;
-  onDeleteStep: (stepId: string) => void;
-  onAddStep: (taskText: string, sourceId?: string, sourceName?: string) => void;
-}) {
-  const [inputVal, setInputVal] = useState('');
-  const itemActions = useMemo(() => actions.filter((a) => a.sourceId === sourceId), [actions, sourceId]);
-
-  const handleAdd = () => {
-    if (!inputVal.trim()) return;
-    onAddStep(inputVal, sourceId, sourceName);
-    setInputVal('');
-  };
-
-  return (
-    <Box sx={{ mt: 2, pt: 2, borderTop: `1px dashed ${isDark ? '#334155' : '#e2e8f0'}` }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-        <Typography sx={{ fontSize: 11, fontWeight: 800, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-          🎯 Strategy Tasks for {sourceName} ({itemActions.length})
-        </Typography>
-      </Box>
-
-      {itemActions.length > 0 && (
-        <div className="space-y-1.5 mb-2.5">
-          {itemActions.map((step) => {
-            const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
-            const hasLink = kind === 'schedule' || kind === 'todo';
-
-            return (
-              <div
-                key={step.id}
-                onClick={() => onOpenModal(step)}
-                className="group flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500 shadow-sm"
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleStep(step);
-                    }}
-                    className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${
-                      step.done
-                        ? 'bg-emerald-500 border-emerald-500 text-white'
-                        : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400'
-                    }`}
-                  >
-                    {step.done && (
-                      <svg viewBox="0 0 24 24" fill="none" className="w-3 h-3 stroke-current stroke-[3]">
-                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </button>
-
-                  <span
-                    className={`text-xs font-semibold truncate ${
-                      step.done
-                        ? 'line-through text-slate-400 dark:text-slate-500'
-                        : 'text-slate-800 dark:text-slate-100'
-                    }`}
-                  >
-                    {step.task}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span
-                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border transition-colors ${
-                      hasLink
-                        ? kind === 'schedule'
-                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                          : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    {kind === 'schedule'
-                      ? '🗓 Schedule'
-                      : kind === 'todo'
-                      ? '✅ Todo'
-                      : '+ Schedule/Todo'}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteStep(step.id);
-                    }}
-                    className="p-0.5 text-slate-400 hover:text-rose-500 rounded transition-colors opacity-0 group-hover:opacity-100"
-                    title="Delete step"
-                  >
-                    <DeleteIcon sx={{ fontSize: 14 }} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Inline Add Task Input */}
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          placeholder={`+ Add strategy task for ${sourceName}…`}
-          value={inputVal}
-          onChange={(e) => setInputVal(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleAdd();
-          }}
-          className="flex-1 text-xs font-medium px-3 py-1.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 dark:focus:border-emerald-500"
-        />
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={!inputVal.trim()}
-          className="px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm shrink-0"
-        >
-          Add Task
-        </button>
-      </div>
     </Box>
   );
 }

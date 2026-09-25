@@ -203,7 +203,7 @@ function calculateMedicineStreak(history?: Array<{ date: string }>): number {
   return streak;
 }
 
-function ItemStrategyTaskBox({
+export function ItemStrategyTaskBox({
   sourceId,
   sourceName,
   actions,
@@ -1408,18 +1408,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   </Box>
                 )}
 
-                {/* 🌟 EMBEDDED PER-ITEM STRATEGY TASKS SECTION */}
-                <ItemStrategyTaskBox
-                  sourceId={a.id || String(idx)}
-                  sourceName={a.doctor}
-                  actions={actions}
-                  isDark={isDark}
-                  onToggleStep={handleToggleStepCompletion}
-                  onOpenModal={handleOpenTaskDetailModal}
-                  onDeleteStep={handleDeleteStep}
-                  onAddStep={handleAddStep}
-                  getIsStepDone={getIsStepDone}
-                />
+
               </Box>
             );
           })}
@@ -1675,18 +1664,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   </Box>
                 )}
 
-                {/* 🌟 EMBEDDED PER-ITEM STRATEGY TASKS SECTION */}
-                <ItemStrategyTaskBox
-                  sourceId={t.id || String(idx)}
-                  sourceName={t.name}
-                  actions={actions}
-                  isDark={isDark}
-                  onToggleStep={handleToggleStepCompletion}
-                  onOpenModal={handleOpenTaskDetailModal}
-                  onDeleteStep={handleDeleteStep}
-                  onAddStep={handleAddStep}
-                  getIsStepDone={getIsStepDone}
-                />
+
               </Box>
             );
           })}
@@ -1906,18 +1884,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   </Box>
                 )}
 
-                {/* 🌟 EMBEDDED PER-ITEM STRATEGY TASKS SECTION */}
-                <ItemStrategyTaskBox
-                  sourceId={m.id || String(idx)}
-                  sourceName={m.name}
-                  actions={actions}
-                  isDark={isDark}
-                  onToggleStep={handleToggleStepCompletion}
-                  onOpenModal={handleOpenTaskDetailModal}
-                  onDeleteStep={handleDeleteStep}
-                  onAddStep={handleAddStep}
-                  getIsStepDone={getIsStepDone}
-                />
+
               </Box>
             );
           })}
@@ -2250,18 +2217,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
                   </Box>
                 )}
 
-                {/* 🌟 EMBEDDED PER-ITEM STRATEGY TASKS SECTION */}
-                <ItemStrategyTaskBox
-                  sourceId={f.id || String(idx)}
-                  sourceName={f.type}
-                  actions={actions}
-                  isDark={isDark}
-                  onToggleStep={handleToggleStepCompletion}
-                  onOpenModal={handleOpenTaskDetailModal}
-                  onDeleteStep={handleDeleteStep}
-                  onAddStep={handleAddStep}
-                  getIsStepDone={getIsStepDone}
-                />
+
               </Box>
             );
           })}
@@ -2619,7 +2575,7 @@ export default function MedicalTemplate({ goal, onUpdateGoal }: MedicalTemplateP
 
 
       {/* ── STRATEGIC TASKS SECTION FOR MEDICAL CARE GOAL ── */}
-      <Box sx={{ mb: 4 }}>
+      <Box sx={{ mt: 3, pt: 3, mb: 4, borderTop: `1px solid ${cardBorder}` }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
           <Box>
             <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, textTransform: 'uppercase', letterSpacing: '.06em' }}>

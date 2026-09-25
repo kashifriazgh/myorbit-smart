@@ -882,39 +882,21 @@ const GoalDetailInner: React.FC = () => {
       return;
     }
 
-    // Fetch recommendation from AI
-    fetch('/api/goals/smart-nudge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'recommend-milestone-type',
-        title: goal.title,
-        type: goal.type,
-        category: goal.type,
-        subcategory: goal.subcategory,
-        unit: goal.overallTargetUnit || goal.unit,
-        measurementType: goal.measurementType,
-        targetValue: goal.overallTargetValue,
-        dueDate: goal.dueDate ? toPlainDate(goal.dueDate)?.toISOString().split('T')[0] : null,
-      }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.recommendedMilestoneType) {
-          const recType = data.recommendedMilestoneType as 'schedule' | 'todo' | 'finance_source' | 'manual';
-          const reasonStr = data.reason || `Recommended for your ${goal.type} goal metrics.`;
-          setRecommendedType(recType);
-          setRecommendedReason(reasonStr);
-          localStorage.setItem(cacheKey, recType);
+    // Use fast local rule-based recommendation instead of firing AI request on page load
+    let recType: 'schedule' | 'todo' | 'finance_source' | 'manual' = 'schedule';
+    if (goal.type === 'finance') {
+      recType = 'finance_source';
+    } else if (goal.type === 'health') {
+      recType = 'schedule';
+    } else if (goal.type === 'learning' || goal.type === 'work' || goal.type === 'habit') {
+      recType = 'todo';
+    }
 
-          _updateGoal(goal.id!, {
-            recommendedMilestoneType: recType,
-            aiMilestoneReason: reasonStr,
-          }).catch((err) => console.warn('Failed to update goal recommendation in DB:', err));
-        }
-      })
-      .catch((err) => console.error('Error fetching milestone recommendation:', err));
-  }, [goal?.id, goal?.recommendedMilestoneType, goal?.aiMilestoneReason, goal?.title, goal?.type, goal?.subcategory, goal?.overallTargetUnit, goal?.unit, goal?.measurementType, goal?.overallTargetValue, goal?.dueDate, _updateGoal]);
+    const reasonStr = `Recommended for your ${goal.type || 'custom'} goal metrics.`;
+    setRecommendedType(recType);
+    setRecommendedReason(reasonStr);
+    localStorage.setItem(cacheKey, recType);
+  }, [goal?.id, goal?.recommendedMilestoneType, goal?.aiMilestoneReason, goal?.type]);
 
   const meta = useMemo(() => getTypeMeta(goal?.type), [goal]);
   const typeColor = meta.color;

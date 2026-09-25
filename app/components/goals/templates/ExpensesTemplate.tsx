@@ -22,8 +22,6 @@ import {
   Add as PlusIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
-  CheckCircle as CheckIcon,
-  RadioButtonUnchecked as CircleIcon,
   TrendingDown,
   CalendarToday as CalendarIcon,
   Close as CloseIcon,
@@ -111,8 +109,8 @@ function getFutureDateStr(daysAhead: number) {
 export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplateProps) {
   const currencyUnit = goal.overallTargetUnit || 'Rs';
   const { user } = useAuth();
-  const { addSchedule, editSchedule, removeSchedule } = useSchedules();
-  const { addTodo, updateTodo, deleteTodo } = useTodoContext();
+  const { allSchedules, addSchedule, editSchedule, removeSchedule } = useSchedules();
+  const { todos, addTodo, updateTodo, deleteTodo } = useTodoContext();
 
   // State for Expenses - Start empty if no saved expenseItems exist (no dummy data)
   const [expenses, setExpenses] = useState<ExpenseItem[]>(() => {
@@ -160,9 +158,72 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
   const [progressInputAmount, setProgressInputAmount] = useState<number | ''>('');
   const [savingProgress, setSavingProgress] = useState(false);
 
+  // Strategy Tasks State
+  const [actions, setActions] = useState<ExpenseActionItem[]>(() => {
+    if (Array.isArray(goal.actions)) return goal.actions as unknown as ExpenseActionItem[];
+    if (Array.isArray(goal.steps)) {
+      return (goal.steps as unknown as Array<Record<string, unknown>>).map((s, idx) => ({
+        id: String(s.id || `step_${idx}`),
+        task: String(s.task || s.title || ''),
+        done: Boolean(s.done || s.status === 'completed'),
+        assumedContributionValue: Number(s.assumedContributionValue || 0),
+        kind: (s.kind as 'schedule' | 'todo') || (s.linkedType as 'schedule' | 'todo') || undefined,
+        scheduleId: String(s.scheduleId || s.linkedItemId || ''),
+        todoId: String(s.todoId || ''),
+      }));
+    }
+    return [];
+  });
+  const [newStepInput, setNewStepInput] = useState('');
+
+  // Sync strategy tasks status in real time with allSchedules and todos
+  useEffect(() => {
+    const rawGoalActions = Array.isArray(goal.actions) ? (goal.actions as unknown as ExpenseActionItem[]) : [];
+    const baseActions = rawGoalActions.length > 0 ? rawGoalActions : actions;
+    let hasMismatch = false;
+
+    const synced = baseActions.map((act) => {
+      let updatedDone = act.done;
+      if (act.kind === 'schedule' && act.scheduleId) {
+        const sched = allSchedules.find((s) => s.id === act.scheduleId);
+        if (sched) {
+          const isComp = sched.status === 'completed';
+          if (isComp !== act.done) {
+            updatedDone = isComp;
+            hasMismatch = true;
+          }
+        }
+      } else if (act.kind === 'todo' && act.todoId) {
+        const td = todos.find((t) => t.id === act.todoId);
+        if (td) {
+          const isComp = td.status === 'completed';
+          if (isComp !== act.done) {
+            updatedDone = isComp;
+            hasMismatch = true;
+          }
+        }
+      }
+      return updatedDone !== act.done ? { ...act, done: updatedDone } : act;
+    });
+
+    if (hasMismatch || (synced.length !== actions.length && rawGoalActions.length > 0)) {
+      setActions(synced);
+    }
+  }, [goal.actions, allSchedules, todos, actions]);
+
+  const saveActionsList = async (updated: ExpenseActionItem[]) => {
+    setActions(updated);
+    if (goal.id) {
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, { actions: updated as unknown as Goal['actions'] });
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), { actions: updated });
+      }
+    }
+  };
+
   // Strategy Task Detail Modal State
   const [taskModalOpen, setTaskModalOpen] = useState(false);
-  const [activeExpenseId, setActiveExpenseId] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState<ExpenseActionItem | null>(null);
   const [taskEditText, setTaskEditText] = useState('');
   const [taskEditAssumedVal, setTaskEditAssumedVal] = useState<number | ''>('');
@@ -179,9 +240,6 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
   const [stepPromptItem, setStepPromptItem] = useState<{ itemId: string; step: ExpenseActionItem } | null>(null);
   const [stepPromptAmount, setStepPromptAmount] = useState<number | ''>('');
   const [savingStepPrompt, setSavingStepPrompt] = useState(false);
-
-  // Inline Step Form state for cards
-  const [newStepInputs, setNewStepInputs] = useState<Record<string, string>>({});
 
   // Totals & Calculations for Header Bar & Progress
   const totals = useMemo(() => {
@@ -424,99 +482,39 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
     }
   };
 
-  // Toggle Strategic Action Step completion
-  const handleToggleStepCompletion = async (itemId: string, step: ExpenseActionItem) => {
-    // If step has an assumed contribution amount and is NOT yet completed, prompt user for progress amount!
-    if (!step.done && step.assumedContributionValue && step.assumedContributionValue > 0) {
-      setStepPromptItem({ itemId, step });
-      setStepPromptAmount(step.assumedContributionValue);
-      return;
-    }
 
-    const newDone = !step.done;
 
-    // Sync status back to linked Schedule or Todo
-    if (step.scheduleId && editSchedule) {
-      editSchedule(step.scheduleId, { status: newDone ? 'completed' : 'pending' }).catch((err) => console.error(err));
-    }
-    if (step.todoId && updateTodo) {
-      updateTodo(step.todoId, { status: newDone ? 'completed' : 'in_progress' }).catch((err) => console.error(err));
-    }
+  // Add Strategic Action Step from inline row
+  const handleAddStep = async () => {
+    const text = newStepInput.trim();
+    if (!text) return;
 
-    // Direct toggle
-    const updated = expenses.map((item) => {
-      if (item.id === itemId) {
-        const newActions = (item.actions || []).map((s) =>
-          s.id === step.id ? { ...s, done: newDone } : s
-        );
-        return { ...item, actions: newActions };
-      }
-      return item;
-    });
-    await saveExpensesList(updated);
+    const newStep: ExpenseActionItem = {
+      id: 'step_' + Date.now(),
+      task: text,
+      done: false,
+    };
+    const updated = [...actions, newStep];
+    await saveActionsList(updated);
+    setNewStepInput('');
   };
 
-  // Confirm Step Completion with Financial Progress Amount
-  const handleConfirmStepPrompt = async (applyReduction: boolean) => {
-    if (!stepPromptItem) return;
-    setSavingStepPrompt(true);
-
-    try {
-      const { itemId, step } = stepPromptItem;
-      const reductionAmt = applyReduction && typeof stepPromptAmount === 'number' && stepPromptAmount > 0
-        ? stepPromptAmount
-        : 0;
-
-      // Sync status back to linked Schedule or Todo
-      if (step.scheduleId && editSchedule) {
-        editSchedule(step.scheduleId, { status: 'completed' }).catch((err) => console.error(err));
-      }
-      if (step.todoId && updateTodo) {
-        updateTodo(step.todoId, { status: 'completed' }).catch((err) => console.error(err));
-      }
-
-      const updated = expenses.map((item) => {
-        if (item.id === itemId) {
-          const initVal = item.initialValue || item.currentValue;
-          const newCurrent = Math.max(0, item.currentValue - reductionAmt);
-          const pct = initVal > 0 ? Math.max(0, Math.min(100, Math.round(((initVal - newCurrent) / initVal) * 100))) : 0;
-          const newHistory = reductionAmt > 0
-            ? [...(item.history || [initVal]), newCurrent]
-            : item.history;
-
-          const newActions = (item.actions || []).map((s) =>
-            s.id === step.id ? { ...s, done: true } : s
-          );
-
-          return {
-            ...item,
-            initialValue: initVal,
-            currentValue: newCurrent,
-            reductionPercent: pct,
-            history: newHistory,
-            actions: newActions,
-          };
-        }
-        return item;
-      });
-
-      await saveExpensesList(updated);
-      setStepPromptDialogOpen(false);
-      setStepPromptItem(null);
-    } catch (err) {
-      console.error('Failed to confirm step prompt:', err);
-    } finally {
-      setSavingStepPrompt(false);
+  // Delete Action Step inline
+  const handleDeleteStep = async (stepId: string) => {
+    const step = actions.find((s) => s.id === stepId);
+    if (step?.scheduleId && removeSchedule) {
+      await removeSchedule(step.scheduleId, true).catch((err) => console.error(err));
     }
-  };
+    if (step?.todoId && deleteTodo) {
+      await deleteTodo(step.todoId, true).catch((err) => console.error(err));
+    }
 
-  const setStepPromptDialogOpen = (open: boolean) => {
-    if (!open) setStepPromptItem(null);
+    const updated = actions.filter((s) => s.id !== stepId);
+    await saveActionsList(updated);
   };
 
   // Open Task Detail Dialog for Strategy Step
-  const handleOpenTaskDetailModal = (itemId: string, step: ExpenseActionItem) => {
-    setActiveExpenseId(itemId);
+  const handleOpenTaskDetailModal = (step: ExpenseActionItem) => {
     setActiveStep(step);
     setTaskEditText(step.task);
     setTaskEditAssumedVal(step.assumedContributionValue || '');
@@ -535,7 +533,7 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
 
   // Save Task Edit / Convert to Schedule or Todo
   const handleSaveTaskDetail = async () => {
-    if (!activeExpenseId || !activeStep || !taskEditText.trim()) return;
+    if (!activeStep || !taskEditText.trim()) return;
     setSavingTaskEdit(true);
 
     try {
@@ -545,7 +543,6 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
       const targetDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
 
       if (taskEditKind === 'schedule') {
-        // If converting from todo to schedule, force remove old todo
         if (updatedTodoId && deleteTodo) {
           await deleteTodo(updatedTodoId, true).catch((err) => console.error(err));
           updatedTodoId = undefined;
@@ -577,7 +574,6 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
           });
         }
       } else if (taskEditKind === 'todo') {
-        // If converting from schedule to todo, force remove old schedule
         if (updatedScheduleId && removeSchedule) {
           await removeSchedule(updatedScheduleId, true).catch((err) => console.error(err));
           updatedScheduleId = undefined;
@@ -611,7 +607,6 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
           });
         }
       } else {
-        // 'none': unlinking both schedule and todo
         if (updatedScheduleId && removeSchedule) {
           await removeSchedule(updatedScheduleId, true).catch((err) => console.error(err));
           updatedScheduleId = undefined;
@@ -622,33 +617,26 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
         }
       }
 
-      const updated = expenses.map((item) => {
-        if (item.id === activeExpenseId) {
-          const newActions = (item.actions || []).map((s) => {
-            if (s.id === activeStep.id) {
-              return {
-                ...s,
-                task: taskEditText.trim(),
-                kind: taskEditKind === 'none' ? undefined : taskEditKind,
-                dueDate: targetDate,
-                time: taskEditKind === 'schedule' ? taskEditStartTime : taskEditTodoTime,
-                assumedContributionValue: Number(taskEditAssumedVal) || 0,
-                scheduleId: updatedScheduleId,
-                todoId: updatedTodoId,
-                assignee: taskEditAssignee.trim() || undefined,
-              };
-            }
-            return s;
-          });
-          return { ...item, actions: newActions };
+      const updated = actions.map((s) => {
+        if (s.id === activeStep.id) {
+          return {
+            ...s,
+            task: taskEditText.trim(),
+            kind: taskEditKind === 'none' ? undefined : taskEditKind,
+            dueDate: targetDate,
+            time: taskEditKind === 'schedule' ? taskEditStartTime : taskEditTodoTime,
+            assumedContributionValue: Number(taskEditAssumedVal) || 0,
+            scheduleId: updatedScheduleId,
+            todoId: updatedTodoId,
+            assignee: taskEditAssignee.trim() || undefined,
+          };
         }
-        return item;
+        return s;
       });
 
-      await saveExpensesList(updated);
+      await saveActionsList(updated);
       setTaskModalOpen(false);
       setActiveStep(null);
-      setActiveExpenseId(null);
     } catch (err) {
       console.error('Failed to save task details:', err);
     } finally {
@@ -658,7 +646,7 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
 
   // Delete Action Step from Modal
   const handleDeleteTaskFromModal = async () => {
-    if (!activeExpenseId || !activeStep) return;
+    if (!activeStep) return;
     setSavingTaskEdit(true);
 
     try {
@@ -669,18 +657,10 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
         await deleteTodo(activeStep.todoId, true).catch((err) => console.error(err));
       }
 
-      const updated = expenses.map((item) => {
-        if (item.id === activeExpenseId) {
-          const newActions = (item.actions || []).filter((s) => s.id !== activeStep.id);
-          return { ...item, actions: newActions };
-        }
-        return item;
-      });
-
-      await saveExpensesList(updated);
+      const updated = actions.filter((s) => s.id !== activeStep.id);
+      await saveActionsList(updated);
       setTaskModalOpen(false);
       setActiveStep(null);
-      setActiveExpenseId(null);
     } catch (err) {
       console.error('Failed to delete task step:', err);
     } finally {
@@ -688,46 +668,50 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
     }
   };
 
-  // Add Strategic Action Step from inline row
-  const handleAddStep = async (itemId: string) => {
-    const text = (newStepInputs[itemId] || '').trim();
-    if (!text) return;
+  // Toggle Strategic Action Step completion
+  const handleToggleStepCompletion = async (step: ExpenseActionItem) => {
+    if (!step.done && step.assumedContributionValue && step.assumedContributionValue > 0) {
+      setStepPromptItem({ itemId: '', step });
+      setStepPromptAmount(step.assumedContributionValue);
+      return;
+    }
 
-    const updated = expenses.map((item) => {
-      if (item.id === itemId) {
-        const newStep: ExpenseActionItem = {
-          id: 'step_' + Date.now(),
-          task: text,
-          done: false,
-        };
-        return { ...item, actions: [...(item.actions || []), newStep] };
-      }
-      return item;
-    });
+    const newDone = !step.done;
 
-    await saveExpensesList(updated);
-    setNewStepInputs((prev) => ({ ...prev, [itemId]: '' }));
+    if (step.scheduleId && editSchedule) {
+      editSchedule(step.scheduleId, { status: newDone ? 'completed' : 'pending' }).catch((err) => console.error(err));
+    }
+    if (step.todoId && updateTodo) {
+      updateTodo(step.todoId, { status: newDone ? 'completed' : 'in_progress' }).catch((err) => console.error(err));
+    }
+
+    const updated = actions.map((s) => (s.id === step.id ? { ...s, done: newDone } : s));
+    await saveActionsList(updated);
   };
 
-  // Delete Action Step inline
-  const handleDeleteStep = async (itemId: string, stepId: string) => {
-    const item = expenses.find((e) => e.id === itemId);
-    const step = item?.actions?.find((s) => s.id === stepId);
-    if (step?.scheduleId && removeSchedule) {
-      await removeSchedule(step.scheduleId, true).catch((err) => console.error(err));
-    }
-    if (step?.todoId && deleteTodo) {
-      await deleteTodo(step.todoId, true).catch((err) => console.error(err));
-    }
+  // Confirm Step Completion with Financial Progress Amount
+  const handleConfirmStepPrompt = async (_applyReduction: boolean) => {
+    if (!stepPromptItem) return;
+    setSavingStepPrompt(true);
 
-    const updated = expenses.map((item) => {
-      if (item.id === itemId) {
-        const newActions = (item.actions || []).filter((s) => s.id !== stepId);
-        return { ...item, actions: newActions };
+    try {
+      const { step } = stepPromptItem;
+      if (step.scheduleId && editSchedule) {
+        editSchedule(step.scheduleId, { status: 'completed' }).catch((err) => console.error(err));
       }
-      return item;
-    });
-    await saveExpensesList(updated);
+      if (step.todoId && updateTodo) {
+        updateTodo(step.todoId, { status: 'completed' }).catch((err) => console.error(err));
+      }
+
+      const updated = actions.map((s) => (s.id === step.id ? { ...s, done: true } : s));
+      await saveActionsList(updated);
+
+      setStepPromptItem(null);
+    } catch (err) {
+      console.error('Failed to confirm step prompt:', err);
+    } finally {
+      setSavingStepPrompt(false);
+    }
   };
 
   // Dialog Live Computations
@@ -828,8 +812,6 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
           </div>
         ) : (
           sortedExpenses.map((item) => {
-            const steps = item.actions || [];
-            const doneSteps = steps.filter((s) => s.done).length;
             const initVal = item.initialValue || item.currentValue;
             const itemProgress = getExpenseItemProgress(item);
 
@@ -946,94 +928,6 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
                   </div>
                 </div>
 
-                {/* ── Strategy Tasks Section ── */}
-                <div className="mb-4 pt-3 border-t border-slate-100 dark:border-white/5">
-                  <div className="flex items-center justify-between mb-2.5">
-                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Strategy & Action Steps
-                    </p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-                      {doneSteps}/{steps.length} done
-                    </p>
-                  </div>
-
-                  {steps.length > 0 && (
-                    <div className="space-y-1.5 mb-2.5">
-                      {steps.map((step) => (
-                        <div
-                          key={step.id}
-                          className="w-full flex items-center justify-between gap-2.5 rounded-xl px-3 py-2 text-left bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors"
-                        >
-                          {/* Checkbox Icon ONLY toggles status */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleStepCompletion(item.id, step)}
-                            aria-label="Toggle completion"
-                            className="shrink-0 text-slate-400 hover:text-teal-500 transition-colors"
-                          >
-                            {step.done ? (
-                              <CheckIcon className="text-emerald-500 dark:text-emerald-400 shrink-0" sx={{ fontSize: 18 }} />
-                            ) : (
-                              <CircleIcon className="text-slate-300 dark:text-slate-600 shrink-0" sx={{ fontSize: 18 }} />
-                            )}
-                          </button>
-
-                          {/* Task Text Click opens Task Details Dialog */}
-                          <div
-                            onClick={() => handleOpenTaskDetailModal(item.id, step)}
-                            className="flex-1 min-w-0 cursor-pointer flex items-center justify-between gap-2"
-                          >
-                            <span
-                              className={`text-sm truncate hover:underline ${
-                                step.done ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200 font-medium'
-                              }`}
-                            >
-                              {step.task}
-                            </span>
-                            {step.kind === 'schedule' && step.scheduleId ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold shrink-0">
-                                🗓 Schedule
-                              </span>
-                            ) : step.kind === 'todo' && step.todoId ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold shrink-0">
-                                📋 Todo
-                              </span>
-                            ) : null}
-                          </div>
-
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDeleteStep(item.id, step.id)}
-                            className="text-slate-300 hover:text-rose-500 opacity-60 hover:opacity-100 transition-opacity shrink-0"
-                          >
-                            <DeleteIcon sx={{ fontSize: 15 }} />
-                          </IconButton>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Add New Step Input */}
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="text"
-                      placeholder="Add a strategy step..."
-                      value={newStepInputs[item.id] || ''}
-                      onChange={(e) => setNewStepInputs((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleAddStep(item.id);
-                      }}
-                      className="flex-1 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-teal-500"
-                    />
-                    <button
-                      onClick={() => handleAddStep(item.id)}
-                      className="px-3 py-1.5 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-semibold hover:bg-teal-500/20 transition-colors"
-                    >
-                      + Add
-                    </button>
-                  </div>
-                </div>
-
                 {/* Next Check-in Box */}
                 <div className="flex items-center justify-between rounded-2xl border border-teal-200 dark:border-teal-400/20 bg-teal-50 dark:bg-teal-400/10 px-3.5 py-2.5">
                   <div className="flex items-center gap-2.5">
@@ -1050,6 +944,125 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
               </div>
             );
           }))}
+      </div>
+
+      {/* ── Line Separator & Strategy Tasks Section ── */}
+      <div className="max-w-2xl mx-auto mt-6 pt-6 border-t border-slate-200 dark:border-white/10 space-y-4">
+        <div className="flex items-center justify-between px-0.5">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wide">
+              🎯 Strategy Tasks ({actions.length})
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Action steps & habits to reduce your expenses
+            </p>
+          </div>
+        </div>
+
+        {/* Strategic Tasks List */}
+        <div className="space-y-2">
+          {actions.map((step) => {
+            const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
+            const hasLink = kind === 'schedule' || kind === 'todo';
+
+            return (
+              <div
+                key={step.id}
+                onClick={() => handleOpenTaskDetailModal(step)}
+                className="group flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-500 shadow-sm"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStepCompletion(step);
+                    }}
+                    className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
+                      step.done
+                        ? 'bg-teal-500 border-teal-500 text-white'
+                        : 'border-slate-300 dark:border-slate-600 hover:border-teal-400'
+                    }`}
+                  >
+                    {step.done && (
+                      <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
+                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+
+                  <span
+                    className={`text-sm font-semibold truncate ${
+                      step.done
+                        ? 'line-through text-slate-400 dark:text-slate-500'
+                        : 'text-slate-800 dark:text-slate-100'
+                    }`}
+                  >
+                    {step.task}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {step.assumedContributionValue ? (
+                    <span className="text-[11px] font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/20 px-2 py-0.5 rounded-full">
+                      +{currencyUnit} {step.assumedContributionValue}
+                    </span>
+                  ) : null}
+
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
+                      hasLink
+                        ? kind === 'schedule'
+                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
+                          : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {kind === 'schedule'
+                      ? '🗓 Schedule'
+                      : kind === 'todo'
+                      ? '✅ Todo'
+                      : 'Add to Schedule/Todo →'}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteStep(step.id);
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                    title="Delete step"
+                  >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Inline Add Strategic Action Step Input */}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="+ Quickly add a strategy task…"
+            value={newStepInput}
+            onChange={(e) => setNewStepInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAddStep();
+            }}
+            className="flex-1 text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-teal-400 dark:focus:border-teal-500"
+          />
+          <button
+            type="button"
+            onClick={handleAddStep}
+            disabled={!newStepInput.trim()}
+            className="px-3.5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm"
+          >
+            Add Task
+          </button>
+        </div>
       </div>
 
       {/* ── Add / Edit Expense Dialog (Height Responsive & Scrollable) ── */}
@@ -1810,7 +1823,7 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
       {/* ── Prompt Dialog for Strategy Step Completion with Assumed Amount ── */}
       <Dialog
         open={Boolean(stepPromptItem)}
-        onClose={() => setStepPromptDialogOpen(false)}
+        onClose={() => setStepPromptItem(null)}
         maxWidth="xs"
         fullWidth
       >
