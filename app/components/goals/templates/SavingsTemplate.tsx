@@ -5,7 +5,6 @@ import {
   Box,
   Typography,
   Button,
-  Chip,
   IconButton,
   TextField,
   Dialog,
@@ -24,14 +23,12 @@ import {
   Add as AddIcon,
   ArrowDownward,
   ArrowUpward,
-  CalendarMonth,
   Checklist as TodoIcon,
   Delete as DeleteIcon,
   AccessTime as ClockIcon,
   MonetizationOn,
   LinkOff,
   Schedule as ScheduleIcon,
-  Edit as EditIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -40,6 +37,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc, collection, addDoc, Timestamp, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import TargetDateCard from '../TargetDateCard';
 
 export interface Transaction {
   date: string;
@@ -188,6 +186,37 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
   });
   const [freqSettingsOpen, setFreqSettingsOpen] = useState(false);
 
+  // Target Date Dialog State
+  const [targetDateDialogOpen, setTargetDateDialogOpen] = useState(false);
+  const [targetDateInput, setTargetDateInput] = useState(() => {
+    return targetDate ? targetDate.toISOString().split('T')[0] : '';
+  });
+  const [savingTargetDate, setSavingTargetDate] = useState(false);
+
+  const handleOpenTargetDateDialog = () => {
+    setTargetDateInput(targetDate ? targetDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    setTargetDateDialogOpen(true);
+  };
+
+  const handleSaveTargetDate = async () => {
+    if (!targetDateInput || !goal.id) return;
+    setSavingTargetDate(true);
+    try {
+      const newDate = new Date(targetDateInput);
+      const payload = { dueDate: Timestamp.fromDate(newDate) };
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, payload);
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), payload);
+      }
+      setTargetDateDialogOpen(false);
+    } catch (err) {
+      console.error('Failed to update target date:', err);
+    } finally {
+      setSavingTargetDate(false);
+    }
+  };
+
   // Completion Prompt Dialog for Strategy Steps
   const [stepPromptItem, setStepPromptItem] = useState<SavingsActionItem | null>(null);
   const [stepPromptAmount, setStepPromptAmount] = useState<number | ''>('');
@@ -267,7 +296,7 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
     return Math.max(0, Math.min(100, Math.round((totalSaved / targetValue) * 100)));
   }, [totalSaved, targetValue]);
 
-  const timeInfo = useMemo(() => {
+  const _timeInfo = useMemo(() => {
     if (!targetDate) return null;
     const now = new Date();
     const daysLeft = daysBetween(now, new Date(targetDate));
@@ -869,6 +898,16 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
         </Box>
       )}
 
+      {/* 🌟 Target Date Card */}
+      <TargetDateCard
+        goalTitle={goal.title}
+        targetDate={targetDate}
+        startDate={startDate}
+        onUpdateProgress={handleOpenProgressModal}
+        onSetTargetDate={handleOpenTargetDateDialog}
+        category="finance"
+      />
+
       {/* 🌟 1. HERO TARGET CARD */}
       <Box
         sx={{
@@ -895,90 +934,6 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
             pointerEvents: 'none',
           }}
         />
-
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-          <Typography sx={{ fontSize: 22, fontWeight: 800, color: textPrimary, letterSpacing: '-0.02em' }}>
-            {goal.title}
-          </Typography>
-
-          {/* Update Progress Button */}
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={handleOpenProgressModal}
-            startIcon={<EditIcon sx={{ fontSize: 15 }} />}
-            sx={{
-              borderRadius: '12px',
-              textTransform: 'none',
-              fontWeight: 700,
-              fontSize: 12,
-              borderColor: '#10b981',
-              color: '#10b981',
-              '&:hover': { bgcolor: isDark ? 'rgba(16,185,129,0.1)' : '#ecfdf5', borderColor: '#059669' },
-            }}
-          >
-            Update Progress
-          </Button>
-        </Box>
-
-        {/* Prominent Target Date Banner */}
-        {targetDate && (
-          <Box
-            sx={{
-              mt: 2,
-              p: 2,
-              borderRadius: '20px',
-              bgcolor: isDark ? 'rgba(15,23,42,0.6)' : '#f0fdf4',
-              border: `1px solid ${isDark ? '#064e3b' : '#bbf7d0'}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 1.5,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Box
-                sx={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: '14px',
-                  bgcolor: '#10b981',
-                  color: '#ffffff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
-                }}
-              >
-                <CalendarMonth sx={{ fontSize: 24 }} />
-              </Box>
-              <Box>
-                <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '.06em' }}>
-                  Target Date
-                </Typography>
-                <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary }}>
-                  {formatDate(targetDate)}
-                </Typography>
-              </Box>
-            </Box>
-
-            {timeInfo && (
-              <Chip
-                label={timeInfo.daysLeft >= 0 ? `⏳ ${timeInfo.daysLeft} Days Remaining` : '⚠️ Past Due'}
-                sx={{
-                  bgcolor: timeInfo.daysLeft >= 0 ? (isDark ? '#064e3b' : '#ecfdf5') : '#fef2f2',
-                  color: timeInfo.daysLeft >= 0 ? '#10b981' : '#ef4444',
-                  fontWeight: 800,
-                  fontSize: 12,
-                  py: 0.5,
-                  height: 32,
-                  borderRadius: '12px',
-                }}
-              />
-            )}
-          </Box>
-        )}
 
         {/* Current Deposited Total & + Add Money Button */}
         <Box sx={{ mt: 3, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
@@ -1874,6 +1829,42 @@ export default function SavingsTemplate({ goal, onUpdateGoal }: SavingsTemplateP
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setFreqSettingsOpen(false)}>Done</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Target Date Dialog */}
+      <Dialog
+        open={targetDateDialogOpen}
+        onClose={() => setTargetDateDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: '20px' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>Set / Update Target Date 📅</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose a target date for your savings goal to keep track of time elapsed and stay on schedule.
+          </Typography>
+          <TextField
+            type="date"
+            fullWidth
+            size="small"
+            value={targetDateInput}
+            onChange={(e) => setTargetDateInput(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            label="Target Date"
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setTargetDateDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveTargetDate}
+            disabled={savingTargetDate || !targetDateInput}
+            sx={{ bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' }, fontWeight: 800, textTransform: 'none' }}
+          >
+            {savingTargetDate ? <CircularProgress size={20} color="inherit" /> : 'Save Target Date'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

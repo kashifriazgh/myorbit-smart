@@ -46,6 +46,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import TargetDateCard from '../TargetDateCard';
 
 export interface DebtCheckIn {
   id: string;
@@ -145,6 +146,41 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
   const rawUnit = goal.overallTargetUnit || answers.currency || 'PKR';
   const currency = String(rawUnit === 'units' ? 'PKR' : rawUnit);
 
+  // Target Date computation
+  const targetDate = useMemo(() => {
+    return toPlainDate(goal.dueDate) || (answers.target_date ? toPlainDate(answers.target_date) : null);
+  }, [goal.dueDate, answers.target_date]);
+
+  const startDate = useMemo(() => toPlainDate(goal.createdAt), [goal.createdAt]);
+
+  const [targetDateDialogOpen, setTargetDateDialogOpen] = useState(false);
+  const [targetDateInput, setTargetDateInput] = useState('');
+  const [savingTargetDate, setSavingTargetDate] = useState(false);
+
+  const handleOpenTargetDateDialog = () => {
+    setTargetDateInput(targetDate ? targetDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    setTargetDateDialogOpen(true);
+  };
+
+  const handleSaveTargetDate = async () => {
+    if (!targetDateInput || !goal.id) return;
+    setSavingTargetDate(true);
+    try {
+      const newDate = new Date(targetDateInput);
+      const payload = { dueDate: Timestamp.fromDate(newDate) };
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, payload);
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), payload);
+      }
+      setTargetDateDialogOpen(false);
+    } catch (err) {
+      console.error('Failed to update target date:', err);
+    } finally {
+      setSavingTargetDate(false);
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [debtItems, setDebtItems] = useState<UnifiedDebtItem[]>([]);
   const [allUserLoans, setAllUserLoans] = useState<UnifiedDebtItem[]>([]);
@@ -192,6 +228,9 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
   const [progressDialogOpen, setProgressDialogOpen] = useState(false);
   const [progressInputAmount, setProgressInputAmount] = useState<number | ''>('');
   const [savingProgress, setSavingProgress] = useState(false);
+
+  // Accordion open state for debt cards
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
 
   // Fetch loans from Firestore `loans` collection
   const fetchLoans = useCallback(async () => {
@@ -521,7 +560,8 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
     }
   };
 
-  // Open Log / Update Progress Modal for Debt Goal
+  // Open Log / Update Progress Modal for Debt Goal (kept for dialog reachability)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleOpenProgressModal = () => {
     const totalCleared = debtItems.reduce((sum, r) => sum + r.paidAmount, 0);
     setProgressInputAmount(totalCleared);
@@ -762,6 +802,16 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
 
   return (
     <Box sx={{ width: '100%' }}>
+      {/* 🌟 Target Date Card */}
+      <TargetDateCard
+        goalTitle={goal.title}
+        targetDate={targetDate}
+        startDate={startDate}
+        hideUpdateProgress
+        onSetTargetDate={handleOpenTargetDateDialog}
+        category="finance"
+      />
+
       {/* ── 1. Top Summary Banner Card ── */}
       <Box
         sx={{
@@ -778,142 +828,90 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
           <Box>
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-              Manage Debt & Borrowed Loans
+              Borrowed Loans — Repayment Plan
             </Typography>
             <Typography sx={{ fontSize: 22, fontWeight: 800, color: textPrimary, mt: 0.5 }}>
               {goal.title}
             </Typography>
+            <Typography sx={{ fontSize: 12.5, color: textMuted, mt: 0.25 }}>
+              {formatMoney(totals.totalBorrowCleared, currency)} repaid of{' '}
+              <strong style={{ color: textPrimary }}>{formatMoney(totals.totalBorrowTarget, currency)}</strong>
+            </Typography>
           </Box>
 
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Chip
-              label={`${totals.meanProgress}% Settled`}
-              size="small"
-              sx={{
-                bgcolor: 'rgba(16, 185, 129, 0.15)',
-                color: '#10b981',
-                fontWeight: 800,
-                fontSize: 12,
-                px: 0.5,
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                borderRadius: '12px',
-              }}
-            />
-
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={handleOpenProgressModal}
-              startIcon={<EditIcon sx={{ fontSize: 15 }} />}
-              sx={{
-                borderRadius: '12px',
-                textTransform: 'none',
-                fontWeight: 700,
-                fontSize: 12,
-                borderColor: '#10b981',
-                color: '#10b981',
-                bgcolor: surfaceBg,
-                '&:hover': { bgcolor: isDark ? 'rgba(16,185,129,0.1)' : '#ecfdf5', borderColor: '#059669' },
-              }}
-            >
-              Update Progress
-            </Button>
-          </Stack>
-        </Box>
-
-        {/* Breakdown Grid (Payback vs Recoverable) */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 3 }}>
-          <Box sx={{ p: 2, borderRadius: '18px', bgcolor: isDark ? '#450a0a' : '#fef2f2', border: '1px solid rgba(239,68,68,0.2)' }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#ef4444', textTransform: 'uppercase' }}>
-              You Owe (Borrowed Loans)
-            </Typography>
-            <Typography sx={{ fontSize: 22, fontWeight: 900, color: '#ef4444', fontFamily: 'monospace', mt: 0.5 }}>
+          <Box sx={{ textAlign: 'right' }}>
+            <Typography sx={{ fontSize: 32, fontWeight: 900, color: '#ef4444', fontFamily: 'monospace', lineHeight: 1 }}>
               {formatMoney(totals.totalBorrowRemaining, currency)}
             </Typography>
-            <Typography sx={{ fontSize: 10.5, color: textMuted, mt: 0.3 }}>
-              {formatMoney(totals.totalBorrowCleared, currency)} cleared of {formatMoney(totals.totalBorrowTarget, currency)}
-            </Typography>
-          </Box>
-
-          <Box sx={{ p: 2, borderRadius: '18px', bgcolor: isDark ? '#064e3b' : '#ecfdf5', border: '1px solid rgba(16,185,129,0.2)' }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>
-              Owed to You (Lended Loans)
-            </Typography>
-            <Typography sx={{ fontSize: 22, fontWeight: 900, color: '#10b981', fontFamily: 'monospace', mt: 0.5 }}>
-              {formatMoney(totals.totalLendRemaining, currency)}
-            </Typography>
-            <Typography sx={{ fontSize: 10.5, color: textMuted, mt: 0.3 }}>
-              {formatMoney(totals.totalLendCleared, currency)} collected of {formatMoney(totals.totalLendTarget, currency)}
-            </Typography>
+            <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.4 }}>still to repay</Typography>
           </Box>
         </Box>
 
-        {/* Overall Mean Progress Bar */}
-        <Box sx={{ mt: 2.5, height: 8, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
-          <Box
-            sx={{
-              height: '100%',
-              width: `${totals.meanProgress}%`,
-              background: 'linear-gradient(90deg, #ef4444 0%, #10b981 100%)',
-              borderRadius: 99,
-              transition: 'width 0.6s ease',
-            }}
-          />
-        </Box>
-
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5, fontSize: 12, color: textMuted }}>
-          <span>Overall Mean Debt Settlement Progress</span>
-          <span style={{ fontWeight: 700, color: '#10b981' }}>{totals.meanProgress}% Cleared</span>
+        {/* Overall Progress Bar */}
+        <Box sx={{ mt: 2.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted }}>Overall Repayment Progress</Typography>
+            <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#10b981' }}>{totals.meanProgress}% Settled</Typography>
+          </Box>
+          <Box sx={{ height: 8, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
+            <Box
+              sx={{
+                height: '100%',
+                width: `${totals.meanProgress}%`,
+                background: 'linear-gradient(90deg, #ef4444 0%, #10b981 100%)',
+                borderRadius: 99,
+                transition: 'width 0.6s ease',
+              }}
+            />
+          </Box>
         </Box>
       </Box>
 
-      {/* ── 2. Borrowed / Payback Debts Section (Shown at Top) ── */}
+      {/* ── 2. Borrowed Loans Section ── */}
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
           <Typography sx={{ fontSize: 12, fontWeight: 800, color: textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-            💸 Borrowed Debts — You Owe ({borrowRecords.length})
+            Loans ({borrowRecords.length + lendRecords.length})
           </Typography>
-          {borrowRecords.length > 0 && (
-            <Stack direction="row" spacing={1}>
-              <Button
-                size="small"
-                onClick={handleOpenPicker}
-                startIcon={<LinkIcon sx={{ fontSize: 16 }} />}
-                sx={{
-                  textTransform: 'none',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: '#3b82f6',
-                  border: '1px solid #bfdbfe',
-                  bgcolor: 'rgba(59, 130, 246, 0.08)',
-                  borderRadius: '10px',
-                  px: 1.5,
-                  py: 0.6,
-                  '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.16)' },
-                }}
-              >
-                Select Existing Loans
-              </Button>
-              <Button
-                size="small"
-                onClick={() => handleOpenModal()}
-                startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-                sx={{
-                  textTransform: 'none',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  color: '#ffffff',
-                  bgcolor: '#ef4444',
-                  borderRadius: '10px',
-                  px: 2,
-                  py: 0.6,
-                  '&:hover': { bgcolor: '#dc2626' },
-                }}
-              >
-                + Create Debt Account
-              </Button>
-            </Stack>
-          )}
+          <Stack direction="row" spacing={1}>
+            <Button
+              size="small"
+              onClick={handleOpenPicker}
+              startIcon={<LinkIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                textTransform: 'none',
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#3b82f6',
+                border: '1px solid #bfdbfe',
+                bgcolor: 'rgba(59, 130, 246, 0.08)',
+                borderRadius: '10px',
+                px: 1.5,
+                py: 0.6,
+                '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.16)' },
+              }}
+            >
+              Select Loans
+            </Button>
+            <Button
+              size="small"
+              onClick={() => handleOpenModal()}
+              startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                textTransform: 'none',
+                fontSize: 12,
+                fontWeight: 800,
+                color: '#ffffff',
+                bgcolor: '#ef4444',
+                borderRadius: '10px',
+                px: 2,
+                py: 0.6,
+                '&:hover': { bgcolor: '#dc2626' },
+              }}
+            >
+              + Add Loan
+            </Button>
+          </Stack>
         </Box>
 
         {loading ? (
@@ -972,133 +970,138 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
             </Stack>
           </Box>
         ) : (
-          <Stack spacing={2.5}>
-            {borrowRecords.map((r) => {
+          <Stack spacing={2}>
+            {[...borrowRecords, ...lendRecords].map((r) => {
               const remaining = Math.max(0, r.amount - r.paidAmount);
               const prog = calculateDebtProgress(r);
               const daysLeft = daysUntil(r.dueDate);
+              const isOpen = openCardId === r.id;
+              const accentColor = r.type === 'borrow' ? '#ef4444' : '#10b981';
+              const borderColor = r.type === 'borrow'
+                ? (isDark ? 'rgba(239,68,68,0.3)' : '#fecdd3')
+                : (isDark ? 'rgba(16,185,129,0.3)' : '#bbf7d0');
+              const fillPct = Math.max(0, Math.min(100, (r.paidAmount / Math.max(r.amount, 1)) * 100));
 
               return (
                 <Box
                   key={r.id}
                   sx={{
-                    borderRadius: '22px',
-                    border: `1.5px solid ${isDark ? 'rgba(239,68,68,0.3)' : '#fecdd3'}`,
+                    borderRadius: '20px',
+                    border: `1.5px solid ${isOpen ? accentColor : borderColor}`,
                     bgcolor: surfaceBg,
-                    p: 2.5,
-                    boxShadow: isDark ? '0 4px 16px rgba(0,0,0,0.25)' : '0 4px 16px rgba(239,68,68,0.04)',
+                    overflow: 'hidden',
+                    boxShadow: isDark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 10px rgba(0,0,0,0.04)',
+                    transition: 'border-color 0.2s ease',
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 42,
-                          height: 42,
-                          borderRadius: '14px',
-                          bgcolor: 'rgba(239, 68, 68, 0.15)',
-                          color: '#ef4444',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <PersonIcon sx={{ fontSize: 22 }} />
+                  {/* ── Always-visible header row ── */}
+                  <Box
+                    onClick={() => setOpenCardId(isOpen ? null : r.id)}
+                    sx={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 2, px: 2.5, py: 2, cursor: 'pointer',
+                      '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)' },
+                      userSelect: 'none',
+                    }}
+                  >
+                    {/* Left: icon + name */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                      <Box sx={{
+                        width: 38, height: 38, borderRadius: '12px', flexShrink: 0,
+                        bgcolor: r.type === 'borrow' ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)',
+                        color: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <PersonIcon sx={{ fontSize: 20 }} />
                       </Box>
-                      <Box>
-                        <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary }}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary, lineHeight: 1.2 }} noWrap>
                           {r.counterparty}
                         </Typography>
-                        <Typography sx={{ fontSize: 11.5, color: textMuted }}>
-                          Borrowed Loan
+                        <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.2 }}>
+                          {r.type === 'borrow' ? 'Due ' : 'Collect by '}{formatDate(r.dueDate)}
                         </Typography>
                       </Box>
                     </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Chip
-                        label={prog >= 100 ? 'Paid Off' : 'You Owe (Borrow)'}
-                        size="small"
-                        sx={{
-                          fontSize: 11,
-                          fontWeight: 800,
-                          bgcolor: prog >= 100 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                          color: prog >= 100 ? '#10b981' : '#ef4444',
-                          border: `1px solid ${prog >= 100 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                        }}
-                      />
-                      <IconButton size="small" onClick={() => handleOpenModal(r)}>
-                        <EditIcon sx={{ fontSize: 17, color: textMuted }} />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        title="Unlink from goal"
-                        onClick={() => handleUnlinkRecord(r.id)}
-                        sx={{ color: textMuted }}
+                    {/* Right: amount + progress chip + chevron */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, shrink: 0 }}>
+                      <Box sx={{ textAlign: 'right' }}>
+                        <Typography sx={{ fontSize: 16, fontWeight: 900, color: accentColor, fontFamily: 'monospace', lineHeight: 1 }}>
+                          {formatMoney(remaining, currency)}
+                        </Typography>
+                        <Typography sx={{ fontSize: 10, color: textMuted, mt: 0.2 }}>{prog}% done</Typography>
+                      </Box>
+                      {/* Chevron */}
+                      <svg
+                        viewBox="0 0 24 24" fill="none"
+                        style={{ width: 18, height: 18, color: textMuted, transition: 'transform 0.25s ease', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink: 0 }}
                       >
-                        <LinkOffIcon sx={{ fontSize: 17 }} />
-                      </IconButton>
+                        <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </Box>
                   </Box>
 
-                  <Box sx={{ mt: 2.5, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                      <Typography sx={{ fontSize: 26, fontWeight: 900, color: '#ef4444', fontFamily: 'monospace' }}>
-                        {formatMoney(remaining, currency)}
-                      </Typography>
-                      <Typography sx={{ fontSize: 12, color: textMuted }}>
-                        remaining (cleared {formatMoney(r.paidAmount, currency)} of {formatMoney(r.amount, currency)})
-                      </Typography>
+                  {/* Inline mini progress bar — always visible */}
+                  <Box sx={{ height: 4, bgcolor: isDark ? '#334155' : '#e2e8f0' }}>
+                    <Box sx={{
+                      height: '100%',
+                      width: `${fillPct}%`,
+                      bgcolor: prog >= 100 ? '#10b981' : accentColor,
+                      transition: 'width 0.4s ease',
+                    }} />
+                  </Box>
+
+                  {/* ── Collapsible details ── */}
+                  <Collapse in={isOpen} timeout={280} unmountOnExit={false}>
+                    <Box sx={{ px: 2.5, pt: 2, pb: 2.5, borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'}` }}>
+                      {/* Amounts row */}
+                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 1.5 }}>
+                        <Typography sx={{ fontSize: 22, fontWeight: 900, color: accentColor, fontFamily: 'monospace' }}>
+                          {formatMoney(remaining, currency)}
+                        </Typography>
+                        <Typography sx={{ fontSize: 11.5, color: textMuted }}>
+                          remaining · {formatMoney(r.paidAmount, currency)} paid of {formatMoney(r.amount, currency)}
+                        </Typography>
+                      </Box>
+
+                      {/* Due date + days left */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 2, fontSize: 11.5, color: textMuted }}>
+                        <CalendarIcon sx={{ fontSize: 13 }} />
+                        <span>Due: {formatDate(r.dueDate)}</span>
+                        {daysLeft !== null && (
+                          <span style={{ color: daysLeft < 0 ? '#ef4444' : '#f59e0b', fontWeight: 700, marginLeft: 4 }}>
+                            ({daysLeft >= 0 ? `${daysLeft} days left` : 'Overdue'})
+                          </span>
+                        )}
+                      </Box>
+
+                      {/* Action row */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Button
+                          size="small"
+                          onClick={(e) => { e.stopPropagation(); handleOpenLogModal(r); }}
+                          startIcon={<MoneyIcon sx={{ fontSize: 15 }} />}
+                          sx={{
+                            textTransform: 'none', fontSize: 12, fontWeight: 800,
+                            color: '#ffffff', bgcolor: accentColor, borderRadius: '10px',
+                            px: 1.75, py: 0.6,
+                            '&:hover': { bgcolor: r.type === 'borrow' ? '#dc2626' : '#059669' },
+                          }}
+                        >
+                          {r.type === 'borrow' ? 'Log Payment' : 'Log Collection'}
+                        </Button>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleOpenModal(r); }}>
+                          <EditIcon sx={{ fontSize: 16, color: textMuted }} />
+                        </IconButton>
+                        <IconButton size="small" title="Unlink" onClick={(e) => { e.stopPropagation(); handleUnlinkRecord(r.id); }} sx={{ color: textMuted }}>
+                          <LinkOffIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                        {prog >= 100 && (
+                          <Chip label="Settled ✓" size="small" sx={{ bgcolor: 'rgba(16,185,129,0.12)', color: '#10b981', fontWeight: 800, fontSize: 11, border: '1px solid rgba(16,185,129,0.3)' }} />
+                        )}
+                      </Box>
                     </Box>
-
-                    {/* 🌟 HUMAN FRIENDLY "Have you paid some amount?" BUTTON */}
-                    <Button
-                      size="small"
-                      onClick={() => handleOpenLogModal(r)}
-                      startIcon={<MoneyIcon sx={{ fontSize: 16 }} />}
-                      sx={{
-                        textTransform: 'none',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: '#ffffff',
-                        bgcolor: '#10b981',
-                        borderRadius: '10px',
-                        px: 1.75,
-                        py: 0.6,
-                        '&:hover': { bgcolor: '#059669' },
-                      }}
-                    >
-                      Have you paid some amount?
-                    </Button>
-                  </Box>
-
-                  <Box sx={{ mt: 1.5, height: 7, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
-                    <Box
-                      sx={{
-                        height: '100%',
-                        width: `${prog}%`,
-                        bgcolor: prog >= 100 ? '#10b981' : '#ef4444',
-                        borderRadius: 99,
-                        transition: 'width 0.4s ease',
-                      }}
-                    />
-                  </Box>
-
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, fontSize: 11, color: textMuted }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <CalendarIcon sx={{ fontSize: 13 }} />
-                      <span>Due Date: {formatDate(r.dueDate)}</span>
-                      {daysLeft !== null && (
-                        <span style={{ color: daysLeft < 0 ? '#ef4444' : '#f59e0b', fontWeight: 600 }}>
-                          ({daysLeft >= 0 ? `${daysLeft} days left` : 'overdue'})
-                        </span>
-                      )}
-                    </Box>
-                    <span style={{ fontWeight: 700, color: prog >= 100 ? '#10b981' : textPrimary }}>
-                      {prog}% Paid Off
-                    </span>
-                  </Box>
+                  </Collapse>
                 </Box>
               );
             })}
@@ -1106,146 +1109,7 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
         )}
       </Box>
 
-      {/* ── 3. Lended / Recoverable Debts Section (Shown Below) ── */}
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
-          <Typography sx={{ fontSize: 12, fontWeight: 800, color: textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-            💰 Lended Debts — Owed to You ({lendRecords.length})
-          </Typography>
-        </Box>
 
-        {lendRecords.length === 0 ? (
-          <Box
-            sx={{
-              p: 3,
-              borderRadius: '18px',
-              border: `1.5px dashed ${cardBorder}`,
-              bgcolor: surfaceBg,
-              textAlign: 'center',
-            }}
-          >
-            <Typography sx={{ fontSize: 13, color: textMuted }}>
-              No lended debt records linked. Click <strong>Select Existing Loans</strong> or create a new debt account!
-            </Typography>
-          </Box>
-        ) : (
-          <Stack spacing={2.5}>
-            {lendRecords.map((r) => {
-              const remaining = Math.max(0, r.amount - r.paidAmount);
-              const prog = calculateDebtProgress(r);
-
-              return (
-                <Box
-                  key={r.id}
-                  sx={{
-                    borderRadius: '22px',
-                    border: `1.5px solid ${isDark ? 'rgba(16,185,129,0.3)' : '#bbf7d0'}`,
-                    bgcolor: surfaceBg,
-                    p: 2.5,
-                    boxShadow: isDark ? '0 4px 16px rgba(0,0,0,0.25)' : '0 4px 16px rgba(16,185,129,0.04)',
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 42,
-                          height: 42,
-                          borderRadius: '14px',
-                          bgcolor: 'rgba(16, 185, 129, 0.15)',
-                          color: '#10b981',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <PersonIcon sx={{ fontSize: 22 }} />
-                      </Box>
-                      <Box>
-                        <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary }}>
-                          {r.counterparty}
-                        </Typography>
-                        <Typography sx={{ fontSize: 11.5, color: textMuted }}>
-                          Lended Loan
-                        </Typography>
-                      </Box>
-                    </Box>
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Chip
-                        label={prog >= 100 ? 'Fully Collected' : 'Lended'}
-                        size="small"
-                        sx={{
-                          fontSize: 11,
-                          fontWeight: 800,
-                          bgcolor: 'rgba(16, 185, 129, 0.15)',
-                          color: '#10b981',
-                          border: '1px solid rgba(16, 185, 129, 0.3)',
-                        }}
-                      />
-                      <IconButton size="small" onClick={() => handleOpenModal(r)}>
-                        <EditIcon sx={{ fontSize: 17, color: textMuted }} />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        title="Unlink from goal"
-                        onClick={() => handleUnlinkRecord(r.id)}
-                        sx={{ color: textMuted }}
-                      >
-                        <LinkOffIcon sx={{ fontSize: 17 }} />
-                      </IconButton>
-                    </Box>
-                  </Box>
-
-                  <Box sx={{ mt: 2.5, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                      <Typography sx={{ fontSize: 26, fontWeight: 900, color: '#10b981', fontFamily: 'monospace' }}>
-                        {formatMoney(remaining, currency)}
-                      </Typography>
-                      <Typography sx={{ fontSize: 12, color: textMuted }}>
-                        remaining to collect (collected {formatMoney(r.paidAmount, currency)} of {formatMoney(r.amount, currency)})
-                      </Typography>
-                    </Box>
-
-                    {/* 🌟 HUMAN FRIENDLY "Have you received some payment?" BUTTON */}
-                    <Button
-                      size="small"
-                      onClick={() => handleOpenLogModal(r)}
-                      startIcon={<MoneyIcon sx={{ fontSize: 16 }} />}
-                      sx={{
-                        textTransform: 'none',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: '#ffffff',
-                        bgcolor: '#10b981',
-                        borderRadius: '10px',
-                        px: 1.75,
-                        py: 0.6,
-                        '&:hover': { bgcolor: '#059669' },
-                      }}
-                    >
-                      Have you received some payment?
-                    </Button>
-                  </Box>
-
-                  <Box sx={{ mt: 1.5, height: 7, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
-                    <Box
-                      sx={{
-                        height: '100%',
-                        width: `${prog}%`,
-                        bgcolor: '#10b981',
-                        borderRadius: 99,
-                        transition: 'width 0.4s ease',
-                      }}
-                    />
-                  </Box>
-                </Box>
-              );
-            })}
-          </Stack>
-        )}
-      </Box>
 
       {/* ── 4. GENERAL STRATEGY TASKS OVERVIEW SECTION ── */}
       <Box sx={{ mb: 4, pt: 3, borderTop: `1px solid ${cardBorder}` }}>
@@ -2129,6 +1993,42 @@ export default function DebtTemplate({ goal, onUpdateGoal }: DebtTemplateProps) 
             sx={{ textTransform: 'none', fontWeight: 800, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
           >
             Save Selection
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Target Date Dialog */}
+      <Dialog
+        open={targetDateDialogOpen}
+        onClose={() => setTargetDateDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: '20px' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>Set / Update Target Date 📅</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose a target date for your debt payoff/recovery goal to keep track of time elapsed and stay on schedule.
+          </Typography>
+          <TextField
+            type="date"
+            fullWidth
+            size="small"
+            value={targetDateInput}
+            onChange={(e) => setTargetDateInput(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            label="Target Date"
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setTargetDateDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveTargetDate}
+            disabled={savingTargetDate || !targetDateInput}
+            sx={{ bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' }, fontWeight: 800, textTransform: 'none' }}
+          >
+            {savingTargetDate ? <CircularProgress size={20} color="inherit" /> : 'Save Target Date'}
           </Button>
         </DialogActions>
       </Dialog>

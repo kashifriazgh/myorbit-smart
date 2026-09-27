@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, Roboto, Noto_Nastaliq_Urdu } from 'next/font/google';
+import { Inter, Roboto, Noto_Nastaliq_Urdu, Lalezar, Baloo_Bhaijaan_2 } from 'next/font/google';
 import './globals.css';
 
 import { Suspense } from 'react';
@@ -30,6 +30,18 @@ const notoUrdu = Noto_Nastaliq_Urdu({
   variable: '--font-noto-urdu',
 });
 
+const lalezar = Lalezar({
+  subsets: ['arabic', 'latin'],
+  weight: ['400'],
+  variable: '--font-lalezar',
+});
+
+const balooBhaijaan2 = Baloo_Bhaijaan_2({
+  subsets: ['arabic', 'latin'],
+  weight: ['700', '800'],
+  variable: '--font-baloo-bhaijaan',
+});
+
 export const metadata: Metadata = {
   title: 'My Orbit - Your Personal Productivity Tool',
   description:
@@ -51,7 +63,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={`
-          ${inter.variable} ${roboto.variable} ${notoUrdu.variable}
+          ${inter.variable} ${roboto.variable} ${notoUrdu.variable} ${lalezar.variable} ${balooBhaijaan2.variable}
           antialiased
 
           /* Layout */

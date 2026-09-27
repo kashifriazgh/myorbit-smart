@@ -27,19 +27,21 @@ import {
   Close as CloseIcon,
   AccountBalanceWallet as WalletIcon,
   GpsFixed as TargetIcon,
-  NotificationsNone as BellIcon,
-  ChevronRight,
   Schedule as ScheduleIcon,
   FormatListBulleted as TodoIcon,
   ShowChart as ChartIcon,
+  ExpandMore as ExpandMoreIcon,
+  LockOpen as UnlockIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { getExpenseItemProgress } from '@/app/lib/utils/goalProgress';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { useTodoContext } from '@/app/lib/context/todoContext';
+import TargetDateCard from '../TargetDateCard';
 
 export interface ExpenseActionItem {
   id: string;
@@ -87,6 +89,72 @@ const CATEGORY_META: Record<
   Other: { label: 'Other Expense', icon: TagIcon, color: '#64748b' },
 };
 
+function getStep(amount: number): number {
+  if (amount < 500) return 10;
+  if (amount <= 1000) return 50;
+  if (amount <= 5000) return 100;
+  if (amount <= 10000) return 500;
+  if (amount >= 20000) return 1000;
+  return 500;
+}
+
+function clampToStep(value: number, min: number, max: number, step: number): number {
+  if (min >= max) return min;
+  const clamped = Math.min(Math.max(value, min), max);
+  const validStep = Math.max(1, Math.min(step, max - min));
+  const snapped = Math.round((clamped - min) / validStep) * validStep + min;
+  return Math.max(min, Math.min(snapped, max));
+}
+
+function RingGauge({ pct, size = 40, stroke = 4, icon }: { pct: number; size?: number; stroke?: number; icon?: React.ReactNode }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const offset = c - (pct / 100) * c;
+  const gradId = `ring-${size}-${stroke}`;
+
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <defs>
+          <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#2dd4bf" />
+            <stop offset="50%" stopColor="#34d399" />
+            <stop offset="100%" stopColor="#22d3ee" />
+          </linearGradient>
+        </defs>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          className="stroke-slate-100 dark:stroke-white/10"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          stroke={`url(#${gradId})`}
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          className="transition-[stroke-dashoffset] duration-500 ease-out"
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-emerald-600 dark:text-emerald-300">
+        {icon ? (
+          icon
+        ) : (
+          <span className="text-[11px] font-semibold text-slate-700 dark:text-white/80">{pct}%</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+
 function formatCurrency(amount: number, unit: string = 'Rs') {
   return `${unit} ${Math.round(amount).toLocaleString()}`;
 }
@@ -106,11 +174,64 @@ function getFutureDateStr(daysAhead: number) {
 
 
 
+const toPlainDate = (val: unknown): Date | null => {
+  if (!val) return null;
+  if (val instanceof Date) return val;
+  if (typeof val === 'object' && val !== null) {
+    if ('toDate' in val && typeof (val as { toDate: unknown }).toDate === 'function') {
+      return (val as { toDate: () => Date }).toDate();
+    }
+    if ('seconds' in val) {
+      return new Date((val as { seconds: number }).seconds * 1000);
+    }
+  }
+  if (typeof val === 'string' || typeof val === 'number') {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+};
+
 export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplateProps) {
   const currencyUnit = goal.overallTargetUnit || 'Rs';
   const { user } = useAuth();
   const { allSchedules, addSchedule, editSchedule, removeSchedule } = useSchedules();
   const { todos, addTodo, updateTodo, deleteTodo } = useTodoContext();
+
+  // Target Date computation
+  const targetDate = useMemo(() => {
+    return toPlainDate(goal.dueDate) || (goal.questionnaireAnswers?.target_date ? toPlainDate(goal.questionnaireAnswers.target_date) : null);
+  }, [goal.dueDate, goal.questionnaireAnswers]);
+
+  const startDate = useMemo(() => toPlainDate(goal.createdAt), [goal.createdAt]);
+
+  const [targetDateDialogOpen, setTargetDateDialogOpen] = useState(false);
+  const [targetDateInput, setTargetDateInput] = useState('');
+  const [savingTargetDate, setSavingTargetDate] = useState(false);
+
+  const handleOpenTargetDateDialog = () => {
+    setTargetDateInput(targetDate ? targetDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    setTargetDateDialogOpen(true);
+  };
+
+  const handleSaveTargetDate = async () => {
+    if (!targetDateInput || !goal.id) return;
+    setSavingTargetDate(true);
+    try {
+      const newDate = new Date(targetDateInput);
+      const payload = { dueDate: Timestamp.fromDate(newDate) };
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, payload);
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), payload);
+      }
+      setTargetDateDialogOpen(false);
+    } catch (err) {
+      console.error('Failed to update target date:', err);
+    } finally {
+      setSavingTargetDate(false);
+    }
+  };
 
   // State for Expenses - Start empty if no saved expenseItems exist (no dummy data)
   const [expenses, setExpenses] = useState<ExpenseItem[]>(() => {
@@ -127,8 +248,24 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
     }
   }, [goal.expenseItems]);
 
-  // Sorting
-  const [sortByOver, setSortByOver] = useState(true);
+  // Sorting: Default to false so items stay in stable list order without auto-jumping during live edits
+  const [sortByOver, setSortByOver] = useState(false);
+  const expenseIdsKey = useMemo(() => expenses.map((e) => e.id).join(','), [expenses]);
+
+  const sortedExpenses = useMemo(() => {
+    if (!sortByOver) return expenses;
+    return [...expenses].sort((a, b) => {
+      const ratioA = a.targetValue > 0 ? a.currentValue / a.targetValue : a.currentValue;
+      const ratioB = b.targetValue > 0 ? b.currentValue / b.targetValue : b.currentValue;
+      return ratioB - ratioA;
+    });
+    // Note: Do NOT depend directly on `expenses` array reference so live slider amount changes don't cause sudden DOM position jumping
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenseIdsKey, sortByOver]);
+
+  // Accordion open state & Lock state
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [unlockedId, setUnlockedId] = useState<string | null>(null);
 
   // Dialog State (Add/Edit Expense)
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -242,14 +379,20 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
   const [savingStepPrompt, setSavingStepPrompt] = useState(false);
 
   // Totals & Calculations for Header Bar & Progress
+  // Totals & Calculations for Header Bar & Progress
   const totals = useMemo(() => {
     const initial = expenses.reduce((s, e) => s + (e.initialValue || e.currentValue || 0), 0);
     const current = expenses.reduce((s, e) => s + (e.currentValue || 0), 0);
     const target = expenses.reduce((s, e) => s + (e.targetValue || 0), 0);
     const overCount = expenses.filter((e) => e.currentValue > e.targetValue).length;
 
+    const targetReduction = Math.max(0, initial - target);
+    const actualReduction = Math.max(0, initial - current);
+
     let progressPct = 0;
-    if (expenses.length > 0) {
+    if (targetReduction > 0) {
+      progressPct = Math.max(0, Math.min(100, Math.round((actualReduction / targetReduction) * 100)));
+    } else if (expenses.length > 0) {
       let sumProgress = 0;
       for (const item of expenses) {
         sumProgress += getExpenseItemProgress(item);
@@ -257,17 +400,8 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
       progressPct = Math.max(0, Math.min(100, Math.round(sumProgress / expenses.length)));
     }
 
-    return { initial, current, target, overCount, progressPct };
+    return { initial, current, target, overCount, targetReduction, actualReduction, progressPct };
   }, [expenses]);
-
-  const sortedExpenses = useMemo(() => {
-    if (!sortByOver) return expenses;
-    return [...expenses].sort((a, b) => {
-      const ratioA = a.targetValue > 0 ? a.currentValue / a.targetValue : a.currentValue;
-      const ratioB = b.targetValue > 0 ? b.currentValue / b.targetValue : b.currentValue;
-      return ratioB - ratioA;
-    });
-  }, [expenses, sortByOver]);
 
   // Persist expenses list to Firestore / state
   const saveExpensesList = async (newList: ExpenseItem[]) => {
@@ -388,6 +522,28 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
     }
     const filtered = expenses.filter((e) => e.id !== itemId);
     await saveExpensesList(filtered);
+  };
+
+  // Update current expense amount from range slider or stepper buttons
+  const handleUpdateExpenseCurrentVal = async (itemId: string, newVal: number) => {
+    const updated = expenses.map((e) => {
+      if (e.id === itemId) {
+        const initVal = e.initialValue || e.currentValue;
+        const pct = getExpenseItemProgress({
+          currentValue: newVal,
+          targetValue: e.targetValue,
+          initialValue: initVal,
+          actionType: e.actionType,
+        });
+        return {
+          ...e,
+          currentValue: newVal,
+          reductionPercent: pct,
+        };
+      }
+      return e;
+    });
+    await saveExpensesList(updated);
   };
 
   // Mark Expense as Achieved with custom settlement amount (Preserves initialValue)
@@ -740,6 +896,17 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
 
   return (
     <div className="w-full text-slate-900 dark:text-slate-100 transition-colors">
+      <div className="max-w-2xl mx-auto">
+        <TargetDateCard
+          goalTitle={goal.title}
+          targetDate={targetDate}
+          startDate={startDate}
+          hideUpdateProgress
+          onSetTargetDate={handleOpenTargetDateDialog}
+          category="finance"
+        />
+      </div>
+
       {/* ── Expenses Summary Header Bar ── */}
       <div className="max-w-2xl mx-auto mb-6">
         <div className="flex items-center justify-between mb-3">
@@ -798,8 +965,8 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
         </div>
       </div>
 
-      {/* ── Expenses Cards List ── */}
-      <div className="max-w-2xl mx-auto space-y-4">
+      {/* ── Expenses Collapsible List (ExpenseReductionList Format) ── */}
+      <div className="max-w-2xl mx-auto space-y-3">
         {sortedExpenses.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-300 dark:border-white/10 bg-white/50 dark:bg-white/[0.02] p-8 text-center">
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">No expenses added yet.</p>
@@ -811,139 +978,201 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
             </button>
           </div>
         ) : (
-          sortedExpenses.map((item) => {
-            const initVal = item.initialValue || item.currentValue;
-            const itemProgress = getExpenseItemProgress(item);
+          sortedExpenses.map((sortedItem) => {
+            // Look up the live item from `expenses` so slider/values reflect current state.
+            // sortedExpenses is memoized by IDs only (to prevent list jumping during sort),
+            // so its item objects can be stale for currentValue changes.
+            const item = expenses.find((e) => e.id === sortedItem.id) || sortedItem;
+            const initVal = item.initialValue || item.currentValue || 0;
+            const targetVal = item.targetValue ?? 0;
+            const currentVal = item.currentValue ?? initVal;
+            const savedAmt = Math.max(0, initVal - currentVal);
+            const targetReductionAmt = Math.max(0, initVal - targetVal);
 
-            const meta = CATEGORY_META[item.category] || CATEGORY_META.Other;
+            const itemPct = targetReductionAmt > 0
+              ? Math.max(0, Math.min(100, Math.round((savedAmt / targetReductionAmt) * 100)))
+              : getExpenseItemProgress(item);
+
+            const isOpen = openId === item.id;
+            const isLocked = unlockedId === 'locked_' + item.id;
+            const isUnlocked = !isLocked;
+
+            const meta = CATEGORY_META[item.category] || CATEGORY_META.General || CATEGORY_META.Other;
             const IconC = meta.icon;
+
+            const sliderMin = 0;
+            const sliderMax = Math.max(initVal, targetVal, 100);
+            const rangeDiff = sliderMax - sliderMin;
+            const rawStep = getStep(sliderMax);
+            const step = Math.max(1, Math.min(rawStep, rangeDiff));
+            // Percentage of slider track filled up to current thumb position
+            const sliderFillPct = rangeDiff > 0
+              ? Math.max(0, Math.min(100, ((currentVal - sliderMin) / rangeDiff) * 100))
+              : 0;
 
             return (
               <div
                 key={item.id}
-                className="w-full rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] p-5 md:p-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden space-y-3"
+                className="w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] overflow-hidden shadow-sm transition-all"
               >
-                {/* ── Dedicated Line 1: Icon, Category & Full Width Title ── */}
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: `${meta.color}20`, color: meta.color }}
-                  >
-                    <IconC sx={{ fontSize: 22 }} />
+                {/* Accordion Header Row */}
+                <div
+                  onClick={() => setOpenId(isOpen ? null : item.id)}
+                  className="flex items-center justify-between p-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors select-none"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <RingGauge pct={itemPct} size={38} stroke={3.5} />
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate flex items-center gap-2">
+                        {item.title}
+                      </h3>
+                      <div className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        <span className="flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300">
+                          <IconC sx={{ fontSize: 13 }} className="text-teal-600 dark:text-teal-400" />
+                          {item.category || 'General'}
+                        </span>
+                        <span>&bull;</span>
+                        <span>By {formatDate(item.byDate)}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                      {item.category}
-                    </span>
-                    <h3 className="text-slate-900 dark:text-white text-base font-bold leading-snug break-words">
-                      {item.title}
-                    </h3>
-                  </div>
-                </div>
 
-                {/* ── Dedicated Line 2: Action Buttons & Progress Pill Line ── */}
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-white/5 flex-wrap">
-                  <span
-                    className={`shrink-0 text-xs font-semibold px-3 py-1 rounded-full ${
-                      itemProgress >= 100
-                        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-400'
-                        : itemProgress > 0
-                        ? 'bg-teal-50 text-teal-600 dark:bg-teal-400/10 dark:text-teal-400'
-                        : 'bg-amber-50 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400'
-                    }`}
-                  >
-                    {itemProgress >= 100
-                      ? 'Target achieved (100%)'
-                      : itemProgress > 0
-                      ? `${itemProgress}% reduced`
-                      : `0% reduced (${formatCurrency(Math.max(0, item.currentValue - item.targetValue), currencyUnit)} above target)`}
-                  </span>
-
-                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                    <button
-                      onClick={() => handleOpenProgressModal(item)}
-                      title="Update expense reduction progress"
-                      className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors flex items-center gap-1"
-                    >
-                      <ChartIcon sx={{ fontSize: 15 }} />
-                      Update Progress
-                    </button>
-
-                    <button
-                      onClick={() => handleOpenKillModal(item)}
-                      title="Mark as achieved"
-                      className="px-2.5 py-1 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-semibold hover:bg-teal-500/20 transition-colors"
-                    >
-                      Mark as achieved
-                    </button>
-
-                    <IconButton size="small" onClick={() => handleOpenModal(item)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
-                      <EditIcon sx={{ fontSize: 17 }} />
-                    </IconButton>
-                    <IconButton size="small" onClick={() => handleDeleteExpenseItem(item.id)} className="text-rose-400 hover:text-rose-600">
-                      <DeleteIcon sx={{ fontSize: 17 }} />
-                    </IconButton>
-                  </div>
-                </div>
-
-                {/* ── Dedicated Line 3: 3-Values Display Box (Initial, Now/Current, Goal Target) ── */}
-                <div className="grid grid-cols-3 gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/5 text-center">
-                  <div className="text-left">
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">Initial Baseline</p>
-                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      {formatCurrency(initVal, currencyUnit)}
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Now (Current)</p>
-                    <p className="text-base font-extrabold text-slate-900 dark:text-white tracking-tight">
-                      {formatCurrency(item.currentValue, currencyUnit)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium font-semibold">Goal Target</p>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">
-                      {formatCurrency(item.targetValue, currencyUnit)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* ── Thin Progress Bar for Item ── */}
-                <div className="w-full my-3">
-                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-400 dark:text-slate-500 mb-1">
-                    <span>Progress</span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">{itemProgress}%</span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        itemProgress >= 100
-                          ? 'bg-emerald-500'
-                          : itemProgress > 0
-                          ? 'bg-teal-500'
-                          : 'bg-amber-500'
-                      }`}
-                      style={{ width: `${itemProgress}%` }}
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <div className="text-right">
+                      <div className="text-xs font-extrabold text-slate-900 dark:text-white">
+                        {formatCurrency(currentVal, currencyUnit)}
+                      </div>
+                      {savedAmt > 0 ? (
+                        <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          Saved {formatCurrency(savedAmt, currencyUnit)}
+                        </div>
+                      ) : (
+                        <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
+                          Target {formatCurrency(targetVal, currencyUnit)}
+                        </div>
+                      )}
+                    </div>
+                    <ExpandMoreIcon
+                      sx={{ fontSize: 20 }}
+                      className={`text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
                     />
                   </div>
                 </div>
 
-                {/* Next Check-in Box */}
-                <div className="flex items-center justify-between rounded-2xl border border-teal-200 dark:border-teal-400/20 bg-teal-50 dark:bg-teal-400/10 px-3.5 py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <BellIcon className="text-teal-600 dark:text-teal-400 shrink-0" sx={{ fontSize: 18 }} />
-                    <div>
-                      <p className="text-xs font-semibold text-teal-700 dark:text-teal-300">Target & Check-in Date</p>
-                      <p className="text-xs text-teal-600/70 dark:text-teal-400/70">
-                        {formatDate(item.byDate)} &middot; we&apos;ll ask for the new bill amount
-                      </p>
+                {/* Accordion Body with Smooth MUI Collapse Animation & Streamlined Compact Layout */}
+                <Collapse in={isOpen} timeout={300} unmountOnExit={false}>
+                  <div className="px-3.5 pb-3 pt-1 border-t border-slate-100 dark:border-white/5 space-y-2.5">
+                    {/* Compact Integrated Stats Line */}
+                    <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400 pt-1">
+                      <span>Baseline: <strong className="text-slate-800 dark:text-slate-200">{formatCurrency(initVal, currencyUnit)}</strong></span>
+                      <span>Target: <strong className="text-slate-800 dark:text-slate-200">{formatCurrency(targetVal, currencyUnit)}</strong></span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">Reduced: {savedAmt > 0 ? `+${formatCurrency(savedAmt, currencyUnit)}` : `${currencyUnit} 0`}</span>
+                    </div>
+
+                    {/* Touch & Stepper Range Slider */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={!isUnlocked || currentVal <= sliderMin}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newVal = clampToStep(currentVal - step, sliderMin, sliderMax, step);
+                          handleUpdateExpenseCurrentVal(item.id, newVal);
+                        }}
+                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 font-bold text-base flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-teal-500 hover:text-white transition-all shrink-0 select-none"
+                        title="Decrease spend by step"
+                      >
+                        &minus;
+                      </button>
+
+                      <div className="relative flex-1 flex items-center py-1">
+                        <input
+                          type="range"
+                          min={sliderMin}
+                          max={sliderMax}
+                          step={step}
+                          disabled={!isUnlocked}
+                          value={currentVal}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const val = clampToStep(Number(e.target.value), sliderMin, sliderMax, step);
+                            handleUpdateExpenseCurrentVal(item.id, val);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onTouchStart={(e) => e.stopPropagation()}
+                          style={{
+                            touchAction: 'manipulation',
+                            background: `linear-gradient(to right, #14b8a6 0%, #14b8a6 ${sliderFillPct}%, #cbd5e1 ${sliderFillPct}%, #cbd5e1 100%)`,
+                          }}
+                          className="w-full h-2 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-teal-500 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-teal-500 [&::-moz-range-thumb]:border-none"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={!isUnlocked || currentVal >= sliderMax}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newVal = clampToStep(currentVal + step, sliderMin, sliderMax, step);
+                          handleUpdateExpenseCurrentVal(item.id, newVal);
+                        }}
+                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 font-bold text-base flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-teal-500 hover:text-white transition-all shrink-0 select-none"
+                        title="Increase spend by step"
+                      >
+                        &#43;
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUnlockedId(isLocked ? null : 'locked_' + item.id);
+                        }}
+                        className={`p-1 rounded-lg text-xs transition-colors shrink-0 ${
+                          isUnlocked ? 'text-teal-600 dark:text-teal-400' : 'text-amber-500'
+                        }`}
+                        title={isUnlocked ? 'Slider unlocked' : 'Slider locked'}
+                      >
+                        {isUnlocked ? <UnlockIcon sx={{ fontSize: 16 }} /> : <LockIcon sx={{ fontSize: 16 }} />}
+                      </button>
+                    </div>
+
+                    {/* Compact Action Buttons Row */}
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProgressModal(item)}
+                          className="px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[11px] font-semibold hover:bg-teal-500/20 transition-colors flex items-center gap-1"
+                        >
+                          <ChartIcon sx={{ fontSize: 13 }} />
+                          Log Amount
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenKillModal(item)}
+                          className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold hover:bg-emerald-500/20 transition-colors"
+                        >
+                          Mark Achieved
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-0.5">
+                        <IconButton size="small" onClick={() => handleOpenModal(item)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
+                          <EditIcon sx={{ fontSize: 15 }} />
+                        </IconButton>
+                        <IconButton size="small" onClick={() => handleDeleteExpenseItem(item.id)} className="text-rose-400 hover:text-rose-600">
+                          <DeleteIcon sx={{ fontSize: 15 }} />
+                        </IconButton>
+                      </div>
                     </div>
                   </div>
-                  <ChevronRight className="text-teal-400 dark:text-teal-500 shrink-0" sx={{ fontSize: 18 }} />
-                </div>
+                </Collapse>
               </div>
             );
-          }))}
+          })
+        )}
       </div>
 
       {/* ── Line Separator & Strategy Tasks Section ── */}
@@ -1198,65 +1427,102 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
-                    <WalletIcon sx={{ fontSize: 13 }} className="text-slate-500 dark:text-slate-400" />
-                    Initial Baseline
-                  </label>
-                  <div className="flex items-center rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-2 focus-within:border-teal-500/60 transition-all">
-                    <span className="text-slate-400 dark:text-slate-500 text-xs mr-0.5 font-medium">{currencyUnit}</span>
-                    <input
-                      value={formInitialVal}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/[^0-9.]/g, '');
-                        setFormInitialVal(val);
-                        if (!editingId && (!formCurrentVal || formCurrentVal === formInitialVal)) {
+              {!editingId ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                      <WalletIcon sx={{ fontSize: 13 }} className="text-slate-500 dark:text-slate-400" />
+                      How much you are paying now
+                    </label>
+                    <div className="flex items-center rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-2 focus-within:border-teal-500/60 transition-all">
+                      <span className="text-slate-400 dark:text-slate-500 text-xs mr-0.5 font-medium">{currencyUnit}</span>
+                      <input
+                        value={formInitialVal}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, '');
+                          setFormInitialVal(val);
                           setFormCurrentVal(val);
-                        }
-                      }}
-                      inputMode="decimal"
-                      placeholder="3000"
-                      className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none font-semibold"
-                    />
+                        }}
+                        inputMode="decimal"
+                        placeholder="3000"
+                        className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none font-semibold"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="flex items-center gap-1 text-[11px] font-medium text-teal-600 dark:text-teal-400 mb-1">
-                    <WalletIcon sx={{ fontSize: 13 }} className="text-teal-600 dark:text-teal-400" />
-                    Current (Now)
-                  </label>
-                  <div className="flex items-center rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-2 focus-within:border-teal-500/60 transition-all">
-                    <span className="text-slate-400 dark:text-slate-500 text-xs mr-0.5 font-medium">{currencyUnit}</span>
-                    <input
-                      value={formCurrentVal}
-                      onChange={(e) => setFormCurrentVal(e.target.value.replace(/[^0-9.]/g, ''))}
-                      inputMode="decimal"
-                      placeholder="2500"
-                      className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none font-semibold"
-                    />
+                  <div>
+                    <label className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 mb-1">
+                      <TargetIcon sx={{ fontSize: 13 }} className="text-emerald-600 dark:text-emerald-400" />
+                      What is your target to be reduced to
+                    </label>
+                    <div className="flex items-center rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-2 focus-within:border-emerald-500/60 transition-all">
+                      <span className="text-slate-400 dark:text-slate-500 text-xs mr-0.5 font-medium">{currencyUnit}</span>
+                      <input
+                        value={formActionType === 'eliminate' ? '0' : formTargetVal}
+                        disabled={formActionType === 'eliminate'}
+                        onChange={(e) => setFormTargetVal(e.target.value.replace(/[^0-9.]/g, ''))}
+                        inputMode="decimal"
+                        placeholder="2000"
+                        className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none font-semibold disabled:opacity-50"
+                      />
+                    </div>
                   </div>
                 </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                      <WalletIcon sx={{ fontSize: 13 }} className="text-slate-500 dark:text-slate-400" />
+                      Initial Baseline
+                    </label>
+                    <div className="flex items-center rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-2 focus-within:border-teal-500/60 transition-all">
+                      <span className="text-slate-400 dark:text-slate-500 text-xs mr-0.5 font-medium">{currencyUnit}</span>
+                      <input
+                        value={formInitialVal}
+                        onChange={(e) => setFormInitialVal(e.target.value.replace(/[^0-9.]/g, ''))}
+                        inputMode="decimal"
+                        placeholder="3000"
+                        className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none font-semibold"
+                      />
+                    </div>
+                  </div>
 
-                <div>
-                  <label className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 mb-1">
-                    <TargetIcon sx={{ fontSize: 13 }} className="text-emerald-600 dark:text-emerald-400" />
-                    Target
-                  </label>
-                  <div className="flex items-center rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-2 focus-within:border-emerald-500/60 transition-all">
-                    <span className="text-slate-400 dark:text-slate-500 text-xs mr-0.5 font-medium">{currencyUnit}</span>
-                    <input
-                      value={formActionType === 'eliminate' ? '0' : formTargetVal}
-                      disabled={formActionType === 'eliminate'}
-                      onChange={(e) => setFormTargetVal(e.target.value.replace(/[^0-9.]/g, ''))}
-                      inputMode="decimal"
-                      placeholder="2000"
-                      className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none font-semibold disabled:opacity-50"
-                    />
+                  <div>
+                    <label className="flex items-center gap-1 text-[11px] font-medium text-teal-600 dark:text-teal-400 mb-1">
+                      <WalletIcon sx={{ fontSize: 13 }} className="text-teal-600 dark:text-teal-400" />
+                      Current (Now)
+                    </label>
+                    <div className="flex items-center rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-2 focus-within:border-teal-500/60 transition-all">
+                      <span className="text-slate-400 dark:text-slate-500 text-xs mr-0.5 font-medium">{currencyUnit}</span>
+                      <input
+                        value={formCurrentVal}
+                        onChange={(e) => setFormCurrentVal(e.target.value.replace(/[^0-9.]/g, ''))}
+                        inputMode="decimal"
+                        placeholder="2500"
+                        className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none font-semibold"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 mb-1">
+                      <TargetIcon sx={{ fontSize: 13 }} className="text-emerald-600 dark:text-emerald-400" />
+                      Target
+                    </label>
+                    <div className="flex items-center rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-2 focus-within:border-emerald-500/60 transition-all">
+                      <span className="text-slate-400 dark:text-slate-500 text-xs mr-0.5 font-medium">{currencyUnit}</span>
+                      <input
+                        value={formActionType === 'eliminate' ? '0' : formTargetVal}
+                        disabled={formActionType === 'eliminate'}
+                        onChange={(e) => setFormTargetVal(e.target.value.replace(/[^0-9.]/g, ''))}
+                        inputMode="decimal"
+                        placeholder="2000"
+                        className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none font-semibold disabled:opacity-50"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
@@ -1862,6 +2128,49 @@ export default function ExpensesTemplate({ goal, onUpdateGoal }: ExpensesTemplat
                 className="px-4 py-1.5 rounded-xl bg-teal-500 text-white text-xs font-semibold hover:bg-teal-600 transition-colors shadow-sm disabled:opacity-50"
               >
                 {savingStepPrompt ? 'Saving...' : 'Confirm & Reduce'}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Target Date Dialog */}
+      <Dialog
+        open={targetDateDialogOpen}
+        onClose={() => setTargetDateDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: '20px' } }}
+      >
+        <DialogContent>
+          <div className="p-2">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+              Set / Update Target Date 📅
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Choose a target date for your expense reduction goal to track time elapsed and keep on schedule.
+            </p>
+            <input
+              type="date"
+              value={targetDateInput}
+              onChange={(e) => setTargetDateInput(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-teal-500 font-semibold mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTargetDateDialogOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveTargetDate}
+                disabled={savingTargetDate || !targetDateInput}
+                className="px-4 py-2 rounded-xl bg-teal-500 text-white text-xs font-bold hover:bg-teal-600 transition-colors shadow-sm disabled:opacity-50"
+              >
+                {savingTargetDate ? 'Saving...' : 'Save Target Date'}
               </button>
             </div>
           </div>

@@ -31,6 +31,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import StreakCard from '@/app/components/goals/StreakCard';
 
 export interface HabitCheckIn {
   id?: string;
@@ -386,6 +387,16 @@ export default function BuildHabitTemplate({ goal, onUpdateGoal }: BuildHabitTem
           </Button>
         </Box>
       </Box>
+
+      {/* Streak Status Card */}
+      <StreakCard
+        goal={goal}
+        onUpdateGoal={onUpdateGoal}
+        logs={checkIns.map((c) => ({ date: c.date, completed: c.completed }))}
+        onQuickLog={toggleTodayCheckIn}
+        quickLogLabel={todayDone ? 'Done Today ✓' : 'Mark Done Today'}
+        metricLabel="habit check-in"
+      />
 
       {/* Habit Loop: Cue & Reward Card */}
       <Box sx={{ mb: 3 }}>

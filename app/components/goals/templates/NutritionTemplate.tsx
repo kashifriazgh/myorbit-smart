@@ -45,6 +45,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import StreakCard from '@/app/components/goals/StreakCard';
 
 export interface NutritionItem {
   id?: string;
@@ -612,6 +613,15 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
           {displayTitle}
         </Typography>
       </Box>
+
+      {/* Streak Status Card */}
+      <StreakCard
+        goal={goal}
+        onUpdateGoal={onUpdateGoal}
+        onQuickLog={() => handleOpenItemModal()}
+        quickLogLabel="Add Nutrition Tracker"
+        metricLabel="nutrition intake"
+      />
 
       {/* Nutrition Categories Progress List */}
       <Box sx={{ mb: 3 }}>

@@ -45,8 +45,10 @@ import {
   addDoc,
   deleteDoc,
   serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import TargetDateCard from '../TargetDateCard';
 
 export interface ExistingIncomeSource {
   id: string;
@@ -89,6 +91,33 @@ function formatMoney(value: number, currency: string = 'PKR') {
   return `${sign}${displayCurrency} ${Math.round(Math.abs(value)).toLocaleString()}`;
 }
 
+/** Step size for the proposed-income inline slider */
+function getIncomeStep(target: number): number {
+  if (target <= 500) return 10;
+  if (target <= 1000) return 50;
+  if (target <= 5000) return 100;
+  if (target <= 30000) return 500;
+  return 1000;
+}
+
+const toPlainDate = (val: unknown): Date | null => {
+  if (!val) return null;
+  if (val instanceof Date) return val;
+  if (typeof val === 'object' && val !== null) {
+    if ('toDate' in val && typeof (val as { toDate: unknown }).toDate === 'function') {
+      return (val as { toDate: () => Date }).toDate();
+    }
+    if ('seconds' in val) {
+      return new Date((val as { seconds: number }).seconds * 1000);
+    }
+  }
+  if (typeof val === 'string' || typeof val === 'number') {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+};
+
 export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplateProps) {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
@@ -100,6 +129,41 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
   const rawUnit = goal.overallTargetUnit || answers.currency || 'PKR';
   const currency = String(rawUnit === 'units' ? 'PKR' : rawUnit);
   const userName = user?.displayName || user?.email?.split('@')[0] || 'Friend';
+
+  // Target Date computation
+  const targetDate = useMemo(() => {
+    return toPlainDate(goal.dueDate) || (answers.target_date ? toPlainDate(answers.target_date) : null);
+  }, [goal.dueDate, answers.target_date]);
+
+  const startDate = useMemo(() => toPlainDate(goal.createdAt), [goal.createdAt]);
+
+  const [targetDateDialogOpen, setTargetDateDialogOpen] = useState(false);
+  const [targetDateInput, setTargetDateInput] = useState('');
+  const [savingTargetDate, setSavingTargetDate] = useState(false);
+
+  const handleOpenTargetDateDialog = () => {
+    setTargetDateInput(targetDate ? targetDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    setTargetDateDialogOpen(true);
+  };
+
+  const handleSaveTargetDate = async () => {
+    if (!targetDateInput || !goal.id) return;
+    setSavingTargetDate(true);
+    try {
+      const newDate = new Date(targetDateInput);
+      const payload = { dueDate: Timestamp.fromDate(newDate) };
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, payload);
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), payload);
+      }
+      setTargetDateDialogOpen(false);
+    } catch (err) {
+      console.error('Failed to update target date:', err);
+    } finally {
+      setSavingTargetDate(false);
+    }
+  };
 
   // 1. Existing Income Sources (Queried from root 'incomeSources' collection)
   const [existingSources, setExistingSources] = useState<ExistingIncomeSource[]>([]);
@@ -191,11 +255,16 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
   const [proposedFreqInput, setProposedFreqInput] = useState<'monthly' | 'weekly'>('monthly');
   const [savingProposed, setSavingProposed] = useState(false);
 
-  // "Have you got an income increase?" Log Modal for Proposed Source
-  const [logEarnedOpen, setLogEarnedOpen] = useState(false);
-  const [targetProposedForLog, setTargetProposedForLog] = useState<ProposedIncomeItem | null>(null);
-  const [earnedInput, setEarnedInput] = useState<number | ''>('');
+  // Inline slider state per proposed source (id → current slider value)
+  const [activeSliderSrcId, setActiveSliderSrcId] = useState<string | null>(null);
+  const [sliderDraftVals, setSliderDraftVals] = useState<Record<string, number>>({});
   const [savingEarned, setSavingEarned] = useState(false);
+
+  // Per-existing-source update amount dialog state
+  const [updateExistingOpen, setUpdateExistingOpen] = useState(false);
+  const [updateExistingSrc, setUpdateExistingSrc] = useState<ExistingIncomeSource | null>(null);
+  const [updateExistingAmount, setUpdateExistingAmount] = useState<number | ''>('');
+  const [savingExistingUpdate, setSavingExistingUpdate] = useState(false);
 
   // Calculate Totals
   const totalCurrentIncome = useMemo(() => {
@@ -327,29 +396,42 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
     await saveProposedSourcesList(filtered);
   };
 
-  // Handler: Confirm Income Increase Log (Immediate close & progress bar)
-  const handleConfirmEarnedLog = async () => {
-    if (!targetProposedForLog || typeof earnedInput !== 'number') return;
+  // Handler: Save inline slider value for a proposed source
+  const handleConfirmSliderSave = async (srcId: string) => {
+    const newVal = sliderDraftVals[srcId];
+    if (typeof newVal !== 'number') return;
     setSavingEarned(true);
     try {
-      const updated = proposedSources.map((s) => {
-        if (s.id === targetProposedForLog.id) {
-          return { ...s, currentAmount: earnedInput };
-        }
-        return s;
-      });
+      const updated = proposedSources.map((s) =>
+        s.id === srcId ? { ...s, currentAmount: newVal } : s
+      );
       await saveProposedSourcesList(updated);
-      setLogEarnedOpen(false);
-      setEarnedInput('');
-      setTargetProposedForLog(null);
+      setActiveSliderSrcId(null);
     } catch (err) {
-      console.error('Error logging income increase:', err);
+      console.error('Error saving income slider:', err);
     } finally {
       setSavingEarned(false);
     }
   };
 
-  // Open Log / Update Progress Modal for Income Goal
+  // Handler: Update amount for an existing income source
+  const handleSaveExistingUpdate = async () => {
+    if (!updateExistingSrc || typeof updateExistingAmount !== 'number' || updateExistingAmount < 0) return;
+    setSavingExistingUpdate(true);
+    try {
+      await updateDoc(doc(db, 'incomeSources', updateExistingSrc.id), { currentAmount: updateExistingAmount });
+      await fetchExistingSources();
+      setUpdateExistingOpen(false);
+      setUpdateExistingSrc(null);
+    } catch (err) {
+      console.error('Error updating existing source amount:', err);
+    } finally {
+      setSavingExistingUpdate(false);
+    }
+  };
+
+  // Open Log / Update Progress Modal for Income Goal (kept for dialog reachability)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleOpenProgressModal = () => {
     setProgressInputAmount(totalCurrentIncome);
     setProgressDialogOpen(true);
@@ -587,6 +669,16 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
 
   return (
     <Box sx={{ width: '100%' }}>
+      {/* 🌟 Target Date Card */}
+      <TargetDateCard
+        goalTitle={goal.title}
+        targetDate={targetDate}
+        startDate={startDate}
+        hideUpdateProgress
+        onSetTargetDate={handleOpenTargetDateDialog}
+        category="finance"
+      />
+
       {/* ── 1. Modern Friendly Header Banner ── */}
       <Box
         sx={{
@@ -647,25 +739,6 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
                 }}
               />
             )}
-
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={handleOpenProgressModal}
-              startIcon={<EditIcon sx={{ fontSize: 15 }} />}
-              sx={{
-                borderRadius: '12px',
-                textTransform: 'none',
-                fontWeight: 700,
-                fontSize: 12,
-                borderColor: '#10b981',
-                color: '#10b981',
-                bgcolor: surfaceBg,
-                '&:hover': { bgcolor: isDark ? 'rgba(16,185,129,0.1)' : '#ecfdf5', borderColor: '#059669' },
-              }}
-            >
-              Update Progress
-            </Button>
           </Stack>
         </Box>
 
@@ -773,10 +846,33 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
                       </Box>
                     </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                       <Typography sx={{ fontSize: 22, fontWeight: 900, fontFamily: 'monospace', color: '#10b981' }}>
                         {formatMoney(src.currentAmount, currency)}
                       </Typography>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          setUpdateExistingSrc(src);
+                          setUpdateExistingAmount(src.currentAmount);
+                          setUpdateExistingOpen(true);
+                        }}
+                        startIcon={<EditIcon sx={{ fontSize: 13 }} />}
+                        sx={{
+                          borderRadius: '10px',
+                          textTransform: 'none',
+                          fontWeight: 700,
+                          fontSize: 11,
+                          borderColor: '#10b981',
+                          color: '#10b981',
+                          px: 1.25,
+                          py: 0.4,
+                          '&:hover': { bgcolor: 'rgba(16,185,129,0.08)' },
+                        }}
+                      >
+                        Update
+                      </Button>
                       <IconButton size="small" onClick={() => handleDeleteCurrentSource(src.id)} sx={{ color: '#ef4444' }}>
                         <DeleteIcon sx={{ fontSize: 18 }} />
                       </IconButton>
@@ -908,55 +1004,121 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
                     </Box>
                   </Box>
 
-                  {/* Target & Current Earned Amounts */}
+                  {/* Target & Current Amounts + trigger button */}
                   <Box sx={{ mt: 2, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
                     <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
                       <Typography sx={{ fontSize: 24, fontWeight: 900, color: textPrimary, fontFamily: 'monospace' }}>
                         {formatMoney(src.currentAmount, currency)}
                       </Typography>
                       <Typography sx={{ fontSize: 12, color: textMuted }}>
-                        / Desired Target: {formatMoney(src.targetAmount, currency)} ({pct}% achieved)
+                        / Target: {formatMoney(src.targetAmount, currency)} ({pct}%)
                       </Typography>
                     </Box>
 
-                    {/* 🌟 HUMAN FRIENDLY "Have you got an income increase?" BUTTON */}
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setTargetProposedForLog(src);
-                        setEarnedInput(src.currentAmount);
-                        setLogEarnedOpen(true);
-                      }}
-                      startIcon={<TrendingUpIcon sx={{ fontSize: 15 }} />}
-                      sx={{
-                        textTransform: 'none',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: '#10b981',
-                        bgcolor: 'rgba(16, 185, 129, 0.12)',
-                        borderRadius: '10px',
-                        px: 1.75,
-                        py: 0.6,
-                        border: '1px solid rgba(16, 185, 129, 0.25)',
-                        '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.2)', borderColor: '#10b981' },
-                      }}
-                    >
-                      Have you got an income increase?
-                    </Button>
+                    {activeSliderSrcId !== src.id && (
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          setSliderDraftVals((prev) => ({ ...prev, [src.id]: src.currentAmount }));
+                          setActiveSliderSrcId(src.id);
+                        }}
+                        startIcon={<TrendingUpIcon sx={{ fontSize: 15 }} />}
+                        sx={{
+                          textTransform: 'none',
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: '#10b981',
+                          bgcolor: 'rgba(16,185,129,0.12)',
+                          borderRadius: '10px',
+                          px: 1.75,
+                          py: 0.6,
+                          border: '1px solid rgba(16,185,129,0.25)',
+                          '&:hover': { bgcolor: 'rgba(16,185,129,0.2)', borderColor: '#10b981' },
+                        }}
+                      >
+                        Have you got an income increase?
+                      </Button>
+                    )}
                   </Box>
 
-                  {/* Progress Bar */}
-                  <Box sx={{ mt: 1.5, height: 7, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
-                    <Box
-                      sx={{
-                        height: '100%',
-                        width: `${pct}%`,
-                        bgcolor: '#3b82f6',
-                        borderRadius: 99,
-                        transition: 'width 0.4s ease',
-                      }}
-                    />
-                  </Box>
+                  {/* Inline Slider (replaces progress bar when active) */}
+                  {activeSliderSrcId === src.id ? (() => {
+                    const sliderStep = getIncomeStep(src.targetAmount);
+                    const sliderMax = Math.max(src.targetAmount, src.currentAmount, 100);
+                    const draftVal = sliderDraftVals[src.id] ?? src.currentAmount;
+                    const fillPct = sliderMax > 0 ? Math.min(100, (draftVal / sliderMax) * 100) : 0;
+                    return (
+                      <Box sx={{ mt: 1.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted }}>Slide to update earned amount</Typography>
+                          <Typography sx={{ fontSize: 13, fontWeight: 900, color: '#10b981', fontFamily: 'monospace' }}>
+                            {formatMoney(draftVal, currency)}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {/* − button */}
+                          <button
+                            type="button"
+                            disabled={draftVal <= 0}
+                            onClick={() => setSliderDraftVals((p) => ({ ...p, [src.id]: Math.max(0, draftVal - sliderStep) }))}
+                            style={{
+                              width: 28, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
+                              background: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9',
+                              color: isDark ? '#94a3b8' : '#475569', fontWeight: 900, fontSize: 16,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                            }}
+                          >&minus;</button>
+                          {/* Slider */}
+                          <input
+                            type="range"
+                            min={0}
+                            max={sliderMax}
+                            step={sliderStep}
+                            value={draftVal}
+                            onChange={(e) => setSliderDraftVals((p) => ({ ...p, [src.id]: Number(e.target.value) }))}
+                            style={{
+                              flex: 1, height: 8, borderRadius: 99, appearance: 'none', cursor: 'pointer',
+                              background: `linear-gradient(to right, #10b981 0%, #10b981 ${fillPct}%, ${isDark ? '#334155' : '#e2e8f0'} ${fillPct}%, ${isDark ? '#334155' : '#e2e8f0'} 100%)`,
+                              touchAction: 'manipulation',
+                            }}
+                          />
+                          {/* + button */}
+                          <button
+                            type="button"
+                            disabled={draftVal >= sliderMax}
+                            onClick={() => setSliderDraftVals((p) => ({ ...p, [src.id]: Math.min(sliderMax, draftVal + sliderStep) }))}
+                            style={{
+                              width: 28, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
+                              background: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9',
+                              color: isDark ? '#94a3b8' : '#475569', fontWeight: 900, fontSize: 16,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                            }}
+                          >&#43;</button>
+                        </Box>
+                        {/* Save / Cancel */}
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 1.25 }}>
+                          <Button size="small" onClick={() => setActiveSliderSrcId(null)}
+                            sx={{ textTransform: 'none', fontSize: 11, fontWeight: 700, color: textMuted }}>
+                            Cancel
+                          </Button>
+                          <Button
+                            size="small" variant="contained"
+                            disabled={savingEarned}
+                            onClick={() => handleConfirmSliderSave(src.id)}
+                            sx={{ textTransform: 'none', fontSize: 11, fontWeight: 800, bgcolor: '#10b981',
+                              borderRadius: '10px', px: 2, py: 0.5, '&:hover': { bgcolor: '#059669' } }}
+                          >
+                            {savingEarned ? 'Saving…' : 'Save'}
+                          </Button>
+                        </Box>
+                      </Box>
+                    );
+                  })() : (
+                    /* Static progress bar when slider not active */
+                    <Box sx={{ mt: 1.5, height: 7, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
+                      <Box sx={{ height: '100%', width: `${pct}%`, bgcolor: '#3b82f6', borderRadius: 99, transition: 'width 0.4s ease' }} />
+                    </Box>
+                  )}
                 </Box>
               );
             })}
@@ -1234,86 +1396,45 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
         </DialogActions>
       </Dialog>
 
-      {/* ── Dialog 3: "Have you got an income increase?" Log Modal ── */}
+      {/* ── Dialog 3: Update EXISTING Income Source Amount ── */}
       <Dialog
-        open={logEarnedOpen}
-        onClose={() => setLogEarnedOpen(false)}
+        open={updateExistingOpen}
+        onClose={() => setUpdateExistingOpen(false)}
         maxWidth="xs"
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: '24px',
-            p: 1,
-            bgcolor: surfaceBg,
-            boxShadow: isDark ? '0 10px 40px rgba(0,0,0,0.5)' : '0 10px 40px rgba(16,185,129,0.12)',
-          },
-        }}
+        PaperProps={{ sx: { borderRadius: '24px', p: 1, bgcolor: surfaceBg } }}
       >
-        <DialogTitle sx={{ fontWeight: 800, fontSize: 18, pt: 2, px: 3, pb: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Box
-            sx={{
-              width: 38,
-              height: 38,
-              borderRadius: '12px',
-              bgcolor: isDark ? '#064e3b' : '#ecfdf5',
-              color: '#10b981',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <TrendingUpIcon sx={{ fontSize: 22 }} />
-          </Box>
-          <Box>
-            <Typography sx={{ fontWeight: 800, fontSize: 16, color: textPrimary }}>
-              Have you got an income increase?
-            </Typography>
-            <Typography sx={{ fontSize: 12, color: textMuted, fontWeight: 600 }}>
-              {targetProposedForLog?.name}
-            </Typography>
-          </Box>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 17 }}>
+          Update Amount — {updateExistingSrc?.name}
         </DialogTitle>
-
-        <DialogContent sx={{ px: 3, py: 2 }}>
-          <Stack spacing={2}>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 1 }}>
             <Typography sx={{ fontSize: 12.5, color: textMuted }}>
-              Update the current earnings achieved so far from <strong>{targetProposedForLog?.name}</strong>.
+              Enter the updated current monthly/weekly amount for <strong>{updateExistingSrc?.name}</strong>.
             </Typography>
             <TextField
-              label={`Current Earned Amount (${currency})`}
+              label={`Updated Amount (${currency})`}
               type="number"
               fullWidth
               autoFocus
               variant="outlined"
-              value={earnedInput}
-              onChange={(e) => setEarnedInput(e.target.value ? Number(e.target.value) : '')}
+              value={updateExistingAmount}
+              onChange={(e) => setUpdateExistingAmount(e.target.value ? Number(e.target.value) : '')}
               InputProps={{
                 sx: { borderRadius: '14px', fontSize: 16, fontWeight: 800, fontFamily: 'monospace' },
               }}
             />
           </Stack>
         </DialogContent>
-
-        <DialogActions sx={{ p: 3, pt: 1, gap: 1 }}>
-          <Button onClick={() => setLogEarnedOpen(false)} sx={{ textTransform: 'none', borderRadius: '12px', fontWeight: 600 }}>
-            Cancel
-          </Button>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button onClick={() => setUpdateExistingOpen(false)} sx={{ textTransform: 'none', fontWeight: 600 }}>Cancel</Button>
           <Button
             variant="contained"
-            disabled={savingEarned || typeof earnedInput !== 'number'}
-            onClick={handleConfirmEarnedLog}
-            sx={{
-              borderRadius: '12px',
-              px: 3.5,
-              py: 1,
-              textTransform: 'none',
-              fontSize: 14,
-              fontWeight: 800,
-              bgcolor: '#10b981',
-              '&:hover': { bgcolor: '#059669' },
-            }}
+            disabled={savingExistingUpdate || typeof updateExistingAmount !== 'number' || updateExistingAmount < 0}
+            onClick={handleSaveExistingUpdate}
+            sx={{ textTransform: 'none', fontWeight: 800, bgcolor: '#10b981', borderRadius: '12px', px: 3, '&:hover': { bgcolor: '#059669' } }}
           >
-            {savingEarned ? <CircularProgress size={18} color="inherit" /> : 'Save Progress'}
+            {savingExistingUpdate ? <CircularProgress size={18} color="inherit" /> : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1686,6 +1807,42 @@ export default function IncomeTemplate({ goal, onUpdateGoal }: IncomeTemplatePro
           </div>
         </Fade>
       </Modal>
+
+      {/* Target Date Dialog */}
+      <Dialog
+        open={targetDateDialogOpen}
+        onClose={() => setTargetDateDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: '20px' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>Set / Update Target Date 📅</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose a target date for your income goal to track time elapsed and stay on schedule.
+          </Typography>
+          <TextField
+            type="date"
+            fullWidth
+            size="small"
+            value={targetDateInput}
+            onChange={(e) => setTargetDateInput(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            label="Target Date"
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setTargetDateDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveTargetDate}
+            disabled={savingTargetDate || !targetDateInput}
+            sx={{ bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' }, fontWeight: 800, textTransform: 'none' }}
+          >
+            {savingTargetDate ? <CircularProgress size={20} color="inherit" /> : 'Save Target Date'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

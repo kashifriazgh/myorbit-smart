@@ -437,11 +437,11 @@ export default function TotalCashSnapshotComponent({
 
     const updatedSources: TotalCashSnapshot['sources'] = {
       in_hand: data.sources.in_hand ?? 0,
-      bank: data.sources.bank ?? {},
+      bank: data.sources.bank ? { ...data.sources.bank } : {},
       easypaisa: data.sources.easypaisa ?? 0,
       jazzcash: data.sources.jazzcash ?? 0,
       other: data.sources.other ?? 0,
-      custom: data.sources.custom ?? {},
+      custom: data.sources.custom ? { ...data.sources.custom } : {},
     };
 
     const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
@@ -456,65 +456,65 @@ export default function TotalCashSnapshotComponent({
         return;
       }
       newFreeze -= amount;
-      newTotal -= amount;
-      const key = getSourceKey(source, bankName, customPaymentHeadName);
-      const isLocked = data.sourceOwnership?.[key]?.isLocked;
-      if (isLocked) {
-        alert(`This source is locked. Unlock it from the Account Breakdown settings to deduct funds.`);
-        setSaving(false);
-        return;
-      }
-      let current = 0;
-      if (source === 'bank' && bankName) {
-        current = updatedSources.bank[bankName] ?? 0;
-      } else if (source === 'custom' && customPaymentHeadName) {
-        current = updatedSources.custom[customPaymentHeadName] ?? 0;
-      } else if (source !== 'bank' && source !== 'custom') {
-        current = (updatedSources[source] as number) ?? 0;
-      }
+    }
 
-      if (amount > current) {
-        alert(`Not enough balance in ${source}${bankName ? ` (${bankName})` : ''}${customPaymentHeadName ? ` (${customPaymentHeadName})` : ''}`);
-        setSaving(false);
-        return;
-      }
+    const key = getSourceKey(source, bankName, customPaymentHeadName);
+    const isLocked = data.sourceOwnership?.[key]?.isLocked;
+    if (isLocked) {
+      alert(`This source is locked. Unlock it from the Account Breakdown settings to deduct funds.`);
+      setSaving(false);
+      return;
+    }
+    let current = 0;
+    if (source === 'bank' && bankName) {
+      current = updatedSources.bank[bankName] ?? 0;
+    } else if (source === 'custom' && customPaymentHeadName) {
+      current = updatedSources.custom[customPaymentHeadName] ?? 0;
+    } else if (source !== 'bank' && source !== 'custom') {
+      current = (updatedSources[source] as number) ?? 0;
+    }
 
-      const holders = updatedHeldBy[key] || [];
-      if (holders.length > 0) {
-        if (holderName && holderName !== 'Unassigned' && holderName !== 'Self') {
-          const holderIdx = holders.findIndex((h) => h.holderName === holderName);
-          const holderAmt = holderIdx > -1 ? holders[holderIdx].amount : 0;
-          if (amount > holderAmt) {
-            alert(`Not enough balance for holder: ${holderName} (Available: ${holderAmt})`);
-            setSaving(false);
-            return;
-          }
-          const updatedHolders = [...holders];
-          updatedHolders[holderIdx] = {
-            ...updatedHolders[holderIdx],
-            amount: holderAmt - amount,
-          };
-          updatedHeldBy[key] = updatedHolders;
-        } else {
-          const sumHolders = holders.reduce((sum, h) => sum + h.amount, 0);
-          const unassignedAmt = current - sumHolders;
-          if (amount > unassignedAmt) {
-            alert(`Not enough unassigned balance (Available: ${unassignedAmt})`);
-            setSaving(false);
-            return;
-          }
+    if (amount > current) {
+      alert(`Not enough balance in ${source}${bankName ? ` (${bankName})` : ''}${customPaymentHeadName ? ` (${customPaymentHeadName})` : ''}`);
+      setSaving(false);
+      return;
+    }
+
+    const holders = updatedHeldBy[key] || [];
+    if (holders.length > 0) {
+      if (holderName && holderName !== 'Unassigned' && holderName !== 'Self') {
+        const holderIdx = holders.findIndex((h) => h.holderName === holderName);
+        const holderAmt = holderIdx > -1 ? holders[holderIdx].amount : 0;
+        if (amount > holderAmt) {
+          alert(`Not enough balance for holder: ${holderName} (Available: ${holderAmt})`);
+          setSaving(false);
+          return;
+        }
+        const updatedHolders = [...holders];
+        updatedHolders[holderIdx] = {
+          ...updatedHolders[holderIdx],
+          amount: holderAmt - amount,
+        };
+        updatedHeldBy[key] = updatedHolders;
+      } else {
+        const sumHolders = holders.reduce((sum, h) => sum + h.amount, 0);
+        const unassignedAmt = current - sumHolders;
+        if (amount > unassignedAmt) {
+          alert(`Not enough unassigned balance (Available: ${unassignedAmt})`);
+          setSaving(false);
+          return;
         }
       }
-
-      if (source === 'bank' && bankName) {
-        updatedSources.bank[bankName] = current - amount;
-      } else if (source === 'custom' && customPaymentHeadName) {
-        updatedSources.custom[customPaymentHeadName] = current - amount;
-      } else if (source !== 'bank' && source !== 'custom') {
-        updatedSources[source] = current - amount;
-      }
-      newTotal -= amount;
     }
+
+    if (source === 'bank' && bankName) {
+      updatedSources.bank[bankName] = current - amount;
+    } else if (source === 'custom' && customPaymentHeadName) {
+      updatedSources.custom[customPaymentHeadName] = current - amount;
+    } else if (source !== 'bank' && source !== 'custom') {
+      updatedSources[source] = current - amount;
+    }
+    newTotal -= amount;
 
     const updatedSnapshot: TotalCashSnapshot = {
       ...data,

@@ -48,6 +48,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import StreakCard from '@/app/components/goals/StreakCard';
 
 export interface ExerciseItem {
   id: string;
@@ -836,6 +837,15 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
           />
         </Box>
       </Box>
+
+      {/* Streak Status Card */}
+      <StreakCard
+        goal={goal}
+        onUpdateGoal={onUpdateGoal}
+        onQuickLog={() => handleOpenExerciseModal()}
+        quickLogLabel="Add Workout Routine"
+        metricLabel="workout"
+      />
 
       {/* ── 2. Tracked Exercises / Milestones Section ── */}
       <Box sx={{ mb: 4 }}>

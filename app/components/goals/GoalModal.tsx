@@ -875,6 +875,57 @@ export default function GoalModal({
                       </Paper>
 
                       {/* Optional Target Value / Deadline Adjustment */}
+                      {selectedCategory === 'finance' && (
+                        <Paper
+                          elevation={0}
+                          sx={{
+                            p: 2,
+                            borderRadius: '16px',
+                            bgcolor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#fffbeb',
+                            border: `1.5px solid ${isDark ? 'rgba(245, 158, 11, 0.3)' : '#fde68a'}`,
+                          }}
+                        >
+                          <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#d97706', mb: 0.5 }}>
+                            🎯 Target Date Recommendation for Financial Goals
+                          </Typography>
+                          <Typography sx={{ fontSize: 11.5, color: isDark ? '#cbd5e1' : '#475569', mb: 1.5 }}>
+                            Setting a target date for financial goals helps track time elapsed and holds you accountable to achieve your target on schedule.
+                          </Typography>
+
+                          <Typography sx={{ fontSize: 10, fontWeight: 800, color: mutedCol, textTransform: 'uppercase', mb: 1 }}>
+                            Quick Target Date Presets:
+                          </Typography>
+                          <Stack direction="row" gap={0.75} flexWrap="wrap">
+                            {[
+                              { label: '+1 Month', months: 1 },
+                              { label: '+3 Months', months: 3 },
+                              { label: '+6 Months', months: 6 },
+                              { label: '+1 Year', months: 12 },
+                            ].map((preset) => (
+                              <Chip
+                                key={preset.label}
+                                label={preset.label}
+                                size="small"
+                                onClick={() => {
+                                  const d = new Date();
+                                  d.setMonth(d.getMonth() + preset.months);
+                                  setDueDate(d);
+                                }}
+                                sx={{
+                                  borderRadius: '8px',
+                                  fontWeight: 700,
+                                  fontSize: 11,
+                                  bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#ffffff',
+                                  border: `1px solid ${borderCol}`,
+                                  cursor: 'pointer',
+                                  '&:hover': { bgcolor: '#f59e0b', color: '#ffffff' },
+                                }}
+                              />
+                            ))}
+                          </Stack>
+                        </Paper>
+                      )}
+
                       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                         <TextField
                           label={`Target Value (${targetUnit})`}
@@ -886,7 +937,7 @@ export default function GoalModal({
                           sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
                         />
                         <DatePicker
-                          label="Deadline Date"
+                          label="Deadline / Target Date"
                           value={dueDate}
                           onChange={(dVal) => setDueDate(dVal as Date | null)}
                           slotProps={{

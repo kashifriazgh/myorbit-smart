@@ -38,6 +38,7 @@ import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { motion, AnimatePresence } from 'framer-motion';
+import StreakCard from '@/app/components/goals/StreakCard';
 
 export interface SleepLogEntry {
   id: string;
@@ -1188,6 +1189,14 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           </Typography>
         </Box>
       </Box>
+
+      {/* Streak Status Card */}
+      <StreakCard
+        goal={goal}
+        onUpdateGoal={onUpdateGoal}
+        logs={logs as unknown as Parameters<typeof StreakCard>[0]['logs']}
+        metricLabel="sleep log"
+      />
 
       {/* ── STEP A: ONE-TIME TARGET PREFERENCES SETUP CARD ── */}
       {!isPreferencesConfigured ? (

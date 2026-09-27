@@ -33,6 +33,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import StreakCard from '@/app/components/goals/StreakCard';
 
 export const PROFICIENCY_LEVELS = ['Beginner', 'Elementary', 'Intermediate', 'Advanced', 'Expert'];
 
@@ -558,6 +559,16 @@ export default function CoursesTemplate({ goal, onUpdateGoal }: CoursesTemplateP
           )}
         </Box>
       </Box>
+
+      {/* Streak Status Card */}
+      <StreakCard
+        goal={goal}
+        onUpdateGoal={onUpdateGoal}
+        logs={lessons.filter((l) => l.completedAt).map((l) => ({ date: l.completedAt!.split('T')[0], completed: true }))}
+        onQuickLog={handleQuickDailyLog}
+        quickLogLabel={`Log Today's ${courseTerm}`}
+        metricLabel="course lesson"
+      />
 
       {/* Course Modules / Lectures Checklist Section */}
       <Box sx={{ mb: 3 }}>

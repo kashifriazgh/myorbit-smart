@@ -31,6 +31,7 @@ import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import StreakCard from '@/app/components/goals/StreakCard';
 
 export interface RoutineItem {
   id: string;
@@ -296,6 +297,16 @@ export default function DailyRoutineTemplate({ goal, onUpdateGoal }: DailyRoutin
           </Button>
         </Stack>
       </Paper>
+
+      {/* Streak Status Card */}
+      <StreakCard
+        goal={goal}
+        onUpdateGoal={onUpdateGoal}
+        logs={logs.map((l) => ({ date: l.date, completed: l.fullStreak }))}
+        onQuickLog={handleLogDailyRoutine}
+        quickLogLabel="Log Today's Routine"
+        metricLabel="daily routine"
+      />
 
       {/* SOLO CARD CONTAINING ALL ROUTINE ITEMS WITH CHECKBOXES */}
       <Paper

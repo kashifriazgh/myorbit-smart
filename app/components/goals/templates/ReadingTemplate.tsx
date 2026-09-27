@@ -43,6 +43,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
+import StreakCard from '@/app/components/goals/StreakCard';
 
 export interface ReadingLog {
   id: string;
@@ -925,6 +926,16 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           )}
         </Box>
       </Box>
+
+      {/* Streak Status Card */}
+      <StreakCard
+        goal={goal}
+        onUpdateGoal={onUpdateGoal}
+        logs={readingLogs.map((r) => ({ date: r.date, value: r.pagesRead }))}
+        onQuickLog={() => setLogModalOpen(true)}
+        quickLogLabel="Quick Log Reading"
+        metricLabel="reading activity"
+      />
 
       {/* ── 3. STRATEGY TASKS SECTION FOR READING GOAL ── */}
       <Box sx={{ mt: 3, pt: 3, mb: 4, borderTop: `1px solid ${cardBorder}` }}>
