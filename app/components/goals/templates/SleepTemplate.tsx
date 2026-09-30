@@ -38,7 +38,6 @@ import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { motion, AnimatePresence } from 'framer-motion';
-import StreakCard from '@/app/components/goals/StreakCard';
 
 export interface SleepLogEntry {
   id: string;
@@ -1073,143 +1072,19 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
 
   return (
     <Box sx={{ width: '100%' }}>
-      {/* 🌟 1. DUSK-TO-DAWN ARC GRAPHIC & SCHEDULE PILLS CARD (KEPT AS REQUESTED) */}
-      <Box
-        sx={{
-          borderRadius: '24px',
-          border: `1px solid ${cardBorder}`,
-          bgcolor: surfaceBg,
-          p: 3,
-          boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 20px rgba(15,23,42,0.06)',
-          mb: 3,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-          <Box>
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-              Sleep Milestone
-            </Typography>
-            <Typography sx={{ fontSize: 18, fontWeight: 700, color: textPrimary, mt: 0.5 }}>
-              {goal.title}
-            </Typography>
-          </Box>
-          <Chip
-            label={objectiveLabel}
-            size="small"
-            sx={{ bgcolor: isDark ? '#312e81' : '#e0e7ff', color: '#6366f1', fontWeight: 700, fontSize: 11 }}
-          />
-        </Box>
-
-        {/* Dusk-to-Dawn Arc graphic */}
-        <Box sx={{ position: 'relative', mt: 3, display: 'flex', justifyContent: 'center' }}>
-          <svg viewBox="0 0 200 110" style={{ width: '100%', maxWidth: 260 }}>
-            <defs>
-              <linearGradient id="sleepArcGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#4338ca" />
-                <stop offset="55%" stopColor="#818cf8" />
-                <stop offset="100%" stopColor="#f59e0b" />
-              </linearGradient>
-            </defs>
-
-            <path
-              d="M20,100 A80,80 0 0 1 180,100"
-              fill="none"
-              stroke={isDark ? '#334155' : '#eef2ff'}
-              strokeWidth="10"
-              strokeLinecap="round"
-            />
-            <path
-              d="M20,100 A80,80 0 0 1 180,100"
-              fill="none"
-              stroke="url(#sleepArcGradient)"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={dashOffset}
-              style={{ transition: 'stroke-dashoffset 500ms ease' }}
-            />
-
-            <g transform="translate(20,100)">
-              <circle r="10" fill="#4338ca" />
-            </g>
-            <g transform="translate(180,100)">
-              <circle r="10" fill="#f59e0b" />
-            </g>
-          </svg>
-
-          <Box sx={{ position: 'absolute', top: 48, left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 2, textAlign: 'center' }}>
-            <Typography sx={{ fontSize: hasLoggedToday ? 28 : 22, fontWeight: 800, color: textPrimary, fontFamily: 'monospace', lineHeight: 1 }}>
-              {hasLoggedToday ? todayMetrics.dailyProgress + '%' : 'Unlogged'}
-            </Typography>
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: textMuted, mt: 0.75, maxWidth: 220 }}>
-              {hasLoggedToday
-                ? `${todayMetrics.actualValueStr} vs ${todayMetrics.targetValueStr} (${todayMetrics.differenceFormatted})`
-                : 'No check-in today · Log below'}
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* 🌟 Bedtime & Wake-Up Schedule Pills (KEPT AS REQUESTED) */}
-        <Box sx={{ mt: 4, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: '16px', bgcolor: isDark ? '#312e81' : '#e0e7ff' }}>
-            <MoonIcon sx={{ color: '#6366f1', fontSize: 22 }} />
-            <Box>
-              <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase' }}>
-                Bedtime Target
-              </Typography>
-              <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-                {bedTime}
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: '16px', bgcolor: isDark ? '#451a03' : '#fffbeb' }}>
-            <SunIcon sx={{ color: '#f59e0b', fontSize: 22 }} />
-            <Box>
-              <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase' }}>
-                Wake Up Target
-              </Typography>
-              <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-                {wakeTime}
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
-
-        {/* Consistency Streak Row */}
-        <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, borderRadius: '16px', bgcolor: isDark ? 'rgba(51,65,85,0.3)' : '#f8fafc' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <FlameIcon sx={{ color: '#f97316', fontSize: 20 }} />
-            <Typography sx={{ fontSize: 13, color: textPrimary }}>
-              <strong style={{ color: '#f97316' }}>{streakCount} day</strong> consistency streak
-            </Typography>
-          </Box>
-          <Typography sx={{ fontSize: 12, color: textMuted }}>
-            Logged for today: <strong>{hasLoggedToday ? todayMetrics.actualValueStr : 'No log yet'}</strong>
-          </Typography>
-        </Box>
-      </Box>
-
-      {/* Streak Status Card */}
-      <StreakCard
-        goal={goal}
-        onUpdateGoal={onUpdateGoal}
-        logs={logs as unknown as Parameters<typeof StreakCard>[0]['logs']}
-        metricLabel="sleep log"
-      />
-
-      {/* ── STEP A: ONE-TIME TARGET PREFERENCES SETUP CARD ── */}
+      {/* ── 1. DAILY SLEEP CHECK-IN LOG CARD / SETUP CARD (MOVED TO TOP AS REQUESTED) ── */}
       {!isPreferencesConfigured ? (
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: 3.5 }}>
           {/* Target Setup for sleep_better / sleepBetter */}
           {sleepObjective === 'sleep_better' && (
             <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl">
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <BedDoubleIcon className="w-5 h-5 text-teal-600/70 dark:text-teal-300/70" />
-                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                  How much sleep do you want each night?
-                </span>
-              </div>
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                <BedDoubleIcon className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+                How much sleep do you want each night?
+              </h3>
+              <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-6">
+                Set up your target sleep duration preference
+              </p>
 
               {/* Time readout */}
               <div className="flex items-center justify-between gap-3 mb-6">
@@ -1290,12 +1165,13 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           {/* Target Setup for sleep_on_time / sleepOnTime */}
           {sleepObjective === 'sleep_on_time' && (
             <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl">
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <MoonIcon className="w-4 h-4 text-teal-600/70 dark:text-teal-300/70" />
-                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                  What time do you want to sleep daily?
-                </span>
-              </div>
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                <MoonIcon className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                What time do you want to sleep daily?
+              </h3>
+              <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-6">
+                Set up your target bedtime preference
+              </p>
 
               <div className="flex items-center justify-between gap-3">
                 <button
@@ -1344,12 +1220,13 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           {/* Target Setup for wake_up_on_time / wakeUpOnTime */}
           {sleepObjective === 'wake_up_on_time' && (
             <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl">
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <SunIcon className="w-4 h-4 text-amber-600/70 dark:text-amber-300/70" />
-                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                  What time do you want to wake up?
-                </span>
-              </div>
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                <SunIcon className="w-5 h-5 text-amber-500 dark:text-amber-400" />
+                What time do you want to wake up?
+              </h3>
+              <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-6">
+                Set up your target wake time preference
+              </p>
 
               <div className="flex items-center justify-between gap-3">
                 <button
@@ -1407,12 +1284,13 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl"
                 >
-                  <div className="flex items-center justify-center gap-2 mb-6">
-                    <MoonIcon className="w-5 h-5 text-teal-600/70 dark:text-teal-300/70" />
-                    <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                      Step 1 of 2: What time do you want to sleep daily?
-                    </span>
-                  </div>
+                  <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                    <MoonIcon className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                    Step 1 of 2: What time do you want to sleep daily?
+                  </h3>
+                  <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-6">
+                    Configure target bedtime preference
+                  </p>
 
                   <div className="flex items-center justify-between gap-3 mb-6">
                     <button
@@ -1464,12 +1342,13 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl"
                 >
-                  <div className="flex items-center justify-center gap-2 mb-6">
-                    <SunIcon className="w-5 h-5 text-amber-600/70 dark:text-amber-300/70" />
-                    <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                      Step 2 of 2: What time do you want to wake up?
-                    </span>
-                  </div>
+                  <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                    <SunIcon className="w-5 h-5 text-amber-500 dark:text-amber-400" />
+                    Step 2 of 2: What time do you want to wake up?
+                  </h3>
+                  <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-6">
+                    Configure target wake up time preference
+                  </p>
 
                   <div className="flex items-center justify-between gap-3 mb-6">
                     <button
@@ -1527,18 +1406,19 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           )}
         </Box>
       ) : (
-        /* ── STEP B: ELEGANT DAILY CHECK-IN CARDS (SAMPLE SLEEP DURATION & TIME PICKER DESIGN) ── */
-        <Box sx={{ mb: 3 }}>
+        /* ── STEP B: ELEGANT DAILY CHECK-IN CARDS WITH HEADING-LEVEL TITLES AT TOP ── */
+        <Box sx={{ mb: 3.5 }}>
           {/* 1. sleep_better / sleepBetter Daily Check-In */}
           {sleepObjective === 'sleep_better' && (
             <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(45,212,191,0.25)]">
-              {/* Header */}
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <BedDoubleIcon className="w-5 h-5 text-teal-600/70 dark:text-teal-300/70" />
-                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                  How many hours did you sleep last night? (Target: {targetSleepHours} hrs)
-                </span>
-              </div>
+              {/* Heading */}
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                <BedDoubleIcon className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+                How many hours did you sleep last night?
+              </h3>
+              <p className="text-xs text-center font-medium text-slate-500 dark:text-slate-400 mb-6">
+                Target: <strong className="text-teal-600 dark:text-teal-400">{targetSleepHours} hrs</strong>
+              </p>
 
               {/* Time display + controls */}
               <div className="flex items-center justify-between gap-3 mb-6">
@@ -1616,7 +1496,7 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                 type="button"
                 disabled={hasLoggedToday || savingLog}
                 onClick={handleSaveDailyCheckIn}
-                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40"
+                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40 shadow-sm"
               >
                 {hasLoggedToday ? 'Already Logged Today' : savingLog ? 'Saving Log...' : 'Confirm sleep duration'}
               </button>
@@ -1626,17 +1506,17 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           {/* 2. sleep_on_time / sleepOnTime Daily Check-In */}
           {sleepObjective === 'sleep_on_time' && (
             <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(45,212,191,0.25)]">
-              {/* Header */}
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <MoonIcon className="w-4 h-4 text-teal-600/70 dark:text-teal-300/70" />
-                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                  When did you fall asleep last night? (Target: {targetSleepTime})
-                </span>
-              </div>
+              {/* Heading */}
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                <MoonIcon className="w-6 h-6 text-indigo-500 dark:text-indigo-400" />
+                When did you fall asleep last night?
+              </h3>
+              <p className="text-xs text-center font-medium text-slate-500 dark:text-slate-400 mb-6">
+                Target Bedtime: <strong className="text-indigo-600 dark:text-indigo-400">{targetSleepTime}</strong>
+              </p>
 
               {/* Time display + controls */}
               <div className="flex items-center justify-between gap-3">
-                {/* Minus button */}
                 <button
                   type="button"
                   disabled={hasLoggedToday}
@@ -1647,7 +1527,6 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                   <RemoveIcon className="w-6 h-6" />
                 </button>
 
-                {/* Time readout */}
                 <div className={`flex-1 text-center transition-transform duration-150 ${sleepPulse ? 'scale-105' : 'scale-100'}`}>
                   <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
                     <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
@@ -1659,7 +1538,6 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                   </div>
                 </div>
 
-                {/* Plus button */}
                 <button
                   type="button"
                   disabled={hasLoggedToday}
@@ -1681,7 +1559,7 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                 type="button"
                 disabled={hasLoggedToday || savingLog}
                 onClick={handleSaveDailyCheckIn}
-                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40"
+                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40 shadow-sm"
               >
                 {hasLoggedToday ? 'Already Logged Today' : savingLog ? 'Saving...' : 'Confirm sleep time'}
               </button>
@@ -1691,17 +1569,17 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           {/* 3. wake_up_on_time / wakeUpOnTime Daily Check-In */}
           {sleepObjective === 'wake_up_on_time' && (
             <div className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(245,158,11,0.25)]">
-              {/* Header */}
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <SunIcon className="w-4 h-4 text-amber-600/70 dark:text-amber-300/70" />
-                <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                  When did you wake up today? (Target: {targetWakeTime})
-                </span>
-              </div>
+              {/* Heading */}
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                <SunIcon className="w-6 h-6 text-amber-500 dark:text-amber-400" />
+                When did you wake up today?
+              </h3>
+              <p className="text-xs text-center font-medium text-slate-500 dark:text-slate-400 mb-6">
+                Target Wake Up: <strong className="text-amber-600 dark:text-amber-400">{targetWakeTime}</strong>
+              </p>
 
               {/* Time display + controls */}
               <div className="flex items-center justify-between gap-3">
-                {/* Minus button */}
                 <button
                   type="button"
                   disabled={hasLoggedToday}
@@ -1712,7 +1590,6 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                   <RemoveIcon className="w-6 h-6" />
                 </button>
 
-                {/* Time readout */}
                 <div className={`flex-1 text-center transition-transform duration-150 ${wakePulse ? 'scale-105' : 'scale-100'}`}>
                   <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
                     <span className="font-semibold leading-none text-slate-900 dark:text-white" style={{ fontSize: '3.25rem' }}>
@@ -1724,7 +1601,6 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                   </div>
                 </div>
 
-                {/* Plus button */}
                 <button
                   type="button"
                   disabled={hasLoggedToday}
@@ -1746,7 +1622,7 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                 type="button"
                 disabled={hasLoggedToday || savingLog}
                 onClick={handleSaveDailyCheckIn}
-                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40"
+                className="mt-6 w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 active:scale-[0.98] transition-all duration-150 dark:text-[#040d1a] disabled:opacity-40 shadow-sm"
               >
                 {hasLoggedToday ? 'Already Logged Today' : savingLog ? 'Saving...' : 'Confirm wake-up time'}
               </button>
@@ -1765,12 +1641,14 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(45,212,191,0.25)]"
                 >
-                  <div className="flex items-center justify-center gap-2 mb-6">
-                    <MoonIcon className="w-5 h-5 text-teal-600/70 dark:text-teal-300/70" />
-                    <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                      Step 1 of 2: When did you fall asleep last night? (Target: {targetSleepTime})
-                    </span>
-                  </div>
+                  {/* Heading */}
+                  <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                    <MoonIcon className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+                    Step 1 of 2: When did you fall asleep last night?
+                  </h3>
+                  <p className="text-xs text-center font-medium text-slate-500 dark:text-slate-400 mb-6">
+                    Target Bedtime: <strong className="text-teal-600 dark:text-teal-400">{targetSleepTime}</strong>
+                  </p>
 
                   <div className="flex items-center justify-between gap-3 mb-6">
                     <button
@@ -1827,12 +1705,14 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   className="w-full rounded-3xl p-6 transition-colors duration-200 border border-slate-200 bg-white shadow-[0_10px_40px_-15px_rgba(15,23,42,0.15)] dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl dark:shadow-[0_0_60px_-15px_rgba(245,158,11,0.25)]"
                 >
-                  <div className="flex items-center justify-center gap-2 mb-6">
-                    <SunIcon className="w-5 h-5 text-amber-600/70 dark:text-amber-300/70" />
-                    <span className="text-xs tracking-wide text-slate-500 dark:text-slate-400">
-                      Step 2 of 2: When did you wake up today? (Target: {targetWakeTime})
-                    </span>
-                  </div>
+                  {/* Heading */}
+                  <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 mb-1">
+                    <SunIcon className="w-6 h-6 text-amber-500 dark:text-amber-400" />
+                    Step 2 of 2: When did you wake up today?
+                  </h3>
+                  <p className="text-xs text-center font-medium text-slate-500 dark:text-slate-400 mb-6">
+                    Target Wake Up: <strong className="text-amber-600 dark:text-amber-400">{targetWakeTime}</strong>
+                  </p>
 
                   <div className="flex items-center justify-between gap-3 mb-6">
                     <button
@@ -1894,6 +1774,118 @@ export default function SleepTemplate({ goal, onUpdateGoal }: SleepTemplateProps
           )}
         </Box>
       )}
+
+      {/* ── 2. DUSK-TO-DAWN ARC GRAPHIC & TARGET PILLS CARD ── */}
+      <Box
+        sx={{
+          borderRadius: '24px',
+          border: `1px solid ${cardBorder}`,
+          bgcolor: surfaceBg,
+          p: 3,
+          boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 20px rgba(15,23,42,0.06)',
+          mb: 3.5,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
+          <Box>
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+              Sleep Milestone
+            </Typography>
+            <Typography sx={{ fontSize: 18, fontWeight: 700, color: textPrimary, mt: 0.5 }}>
+              {goal.title}
+            </Typography>
+          </Box>
+          <Chip
+            label={objectiveLabel}
+            size="small"
+            sx={{ bgcolor: isDark ? '#312e81' : '#e0e7ff', color: '#6366f1', fontWeight: 700, fontSize: 11 }}
+          />
+        </Box>
+
+        {/* Dusk-to-Dawn Arc graphic */}
+        <Box sx={{ position: 'relative', mt: 3, display: 'flex', justifyContent: 'center' }}>
+          <svg viewBox="0 0 200 110" style={{ width: '100%', maxWidth: 260 }}>
+            <defs>
+              <linearGradient id="sleepArcGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#4338ca" />
+                <stop offset="55%" stopColor="#818cf8" />
+                <stop offset="100%" stopColor="#f59e0b" />
+              </linearGradient>
+            </defs>
+
+            <path
+              d="M20,100 A80,80 0 0 1 180,100"
+              fill="none"
+              stroke={isDark ? '#334155' : '#eef2ff'}
+              strokeWidth="10"
+              strokeLinecap="round"
+            />
+            <path
+              d="M20,100 A80,80 0 0 1 180,100"
+              fill="none"
+              stroke="url(#sleepArcGradient)"
+              strokeWidth="10"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={dashOffset}
+              style={{ transition: 'stroke-dashoffset 500ms ease' }}
+            />
+
+            <g transform="translate(20,100)">
+              <circle r="10" fill="#4338ca" />
+            </g>
+            <g transform="translate(180,100)">
+              <circle r="10" fill="#f59e0b" />
+            </g>
+          </svg>
+        </Box>
+
+        {/* 🌟 Bedtime & Wake-Up Target + Today's Log Cards */}
+        <Box sx={{ mt: 4, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 2, borderRadius: '18px', bgcolor: isDark ? '#312e81' : '#e0e7ff' }}>
+            <MoonIcon sx={{ color: '#6366f1', fontSize: 24 }} />
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                Bedtime Target
+              </Typography>
+              <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary, lineHeight: 1.2 }}>
+                {bedTime}
+              </Typography>
+              <Typography sx={{ fontSize: 11, fontWeight: 600, color: hasLoggedToday && todayMetrics.actualSleepTime ? '#10b981' : textMuted, mt: 0.5 }}>
+                Today: {hasLoggedToday && todayMetrics.actualSleepTime ? todayMetrics.actualSleepTime : 'Not logged'}
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 2, borderRadius: '18px', bgcolor: isDark ? '#451a03' : '#fffbeb' }}>
+            <SunIcon sx={{ color: '#f59e0b', fontSize: 24 }} />
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                Wake Up Target
+              </Typography>
+              <Typography sx={{ fontSize: 15, fontWeight: 800, color: textPrimary, lineHeight: 1.2 }}>
+                {wakeTime}
+              </Typography>
+              <Typography sx={{ fontSize: 11, fontWeight: 600, color: hasLoggedToday && todayMetrics.actualWakeTime ? '#10b981' : textMuted, mt: 0.5 }}>
+                Today: {hasLoggedToday && todayMetrics.actualWakeTime ? todayMetrics.actualWakeTime : 'Not logged'}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Consistency Streak Row */}
+        <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, borderRadius: '16px', bgcolor: isDark ? 'rgba(51,65,85,0.3)' : '#f8fafc' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <FlameIcon sx={{ color: '#f97316', fontSize: 20 }} />
+            <Typography sx={{ fontSize: 13, color: textPrimary }}>
+              <strong style={{ color: '#f97316' }}>{streakCount} day</strong> consistency streak
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: 12, color: textMuted }}>
+            Logged for today: <strong>{hasLoggedToday ? todayMetrics.actualValueStr : 'No log yet'}</strong>
+          </Typography>
+        </Box>
+      </Box>
 
       {/* ── RECORDED SLEEP HISTORY LOGS ── */}
       {logs.length > 0 && (

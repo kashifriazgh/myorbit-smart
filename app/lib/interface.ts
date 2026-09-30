@@ -952,6 +952,10 @@ export interface Goal {
   progress: number; // 0–100
 
   priority: GoalPriority;
+  priorityIndex?: number;
+  color?: string;
+  icon?: string;
+  img?: string;
   status: GoalStatus;
 
   steps: GoalStep[];

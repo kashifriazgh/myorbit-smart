@@ -16,7 +16,6 @@ import {
   MenuItem,
   Select,
   FormControl,
-  InputLabel,
   Modal,
   Fade,
 } from '@mui/material';
@@ -46,6 +45,8 @@ import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import StreakCard from '@/app/components/goals/StreakCard';
+import ActivityRingLogger from '@/app/components/goals/ActivityRingLogger';
+import StrategyTasksSection, { StrategyActionItem } from '@/app/components/goals/StrategyTasksSection';
 
 export interface NutritionItem {
   id?: string;
@@ -55,6 +56,7 @@ export interface NutritionItem {
   currentValue: number;
   unit: string;
   scheduleTime?: string;
+  lastCompletedAt?: string;
 }
 
 export interface NutritionActionItem {
@@ -90,6 +92,176 @@ const NUTRITION_META: Record<string, { label: string; icon: React.ElementType; c
   other: { label: 'Other Nutrition', icon: MealIcon, color: '#64748b' },
 };
 
+const CATEGORY_UNITS_MAP: Record<NutritionItem['category'], Array<{ label: string; value: string }>> = {
+  water: [
+    { label: 'Glasses 🥛', value: 'glasses' },
+    { label: 'Liters (L) 🧴', value: 'liters' },
+    { label: 'Milliliters (ml) 🧪', value: 'ml' },
+    { label: 'Bottles 🍼', value: 'bottles' },
+    { label: 'Sips 🥤', value: 'sips' },
+  ],
+  calories: [
+    { label: 'Calories (kcal) 🔥', value: 'calories' },
+  ],
+  protein: [
+    { label: 'Grams (g) ⚖️', value: 'grams' },
+    { label: 'Scoops 🏋️', value: 'scoops' },
+    { label: 'Servings 🍽️', value: 'servings' },
+  ],
+  sugar: [
+    { label: 'Grams (g) ⚖️', value: 'grams' },
+    { label: 'Teaspoons 🥄', value: 'teaspoons' },
+    { label: 'Servings 🍽️', value: 'servings' },
+    { label: 'Times / Occurrences 📅', value: 'times' },
+  ],
+  soft_drinks: [
+    { label: 'Cans 🥫', value: 'cans' },
+    { label: 'Bottles 🍼', value: 'bottles' },
+    { label: 'Glasses 🥛', value: 'glasses' },
+    { label: 'Sips 🥤', value: 'sips' },
+    { label: 'Times / Occurrences 📅', value: 'times' },
+  ],
+  fast_food: [
+    { label: 'Meals 🥗', value: 'meals' },
+    { label: 'Servings 🍽️', value: 'servings' },
+    { label: 'Times / Occurrences 📅', value: 'times' },
+  ],
+  meals: [
+    { label: 'Meals 🥗', value: 'meals' },
+    { label: 'Servings 🍽️', value: 'servings' },
+  ],
+  supplements: [
+    { label: 'Tablets / Tabs 💊', value: 'tabs' },
+    { label: 'Capsules 💊', value: 'capsules' },
+    { label: 'Doses 🧪', value: 'doses' },
+    { label: 'Scoops 🏋️', value: 'scoops' },
+    { label: 'Teaspoons 🥄', value: 'teaspoons' },
+  ],
+  fruits: [
+    { label: 'Servings 🍽️', value: 'servings' },
+    { label: 'Grams (g) ⚖️', value: 'grams' },
+    { label: 'Times / Occurrences 📅', value: 'times' },
+  ],
+  other: [
+    { label: 'Servings 🍽️', value: 'servings' },
+    { label: 'Grams (g) ⚖️', value: 'grams' },
+    { label: 'Calories (kcal) 🔥', value: 'calories' },
+    { label: 'Milliliters (ml) 🧪', value: 'ml' },
+    { label: 'Times / Occurrences 📅', value: 'times' },
+  ],
+};
+
+function getTodayStr(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function _formatDate(dateVal: unknown): string {
+  if (!dateVal) return getTodayStr();
+  if (dateVal instanceof Date) {
+    const year = dateVal.getFullYear();
+    const month = String(dateVal.getMonth() + 1).padStart(2, '0');
+    const day = String(dateVal.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  if (typeof dateVal === 'object' && 'seconds' in (dateVal as { seconds: number })) {
+    const d = new Date((dateVal as { seconds: number }).seconds * 1000);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return String(dateVal).split('T')[0];
+}
+
+function calculateNutritionProgress(item: NutritionItem): number {
+  if (!item.targetValue || item.targetValue <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round(((item.currentValue || 0) / item.targetValue) * 100)));
+}
+
+function isDoneForToday(it: NutritionItem, _goal?: Goal): boolean {
+  const todayStr = getTodayStr();
+  if ((it as { lastCompletedAt?: string }).lastCompletedAt === todayStr) return true;
+  if (it.targetValue > 0 && (it.currentValue || 0) >= it.targetValue) return true;
+  return false;
+}
+
+function getPredefinedSlotsForNutrition(unit: string, targetValue: number, _category: string): Array<{ label: string; value: number }> {
+  const target = targetValue && targetValue > 0 ? targetValue : 8;
+  const normUnit = (unit || '').toLowerCase().trim();
+
+  if (normUnit === 'glasses') {
+    const _q1 = 1;
+    const q2 = Math.max(1, Math.round(target * 0.25));
+    const q3 = Math.max(1, Math.round(target * 0.5));
+    return [
+      { label: `+1 glass`, value: 1 },
+      { label: `+${q2} glasses`, value: q2 },
+      { label: `+${q3} glasses`, value: q3 },
+      { label: `Full (${target} glasses)`, value: target },
+    ];
+  }
+
+  if (normUnit === 'liters' || normUnit === 'l') {
+    const _q1 = 0.5;
+    const q2 = Number((target * 0.5).toFixed(1));
+    return [
+      { label: `+0.5 L`, value: 0.5 },
+      { label: `+${q2} L`, value: q2 },
+      { label: `Full (${target} L)`, value: target },
+    ];
+  }
+
+  if (normUnit === 'ml') {
+    const _q1 = 250;
+    const _q2 = 500;
+    const q3 = Math.round(target * 0.5);
+    return [
+      { label: `+250 ml`, value: 250 },
+      { label: `+500 ml`, value: 500 },
+      { label: `+${q3} ml`, value: q3 },
+      { label: `Full (${target} ml)`, value: target },
+    ];
+  }
+
+  if (normUnit === 'calories' || normUnit === 'kcal') {
+    const q1 = Math.round(target * 0.25);
+    const q2 = Math.round(target * 0.5);
+    const q3 = Math.round(target * 0.75);
+    return [
+      { label: `+${q1} kcal`, value: q1 },
+      { label: `+${q2} kcal`, value: q2 },
+      { label: `+${q3} kcal`, value: q3 },
+      { label: `Full (${target} kcal)`, value: target },
+    ];
+  }
+
+  if (normUnit === 'grams' || normUnit === 'gm' || normUnit === 'g') {
+    const q1 = Math.max(1, Math.round(target * 0.25));
+    const q2 = Math.max(1, Math.round(target * 0.5));
+    const q3 = Math.max(1, Math.round(target * 0.75));
+    return [
+      { label: `+${q1} g`, value: q1 },
+      { label: `+${q2} g`, value: q2 },
+      { label: `+${q3} g`, value: q3 },
+      { label: `Full (${target} g)`, value: target },
+    ];
+  }
+
+  const q1 = Math.max(1, Math.round(target * 0.25));
+  const q2 = Math.max(1, Math.round(target * 0.5));
+  const q3 = Math.max(1, Math.round(target * 0.75));
+  return [
+    { label: `+${q1} ${unit}`, value: q1 },
+    { label: `+${q2} ${unit}`, value: q2 },
+    { label: `+${q3} ${unit}`, value: q3 },
+    { label: `Full (${target} ${unit})`, value: target },
+  ];
+}
+
 function formatUnitVal(val: number, unit: string) {
   if (unit === 'glasses') return `${val.toLocaleString()} ${val === 1 ? 'glass' : 'glasses'}`;
   if (unit === 'liters' || unit === 'L') return `${val.toLocaleString()} ${val === 1 ? 'liter' : 'liters'}`;
@@ -124,7 +296,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     }
     return [];
   });
-  const [newGeneralStepInput, setNewGeneralStepInput] = useState('');
+  const [_newGeneralStepInput, _setNewGeneralStepInput] = useState('');
 
   // Sync actions state when goal.actions, allSchedules, or todos update
   useEffect(() => {
@@ -149,25 +321,35 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
   }, [goal.actions, allSchedules, todos]);
 
   // Task Details Modal States
-  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [_taskModalOpen, setTaskModalOpen] = useState(false);
   const [activeStep, setActiveStep] = useState<NutritionActionItem | null>(null);
   const [taskEditText, setTaskEditText] = useState('');
   const [taskEditAssumedVal, setTaskEditAssumedVal] = useState<number | ''>('');
   const [taskEditKind, setTaskEditKind] = useState<'none' | 'schedule' | 'todo'>('none');
-  const [showConvertOptions, setShowConvertOptions] = useState(false);
-  const [taskEditDate, setTaskEditDate] = useState(new Date().toISOString().split('T')[0]);
+  const [_showConvertOptions, setShowConvertOptions] = useState(false);
+  const [taskEditDate, setTaskEditDate] = useState(getTodayStr());
   const [taskEditStartTime, setTaskEditStartTime] = useState('08:00');
   const [taskEditEndTime, setTaskEditEndTime] = useState('08:30');
   const [taskEditTodoTime, setTaskEditTodoTime] = useState('');
   const [taskEditAssignee, setTaskEditAssignee] = useState('');
-  const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+  const [_savingTaskEdit, setSavingTaskEdit] = useState(false);
 
   const answers = useMemo(() => goal.questionnaireAnswers || {}, [goal.questionnaireAnswers]);
 
-  // Nutrition items stored on goal.nutritionItems or derived from questionnaire answers
+  // Nutrition items state with automatic 24-hr daily reset logic for daily routines
   const [items, setItems] = useState<NutritionItem[]>(() => {
+    const todayStr = getTodayStr();
     if (Array.isArray(goal.nutritionItems) && goal.nutritionItems.length > 0) {
-      return goal.nutritionItems as unknown as NutritionItem[];
+      const raw = goal.nutritionItems as unknown as NutritionItem[];
+      return raw.map((it) => {
+        if ((it as { lastCompletedAt?: string }).lastCompletedAt && (it as { lastCompletedAt?: string }).lastCompletedAt !== todayStr) {
+          return {
+            ...it,
+            currentValue: 0,
+          };
+        }
+        return it;
+      });
     }
 
     const trackItem = String(answers.track_item || 'Nutrition Intake');
@@ -209,29 +391,101 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     ];
   });
 
+  // Auto reset daily nutrition progress when a new 24-hr day starts
+  useEffect(() => {
+    const todayStr = getTodayStr();
+    if (!items.length) return;
+
+    let hasReset = false;
+    const resetList = items.map((it) => {
+      if ((it as { lastCompletedAt?: string }).lastCompletedAt && (it as { lastCompletedAt?: string }).lastCompletedAt !== todayStr && it.currentValue > 0) {
+        hasReset = true;
+        return {
+          ...it,
+          currentValue: 0,
+        };
+      }
+      return it;
+    });
+
+    if (hasReset) {
+      setItems(resetList);
+      if (goal.id) {
+        let sumProgress = 0;
+        for (const item of resetList) {
+          sumProgress += calculateNutritionProgress(item);
+        }
+        const newMean = resetList.length > 0 ? Math.max(0, Math.min(100, Math.round(sumProgress / resetList.length))) : 0;
+
+        const payload: Partial<Goal> = {
+          nutritionItems: resetList as unknown as Goal['nutritionItems'],
+          progress: newMean,
+        };
+        if (onUpdateGoal) {
+          onUpdateGoal(goal.id, payload).catch((err) => console.warn(err));
+        } else {
+          updateDoc(doc(db, 'goals', goal.id), payload).catch((err) => console.warn(err));
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goal.id]);
+
+  // Overall Mean Progress
+  const meanProgress = useMemo(() => {
+    if (items.length === 0) return 0;
+    let sum = 0;
+    for (const it of items) {
+      sum += calculateNutritionProgress(it);
+    }
+    return Math.max(0, Math.min(100, Math.round(sum / items.length)));
+  }, [items]);
+
+  // Wrapped Goal object with immediate habit check-in evaluation (>=70% streak done)
+  const currentGoalWithCheckIns = useMemo(() => {
+    const todayStr = getTodayStr();
+    const isStreakDone = meanProgress >= 70;
+    const existingCheckIns = Array.isArray(goal.habitCheckIns) ? [...goal.habitCheckIns] : [];
+
+    if (isStreakDone) {
+      const hasToday = existingCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+      const updatedCheckIns = hasToday
+        ? existingCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+        : [...existingCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+      return { ...goal, habitCheckIns: updatedCheckIns, progress: meanProgress };
+    }
+    return { ...goal, progress: meanProgress };
+  }, [goal, meanProgress]);
+
   // Dialog state for adding/editing nutrition item
   const [modalOpen, setModalOpen] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<NutritionItem['category']>('water');
   const [targetVal, setTargetVal] = useState<number | ''>('');
-  const [currentVal, setCurrentVal] = useState<number | ''>('');
   const [unit, setUnit] = useState<string>('glasses');
   const [time, setTime] = useState('08:00 AM');
   const [savingItem, setSavingItem] = useState(false);
 
-  // Dialog state for adding intake log
-  const [logModalOpen, setLogModalOpen] = useState(false);
-  const [selectedItemIdx, setSelectedItemIdx] = useState<number>(0);
-  const [addAmount, setAddAmount] = useState<number | ''>('');
-  const [savingLog, setSavingLog] = useState(false);
+  // Available units filtered by active category
+  const currentAvailableUnits = useMemo(() => {
+    return CATEGORY_UNITS_MAP[category] || CATEGORY_UNITS_MAP.other;
+  }, [category]);
+
+  const handleCategoryChange = (newCat: NutritionItem['category']) => {
+    setCategory(newCat);
+    const available = CATEGORY_UNITS_MAP[newCat] || CATEGORY_UNITS_MAP.other;
+    if (available.length > 0 && !available.some((u) => u.value === unit)) {
+      setUnit(available[0].value);
+    }
+  };
 
   // Schedule modal
   const [schedModalOpen, setSchedModalOpen] = useState(false);
   const [schedKind, setSchedKind] = useState<'schedule' | 'todo'>('schedule');
   const [schedTitle, setSchedTitle] = useState('');
   const [schedTime, setSchedTime] = useState('08:00');
-  const [schedDate, setSchedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [schedDate, setSchedDate] = useState(getTodayStr());
   const [savingSched, setSavingSched] = useState(false);
 
   const selectedNutName = useMemo(() => {
@@ -258,13 +512,6 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     return `${goal.title} - ${selectedNutName}`;
   }, [goal.title, selectedNutName]);
 
-  const handleOpenLogModal = (idx: number) => {
-    setSelectedItemIdx(idx);
-    const targetItem = items[idx];
-    setAddAmount(targetItem ? targetItem.targetValue : 1);
-    setLogModalOpen(true);
-  };
-
   // Filter linked schedules and todos
   const linkedNutritionSchedules = useMemo(() => {
     if (!goal.id) return [];
@@ -288,7 +535,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     }
   };
 
-  const handleToggleStepCompletion = async (step: NutritionActionItem) => {
+  const _handleToggleStepCompletion = async (step: NutritionActionItem) => {
     const nextDone = !step.done;
     const updated = actions.map((s) => (s.id === step.id ? { ...s, done: nextDone } : s));
     await saveActionsList(updated);
@@ -301,7 +548,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     }
   };
 
-  const handleAddStep = async (taskText: string, sourceId?: string, sourceName?: string) => {
+  const _handleAddStep = async (taskText: string, sourceId?: string, sourceName?: string) => {
     const text = taskText.trim();
     if (!text) return;
 
@@ -316,7 +563,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     await saveActionsList(updated);
   };
 
-  const handleDeleteStep = async (stepId: string) => {
+  const _handleDeleteStep = async (stepId: string) => {
     const step = actions.find((s) => s.id === stepId);
     if (step?.scheduleId && removeSchedule) {
       await removeSchedule(step.scheduleId, true).catch((err) => console.error(err));
@@ -328,7 +575,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     await saveActionsList(updated);
   };
 
-  const handleOpenTaskDetailModal = (step: NutritionActionItem) => {
+  const _handleOpenTaskDetailModal = (step: NutritionActionItem) => {
     setActiveStep(step);
     setTaskEditText(step.task);
     setTaskEditAssumedVal(step.assumedContributionValue || '');
@@ -336,7 +583,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     setTaskEditKind(kind as 'none' | 'schedule' | 'todo');
     setShowConvertOptions(kind === 'schedule' || kind === 'todo');
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getTodayStr();
     setTaskEditDate(step.dueDate || todayStr);
     setTaskEditStartTime(step.time || '08:00');
     setTaskEditEndTime('08:30');
@@ -345,13 +592,13 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     setTaskModalOpen(true);
   };
 
-  const handleSaveTaskDetail = async () => {
+  const _handleSaveTaskDetail = async () => {
     if (!activeStep || !taskEditText.trim()) return;
     setSavingTaskEdit(true);
     try {
       let updatedScheduleId = activeStep.scheduleId;
       let updatedTodoId = activeStep.todoId;
-      const rawDate = taskEditDate || new Date().toISOString().split('T')[0];
+      const rawDate = taskEditDate || getTodayStr();
       const targetDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
 
       if (taskEditKind === 'schedule') {
@@ -454,12 +701,90 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
   const saveItemsList = async (updatedList: NutritionItem[]) => {
     setItems(updatedList);
     if (!goal.id) return;
+    const todayStr = getTodayStr();
+
+    let sum = 0;
+    for (const it of updatedList) {
+      sum += calculateNutritionProgress(it);
+    }
+    const newMean = updatedList.length > 0 ? Math.max(0, Math.min(100, Math.round(sum / updatedList.length))) : 0;
+
+    const existingCheckIns = Array.isArray(goal.habitCheckIns) ? [...goal.habitCheckIns] : [];
+    let updatedCheckIns = existingCheckIns;
+    if (newMean >= 70) {
+      const hasToday = existingCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+      updatedCheckIns = hasToday
+        ? existingCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+        : [...existingCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+    }
+
+    const payload: Partial<Goal> = {
+      nutritionItems: updatedList as unknown as Goal['nutritionItems'],
+      habitCheckIns: updatedCheckIns,
+      progress: newMean,
+    };
 
     if (onUpdateGoal) {
-      await onUpdateGoal(goal.id, { nutritionItems: updatedList });
+      await onUpdateGoal(goal.id, payload);
     } else {
-      await updateDoc(doc(db, 'goals', goal.id), { nutritionItems: updatedList });
+      await updateDoc(doc(db, 'goals', goal.id), payload);
     }
+  };
+
+  const handleLoggerAddEntry = async (it: NutritionItem, addedValue: number) => {
+    if (!goal.id) return;
+    const todayStr = getTodayStr();
+
+    const prevVal = it.currentValue || 0;
+    const newCurrent = Math.min(it.targetValue, Math.round((prevVal + addedValue) * 100) / 100);
+    const isCompletedNow = newCurrent >= it.targetValue;
+
+    const updatedList = items.map((e) => {
+      if (e.id === it.id || e === it) {
+        return {
+          ...e,
+          currentValue: newCurrent,
+          lastCompletedAt: isCompletedNow ? todayStr : (e as { lastCompletedAt?: string }).lastCompletedAt,
+        };
+      }
+      return e;
+    });
+
+    setItems(updatedList);
+
+    let sumProgress = 0;
+    for (const item of updatedList) {
+      sumProgress += calculateNutritionProgress(item);
+    }
+    const newMean = updatedList.length > 0 ? Math.max(0, Math.min(100, Math.round(sumProgress / updatedList.length))) : 0;
+
+    const existingCheckIns = Array.isArray(goal.habitCheckIns) ? [...goal.habitCheckIns] : [];
+    let updatedCheckIns = existingCheckIns;
+    const isStreakDone = newMean >= 70 || isCompletedNow;
+
+    if (isStreakDone) {
+      const hasToday = existingCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+      updatedCheckIns = hasToday
+        ? existingCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+        : [...existingCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+    }
+
+    const payload: Partial<Goal> = {
+      nutritionItems: updatedList as unknown as Goal['nutritionItems'],
+      habitCheckIns: updatedCheckIns,
+      progress: newMean,
+    };
+
+    if (onUpdateGoal) {
+      await onUpdateGoal(goal.id, payload);
+    } else {
+      await updateDoc(doc(db, 'goals', goal.id), payload);
+    }
+  };
+
+  const handleLoggerFinishToday = async (it: NutritionItem) => {
+    const remaining = Math.max(0, it.targetValue - (it.currentValue || 0));
+    await handleLoggerAddEntry(it, remaining > 0 ? remaining : it.targetValue);
   };
 
   const handleOpenItemModal = (item?: NutritionItem, idx?: number) => {
@@ -468,15 +793,15 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
       setName(item.name);
       setCategory(item.category);
       setTargetVal(item.targetValue);
-      setCurrentVal(item.currentValue);
-      setUnit(item.unit);
+      const categoryUnits = CATEGORY_UNITS_MAP[item.category] || CATEGORY_UNITS_MAP.other;
+      const validUnit = categoryUnits.some((u) => u.value === item.unit) ? item.unit : categoryUnits[0].value;
+      setUnit(validUnit);
       setTime(item.scheduleTime || '08:00 AM');
     } else {
       setEditingIdx(null);
       setName('');
       setCategory('water');
       setTargetVal('');
-      setCurrentVal('');
       setUnit('glasses');
       setTime('08:00 AM');
     }
@@ -487,12 +812,13 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     if (!name.trim() || typeof targetVal !== 'number' || targetVal <= 0 || !goal.id) return;
     setSavingItem(true);
     try {
+      const existingCurrent = editingIdx !== null && items[editingIdx] ? items[editingIdx].currentValue || 0 : 0;
       const newItem: NutritionItem = {
         id: editingIdx !== null && items[editingIdx] ? items[editingIdx].id : 'nut_' + Date.now(),
         name: name.trim(),
         category,
         targetValue: targetVal,
-        currentValue: typeof currentVal === 'number' ? currentVal : 0,
+        currentValue: existingCurrent,
         unit,
         scheduleTime: time,
       };
@@ -519,29 +845,6 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
     await saveItemsList(filtered);
   };
 
-  const handleLogIntake = async () => {
-    if (typeof addAmount !== 'number' || addAmount <= 0 || !goal.id) return;
-    setSavingLog(true);
-    try {
-      const targetItem = items[selectedItemIdx];
-      if (!targetItem) return;
-      const updatedItem = {
-        ...targetItem,
-        currentValue: targetItem.currentValue + addAmount,
-      };
-
-      const updatedList = items.map((it, idx) => (idx === selectedItemIdx ? updatedItem : it));
-      await saveItemsList(updatedList);
-
-      setAddAmount('');
-      setLogModalOpen(false);
-    } catch (err) {
-      console.error('Failed to log intake:', err);
-    } finally {
-      setSavingLog(false);
-    }
-  };
-
   const handleScheduleMeal = async () => {
     if (!schedTitle.trim() || !user || !goal.id) return;
     setSavingSched(true);
@@ -549,7 +852,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
       if (schedKind === 'schedule') {
         await addSchedule({
           title: schedTitle.trim(),
-          date: schedDate || new Date().toISOString().split('T')[0],
+          date: schedDate || getTodayStr(),
           startTime: schedTime || '08:00',
           endTime: '08:30',
           projectId: goal.projectId || '',
@@ -595,137 +898,249 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
 
   return (
     <Box sx={{ width: '100%' }}>
-      {/* Header Card */}
+      {/* ── 1. Top Nutrition Summary Banner Card ── */}
       <Box
         sx={{
-          borderRadius: '24px',
-          border: `1px solid ${cardBorder}`,
-          bgcolor: surfaceBg,
-          p: 3,
-          boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 20px rgba(15,23,42,0.06)',
-          mb: 3,
+          borderRadius: '28px',
+          border: `1.5px solid ${isDark ? 'rgba(16,185,129,0.3)' : '#a7f3d0'}`,
+          bgcolor: isDark ? 'rgba(15, 23, 42, 0.85)' : '#ffffff',
+          p: 3.5,
+          boxShadow: isDark ? '0 8px 30px rgba(0,0,0,0.35)' : '0 8px 30px rgba(16,185,129,0.06)',
+          mb: 3.5,
         }}
       >
-        <Typography sx={{ fontSize: 11, fontWeight: 600, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-          Health · Nutrition & Hydration Goal
-        </Typography>
-        <Typography sx={{ fontSize: 18, fontWeight: 700, color: textPrimary, mt: 0.5 }}>
-          {displayTitle}
-        </Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: 1 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              Health · Nutrition & Hydration Goal
+            </Typography>
+
+            <Chip
+              label={`${meanProgress}% Target Progress`}
+              size="small"
+              sx={{
+                bgcolor: 'rgba(16, 185, 129, 0.15)',
+                color: '#10b981',
+                fontWeight: 800,
+                fontSize: 12,
+                px: 1,
+                py: 0.5,
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+              }}
+            />
+          </Box>
+
+          <Typography sx={{ fontSize: { xs: 20, sm: 24 }, fontWeight: 800, color: textPrimary, width: '100%', wordBreak: 'break-word', mt: 0.5 }}>
+            {displayTitle}
+          </Typography>
+        </Box>
+
+        <Box sx={{ mt: 2.5, display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+          <Typography sx={{ fontSize: { xs: 18, sm: 20 }, fontWeight: 800, color: textPrimary, fontFamily: 'monospace' }}>
+            {items.length} Active Intake {items.length === 1 ? 'Category' : 'Categories'}
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: textMuted, fontWeight: 500 }}>
+            configured for nutrition routine
+          </Typography>
+        </Box>
+
+        <Box sx={{ mt: 2, height: 8, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
+          <Box
+            sx={{
+              height: '100%',
+              width: `${meanProgress}%`,
+              bgcolor: '#10b981',
+              borderRadius: 99,
+              transition: 'width 0.4s ease',
+            }}
+          />
+        </Box>
       </Box>
 
-      {/* Streak Status Card */}
+      {/* Streak Status Card (Add Nutrition button removed from StreaksCard) */}
       <StreakCard
-        goal={goal}
+        goal={currentGoalWithCheckIns}
         onUpdateGoal={onUpdateGoal}
-        onQuickLog={() => handleOpenItemModal()}
-        quickLogLabel="Add Nutrition Tracker"
         metricLabel="nutrition intake"
       />
 
-      {/* Nutrition Categories Progress List */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
-          <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+      {/* ── 2. Tracked Intake Categories Section ── */}
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 800, color: textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
             Tracked Intake Categories ({items.length})
           </Typography>
-          <Button
-            size="small"
-            onClick={() => handleOpenItemModal()}
-            startIcon={<AddIcon sx={{ fontSize: 15 }} />}
-            sx={{ textTransform: 'none', fontSize: 12, fontWeight: 700, color: '#10b981' }}
-          >
-            Add Nutrition
-          </Button>
+
+          {items.length > 0 && (
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => handleOpenItemModal()}
+              startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                textTransform: 'none',
+                fontSize: 12.5,
+                fontWeight: 800,
+                borderRadius: '12px',
+                bgcolor: '#10b981',
+                color: '#ffffff',
+                px: 2,
+                py: 0.75,
+                boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
+                '&:hover': { bgcolor: '#059669' },
+              }}
+            >
+              + Add Nutrition
+            </Button>
+          )}
         </Box>
 
-        <Stack spacing={2}>
-          {items.map((it, idx) => {
-            const meta = NUTRITION_META[it.category] || NUTRITION_META.other;
-            const IconComponent = meta.icon;
-            const progress = it.targetValue > 0 ? Math.max(0, Math.min(100, Math.round((it.currentValue / it.targetValue) * 100))) : 0;
+        {items.length === 0 ? (
+          <Box
+            sx={{
+              p: 4,
+              borderRadius: '24px',
+              border: `2px dashed ${isDark ? '#334155' : '#cbd5e1'}`,
+              bgcolor: surfaceBg,
+              textAlign: 'center',
+              boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.2)' : '0 4px 20px rgba(15,23,42,0.03)',
+            }}
+          >
+            <Box
+              sx={{
+                width: 56,
+                height: 56,
+                borderRadius: '18px',
+                bgcolor: 'rgba(16, 185, 129, 0.12)',
+                color: '#10b981',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                mb: 2,
+              }}
+            >
+              <WaterIcon sx={{ fontSize: 30 }} />
+            </Box>
 
-            return (
-              <Box
-                key={it.id || idx}
-                sx={{
-                  borderRadius: '20px',
-                  border: `1px solid ${cardBorder}`,
-                  bgcolor: surfaceBg,
-                  p: 2.5,
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Box
-                      sx={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: '12px',
-                        bgcolor: `${meta.color}15`,
-                        color: meta.color,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <IconComponent sx={{ fontSize: 20 }} />
+            <Typography sx={{ fontSize: 18, fontWeight: 800, color: textPrimary, mb: 1 }}>
+              Choose a nutrition item to track
+            </Typography>
+            <Typography sx={{ fontSize: 13, color: textMuted, maxWidth: 460, mx: 'auto', mb: 3 }}>
+              Set up your daily intake routines (Water, Protein, Calories, Meals, Supplements, Fruits & Veggies) with custom targets and units.
+            </Typography>
+
+            <Button
+              variant="contained"
+              onClick={() => handleOpenItemModal()}
+              startIcon={<AddIcon />}
+              sx={{
+                textTransform: 'none',
+                fontSize: 13.5,
+                fontWeight: 800,
+                borderRadius: '14px',
+                bgcolor: '#10b981',
+                color: '#ffffff',
+                px: 3,
+                py: 1,
+                boxShadow: '0 6px 20px rgba(16,185,129,0.35)',
+                '&:hover': { bgcolor: '#059669' },
+              }}
+            >
+              + Add Nutrition
+            </Button>
+          </Box>
+        ) : (
+          <Stack spacing={2.5}>
+            {items.map((it, idx) => {
+              const meta = NUTRITION_META[it.category] || NUTRITION_META.other;
+              const IconComponent = meta.icon;
+              const itProg = calculateNutritionProgress(it);
+
+              return (
+                <Box
+                  key={it.id || idx}
+                  sx={{
+                    borderRadius: '22px',
+                    border: `1.5px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                    bgcolor: surfaceBg,
+                    p: 3,
+                    boxShadow: isDark ? '0 4px 18px rgba(0,0,0,0.25)' : '0 4px 18px rgba(15,23,42,0.04)',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, flex: 1, minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: '14px',
+                          bgcolor: `${meta.color}15`,
+                          color: meta.color,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          mt: 0.5,
+                        }}
+                      >
+                        <IconComponent sx={{ fontSize: 24 }} />
+                      </Box>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 17, fontWeight: 800, color: textPrimary, width: '100%' }}>
+                          {it.name}
+                        </Typography>
+                        <Typography sx={{ fontSize: 12, color: textMuted, fontWeight: 500, mt: 0.25 }}>
+                          Target: {formatUnitVal(it.targetValue, it.unit)} {it.scheduleTime && `· Time: ${it.scheduleTime}`}
+                        </Typography>
+                      </Box>
                     </Box>
-                    <Box>
-                      <Typography sx={{ fontSize: 14, fontWeight: 700, color: textPrimary }}>
-                        {it.name}
-                      </Typography>
-                      <Typography sx={{ fontSize: 11, color: textMuted }}>
-                        Target: {formatUnitVal(it.targetValue, it.unit)} {it.scheduleTime && `· Time: ${it.scheduleTime}`}
-                      </Typography>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+                      <Chip
+                        label={`${itProg}%`}
+                        size="small"
+                        sx={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          bgcolor: 'rgba(16, 185, 129, 0.15)',
+                          color: '#10b981',
+                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          mr: 0.5,
+                        }}
+                      />
+                      <IconButton size="small" onClick={() => handleOpenItemModal(it, idx)}>
+                        <EditIcon sx={{ fontSize: 17, color: textMuted }} />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => handleDeleteItem(idx)} sx={{ color: '#ef4444' }}>
+                        <DeleteIcon sx={{ fontSize: 17 }} />
+                      </IconButton>
                     </Box>
                   </Box>
 
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <Chip
-                      label={`${progress}% Achieved`}
-                      size="small"
-                      sx={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        bgcolor: isDark ? `${meta.color}20` : `${meta.color}10`,
-                        color: meta.color,
-                      }}
+                  {/* Circular Ring Progress Logger */}
+                  <Box sx={{ mt: 2.5 }}>
+                    <ActivityRingLogger
+                      label={it.name}
+                      unit={it.unit}
+                      target={it.targetValue}
+                      currentValue={it.currentValue || 0}
+                      chips={getPredefinedSlotsForNutrition(it.unit, it.targetValue, it.category).map((s) => s.value)}
+                      isDone={isDoneForToday(it, currentGoalWithCheckIns)}
+                      onAddEntry={(addedVal) => handleLoggerAddEntry(it, addedVal)}
+                      onFinishForToday={() => handleLoggerFinishToday(it)}
                     />
-                    <IconButton size="small" onClick={() => handleOpenItemModal(it, idx)}>
-                      <EditIcon sx={{ fontSize: 16, color: textMuted }} />
-                    </IconButton>
-                    <IconButton size="small" onClick={() => handleDeleteItem(idx)} sx={{ color: '#ef4444' }}>
-                      <DeleteIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
                   </Box>
                 </Box>
-
-                <Box sx={{ mt: 2, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                  <Typography sx={{ fontSize: 20, fontWeight: 800, color: textPrimary, fontFamily: 'monospace' }}>
-                    {formatUnitVal(it.currentValue, it.unit)}
-                  </Typography>
-                  <Button
-                    size="small"
-                    onClick={() => handleOpenLogModal(idx)}
-                    sx={{ textTransform: 'none', fontSize: 11, fontWeight: 700, color: meta.color }}
-                  >
-                    + Add Intake
-                  </Button>
-                </Box>
-
-                <Box sx={{ mt: 1.5, height: 6, borderRadius: 99, bgcolor: isDark ? '#334155' : '#f1f5f9', overflow: 'hidden' }}>
-                  <Box sx={{ height: '100%', width: `${progress}%`, bgcolor: meta.color, borderRadius: 99, transition: 'width 0.4s ease' }} />
-                </Box>
-              </Box>
-            );
-          })}
-        </Stack>
+              );
+            })}
+          </Stack>
+        )}
       </Box>
 
-      {/* Schedules & Todo Reminders */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, px: 0.5 }}>
+      {/* ── 3. SCHEDULES & TODOS REMINDERS SECTION ── */}
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
           <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
             Scheduled Meals & Nutrition Reminders ({linkedNutritionSchedules.length + linkedNutritionTodos.length})
           </Typography>
@@ -803,290 +1218,178 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
         </Stack>
       </Box>
 
-      {/* 🌟 STRATEGY TASKS SECTION AT BOTTOM */}
-      <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${cardBorder}` }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 800, color: textPrimary, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-            🎯 Strategy Tasks ({actions.length})
-          </Typography>
-        </Box>
+      {/* ── 4. STRATEGY TASKS SECTION ── */}
+      <StrategyTasksSection
+        goal={goal}
+        actions={actions as StrategyActionItem[]}
+        onSaveActions={async (updated) => saveActionsList(updated as NutritionActionItem[])}
+        placeholder="+ Quickly add a strategy task for your nutrition goal…"
+      />
 
-        {actions.length > 0 && (
-          <div className="space-y-2 mb-3">
-            {actions.map((step) => {
-              const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
-              const hasLink = kind === 'schedule' || kind === 'todo';
-
-              return (
-                <div
-                  key={step.id}
-                  onClick={() => handleOpenTaskDetailModal(step)}
-                  className="group flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500 shadow-sm"
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleStepCompletion(step);
-                      }}
-                      className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
-                        step.done
-                          ? 'bg-emerald-500 border-emerald-500 text-white'
-                          : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400'
-                      }`}
-                    >
-                      {step.done && (
-                        <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
-                          <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </button>
-
-                    <div className="min-w-0 flex-1">
-                      {step.sourceName && (
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 block">
-                          {step.sourceName}
-                        </span>
-                      )}
-                      <span
-                        className={`text-xs font-bold block truncate ${
-                          step.done
-                            ? 'line-through text-slate-400 dark:text-slate-500'
-                            : 'text-slate-800 dark:text-slate-100'
-                        }`}
-                      >
-                        {step.task}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
-                        hasLink
-                          ? kind === 'schedule'
-                            ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                            : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                      }`}
-                    >
-                      {kind === 'schedule'
-                        ? '🗓 Schedule'
-                        : kind === 'todo'
-                        ? '✅ Todo'
-                        : '+ Schedule/Todo'}
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteStep(step.id);
-                      }}
-                      className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                      title="Delete step"
-                    >
-                      <DeleteIcon sx={{ fontSize: 16 }} />
-                    </button>
-                  </div>
+      {/* ── MODERN ADD / EDIT NUTRITION CATEGORY MODAL ── */}
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} closeAfterTransition>
+        <Fade in={modalOpen}>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[92%] sm:w-[460px] shadow-2xl overflow-hidden border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800">
+            {/* Header Banner */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-lg">
+                  🥗
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Inline Add Task Input */}
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="+ Add a strategy task..."
-            value={newGeneralStepInput}
-            onChange={(e) => setNewGeneralStepInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newGeneralStepInput.trim()) {
-                handleAddStep(newGeneralStepInput.trim());
-                setNewGeneralStepInput('');
-              }
-            }}
-            className="flex-1 text-xs font-medium px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 dark:focus:border-emerald-500"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (newGeneralStepInput.trim()) {
-                handleAddStep(newGeneralStepInput.trim());
-                setNewGeneralStepInput('');
-              }
-            }}
-            disabled={!newGeneralStepInput.trim()}
-            className="px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm shrink-0"
-          >
-            Add Task
-          </button>
-        </div>
-      </Box>
-
-      {/* Add / Edit Category Dialog */}
-      <Dialog open={modalOpen} onClose={() => setModalOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>
-          {editingIdx !== null ? 'Edit Nutrition Category' : 'Add Nutrition Category'}
-        </DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <TextField
-              label="Intake Name"
-              placeholder="e.g. Daily Water, Protein Shake, Vitamin D Tabs"
-              fullWidth
-              size="small"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-
-            <FormControl fullWidth size="small">
-              <InputLabel>Category</InputLabel>
-              <Select value={category} label="Category" onChange={(e) => setCategory(e.target.value as NutritionItem['category'])}>
-                <MenuItem value="water">Water Intake 💧</MenuItem>
-                <MenuItem value="protein">Protein Intake 🥩</MenuItem>
-                <MenuItem value="calories">Daily Calories 🔥</MenuItem>
-                <MenuItem value="sugar">Sugar Control 🍬</MenuItem>
-                <MenuItem value="soft_drinks">Soft Drinks 🥤</MenuItem>
-                <MenuItem value="fast_food">Fast Food 🍔</MenuItem>
-                <MenuItem value="meals">Balanced Meals 🥗</MenuItem>
-                <MenuItem value="supplements">Supplements 💊</MenuItem>
-                <MenuItem value="fruits">Fruits & Vegetables 🍎</MenuItem>
-                <MenuItem value="other">Other 🍽️</MenuItem>
-              </Select>
-            </FormControl>
-
-            <FormControl fullWidth size="small">
-              <InputLabel>Unit</InputLabel>
-              <Select value={unit} label="Unit" onChange={(e) => setUnit(e.target.value)}>
-                <MenuItem value="glasses">Glasses 🥛</MenuItem>
-                <MenuItem value="liters">Liters (L) 🧴</MenuItem>
-                <MenuItem value="ml">Milliliters (ml) 🧪</MenuItem>
-                <MenuItem value="bottles">Bottles 🍼</MenuItem>
-                <MenuItem value="cans">Cans 🥫</MenuItem>
-                <MenuItem value="sips">Sips 🥤</MenuItem>
-                <MenuItem value="grams">Grams (gm) ⚖️</MenuItem>
-                <MenuItem value="scoops">Scoops 🏋️</MenuItem>
-                <MenuItem value="servings">Servings 🍽️</MenuItem>
-                <MenuItem value="calories">Calories (kcal) 🔥</MenuItem>
-                <MenuItem value="teaspoons">Teaspoons 🥄</MenuItem>
-                <MenuItem value="tabs">Tablets / Tabs 💊</MenuItem>
-                <MenuItem value="capsules">Capsules 💊</MenuItem>
-                <MenuItem value="doses">Doses 🧪</MenuItem>
-                <MenuItem value="times">Times / Occurrences 📅</MenuItem>
-                <MenuItem value="meals">Meals 🥗</MenuItem>
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="Daily Target Amount"
-              type="number"
-              fullWidth
-              size="small"
-              value={targetVal}
-              onChange={(e) => setTargetVal(e.target.value ? Number(e.target.value) : '')}
-            />
-
-            <TextField
-              label="Current Logged Amount"
-              type="number"
-              fullWidth
-              size="small"
-              value={currentVal}
-              onChange={(e) => setCurrentVal(e.target.value ? Number(e.target.value) : '')}
-            />
-
-            <TextField
-              label="Scheduled Time (Optional)"
-              placeholder="e.g. 08:00 AM"
-              fullWidth
-              size="small"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setModalOpen(false)} sx={{ textTransform: 'none' }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={savingItem || !name.trim() || typeof targetVal !== 'number' || targetVal <= 0}
-            onClick={handleSaveItem}
-            sx={{ textTransform: 'none', bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
-          >
-            Save Category
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Log Intake Dialog */}
-      <Dialog open={logModalOpen} onClose={() => setLogModalOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>Log Nutrition Intake</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Category</InputLabel>
-              <Select
-                value={selectedItemIdx}
-                label="Category"
-                onChange={(e) => setSelectedItemIdx(Number(e.target.value))}
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
+                    {editingIdx !== null ? 'Edit Nutrition Tracker' : 'Add Nutrition Tracker'}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Configure daily intake targets and measurement units
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors"
               >
-                {items.map((it, i) => (
-                  <MenuItem key={i} value={i}>
-                    {it.name} ({it.unit})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </button>
+            </div>
 
-            <TextField
-              label={`Amount to Add (${items[selectedItemIdx]?.unit || ''})`}
-              type="number"
-              fullWidth
-              size="small"
-              value={addAmount}
-              onChange={(e) => setAddAmount(e.target.value ? Number(e.target.value) : '')}
-            />
-
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', pt: 0.5 }}>
-              <Chip
-                label={`Full Target (${items[selectedItemIdx]?.targetValue || 1} ${items[selectedItemIdx]?.unit || ''})`}
-                onClick={() => setAddAmount(items[selectedItemIdx]?.targetValue || 1)}
-                size="small"
-                color="primary"
-                sx={{ fontWeight: 700, cursor: 'pointer' }}
-              />
-              {items[selectedItemIdx]?.targetValue && items[selectedItemIdx].targetValue > 1 && (
-                <Chip
-                  label={`Half Target (${Math.round(items[selectedItemIdx].targetValue / 2)} ${items[selectedItemIdx]?.unit || ''})`}
-                  onClick={() => setAddAmount(Math.round(items[selectedItemIdx].targetValue / 2))}
-                  size="small"
-                  variant="outlined"
-                  sx={{ fontWeight: 700, cursor: 'pointer' }}
+            <div className="p-5 space-y-4 max-h-[78vh] overflow-y-auto">
+              {/* Intake Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                  Intake / Item Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Daily Water, Whey Protein, Vitamin D Tabs"
+                  className="w-full text-sm font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500 transition-colors"
                 />
-              )}
-            </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setLogModalOpen(false)} sx={{ textTransform: 'none' }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={savingLog || typeof addAmount !== 'number' || addAmount <= 0}
-            onClick={handleLogIntake}
-            sx={{ textTransform: 'none', bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
-          >
-            Log Intake
-          </Button>
-        </DialogActions>
-      </Dialog>
+              </div>
+
+              {/* Category Dropdown */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                  Nutrition Category
+                </label>
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={category}
+                    onChange={(e) => handleCategoryChange(e.target.value as NutritionItem['category'])}
+                    sx={{
+                      borderRadius: '12px',
+                      fontSize: '0.875rem',
+                      fontWeight: 700,
+                      bgcolor: isDark ? 'rgba(30,41,59,0.5)' : '#f8fafc',
+                    }}
+                  >
+                    <MenuItem value="water">💧 Water Intake</MenuItem>
+                    <MenuItem value="protein">🥩 Protein Intake</MenuItem>
+                    <MenuItem value="calories">🔥 Daily Calories</MenuItem>
+                    <MenuItem value="sugar">🍬 Sugar Control</MenuItem>
+                    <MenuItem value="soft_drinks">🥤 Soft Drinks</MenuItem>
+                    <MenuItem value="fast_food">🍔 Fast Food</MenuItem>
+                    <MenuItem value="meals">🥗 Balanced Meals</MenuItem>
+                    <MenuItem value="supplements">💊 Supplements</MenuItem>
+                    <MenuItem value="fruits">🍎 Fruits & Vegetables</MenuItem>
+                    <MenuItem value="other">🍽️ Other Nutrition</MenuItem>
+                  </Select>
+                </FormControl>
+              </div>
+
+              {/* Category-Specific Units Dropdown */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                  Measurement Unit ({currentAvailableUnits.length} available)
+                </label>
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                    sx={{
+                      borderRadius: '12px',
+                      fontSize: '0.875rem',
+                      fontWeight: 700,
+                      bgcolor: isDark ? 'rgba(30,41,59,0.5)' : '#f8fafc',
+                    }}
+                  >
+                    {currentAvailableUnits.map((u) => (
+                      <MenuItem key={u.value} value={u.value}>
+                        {u.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </div>
+
+              {/* Daily Target Amount */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                  Daily Target Goal Amount
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={targetVal}
+                    onChange={(e) => setTargetVal(e.target.value ? Number(e.target.value) : '')}
+                    placeholder="e.g. 8"
+                    className="w-full text-sm font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    {unit}
+                  </span>
+                </div>
+              </div>
+
+              {/* Scheduled Time (Optional) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                  Scheduled Reminder Time (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  placeholder="e.g. 08:00 AM"
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors"
+              >
+                Cancel
+              </button>
+              <Button
+                variant="contained"
+                disabled={savingItem || !name.trim() || typeof targetVal !== 'number' || targetVal <= 0}
+                onClick={handleSaveItem}
+                sx={{
+                  borderRadius: '12px',
+                  px: 3,
+                  py: 1,
+                  textTransform: 'none',
+                  fontWeight: 800,
+                  fontSize: '0.825rem',
+                  bgcolor: '#10b981',
+                  color: '#ffffff',
+                  boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
+                  '&:hover': { bgcolor: '#059669' },
+                }}
+              >
+                {savingItem ? 'Saving...' : editingIdx !== null ? 'Update Tracker' : 'Save Tracker'}
+              </Button>
+            </div>
+          </div>
+        </Fade>
+      </Modal>
 
       {/* Schedule Meal Dialog */}
       <Dialog open={schedModalOpen} onClose={() => setSchedModalOpen(false)} maxWidth="xs" fullWidth>
@@ -1160,229 +1463,7 @@ export default function NutritionTemplate({ goal, onUpdateGoal }: NutritionTempl
         </DialogActions>
       </Dialog>
 
-      {/* ── Dialog 4: STRATEGY TASK DETAIL MODAL ── */}
-      <Modal
-        open={taskModalOpen}
-        onClose={() => setTaskModalOpen(false)}
-        closeAfterTransition
-      >
-        <Fade in={taskModalOpen}>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[440px] shadow-2xl overflow-hidden border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800">
-            {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
-              <p className="text-[1.05rem] font-extrabold text-slate-800 dark:text-slate-100">
-                Task Details
-              </p>
-              <button
-                type="button"
-                onClick={() => setTaskModalOpen(false)}
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <CloseIcon sx={{ fontSize: 18 }} />
-              </button>
-            </div>
 
-            <div className="p-5 space-y-4 max-h-[78vh] overflow-y-auto">
-              {/* Parent Item Name Banner if item action */}
-              {activeStep?.sourceName && (
-                <div className="p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
-                  <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-                    Linked Nutrition Category
-                  </p>
-                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-0.5">
-                    {activeStep.sourceName}
-                  </p>
-                </div>
-              )}
-
-              {/* Task Title Input */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                  Task Title / Strategy Step
-                </label>
-                <input
-                  type="text"
-                  value={taskEditText}
-                  onChange={(e) => setTaskEditText(e.target.value)}
-                  placeholder="e.g. Drink 2 glasses of water before breakfast"
-                  className="w-full text-sm font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              {/* Toggle Convert Options Button */}
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowConvertOptions(!showConvertOptions)}
-                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 hover:border-emerald-400 text-left transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🗓️</span>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        {taskEditKind === 'schedule'
-                          ? 'Converted to Schedule'
-                          : taskEditKind === 'todo'
-                          ? 'Converted to Todo'
-                          : 'Convert to Schedule or Todo'}
-                      </p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        {taskEditKind === 'none'
-                          ? 'Appears in Schedules or Todo lists across app'
-                          : `Currently synced as ${taskEditKind}`}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                    {showConvertOptions ? 'Hide' : 'Configure'}
-                  </span>
-                </button>
-
-                {showConvertOptions && (
-                  <div className="mt-2.5 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 space-y-3">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('none')}
-                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'none'
-                            ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        Plain Step
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('schedule')}
-                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'schedule'
-                            ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        🗓 Schedule
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('todo')}
-                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'todo'
-                            ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        ✅ Todo
-                      </button>
-                    </div>
-
-                    {taskEditKind !== 'none' && (
-                      <div className="space-y-2.5 pt-1">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                            {taskEditKind === 'schedule' ? 'Schedule Date' : 'Due Date'}
-                          </label>
-                          <input
-                            type="date"
-                            value={taskEditDate}
-                            onChange={(e) => setTaskEditDate(e.target.value)}
-                            className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                          />
-                        </div>
-
-                        {taskEditKind === 'schedule' && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                                Start Time
-                              </label>
-                              <input
-                                type="time"
-                                value={taskEditStartTime}
-                                onChange={(e) => setTaskEditStartTime(e.target.value)}
-                                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                                End Time
-                              </label>
-                              <input
-                                type="time"
-                                value={taskEditEndTime}
-                                onChange={(e) => setTaskEditEndTime(e.target.value)}
-                                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Assignee Input */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                  Assignee (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={taskEditAssignee}
-                  onChange={(e) => setTaskEditAssignee(e.target.value)}
-                  placeholder="e.g. Self, Dietitian"
-                  className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeStep) {
-                    handleDeleteStep(activeStep.id);
-                    setTaskModalOpen(false);
-                  }
-                }}
-                className="px-3 py-2 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
-              >
-                Delete Task
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTaskModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <Button
-                  variant="contained"
-                  disabled={savingTaskEdit || !taskEditText.trim()}
-                  onClick={handleSaveTaskDetail}
-                  sx={{
-                    borderRadius: '12px',
-                    px: 3,
-                    textTransform: 'none',
-                    fontWeight: 700,
-                    bgcolor: '#10b981',
-                    color: '#fff',
-                    '&:hover': { bgcolor: '#059669' },
-                  }}
-                >
-                  {savingTaskEdit ? 'Saving...' : 'Save Task'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Fade>
-      </Modal>
     </Box>
   );
 }
-
-

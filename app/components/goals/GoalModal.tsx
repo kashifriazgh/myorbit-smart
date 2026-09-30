@@ -131,6 +131,9 @@ export default function GoalModal({
   );
   const [dueDate, setDueDate] = useState<Date | null>(toPlainDate(goal?.dueDate));
   const [priority] = useState<GoalPriority>(goal?.priority || 'Medium');
+  const [priorityIndex, setPriorityIndex] = useState<number | ''>(
+    goal?.priorityIndex !== undefined ? goal.priorityIndex : ''
+  );
 
   const activeCategoryConfig = useMemo(
     () => getCategoryConfig(selectedCategory),
@@ -172,6 +175,7 @@ export default function GoalModal({
         setTargetValue(goal.overallTargetValue || '');
         setTargetUnit(goal.overallTargetUnit || 'units');
         setDueDate(toPlainDate(goal.dueDate));
+        setPriorityIndex(goal.priorityIndex !== undefined ? goal.priorityIndex : '');
         if (goal.questionnaireAnswers) {
           setAnswers(goal.questionnaireAnswers);
         }
@@ -184,6 +188,7 @@ export default function GoalModal({
         setTitle('');
         setTargetValue('');
         setDueDate(null);
+        setPriorityIndex('');
       }
     }
   }, [open, goal]);
@@ -407,6 +412,7 @@ export default function GoalModal({
         subcategory: selectedSubcat?.name || selectedSubcatId,
         measurementType: mType,
         priority,
+        priorityIndex: priorityIndex !== '' ? Number(priorityIndex) : undefined,
         unit: targetUnit,
         dueDate: dueDate ? Timestamp.fromDate(dueDate) : undefined,
         overallTargetValue: numTarget,
@@ -947,6 +953,16 @@ export default function GoalModal({
                               sx: { '& .MuiOutlinedInput-root': { borderRadius: '12px' } },
                             },
                           }}
+                        />
+                        <TextField
+                          label="Priority / Display Index"
+                          type="number"
+                          value={priorityIndex}
+                          onChange={(e) => setPriorityIndex(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
+                          placeholder="e.g. 1, 2, 3..."
+                          size="small"
+                          fullWidth
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
                         />
                       </Stack>
                     </Stack>

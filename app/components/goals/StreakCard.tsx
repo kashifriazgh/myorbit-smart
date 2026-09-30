@@ -124,7 +124,10 @@ export interface StreakCardProps {
 }
 
 const formatDateStr = (d: Date): string => {
-  return d.toISOString().split('T')[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 export default function StreakCard({
@@ -160,6 +163,13 @@ export default function StreakCard({
   // Set of logged date strings (YYYY-MM-DD)
   const loggedDatesSet = useMemo(() => {
     const set = new Set<string>();
+    const todayStr = formatDateStr(new Date());
+
+    // Automatically mark today as done if overall goal progress is >= 70%
+    if ((goal.progress || 0) >= 70) {
+      set.add(todayStr);
+    }
+
     logs.forEach((item) => {
       if (item.date && (item.completed !== false)) {
         const cleanDate = typeof item.date === 'string' ? item.date.split('T')[0] : '';
@@ -188,26 +198,60 @@ export default function StreakCard({
       });
     }
     return set;
-  }, [logs, goal.habitCheckIns, goal.routineLogs, goal.nutritionLogs, goal.readingLogs]);
+  }, [logs, goal.progress, goal.habitCheckIns, goal.routineLogs, goal.nutritionLogs, goal.readingLogs]);
 
   // Compute Streak Days & Missed Days
   const { streakDays, missedDays, last7Days } = useMemo(() => {
     const today = new Date();
     const todayStr = formatDateStr(today);
 
+    // Get goal creation date normalized to midnight
+    const getGoalCreatedDate = (g: Goal): Date => {
+      const raw = g.createdAt || g.quitStartDate || (g as unknown as { startDate?: unknown }).startDate;
+      if (!raw) return new Date();
+
+      if (raw instanceof Date) return raw;
+      if (typeof raw === 'object' && raw !== null) {
+        if ('toDate' in raw && typeof (raw as { toDate: unknown }).toDate === 'function') {
+          return (raw as { toDate: () => Date }).toDate();
+        }
+        if ('seconds' in raw && typeof (raw as { seconds: number }).seconds === 'number') {
+          return new Date((raw as { seconds: number }).seconds * 1000);
+        }
+      }
+      if (typeof raw === 'string' || typeof raw === 'number') {
+        const parsed = new Date(raw);
+        if (!isNaN(parsed.getTime())) return parsed;
+      }
+      return new Date();
+    };
+
+    const createdDate = getGoalCreatedDate(goal);
+    const createdMidnight = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate());
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (createdMidnight > todayMidnight) {
+      createdMidnight.setTime(todayMidnight.getTime());
+    }
+    const createdDateStr = formatDateStr(createdMidnight);
+
+    // Compute total elapsed days from goal creation until today
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const diffMs = todayMidnight.getTime() - createdMidnight.getTime();
+    const daysSinceCreation = Math.max(0, Math.floor(diffMs / msPerDay));
+
     // Compute 7-day tracker (oldest to newest: past 6 days + today)
     const dayLabelsArr: string[] = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
     const trackerDays: Array<{ label: string; status: 'done' | 'missed' | 'future'; dateStr: string }> = [];
 
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
+      const d = new Date(todayMidnight);
       d.setDate(d.getDate() - i);
       const dStr = formatDateStr(d);
       const label = dayLabelsArr[d.getDay()];
 
       let status: 'done' | 'missed' | 'future' = 'missed';
-      if (dStr > todayStr) {
-        status = 'future';
+      if (dStr > todayStr || dStr < createdDateStr) {
+        status = 'future'; // Days before goal creation or in future are not missed
       } else if (loggedDatesSet.has(dStr)) {
         status = 'done';
       }
@@ -217,33 +261,33 @@ export default function StreakCard({
 
     // Compute current consecutive streak count
     let streakCount = 0;
-    let checkDate = new Date(today);
+    let checkDate = new Date(todayMidnight);
 
     // If today is not logged yet, start checking from yesterday to preserve streak
     if (!loggedDatesSet.has(formatDateStr(checkDate))) {
-      const yesterday = new Date(today);
+      const yesterday = new Date(todayMidnight);
       yesterday.setDate(yesterday.getDate() - 1);
       if (loggedDatesSet.has(formatDateStr(yesterday))) {
         checkDate = yesterday;
       }
     }
 
-    while (loggedDatesSet.has(formatDateStr(checkDate))) {
+    while (formatDateStr(checkDate) >= createdDateStr && loggedDatesSet.has(formatDateStr(checkDate))) {
       streakCount++;
       checkDate.setDate(checkDate.getDate() - 1);
     }
 
-    // Compute missing days in past 30 days
+    // Compute missing days ONLY for past days since goal creation (up to last 30 days)
+    const daysToCheck = Math.min(30, daysSinceCreation);
     let missingCount = 0;
-    for (let i = 1; i <= 30; i++) {
-      const d = new Date(today);
+    for (let i = 1; i <= daysToCheck; i++) {
+      const d = new Date(todayMidnight);
       d.setDate(d.getDate() - i);
       const dStr = formatDateStr(d);
-      if (!loggedDatesSet.has(dStr)) {
+      if (dStr >= createdDateStr && !loggedDatesSet.has(dStr)) {
         missingCount++;
       }
     }
-    // Limit missing count display for UI cleanliness
     const cappedMissing = Math.min(30, Math.max(0, missingCount));
 
     return {
@@ -251,7 +295,7 @@ export default function StreakCard({
       missedDays: cappedMissing,
       last7Days: trackerDays,
     };
-  }, [loggedDatesSet]);
+  }, [goal, loggedDatesSet]);
 
   const handleSaveFrequency = async (freq: FrequencyInterval) => {
     if (!goal.id) return;

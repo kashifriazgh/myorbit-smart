@@ -13,9 +13,6 @@ import {
   DialogContent,
   DialogActions,
   Stack,
-  Modal,
-  Fade,
-  Collapse,
 } from '@mui/material';
 import {
   MenuBook as BookIcon,
@@ -25,7 +22,6 @@ import {
   Add as AddIcon,
   Flag as CheckpointIcon,
   Bookmark as BookmarkIcon,
-  LockClock as LockClockIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
   Close as CloseIcon,
@@ -38,12 +34,12 @@ import {
 } from '@mui/icons-material';
 import { Goal } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { useAuth } from '@/app/lib/context/userContext';
 import { useTodoContext } from '@/app/lib/context/todoContext';
 import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import StreakCard from '@/app/components/goals/StreakCard';
+import StrategyTasksSection, { StrategyActionItem } from '@/app/components/goals/StrategyTasksSection';
 
 export interface ReadingLog {
   id: string;
@@ -93,6 +89,54 @@ function formatDate(dateStr?: string) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function getPredefinedSlots(unit: string, targetValue: number): Array<{ label: string; value: number }> {
+  const target = targetValue && targetValue > 0 ? targetValue : (unit === 'chapters' ? 2 : unit === 'minutes' ? 30 : 20);
+  const normUnit = (unit || '').toLowerCase().trim();
+
+  if (normUnit === 'chapters') {
+    if (target === 1) {
+      return [
+        { label: '+0.25 ch', value: 0.25 },
+        { label: '+0.5 ch', value: 0.5 },
+        { label: '+0.75 ch', value: 0.75 },
+        { label: 'Full (1 ch)', value: 1 },
+      ];
+    }
+    const q1 = Math.max(0.5, Math.round(target * 0.25 * 2) / 2);
+    const q2 = Math.max(1, Math.round(target * 0.5 * 2) / 2);
+    const q3 = Math.max(1.5, Math.round(target * 0.75 * 2) / 2);
+    return [
+      { label: `+${q1} ch`, value: q1 },
+      { label: `+${q2} ch`, value: q2 },
+      { label: `+${q3} ch`, value: q3 },
+      { label: `Full (${target} ch)`, value: target },
+    ];
+  }
+
+  if (normUnit === 'minutes' || normUnit === 'mins') {
+    const q1 = Math.max(5, Math.round(target * 0.25));
+    const q2 = Math.max(10, Math.round(target * 0.5));
+    const q3 = Math.max(15, Math.round(target * 0.75));
+    return [
+      { label: `+${q1} mins`, value: q1 },
+      { label: `+${q2} mins`, value: q2 },
+      { label: `+${q3} mins`, value: q3 },
+      { label: `Full (${target} mins)`, value: target },
+    ];
+  }
+
+  // Default: pages
+  const q1 = Math.max(1, Math.round(target * 0.25));
+  const q2 = Math.max(2, Math.round(target * 0.5));
+  const q3 = Math.max(3, Math.round(target * 0.75));
+  return [
+    { label: `+${q1} pages`, value: q1 },
+    { label: `+${q2} pages`, value: q2 },
+    { label: `+${q3} pages`, value: q3 },
+    { label: `Full (${target} pages)`, value: target },
+  ];
+}
+
 // Preference Card Config Constants
 const TIME_SLOTS = [
   { id: 'morning', label: 'Morning', sub: '6–11 AM', icon: SunriseIcon },
@@ -120,9 +164,8 @@ const TYPE_EMOJIS: Record<string, string> = {
 export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateProps) {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
-  const { user } = useAuth();
-  const { todos, addTodo, updateTodo, deleteTodo } = useTodoContext();
-  const { allSchedules, addSchedule, editSchedule, removeSchedule } = useSchedules();
+  const { todos } = useTodoContext();
+  const { allSchedules } = useSchedules();
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const answers = goal.questionnaireAnswers || {};
@@ -131,13 +174,15 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
   const bookTitle = goal.title || String(answers.material_name || answers.reading_title || answers.book_title || 'Reading Item');
   const author = String(answers.author || answers.writer || '');
 
-  // Track by unit ('pages' | 'chapters')
+  // Track by unit ('pages' | 'chapters' | 'minutes')
   const trackByUnit = useMemo(() => {
     const rawTrack = String(answers.track_by || goal.overallTargetUnit || goal.unit || 'pages').toLowerCase();
-    return rawTrack.includes('chapter') ? 'chapters' : 'pages';
+    if (rawTrack.includes('chapter')) return 'chapters';
+    if (rawTrack.includes('minute') || rawTrack.includes('min')) return 'minutes';
+    return 'pages';
   }, [answers.track_by, goal.overallTargetUnit, goal.unit]);
 
-  // Overall total pages or chapters of book
+  // Overall total pages, chapters, or minutes of book
   const targetPages = Number(
     goal.overallTargetValue ||
     answers.total_pages ||
@@ -146,19 +191,35 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
     0
   );
 
-  // Daily target pages/chapters user wants to read per session
+  // Daily target pages/chapters/minutes user wants to read per session
   const dailyTargetNum = Number(
     answers.daily_target_qty ||
     answers.daily_pages ||
     answers.daily_chapters ||
     answers.daily_reading_target ||
-    (trackByUnit === 'chapters' ? 1 : 10)
+    (trackByUnit === 'chapters' ? 2 : trackByUnit === 'minutes' ? 30 : 10)
   );
-  const dailyTargetText = dailyTargetNum > 0 ? String(dailyTargetNum) : 'some';
+
+  // Derived predefined slots for 1-tap progress logging
+  const predefinedSlots = useMemo(() => {
+    return getPredefinedSlots(trackByUnit, dailyTargetNum);
+  }, [trackByUnit, dailyTargetNum]);
 
   const dailyReadingTime = String(answers.preferred_time || answers.reading_time || 'Flexible');
 
   const [currentPages, setCurrentPages] = useState<number>(goal.currentValue || 0);
+
+  // Habit check-ins state for streak synchronization
+  const [habitCheckIns, setHabitCheckIns] = useState<NonNullable<Goal['habitCheckIns']>>(() => {
+    return Array.isArray(goal.habitCheckIns) ? goal.habitCheckIns : [];
+  });
+
+  // Synchronize habit check-ins when goal object updates externally
+  useEffect(() => {
+    if (Array.isArray(goal.habitCheckIns)) {
+      setHabitCheckIns(goal.habitCheckIns);
+    }
+  }, [goal.habitCheckIns]);
 
   // Reading Logs History
   const [readingLogs, setReadingLogs] = useState<ReadingLog[]>(() => {
@@ -192,7 +253,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
     }
     return [];
   });
-  const [newGeneralStepInput, setNewGeneralStepInput] = useState('');
+
 
   // Synchronize strategy tasks status in real time with allSchedules and todos
   useEffect(() => {
@@ -243,7 +304,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
   const [editTargetsOpen, setEditTargetsOpen] = useState(false);
   const [editTotalPagesVal, setEditTotalPagesVal] = useState<number | ''>(targetPages > 0 ? targetPages : '');
   const [editDailyTargetVal, setEditDailyTargetVal] = useState<number | ''>(dailyTargetNum > 0 ? dailyTargetNum : 10);
-  const [editTrackBy, setEditTrackBy] = useState<'pages' | 'chapters'>(trackByUnit);
+  const [editTrackBy, setEditTrackBy] = useState<'pages' | 'chapters' | 'minutes'>(trackByUnit);
   const [savingTargets, setSavingTargets] = useState(false);
 
   // Daily Logging & Checkpoint Modals State
@@ -256,19 +317,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
   const [cpLabelInput, setCpLabelInput] = useState('');
   const [savingCp, setSavingCp] = useState(false);
 
-  // Strategy Task Details Modal State
-  const [taskModalOpen, setTaskModalOpen] = useState(false);
-  const [activeStep, setActiveStep] = useState<ReadingActionItem | null>(null);
-  const [taskEditText, setTaskEditText] = useState('');
-  const [taskEditAssumedVal, setTaskEditAssumedVal] = useState<number | ''>('');
-  const [taskEditKind, setTaskEditKind] = useState<'none' | 'schedule' | 'todo'>('none');
-  const [showConvertOptions, setShowConvertOptions] = useState(false);
-  const [taskEditDate, setTaskEditDate] = useState(todayStr);
-  const [taskEditStartTime, setTaskEditStartTime] = useState('21:00');
-  const [taskEditEndTime, setTaskEditEndTime] = useState('21:30');
-  const [taskEditTodoTime, setTaskEditTodoTime] = useState('');
-  const [taskEditAssignee, setTaskEditAssignee] = useState('');
-  const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+
 
   // Check if today's reading progress has already been logged
   const todayLog = useMemo(() => readingLogs.find((l) => l.date === todayStr), [readingLogs, todayStr]);
@@ -281,6 +330,17 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
     }
     return Math.max(0, Math.min(100, Math.round(goal.progress || 0)));
   }, [currentPages, targetPages, goal.progress]);
+
+  // Synced goal object for StreakCard real-time updates
+  const syncedGoal = useMemo(() => {
+    return {
+      ...goal,
+      currentValue: currentPages,
+      progress: progressPercent,
+      readingLogs: readingLogs,
+      habitCheckIns: habitCheckIns,
+    };
+  }, [goal, currentPages, progressPercent, readingLogs, habitCheckIns]);
 
   const checkpointsDoneCnt = useMemo(() => checkpoints.filter((c) => c.done).length, [checkpoints]);
 
@@ -302,166 +362,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
     }
   };
 
-  // Toggle Strategy Task completion
-  const handleToggleStepCompletion = async (step: ReadingActionItem) => {
-    const nextDone = !step.done;
-    const updated = actions.map((s) => (s.id === step.id ? { ...s, done: nextDone } : s));
-    await saveActionsList(updated);
 
-    if (step.scheduleId && editSchedule) {
-      await editSchedule(step.scheduleId, { status: nextDone ? 'completed' : 'pending' }).catch((e) => console.warn(e));
-    }
-    if (step.todoId && updateTodo) {
-      await updateTodo(step.todoId, { status: nextDone ? 'completed' : 'in_progress' }).catch((e) => console.warn(e));
-    }
-  };
-
-  const handleAddStep = async (taskText: string) => {
-    const text = taskText.trim();
-    if (!text) return;
-
-    const newStep: ReadingActionItem = {
-      id: 'step_' + Date.now(),
-      task: text,
-      done: false,
-    };
-    const updated = [...actions, newStep];
-    await saveActionsList(updated);
-  };
-
-  const handleDeleteStep = async (stepId: string) => {
-    const step = actions.find((s) => s.id === stepId);
-    if (step?.scheduleId && removeSchedule) {
-      await removeSchedule(step.scheduleId, true).catch((err) => console.error(err));
-    }
-    if (step?.todoId && deleteTodo) {
-      await deleteTodo(step.todoId, true).catch((err) => console.error(err));
-    }
-    const updated = actions.filter((s) => s.id !== stepId);
-    await saveActionsList(updated);
-  };
-
-  const handleOpenTaskDetailModal = (step: ReadingActionItem) => {
-    setActiveStep(step);
-    setTaskEditText(step.task);
-    setTaskEditAssumedVal(step.assumedContributionValue || '');
-    const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
-    setTaskEditKind(kind as 'none' | 'schedule' | 'todo');
-    setShowConvertOptions(kind === 'schedule' || kind === 'todo');
-
-    setTaskEditDate(step.dueDate || todayStr);
-    setTaskEditStartTime(step.time || '21:00');
-    setTaskEditEndTime('21:30');
-    setTaskEditTodoTime(step.time || '');
-    setTaskEditAssignee(step.assignee || '');
-    setTaskModalOpen(true);
-  };
-
-  const handleSaveTaskDetail = async () => {
-    if (!activeStep || !taskEditText.trim()) return;
-    setSavingTaskEdit(true);
-    try {
-      let updatedScheduleId = activeStep.scheduleId;
-      let updatedTodoId = activeStep.todoId;
-      const rawDate = taskEditDate || todayStr;
-      const targetDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
-
-      if (taskEditKind === 'schedule') {
-        if (updatedTodoId && deleteTodo) {
-          await deleteTodo(updatedTodoId, true).catch((err) => console.error(err));
-          updatedTodoId = undefined;
-        }
-        if (!updatedScheduleId) {
-          if (addSchedule) {
-            const created = await addSchedule({
-              userId: user?.uid || '',
-              title: taskEditText.trim(),
-              date: targetDate,
-              startTime: taskEditStartTime || '21:00',
-              endTime: taskEditEndTime || '21:30',
-              status: activeStep.done ? 'completed' : 'pending',
-              linkedGoalId: goal.id,
-              goalTitle: goal.title,
-            });
-            if (typeof created === 'string') updatedScheduleId = created;
-            else if (created && typeof (created as { id?: string }).id === 'string') updatedScheduleId = (created as { id: string }).id;
-          }
-        } else if (editSchedule) {
-          await editSchedule(updatedScheduleId, {
-            title: taskEditText.trim(),
-            date: targetDate,
-            startTime: taskEditStartTime || '21:00',
-            endTime: taskEditEndTime || '21:30',
-          });
-        }
-      } else if (taskEditKind === 'todo') {
-        if (updatedScheduleId && removeSchedule) {
-          await removeSchedule(updatedScheduleId, true).catch((err) => console.error(err));
-          updatedScheduleId = undefined;
-        }
-        if (!updatedTodoId) {
-          if (addTodo) {
-            const created = await addTodo({
-              title: taskEditText.trim(),
-              status: activeStep.done ? 'completed' : 'in_progress',
-              priority: 'routine',
-              projectId: goal.projectId || '',
-              authorId: user?.uid || '',
-              dueDate: new Date(targetDate),
-              steps: [],
-              tags: [],
-              progressPercent: 0,
-              assignedUsers: [],
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              linkedGoalId: goal.id,
-              goalTitle: goal.title,
-            });
-            if (typeof created === 'string') updatedTodoId = created;
-            else if (created && typeof (created as { id?: string }).id === 'string') updatedTodoId = (created as { id: string }).id;
-          }
-        } else if (updateTodo) {
-          await updateTodo(updatedTodoId, {
-            title: taskEditText.trim(),
-            dueDate: new Date(targetDate),
-          });
-        }
-      } else {
-        if (updatedScheduleId && removeSchedule) {
-          await removeSchedule(updatedScheduleId, true).catch((err) => console.error(err));
-          updatedScheduleId = undefined;
-        }
-        if (updatedTodoId && deleteTodo) {
-          await deleteTodo(updatedTodoId, true).catch((err) => console.error(err));
-          updatedTodoId = undefined;
-        }
-      }
-
-      const updatedActions = actions.map((s) => {
-        if (s.id === activeStep.id) {
-          return {
-            ...s,
-            task: taskEditText.trim(),
-            assumedContributionValue: typeof taskEditAssumedVal === 'number' ? taskEditAssumedVal : undefined,
-            kind: taskEditKind === 'none' ? undefined : taskEditKind,
-            dueDate: targetDate,
-            time: taskEditKind === 'schedule' ? taskEditStartTime : taskEditKind === 'todo' ? taskEditTodoTime : undefined,
-            assignee: taskEditAssignee.trim() || undefined,
-            scheduleId: updatedScheduleId,
-            todoId: updatedTodoId,
-          };
-        }
-        return s;
-      });
-
-      await saveActionsList(updatedActions);
-      setTaskModalOpen(false);
-    } catch (err) {
-      console.error('Failed to save task detail:', err);
-    } finally {
-      setSavingTaskEdit(false);
-    }
-  };
 
   // Quick Target Edit Save Handler
   const handleSaveTargets = async () => {
@@ -536,31 +437,62 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
     }
   };
 
-  // Quick Log Reading Progress
-  const handleSaveLog = async (addPagesVal?: number) => {
-    const val = typeof addPagesVal === 'number' ? addPagesVal : typeof pagesInput === 'number' ? pagesInput : (dailyTargetNum > 0 ? dailyTargetNum : 1);
-    if (val <= 0 || !goal.id || hasLoggedToday) return;
+  // Quick Log Reading Progress (Predefined slots or custom log)
+  const handleSaveLog = async (addPagesVal?: number, customNote?: string) => {
+    const val =
+      typeof addPagesVal === 'number' && addPagesVal > 0
+        ? addPagesVal
+        : typeof pagesInput === 'number' && pagesInput > 0
+        ? pagesInput
+        : dailyTargetNum > 0
+        ? dailyTargetNum
+        : 1;
+
+    if (val <= 0 || !goal.id) return;
     setSavingLog(true);
     try {
       const newTotal = currentPages + val;
       setCurrentPages(newTotal);
 
-      const newLog: ReadingLog = {
-        id: String(Date.now()),
-        date: todayStr,
-        pagesRead: val,
-        chapterNote: noteInput.trim() || undefined,
-      };
-      const updatedLogs = [newLog, ...readingLogs.filter((l) => l.date !== todayStr)];
+      // Check if today already has a log entry
+      const existingTodayLog = readingLogs.find((l) => l.date === todayStr);
+      let updatedLogs: ReadingLog[];
+      if (existingTodayLog) {
+        updatedLogs = readingLogs.map((l) =>
+          l.date === todayStr
+            ? {
+                ...l,
+                pagesRead: l.pagesRead + val,
+                chapterNote: customNote !== undefined ? customNote : l.chapterNote || (noteInput.trim() || undefined),
+              }
+            : l
+        );
+      } else {
+        const newLog: ReadingLog = {
+          id: String(Date.now()),
+          date: todayStr,
+          pagesRead: val,
+          chapterNote: customNote || (noteInput.trim() || undefined),
+        };
+        updatedLogs = [newLog, ...readingLogs];
+      }
       setReadingLogs(updatedLogs);
+
+      // Update habitCheckIns for streak card real-time sync
+      const hasTodayCheckIn = habitCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+      const updatedCheckIns = hasTodayCheckIn
+        ? habitCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+        : [...habitCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+      setHabitCheckIns(updatedCheckIns);
 
       const updates: Partial<Goal> = {
         currentValue: newTotal,
         readingLogs: updatedLogs,
+        habitCheckIns: updatedCheckIns,
       };
 
       if (!targetPages || targetPages <= 0) {
-        const incrementPct = trackByUnit === 'chapters' ? 8.66 : 3.0;
+        const incrementPct = trackByUnit === 'chapters' ? 8.66 : trackByUnit === 'minutes' ? 5.0 : 3.0;
         const newProgress = Math.min(100, Math.round(((goal.progress || 0) + incrementPct) * 100) / 100);
         updates.progress = newProgress;
       } else {
@@ -580,9 +512,35 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
 
   const handleDeleteLog = async (logId: string) => {
     if (!confirm('Are you sure you want to delete this reading log entry?')) return;
-    const updated = readingLogs.filter((l) => l.id !== logId);
-    setReadingLogs(updated);
-    await persistReadingData({ readingLogs: updated });
+    const deletedLog = readingLogs.find((l) => l.id === logId);
+    const updatedLogs = readingLogs.filter((l) => l.id !== logId);
+    setReadingLogs(updatedLogs);
+
+    let newCurrent = currentPages;
+    if (deletedLog) {
+      newCurrent = Math.max(0, currentPages - deletedLog.pagesRead);
+      setCurrentPages(newCurrent);
+    }
+
+    // Recalculate habitCheckIns if no log remains for deleted log date
+    let updatedCheckIns = habitCheckIns;
+    if (deletedLog) {
+      const remainingLogsForDate = updatedLogs.filter((l) => l.date === deletedLog.date);
+      if (remainingLogsForDate.length === 0) {
+        updatedCheckIns = habitCheckIns.filter((c) => !(c.date && c.date.split('T')[0] === deletedLog.date));
+        setHabitCheckIns(updatedCheckIns);
+      }
+    }
+
+    const updates: Partial<Goal> = {
+      currentValue: newCurrent,
+      readingLogs: updatedLogs,
+      habitCheckIns: updatedCheckIns,
+    };
+    if (targetPages > 0) {
+      updates.progress = Math.min(100, Math.round((newCurrent / targetPages) * 100));
+    }
+    await persistReadingData(updates);
   };
 
   // Checkpoint Handlers
@@ -865,196 +823,138 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
             Preferences
           </Button>
         </Box>
-
-        {/* ── DAILY READING PROMPT & LOG CONTROL ── */}
-        <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${cardBorder}` }}>
-          <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, mb: 1.5 }}>
-            Have you read {dailyTargetText} {trackByUnit} today?
-          </Typography>
-
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-            <Button
-              variant="contained"
-              size="small"
-              disabled={hasLoggedToday}
-              onClick={() => handleSaveLog(dailyTargetNum > 0 ? dailyTargetNum : 10)}
-              startIcon={hasLoggedToday ? <LockClockIcon sx={{ fontSize: 16 }} /> : <AddIcon sx={{ fontSize: 16 }} />}
-              sx={{
-                borderRadius: '12px',
-                textTransform: 'none',
-                fontWeight: 800,
-                fontSize: 12.5,
-                bgcolor: '#3b82f6',
-                '&:hover': { bgcolor: '#2563eb' },
-                '&.Mui-disabled': {
-                  bgcolor: isDark ? '#334155' : '#cbd5e1',
-                  color: textMuted,
-                },
-              }}
-            >
-              {hasLoggedToday ? 'Logged for Today' : `Yes, I read ${dailyTargetText} ${trackByUnit} today`}
-            </Button>
-
-            <Button
-              variant="outlined"
-              size="small"
-              disabled={hasLoggedToday}
-              onClick={() => setLogModalOpen(true)}
-              sx={{
-                borderRadius: '12px',
-                textTransform: 'none',
-                fontWeight: 700,
-                fontSize: 12,
-                borderColor: cardBorder,
-                color: textPrimary,
-              }}
-            >
-              Custom Amount / Note
-            </Button>
-          </Box>
-
-          {hasLoggedToday ? (
-            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#10b981', mt: 1.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              ✅ Today&apos;s reading logged ({todayLog?.pagesRead} {trackByUnit}) · Disabled until tomorrow
-            </Typography>
-          ) : (
-            <Typography sx={{ fontSize: 11.5, color: textMuted, mt: 1 }}>
-              {targetPages <= 0
-                ? `Log once per day to increase progress (+${trackByUnit === 'chapters' ? '8.66%' : '3%'}).`
-                : 'Log once per day. Option disables after logging until tomorrow.'}
-            </Typography>
-          )}
-        </Box>
       </Box>
 
-      {/* Streak Status Card */}
+      {/* ── 2. DAILY READING PROGRESS UPDATE CARD WITH PREDEFINED SLOTS ── */}
+      <Box
+        sx={{
+          borderRadius: '24px',
+          border: `1px solid ${cardBorder}`,
+          bgcolor: surfaceBg,
+          p: 3,
+          boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 20px rgba(15,23,42,0.06)',
+          mb: 3,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Box>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+              Daily Progress Logging
+            </Typography>
+            <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary, mt: 0.2 }}>
+              Log Today&apos;s Reading Progress
+            </Typography>
+          </Box>
+          <Chip
+            label={`Daily Target: ${dailyTargetNum} ${trackByUnit}`}
+            size="small"
+            sx={{
+              bgcolor: isDark ? 'rgba(45, 212, 191, 0.15)' : '#ccfbf1',
+              color: isDark ? '#2dd4bf' : '#0d9488',
+              fontWeight: 700,
+              fontSize: 11,
+            }}
+          />
+        </Box>
+
+        {/* Quick Predefined Slot Chips */}
+        <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, mb: 1.5 }}>
+          Quick 1-Tap Progress Slots:
+        </Typography>
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' }, gap: 1.5, mb: 2.5 }}>
+          {predefinedSlots.map((slot, idx) => (
+            <button
+              key={idx}
+              type="button"
+              disabled={savingLog}
+              onClick={() => handleSaveLog(slot.value)}
+              className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-teal-200 dark:border-teal-800/60 bg-teal-50/50 dark:bg-teal-950/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 text-teal-800 dark:text-teal-200 active:scale-[0.98] transition-all shadow-sm group cursor-pointer disabled:opacity-50"
+            >
+              <span className="text-xs font-bold group-hover:scale-105 transition-transform">{slot.label}</span>
+              <span className="text-[10px] text-teal-600 dark:text-teal-400 font-semibold mt-0.5">
+                Tap to add
+              </span>
+            </button>
+          ))}
+        </Box>
+
+        {/* Primary Action Buttons & Status */}
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center', pt: 1, borderTop: `1px dashed ${cardBorder}` }}>
+          <Button
+            variant="contained"
+            size="small"
+            disabled={savingLog}
+            onClick={() => handleSaveLog(dailyTargetNum > 0 ? dailyTargetNum : 10)}
+            startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
+            sx={{
+              borderRadius: '12px',
+              textTransform: 'none',
+              fontWeight: 800,
+              fontSize: 12.5,
+              bgcolor: '#0d9488',
+              '&:hover': { bgcolor: '#0f766e' },
+              py: 1,
+              px: 2.5,
+            }}
+          >
+            {`Full Target (+${dailyTargetNum || 10} ${trackByUnit})`}
+          </Button>
+
+          <Button
+            variant="outlined"
+            size="small"
+            disabled={savingLog}
+            onClick={() => setLogModalOpen(true)}
+            startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+            sx={{
+              borderRadius: '12px',
+              textTransform: 'none',
+              fontWeight: 700,
+              fontSize: 12,
+              borderColor: cardBorder,
+              color: textPrimary,
+              py: 1,
+              px: 2,
+            }}
+          >
+            Custom Amount / Note
+          </Button>
+        </Box>
+
+        {/* Today's Logged Summary Banner */}
+        {hasLoggedToday ? (
+          <Box sx={{ mt: 2, p: 1.5, borderRadius: '12px', bgcolor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ecfdf5', border: '1px solid', borderColor: isDark ? 'rgba(16, 185, 129, 0.25)' : '#a7f3d0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <span>✅ Today&apos;s logged total:</span>
+              <strong style={{ fontSize: 13 }}>{todayLog?.pagesRead} {trackByUnit}</strong>
+            </Typography>
+            <Typography sx={{ fontSize: 11, color: textMuted }}>
+              Streak active today 🔥
+            </Typography>
+          </Box>
+        ) : (
+          <Typography sx={{ fontSize: 11.5, color: textMuted, mt: 1.5 }}>
+            💡 Select a slot above or log custom reading activity to maintain your streak for today.
+          </Typography>
+        )}
+      </Box>
+
+      {/* ── 3. STREAK STATUS CARD (REAL-TIME SYNCED) ── */}
       <StreakCard
-        goal={goal}
+        goal={syncedGoal}
         onUpdateGoal={onUpdateGoal}
         logs={readingLogs.map((r) => ({ date: r.date, value: r.pagesRead }))}
-        onQuickLog={() => setLogModalOpen(true)}
-        quickLogLabel="Quick Log Reading"
         metricLabel="reading activity"
       />
 
-      {/* ── 3. STRATEGY TASKS SECTION FOR READING GOAL ── */}
-      <Box sx={{ mt: 3, pt: 3, mb: 4, borderTop: `1px solid ${cardBorder}` }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
-          <Box>
-            <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-              🎯 Strategy Tasks ({actions.length})
-            </Typography>
-            <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.2 }}>
-              Action steps, reading schedules, and chapter tasks synced across your app
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* Strategic Tasks List */}
-        <div className="space-y-2 mb-3">
-          {actions.map((step) => {
-            const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
-            const hasLink = kind === 'schedule' || kind === 'todo';
-
-            return (
-              <div
-                key={step.id}
-                onClick={() => handleOpenTaskDetailModal(step)}
-                className="group flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500 shadow-sm"
-              >
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleStepCompletion(step);
-                    }}
-                    className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
-                      step.done
-                        ? 'bg-blue-500 border-blue-500 text-white'
-                        : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'
-                    }`}
-                  >
-                    {step.done && (
-                      <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
-                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </button>
-
-                  <span
-                    className={`text-xs font-bold truncate ${
-                      step.done
-                        ? 'line-through text-slate-400 dark:text-slate-500'
-                        : 'text-slate-800 dark:text-slate-100'
-                    }`}
-                  >
-                    {step.task}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
-                      hasLink
-                        ? kind === 'schedule'
-                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                          : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    {kind === 'schedule'
-                      ? '🗓 Schedule'
-                      : kind === 'todo'
-                      ? '✅ Todo'
-                      : '+ Schedule/Todo'}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteStep(step.id);
-                    }}
-                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                    title="Delete step"
-                  >
-                    <DeleteIcon sx={{ fontSize: 16 }} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Quick Task Creation Box */}
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="+ Quickly add a strategy task for your reading goal…"
-            value={newGeneralStepInput}
-            onChange={(e) => setNewGeneralStepInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newGeneralStepInput.trim()) {
-                handleAddStep(newGeneralStepInput);
-                setNewGeneralStepInput('');
-              }
-            }}
-            className="flex-1 text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              handleAddStep(newGeneralStepInput);
-              setNewGeneralStepInput('');
-            }}
-            disabled={!newGeneralStepInput.trim()}
-            className="px-3.5 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm"
-          >
-            Add Task
-          </button>
-        </div>
-      </Box>
+      {/* ── 4. STRATEGY TASKS SECTION ── */}
+      <StrategyTasksSection
+        goal={goal}
+        actions={actions as StrategyActionItem[]}
+        onSaveActions={async (updated) => saveActionsList(updated as ReadingLog extends unknown ? ReadingActionItem[] : never)}
+        placeholder="+ Quickly add a strategy task for your reading goal…"
+      />
 
       {/* ── 4. READING LOG HISTORY ── */}
       <Box sx={{ mb: 3 }}>
@@ -1219,6 +1119,15 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
                 >
                   By Chapters 🔖
                 </Button>
+                <Button
+                  fullWidth
+                  variant={editTrackBy === 'minutes' ? 'contained' : 'outlined'}
+                  onClick={() => setEditTrackBy('minutes')}
+                  size="small"
+                  sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 700 }}
+                >
+                  By Minutes ⏱️
+                </Button>
               </Stack>
             </Box>
 
@@ -1329,199 +1238,6 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
         </DialogActions>
       </Dialog>
 
-      {/* ── MODAL: STRATEGY TASK DETAIL MODAL ── */}
-      <Modal
-        open={taskModalOpen}
-        onClose={() => setTaskModalOpen(false)}
-        closeAfterTransition
-      >
-        <Fade in={taskModalOpen}>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[440px] shadow-2xl overflow-hidden border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800">
-            {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
-              <p className="text-[1.05rem] font-extrabold text-slate-800 dark:text-slate-100">
-                Task Details
-              </p>
-              <button
-                type="button"
-                onClick={() => setTaskModalOpen(false)}
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <CloseIcon sx={{ fontSize: 18 }} />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 max-h-[78vh] overflow-y-auto">
-              {/* Task Title Input */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                  Task Title / Strategy Step
-                </label>
-                <input
-                  type="text"
-                  value={taskEditText}
-                  onChange={(e) => setTaskEditText(e.target.value)}
-                  placeholder="e.g. Read 20 pages of Chapter 3"
-                  className="w-full text-sm font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              {/* Toggle Convert Options Button */}
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowConvertOptions(!showConvertOptions)}
-                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 hover:border-blue-400 text-left transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🗓️</span>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        {taskEditKind === 'schedule'
-                          ? 'Converted to Schedule'
-                          : taskEditKind === 'todo'
-                          ? 'Converted to Todo'
-                          : 'Convert to Schedule or Todo'}
-                      </p>
-                      <p className="text-[10px] text-slate-400">
-                        Sync status in real-time across app
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs text-blue-500 font-bold">
-                    {showConvertOptions ? 'Hide' : 'Options'}
-                  </span>
-                </button>
-
-                <Collapse in={showConvertOptions}>
-                  <div className="mt-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-3">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('none')}
-                        className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'none'
-                            ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-100 dark:text-slate-900'
-                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        Simple Task
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('schedule')}
-                        className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'schedule'
-                            ? 'bg-amber-500 text-white border-amber-500'
-                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        🗓 Schedule
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('todo')}
-                        className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'todo'
-                            ? 'bg-blue-500 text-white border-blue-500'
-                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        ✅ Todo
-                      </button>
-                    </div>
-
-                    {(taskEditKind === 'schedule' || taskEditKind === 'todo') && (
-                      <div className="space-y-2.5 pt-1">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">
-                            Due Date
-                          </label>
-                          <input
-                            type="date"
-                            value={taskEditDate}
-                            onChange={(e) => setTaskEditDate(e.target.value)}
-                            className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                          />
-                        </div>
-
-                        {taskEditKind === 'schedule' && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">
-                                Start Time
-                              </label>
-                              <input
-                                type="time"
-                                value={taskEditStartTime}
-                                onChange={(e) => setTaskEditStartTime(e.target.value)}
-                                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">
-                                End Time
-                              </label>
-                              <input
-                                type="time"
-                                value={taskEditEndTime}
-                                onChange={(e) => setTaskEditEndTime(e.target.value)}
-                                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">
-                            Assignee (Optional)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Self or Username"
-                            value={taskEditAssignee}
-                            onChange={(e) => setTaskEditAssignee(e.target.value)}
-                            className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </Collapse>
-              </div>
-            </div>
-
-            {/* Footer Buttons */}
-            <div className="flex items-center justify-between p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-              <button
-                type="button"
-                onClick={() => activeStep && handleDeleteStep(activeStep.id)}
-                className="text-xs font-bold text-rose-500 hover:text-rose-600 px-3 py-2 rounded-xl transition-colors"
-              >
-                Delete Task
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTaskModalOpen(false)}
-                  className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-3.5 py-2 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={savingTaskEdit || !taskEditText.trim()}
-                  onClick={handleSaveTaskDetail}
-                  className="text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 px-4 py-2 rounded-xl shadow-md transition-colors"
-                >
-                  {savingTaskEdit ? 'Saving...' : 'Save Task'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </Fade>
-      </Modal>
     </Box>
   );
 }

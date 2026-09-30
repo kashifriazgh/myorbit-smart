@@ -302,11 +302,13 @@ function StatStrip({
   daysLeft,
   priority,
   isDark,
+  onReschedule,
 }: {
   steps: GoalStep[];
   daysLeft: number;
   priority: string | undefined;
   isDark: boolean;
+  onReschedule?: () => void;
 }) {
   const done = steps.filter(
     (s) => s.status === GoalStepStatus.COMPLETED,
@@ -332,7 +334,6 @@ function StatStrip({
     } else if (remainder <= 4) {
       return `${weeks}w + ${remainder}d`;
     } else {
-      // Round up: show (weeks+1)w - (7-remainder)d
       return `${weeks + 1}w - ${7 - remainder}d`;
     }
   };
@@ -363,109 +364,44 @@ function StatStrip({
         pb: 0.5,
       }}
     >
-      {/* Steps Done */}
+
+      {/* Days Left (Interactive Reschedule Trigger) */}
       <Box
-        sx={{
-          minWidth: 0,
-          flex: 2,
-          background: bg,
-          borderRadius: '12px',
-          p: '12px 14px',
-        }}
-      >
-        <Typography
-          sx={{
-            fontSize: 10,
-            color: muted,
-            textTransform: 'uppercase',
-            letterSpacing: '.05em',
-            mb: '6px',
-          }}
-        >
-          Steps done
-        </Typography>
-
-        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-          <Typography
-            sx={{
-              fontSize: 18,
-              fontWeight: 700,
-              color: '#10B981',
-              fontFamily: 'monospace',
-              lineHeight: 1,
-            }}
-          >
-            {total > 0 ? done : '—'}
-          </Typography>
-          {total > 0 && (
-            <Typography
-              sx={{ fontSize: 13, color: muted, fontFamily: 'monospace' }}
-            >
-              / {total}
-            </Typography>
-          )}
-        </Box>
-
-        {total > 0 && (
-          <>
-            <Box
-              sx={{
-                mt: '8px',
-                height: '5px',
-                borderRadius: '99px',
-                background: 'rgba(0,0,0,0.08)',
-                overflow: 'hidden',
-              }}
-            >
-              <Box
-                sx={{
-                  height: '100%',
-                  width: `${(done / total) * 100}%`,
-                  borderRadius: '99px',
-                  background: '#10B981',
-                  transition: 'width .3s',
-                }}
-              />
-            </Box>
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                mt: '4px',
-              }}
-            >
-              <Typography sx={{ fontSize: 10, color: muted }}>
-                {Math.round((done / total) * 100)}%
-              </Typography>
-              <Typography sx={{ fontSize: 10, color: muted }}>
-                {total - done} left
-              </Typography>
-            </Box>
-          </>
-        )}
-      </Box>
-
-      {/* Days Left */}
-      {/* Days Left */}
-      <Box
+        onClick={onReschedule}
+        title="Click to reschedule goal due date"
         sx={{
           flex: 1.2,
           background: bg,
           borderRadius: '12px',
           p: '12px 14px',
+          cursor: onReschedule ? 'pointer' : 'default',
+          transition: 'all 0.2s ease',
+          '&:hover': onReschedule
+            ? {
+                background: isDark ? '#334155' : '#f1f5f9',
+                transform: 'translateY(-1px)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
+              }
+            : {},
         }}
       >
-        <Typography
-          sx={{
-            fontSize: 10,
-            color: muted,
-            textTransform: 'uppercase',
-            letterSpacing: '.05em',
-            mb: '6px',
-          }}
-        >
-          Days left
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: '6px' }}>
+          <Typography
+            sx={{
+              fontSize: 10,
+              color: muted,
+              textTransform: 'uppercase',
+              letterSpacing: '.05em',
+            }}
+          >
+            Days left
+          </Typography>
+          {onReschedule && (
+            <Typography sx={{ fontSize: 10, color: '#3b82f6', fontWeight: 700 }}>
+              📅 Edit
+            </Typography>
+          )}
+        </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
           <Typography
@@ -778,6 +714,29 @@ const GoalDetailInner: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
+  const [selectedDueDate, setSelectedDueDate] = useState<string>('');
+  const [savingReschedule, setSavingReschedule] = useState(false);
+
+  const handleApplyPresetDays = (daysToAdd: number) => {
+    const base = new Date();
+    base.setDate(base.getDate() + daysToAdd);
+    setSelectedDueDate(base.toISOString().split('T')[0]);
+  };
+
+  const handleSaveReschedule = async () => {
+    if (!goal?.id || !selectedDueDate) return;
+    setSavingReschedule(true);
+    try {
+      await _updateGoal(goal.id, { dueDate: new Date(selectedDueDate) });
+      setRescheduleModalOpen(false);
+    } catch (err) {
+      console.error('Failed to reschedule goal:', err);
+    } finally {
+      setSavingReschedule(false);
+    }
+  };
+
   const [addMilestoneDialogOpen, setAddMilestoneDialogOpen] = useState(false);
   const [milestoneFormStep, setMilestoneFormStep] = useState<1 | 2 | 3>(1);
   const [milestoneType, setMilestoneType] = useState<'schedule' | 'todo' | 'finance_source' | 'manual'>('schedule');
@@ -1584,6 +1543,11 @@ const GoalDetailInner: React.FC = () => {
           daysLeft={daysLeft}
           priority={goal.priority}
           isDark={isDark}
+          onReschedule={() => {
+            const rawDue = toPlainDate(goal.dueDate);
+            setSelectedDueDate(rawDue ? rawDue.toISOString().split('T')[0] : '');
+            setRescheduleModalOpen(true);
+          }}
         />
 
 
@@ -3352,6 +3316,89 @@ const GoalDetailInner: React.FC = () => {
           await addGoalStep(goal.id!, { title, description: description || undefined, weight: 1, endDate });
         }}
       />
+      {/* ── Reschedule Goal Target Date Modal ── */}
+      <Dialog
+        open={rescheduleModalOpen}
+        onClose={() => setRescheduleModalOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '24px',
+            p: 1,
+            backgroundColor: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f1f5f9' : '#0f172a',
+          },
+        }}
+      >
+        <DialogTitle className="font-extrabold text-lg">
+          Reschedule Goal Target Date 🗓️
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2, color: isDark ? '#94a3b8' : '#64748b' }}>
+            Choose a new target date or pick from suggested extension slots below to adjust your goal timeline.
+          </Typography>
+
+          {/* Preset Extension Slots */}
+          <Typography variant="caption" sx={{ fontWeight: 800, color: isDark ? '#94a3b8' : '#64748b', display: 'block', mb: 1, textTransform: 'uppercase' }}>
+            Suggested Extensions:
+          </Typography>
+          <Box className="flex flex-wrap gap-2 mb-4">
+            {[
+              { label: '+7 Days', days: 7 },
+              { label: '+14 Days', days: 14 },
+              { label: '+30 Days', days: 30 },
+              { label: '+60 Days', days: 60 },
+            ].map((slot) => (
+              <Chip
+                key={slot.days}
+                label={slot.label}
+                onClick={() => handleApplyPresetDays(slot.days)}
+                sx={{
+                  fontWeight: 800,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  bgcolor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#eff6ff',
+                  color: '#3b82f6',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  '&:hover': { bgcolor: '#3b82f6', color: '#ffffff' },
+                }}
+              />
+            ))}
+          </Box>
+
+          <TextField
+            label="Target End Date"
+            type="date"
+            fullWidth
+            size="small"
+            value={selectedDueDate}
+            onChange={(e) => setSelectedDueDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setRescheduleModalOpen(false)} sx={{ textTransform: 'none', fontWeight: 700 }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={savingReschedule || !selectedDueDate}
+            onClick={handleSaveReschedule}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 800,
+              borderRadius: '12px',
+              bgcolor: '#3b82f6',
+              px: 3,
+              '&:hover': { bgcolor: '#2563eb' },
+            }}
+          >
+            {savingReschedule ? 'Saving...' : 'Save New Target Date'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

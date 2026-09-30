@@ -29,6 +29,7 @@ import GoalSimpleCard from '../components/goals/GoalSimpleCard';
 // import DailyChecks from '../components/global/DailyChecks';
 import { useRouter } from 'next/navigation';
 import moment from 'moment';
+import { sortGoalsByPriorityIndex } from '../lib/utils/goalSorting';
 
 /* ---------- DATE UTILS ---------- */
 
@@ -92,7 +93,8 @@ const GoalsPageInner: React.FC = () => {
 
   const userGoals = React.useMemo(() => {
     if (!user?.uid) return [];
-    return goals.filter((g) => g.userId === user.uid);
+    const filtered = goals.filter((g) => g.userId === user.uid);
+    return sortGoalsByPriorityIndex(filtered);
   }, [goals, user?.uid]);
 
   const filteredGoals = userGoals.filter((goal) => {

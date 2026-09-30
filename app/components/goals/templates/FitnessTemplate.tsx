@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -19,8 +19,6 @@ import {
   InputLabel,
   InputAdornment,
   Divider,
-  Modal,
-  Fade,
 } from '@mui/material';
 import {
   FitnessCenter as WorkoutIcon,
@@ -31,10 +29,7 @@ import {
   Delete as DeleteIcon,
   Repeat as RepeatIcon,
   Checklist as TodoIcon,
-  TrendingUp as TrendingUpIcon,
   DirectionsRun as RunIcon,
-  Timer as TimerIcon,
-  EmojiEvents as PurposeIcon,
   Close as CloseIcon,
   ArrowBack as ArrowBackIcon,
   ArrowForward as ArrowForwardIcon,
@@ -49,6 +44,8 @@ import { useSchedules } from '@/app/lib/context/SchedulesContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import StreakCard from '@/app/components/goals/StreakCard';
+import ActivityRingLogger from '@/app/components/goals/ActivityRingLogger';
+import StrategyTasksSection, { StrategyActionItem } from '@/app/components/goals/StrategyTasksSection';
 
 export interface ExerciseItem {
   id: string;
@@ -60,6 +57,7 @@ export interface ExerciseItem {
   currentValue: number;
   unit: string; // e.g. 'steps' | 'minutes' | 'rounds' | 'hours' | 'sets' | 'sessions' | 'reps' | 'laps' | 'meters' | 'km' | 'kcal'
   scheduleTime?: string;
+  lastCompletedAt?: string;
 }
 
 export interface FitnessActionItem {
@@ -219,11 +217,28 @@ const slideVariants = {
   }),
 };
 
+function getTodayStr(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function formatDate(dateVal: unknown): string {
-  if (!dateVal) return new Date().toISOString().split('T')[0];
-  if (dateVal instanceof Date) return dateVal.toISOString().split('T')[0];
+  if (!dateVal) return getTodayStr();
+  if (dateVal instanceof Date) {
+    const year = dateVal.getFullYear();
+    const month = String(dateVal.getMonth() + 1).padStart(2, '0');
+    const day = String(dateVal.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
   if (typeof dateVal === 'object' && 'seconds' in (dateVal as { seconds: number })) {
-    return new Date((dateVal as { seconds: number }).seconds * 1000).toISOString().split('T')[0];
+    const d = new Date((dateVal as { seconds: number }).seconds * 1000);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
   return String(dateVal).split('T')[0];
 }
@@ -264,6 +279,76 @@ function formatUnitVal(val: number, unit: string) {
   return `${val} ${unit}`;
 }
 
+function isDoneForToday(ex: ExerciseItem, _goal?: Goal): boolean {
+  const todayStr = getTodayStr();
+  if ((ex as { lastCompletedAt?: string }).lastCompletedAt === todayStr) return true;
+  if (ex.targetValue > 0 && (ex.currentValue || 0) >= ex.targetValue) return true;
+  return false;
+}
+
+function getPredefinedSlots(unit: string, targetValue: number): Array<{ label: string; value: number }> {
+  const target = targetValue && targetValue > 0 ? targetValue : 10;
+  const normUnit = (unit || '').toLowerCase().trim();
+
+  if (normUnit === 'steps') {
+    const q1 = Math.round(target * 0.25);
+    const q2 = Math.round(target * 0.5);
+    const q3 = Math.round(target * 0.75);
+    return [
+      { label: `+${q1.toLocaleString()} steps`, value: q1 },
+      { label: `+${q2.toLocaleString()} steps`, value: q2 },
+      { label: `+${q3.toLocaleString()} steps`, value: q3 },
+      { label: `Full (${target.toLocaleString()})`, value: target },
+    ];
+  }
+
+  if (normUnit === 'km' || normUnit === 'kilometer' || normUnit === 'kilometers') {
+    const q1 = Number((target * 0.25).toFixed(1));
+    const q2 = Number((target * 0.5).toFixed(1));
+    const q3 = Number((target * 0.75).toFixed(1));
+    return [
+      { label: `+${q1} km`, value: q1 },
+      { label: `+${q2} km`, value: q2 },
+      { label: `+${q3} km`, value: q3 },
+      { label: `Full (${target} km)`, value: target },
+    ];
+  }
+
+  if (normUnit === 'minutes' || normUnit === 'mins') {
+    const q1 = Math.round(target * 0.25);
+    const q2 = Math.round(target * 0.5);
+    const q3 = Math.round(target * 0.75);
+    return [
+      { label: `+${q1} mins`, value: q1 },
+      { label: `+${q2} mins`, value: q2 },
+      { label: `+${q3} mins`, value: q3 },
+      { label: `Full (${target} mins)`, value: target },
+    ];
+  }
+
+  if (normUnit === 'reps' || normUnit === 'repetitions') {
+    const q1 = Math.max(1, Math.round(target * 0.25));
+    const q2 = Math.max(1, Math.round(target * 0.5));
+    const q3 = Math.max(1, Math.round(target * 0.75));
+    return [
+      { label: `+${q1} reps`, value: q1 },
+      { label: `+${q2} reps`, value: q2 },
+      { label: `+${q3} reps`, value: q3 },
+      { label: `Full (${target} reps)`, value: target },
+    ];
+  }
+
+  const q1 = Math.max(1, Math.round(target * 0.25));
+  const q2 = Math.max(1, Math.round(target * 0.5));
+  const q3 = Math.max(1, Math.round(target * 0.75));
+  return [
+    { label: `+${q1} ${unit}`, value: q1 },
+    { label: `+${q2} ${unit}`, value: q2 },
+    { label: `+${q3} ${unit}`, value: q3 },
+    { label: `Full (${target} ${unit})`, value: target },
+  ];
+}
+
 export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateProps) {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
@@ -278,29 +363,81 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     }
     return [];
   });
-  const [newGeneralStepInput, setNewGeneralStepInput] = useState('');
+  const [_newGeneralStepInput, _setNewGeneralStepInput] = useState('');
 
   // Task Details Modal States
-  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [_taskModalOpen, setTaskModalOpen] = useState(false);
   const [activeStep, setActiveStep] = useState<FitnessActionItem | null>(null);
   const [taskEditText, setTaskEditText] = useState('');
   const [taskEditAssumedVal, setTaskEditAssumedVal] = useState<number | ''>('');
   const [taskEditKind, setTaskEditKind] = useState<'none' | 'schedule' | 'todo'>('none');
-  const [showConvertOptions, setShowConvertOptions] = useState(false);
+  const [_showConvertOptions, setShowConvertOptions] = useState(false);
   const [taskEditDate, setTaskEditDate] = useState(new Date().toISOString().split('T')[0]);
   const [taskEditStartTime, setTaskEditStartTime] = useState('07:00');
   const [taskEditEndTime, setTaskEditEndTime] = useState('08:00');
   const [taskEditTodoTime, setTaskEditTodoTime] = useState('');
   const [taskEditAssignee, setTaskEditAssignee] = useState('');
-  const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+  const [_savingTaskEdit, setSavingTaskEdit] = useState(false);
 
-  // Exercise items state
+  // Exercise items state with automatic 24-hr daily reset logic for daily routines
   const [exercises, setExercises] = useState<ExerciseItem[]>(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
     if (Array.isArray(goal.exerciseItems) && goal.exerciseItems.length > 0) {
-      return goal.exerciseItems as unknown as ExerciseItem[];
+      const items = goal.exerciseItems as unknown as ExerciseItem[];
+      return items.map((ex) => {
+        const isDaily = !ex.frequency || ex.frequency.toLowerCase().includes('daily') || ex.frequency.toLowerCase().includes('7 days');
+        if (isDaily && (ex as { lastCompletedAt?: string }).lastCompletedAt && (ex as { lastCompletedAt?: string }).lastCompletedAt !== todayStr) {
+          return {
+            ...ex,
+            currentValue: 0,
+          };
+        }
+        return ex;
+      });
     }
     return [];
   });
+
+  // Auto reset daily exercise progress when a new 24-hr day starts
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (!exercises.length) return;
+
+    let hasReset = false;
+    const resetList = exercises.map((ex) => {
+      const isDaily = !ex.frequency || ex.frequency.toLowerCase().includes('daily') || ex.frequency.toLowerCase().includes('7 days');
+      if (isDaily && (ex as { lastCompletedAt?: string }).lastCompletedAt && (ex as { lastCompletedAt?: string }).lastCompletedAt !== todayStr && ex.currentValue > 0) {
+        hasReset = true;
+        return {
+          ...ex,
+          currentValue: 0,
+        };
+      }
+      return ex;
+    });
+
+    if (hasReset) {
+      setExercises(resetList);
+      if (goal.id) {
+        let sumProgress = 0;
+        for (const item of resetList) {
+          sumProgress += calculateExerciseProgress(item);
+        }
+        const newMean = resetList.length > 0 ? Math.max(0, Math.min(100, Math.round(sumProgress / resetList.length))) : 0;
+
+        const payload: Partial<Goal> = {
+          exerciseItems: resetList as unknown as Goal['exerciseItems'],
+          progress: newMean,
+        };
+        if (onUpdateGoal) {
+          onUpdateGoal(goal.id, payload).catch((err) => console.warn(err));
+        } else {
+          updateDoc(doc(db, 'goals', goal.id), payload).catch((err) => console.warn(err));
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goal.id]);
 
   // Step-by-step Wizard States for Exercise Add/Edit
   const [exerciseModalOpen, setExerciseModalOpen] = useState(false);
@@ -333,6 +470,21 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
   const [schedDate, setSchedDate] = useState(new Date().toISOString().split('T')[0]);
   const [savingSched, setSavingSched] = useState(false);
 
+  // Reschedule Goal Target Date Modal State
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
+  const [selectedDueDate, setSelectedDueDate] = useState<string>(() => formatDate(goal.dueDate));
+  const [savingReschedule, setSavingReschedule] = useState(false);
+
+  // Days Left Calculation
+  const _daysLeft = useMemo(() => {
+    if (!goal.dueDate) return null;
+    const dueStr = formatDate(goal.dueDate);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const diffMs = new Date(dueStr).getTime() - new Date(todayStr).getTime();
+    const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    return Math.max(0, days);
+  }, [goal.dueDate]);
+
   // Overall Mean Progress
   const meanProgress = useMemo(() => {
     if (exercises.length === 0) return 0;
@@ -342,6 +494,48 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     }
     return Math.max(0, Math.min(100, Math.round(sum / exercises.length)));
   }, [exercises]);
+
+  // Wrapped Goal object with immediate habit check-in evaluation (>=70% streak done)
+  const currentGoalWithCheckIns = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isStreakDone = meanProgress >= 70;
+    const existingCheckIns = Array.isArray(goal.habitCheckIns) ? [...goal.habitCheckIns] : [];
+
+    if (isStreakDone) {
+      const hasToday = existingCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+      const updatedCheckIns = hasToday
+        ? existingCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+        : [...existingCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+      return { ...goal, habitCheckIns: updatedCheckIns };
+    }
+    return goal;
+  }, [goal, meanProgress]);
+
+  const handleApplyPresetDays = (daysToAdd: number) => {
+    const base = new Date();
+    base.setDate(base.getDate() + daysToAdd);
+    setSelectedDueDate(base.toISOString().split('T')[0]);
+  };
+
+  const handleSaveReschedule = async () => {
+    if (!goal.id || !selectedDueDate) return;
+    setSavingReschedule(true);
+    try {
+      const payload: Partial<Goal> = {
+        dueDate: new Date(selectedDueDate),
+      };
+      if (onUpdateGoal) {
+        await onUpdateGoal(goal.id, payload);
+      } else {
+        await updateDoc(doc(db, 'goals', goal.id), payload);
+      }
+      setRescheduleModalOpen(false);
+    } catch (err) {
+      console.error('Failed to reschedule goal target date:', err);
+    } finally {
+      setSavingReschedule(false);
+    }
+  };
 
   // Linked Timeline Actions (Schedules & Todos)
   const actionItems = useMemo(() => {
@@ -412,7 +606,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     }
   };
 
-  const handleToggleStepCompletion = async (step: FitnessActionItem) => {
+  const _handleToggleStepCompletion = async (step: FitnessActionItem) => {
     const nextDone = !step.done;
     const updated = actions.map((s) => (s.id === step.id ? { ...s, done: nextDone } : s));
     await saveActionsList(updated);
@@ -425,7 +619,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     }
   };
 
-  const handleAddStep = async (taskText: string, sourceId?: string, sourceName?: string) => {
+  const _handleAddStep = async (taskText: string, sourceId?: string, sourceName?: string) => {
     const text = taskText.trim();
     if (!text) return;
 
@@ -440,7 +634,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     await saveActionsList(updated);
   };
 
-  const handleDeleteStep = async (stepId: string) => {
+  const _handleDeleteStep = async (stepId: string) => {
     const step = actions.find((s) => s.id === stepId);
     if (step?.scheduleId && removeSchedule) {
       await removeSchedule(step.scheduleId, true).catch((err) => console.error(err));
@@ -452,7 +646,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     await saveActionsList(updated);
   };
 
-  const handleOpenTaskDetailModal = (step: FitnessActionItem) => {
+  const _handleOpenTaskDetailModal = (step: FitnessActionItem) => {
     setActiveStep(step);
     setTaskEditText(step.task);
     setTaskEditAssumedVal(step.assumedContributionValue || '');
@@ -469,7 +663,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
     setTaskModalOpen(true);
   };
 
-  const handleSaveTaskDetail = async () => {
+  const _handleSaveTaskDetail = async () => {
     if (!activeStep || !taskEditText.trim()) return;
     setSavingTaskEdit(true);
     try {
@@ -684,21 +878,207 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
   };
 
   // Open Quick Log Progress Modal
-  const handleOpenQuickLog = (item: ExerciseItem) => {
+  const _handleOpenQuickLog = (item: ExerciseItem) => {
     setTargetExerciseForLog(item);
     setLogValueInput(item.currentValue);
     setLogModalOpen(true);
   };
 
-  const handleConfirmQuickLog = async () => {
-    if (!targetExerciseForLog || typeof logValueInput !== 'number') return;
-    const updated = exercises.map((e) => {
-      if (e.id === targetExerciseForLog.id) {
-        return { ...e, currentValue: logValueInput };
+  const _handleDoneForToday = async (ex: ExerciseItem) => {
+    if (!goal.id) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const updatedList = exercises.map((e) => {
+      if (e.id === ex.id) {
+        return {
+          ...e,
+          currentValue: e.targetValue,
+          lastCompletedAt: todayStr,
+        };
       }
       return e;
     });
-    await saveExercisesList(updated);
+
+    setExercises(updatedList);
+
+    const existingCheckIns = Array.isArray(goal.habitCheckIns) ? [...goal.habitCheckIns] : [];
+    const hasToday = existingCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+    const updatedCheckIns = hasToday
+      ? existingCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+      : [...existingCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+
+    let sum = 0;
+    for (const item of updatedList) {
+      sum += calculateExerciseProgress(item);
+    }
+    const newMean = updatedList.length > 0 ? Math.max(0, Math.min(100, Math.round(sum / updatedList.length))) : 0;
+
+    const payload: Partial<Goal> = {
+      exerciseItems: updatedList as unknown as Goal['exerciseItems'],
+      habitCheckIns: updatedCheckIns,
+      progress: newMean,
+    };
+
+    if (onUpdateGoal) {
+      await onUpdateGoal(goal.id, payload);
+    } else {
+      await updateDoc(doc(db, 'goals', goal.id), payload);
+    }
+  };
+
+  const handleApplyPartialSlot = async (ex: ExerciseItem, slotValue: number, isDirectTarget: boolean = false) => {
+    if (!goal.id) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const newCurrent = isDirectTarget ? slotValue : Math.min(ex.targetValue, (ex.currentValue || 0) + slotValue);
+    const isCompletedNow = newCurrent >= ex.targetValue;
+
+    const updatedList = exercises.map((e) => {
+      if (e.id === ex.id) {
+        return {
+          ...e,
+          currentValue: newCurrent,
+          lastCompletedAt: isCompletedNow ? todayStr : (e as { lastCompletedAt?: string }).lastCompletedAt,
+        };
+      }
+      return e;
+    });
+
+    setExercises(updatedList);
+
+    const existingCheckIns = Array.isArray(goal.habitCheckIns) ? [...goal.habitCheckIns] : [];
+    let updatedCheckIns = existingCheckIns;
+    if (isCompletedNow) {
+      const hasToday = existingCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+      updatedCheckIns = hasToday
+        ? existingCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+        : [...existingCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+    }
+
+    let sum = 0;
+    for (const item of updatedList) {
+      sum += calculateExerciseProgress(item);
+    }
+    const newMean = updatedList.length > 0 ? Math.max(0, Math.min(100, Math.round(sum / updatedList.length))) : 0;
+
+    const payload: Partial<Goal> = {
+      exerciseItems: updatedList as unknown as Goal['exerciseItems'],
+      habitCheckIns: updatedCheckIns,
+      progress: newMean,
+    };
+
+    if (onUpdateGoal) {
+      await onUpdateGoal(goal.id, payload);
+    } else {
+      await updateDoc(doc(db, 'goals', goal.id), payload);
+    }
+
+    setLogModalOpen(false);
+  };
+
+  const handleLoggerAddEntry = async (ex: ExerciseItem, addedValue: number) => {
+    if (!goal.id) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Directly accumulate progress (locked from decreasing)
+    const prevVal = ex.currentValue || 0;
+    const newCurrent = Math.min(ex.targetValue, Math.round((prevVal + addedValue) * 100) / 100);
+    const isCompletedNow = newCurrent >= ex.targetValue;
+
+    const updatedList = exercises.map((e) => {
+      if (e.id === ex.id) {
+        return {
+          ...e,
+          currentValue: newCurrent,
+          lastCompletedAt: isCompletedNow ? todayStr : (e as unknown as { lastCompletedAt?: string }).lastCompletedAt,
+        };
+      }
+      return e;
+    });
+
+    setExercises(updatedList);
+
+    // Calculate overall mean progress across all exercises/items
+    let sumProgress = 0;
+    for (const item of updatedList) {
+      sumProgress += calculateExerciseProgress(item);
+    }
+    const newMean = updatedList.length > 0 ? Math.max(0, Math.min(100, Math.round(sumProgress / updatedList.length))) : 0;
+
+    // Check if mean progress reaches >= 70% threshold or item completed -> mark streak for today as DONE
+    const existingCheckIns = Array.isArray(goal.habitCheckIns) ? [...goal.habitCheckIns] : [];
+    let updatedCheckIns = existingCheckIns;
+    const isStreakDone = newMean >= 70 || isCompletedNow;
+
+    if (isStreakDone) {
+      const hasToday = existingCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+      updatedCheckIns = hasToday
+        ? existingCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+        : [...existingCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+    }
+
+    const payload: Partial<Goal> = {
+      exerciseItems: updatedList as unknown as Goal['exerciseItems'],
+      habitCheckIns: updatedCheckIns,
+      progress: newMean,
+    };
+
+    if (onUpdateGoal) {
+      await onUpdateGoal(goal.id, payload);
+    } else {
+      await updateDoc(doc(db, 'goals', goal.id), payload);
+    }
+  };
+
+  const handleLoggerFinishToday = async (ex: ExerciseItem) => {
+    const remaining = Math.max(0, ex.targetValue - (ex.currentValue || 0));
+    await handleLoggerAddEntry(ex, remaining > 0 ? remaining : ex.targetValue);
+  };
+
+  const handleConfirmQuickLog = async () => {
+    if (!targetExerciseForLog || typeof logValueInput !== 'number' || !goal.id) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isCompletedNow = logValueInput >= targetExerciseForLog.targetValue;
+
+    const updated = exercises.map((e) => {
+      if (e.id === targetExerciseForLog.id) {
+        return {
+          ...e,
+          currentValue: logValueInput,
+          lastCompletedAt: isCompletedNow ? todayStr : (e as { lastCompletedAt?: string }).lastCompletedAt,
+        };
+      }
+      return e;
+    });
+
+    const existingCheckIns = Array.isArray(goal.habitCheckIns) ? [...goal.habitCheckIns] : [];
+    let updatedCheckIns = existingCheckIns;
+    if (isCompletedNow) {
+      const hasToday = existingCheckIns.some((c) => c.date && c.date.split('T')[0] === todayStr);
+      updatedCheckIns = hasToday
+        ? existingCheckIns.map((c) => (c.date && c.date.split('T')[0] === todayStr ? { ...c, completed: true } : c))
+        : [...existingCheckIns, { id: 'chk_' + Date.now(), date: todayStr, completed: true }];
+    }
+
+    let sum = 0;
+    for (const item of updated) {
+      sum += calculateExerciseProgress(item);
+    }
+    const newMean = updated.length > 0 ? Math.max(0, Math.min(100, Math.round(sum / updated.length))) : 0;
+
+    const payload: Partial<Goal> = {
+      exerciseItems: updated as unknown as Goal['exerciseItems'],
+      habitCheckIns: updatedCheckIns,
+      progress: newMean,
+    };
+
+    setExercises(updated);
+
+    if (onUpdateGoal) {
+      await onUpdateGoal(goal.id, payload);
+    } else {
+      await updateDoc(doc(db, 'goals', goal.id), payload);
+    }
+
     setLogModalOpen(false);
   };
 
@@ -791,35 +1171,39 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
           mb: 3.5,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-          <Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: 1 }}>
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
               Health & Fitness Tracker
             </Typography>
-            <Typography sx={{ fontSize: 22, fontWeight: 800, color: textPrimary, mt: 0.5 }}>
-              {goal.title}
-            </Typography>
+
+            <Chip
+              label={`${meanProgress}% Target Progress`}
+              size="small"
+              sx={{
+                bgcolor: 'rgba(16, 185, 129, 0.15)',
+                color: '#10b981',
+                fontWeight: 800,
+                fontSize: 12,
+                px: 1,
+                py: 0.5,
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+              }}
+            />
           </Box>
 
-          <Chip
-            label={`${meanProgress}% Target Progress`}
-            size="small"
-            sx={{
-              bgcolor: 'rgba(16, 185, 129, 0.15)',
-              color: '#10b981',
-              fontWeight: 800,
-              fontSize: 12,
-              px: 0.5,
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-            }}
-          />
+          {/* Full Line Goal Title */}
+          <Typography sx={{ fontSize: { xs: 20, sm: 24 }, fontWeight: 800, color: textPrimary, width: '100%', wordBreak: 'break-word', mt: 0.5 }}>
+            {goal.title}
+          </Typography>
         </Box>
 
-        <Box sx={{ mt: 3, display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
-          <Typography sx={{ fontSize: 32, fontWeight: 900, color: textPrimary, fontFamily: 'monospace' }}>
+        {/* Compact Active Exercises Heading */}
+        <Box sx={{ mt: 2.5, display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+          <Typography sx={{ fontSize: { xs: 18, sm: 20 }, fontWeight: 800, color: textPrimary, fontFamily: 'monospace' }}>
             {exercises.length} Active {exercises.length === 1 ? 'Exercise' : 'Exercises'}
           </Typography>
-          <Typography sx={{ fontSize: 13, color: textMuted, fontWeight: 500 }}>
+          <Typography sx={{ fontSize: 12, color: textMuted, fontWeight: 500 }}>
             configured for fitness routine
           </Typography>
         </Box>
@@ -838,12 +1222,10 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
         </Box>
       </Box>
 
-      {/* Streak Status Card */}
+      {/* Streak Status Card (Add Workout Routine button removed) */}
       <StreakCard
-        goal={goal}
+        goal={currentGoalWithCheckIns}
         onUpdateGoal={onUpdateGoal}
-        onQuickLog={() => handleOpenExerciseModal()}
-        quickLogLabel="Add Workout Routine"
         metricLabel="workout"
       />
 
@@ -854,26 +1236,28 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
             Tracked Exercises ({exercises.length})
           </Typography>
 
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => handleOpenExerciseModal()}
-            startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-            sx={{
-              textTransform: 'none',
-              fontSize: 12.5,
-              fontWeight: 800,
-              borderRadius: '12px',
-              bgcolor: '#10b981',
-              color: '#ffffff',
-              px: 2,
-              py: 0.75,
-              boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
-              '&:hover': { bgcolor: '#059669' },
-            }}
-          >
-            + Add Exercise
-          </Button>
+          {exercises.length > 0 && (
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => handleOpenExerciseModal()}
+              startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                textTransform: 'none',
+                fontSize: 12.5,
+                fontWeight: 800,
+                borderRadius: '12px',
+                bgcolor: '#10b981',
+                color: '#ffffff',
+                px: 2,
+                py: 0.75,
+                boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
+                '&:hover': { bgcolor: '#059669' },
+              }}
+            >
+              + Add Exercise
+            </Button>
+          )}
         </Box>
 
         {/* Initial Prompt State if no exercises added yet */}
@@ -966,28 +1350,9 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
                         <WorkoutIcon sx={{ fontSize: 24 }} />
                       </Box>
                       <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography sx={{ fontSize: 17, fontWeight: 800, color: textPrimary, width: '100%', mb: 0.5 }}>
+                        <Typography sx={{ fontSize: 17, fontWeight: 800, color: textPrimary, width: '100%' }}>
                           {ex.name}
                         </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                          <Chip
-                            label={ex.frequency}
-                            size="small"
-                            sx={{ fontSize: 10.5, fontWeight: 800, bgcolor: isDark ? '#1e293b' : '#f1f5f9', color: textMuted }}
-                          />
-                          <Chip
-                            icon={<TimerIcon sx={{ fontSize: '13px !important' }} />}
-                            label={`${ex.durationMins || 30} mins/session`}
-                            size="small"
-                            sx={{ fontSize: 10.5, fontWeight: 700, bgcolor: isDark ? '#1e293b' : '#f1f5f9', color: textMuted }}
-                          />
-                          <Chip
-                            icon={<PurposeIcon sx={{ fontSize: '13px !important' }} />}
-                            label={ex.purpose}
-                            size="small"
-                            sx={{ fontSize: 10.5, fontWeight: 800, bgcolor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}
-                          />
-                        </Box>
                       </Box>
                     </Box>
 
@@ -1013,47 +1378,17 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
                     </Box>
                   </Box>
 
-                  {/* Target & Current Values */}
-                  <Box sx={{ mt: 2.5, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                      <Typography sx={{ fontSize: 24, fontWeight: 900, color: textPrimary, fontFamily: 'monospace' }}>
-                        {formatUnitVal(ex.currentValue || 0, ex.unit)}
-                      </Typography>
-                      <Typography sx={{ fontSize: 12.5, color: textMuted }}>
-                        / Target: {formatUnitVal(ex.targetValue, ex.unit)} per session
-                      </Typography>
-                    </Box>
-
-                    <Button
-                      size="small"
-                      onClick={() => handleOpenQuickLog(ex)}
-                      startIcon={<TrendingUpIcon sx={{ fontSize: 15 }} />}
-                      sx={{
-                        textTransform: 'none',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: '#10b981',
-                        bgcolor: 'rgba(16, 185, 129, 0.12)',
-                        borderRadius: '10px',
-                        px: 1.75,
-                        py: 0.6,
-                        '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.22)' },
-                      }}
-                    >
-                      Have you walked today?
-                    </Button>
-                  </Box>
-
-                  {/* Progress Bar */}
-                  <Box sx={{ mt: 1.5, height: 7, borderRadius: 99, bgcolor: isDark ? '#334155' : '#e2e8f0', overflow: 'hidden' }}>
-                    <Box
-                      sx={{
-                        height: '100%',
-                        width: `${exProg}%`,
-                        bgcolor: '#10b981',
-                        borderRadius: 99,
-                        transition: 'width 0.4s ease',
-                      }}
+                  {/* Circular Ring Progress Logger */}
+                  <Box sx={{ mt: 2.5 }}>
+                    <ActivityRingLogger
+                      label={ex.name}
+                      unit={ex.unit}
+                      target={ex.targetValue}
+                      currentValue={ex.currentValue || 0}
+                      chips={getPredefinedSlots(ex.unit, ex.targetValue).map((s) => s.value)}
+                      isDone={isDoneForToday(ex, currentGoalWithCheckIns)}
+                      onAddEntry={(addedVal) => handleLoggerAddEntry(ex, addedVal)}
+                      onFinishForToday={() => handleLoggerFinishToday(ex)}
                     />
                   </Box>
                 </Box>
@@ -1216,130 +1551,12 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
       </Box>
 
       {/* ── 4. STRATEGY TASKS SECTION ── */}
-      <Box sx={{ mb: 4, pt: 3, borderTop: `1px solid ${cardBorder}` }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 0.5 }}>
-          <Box>
-            <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-              🎯 Strategy Tasks ({actions.length})
-            </Typography>
-            <Typography sx={{ fontSize: 11, color: textMuted, mt: 0.2 }}>
-              Overview of all fitness action steps & habits
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* Strategic Tasks List */}
-        <div className="space-y-2 mb-3">
-          {actions.map((step) => {
-            const kind = step.kind || (step.scheduleId ? 'schedule' : step.todoId ? 'todo' : 'none');
-            const hasLink = kind === 'schedule' || kind === 'todo';
-
-            return (
-              <div
-                key={step.id}
-                onClick={() => handleOpenTaskDetailModal(step)}
-                className="group flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500 shadow-sm"
-              >
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleStepCompletion(step);
-                    }}
-                    className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
-                      step.done
-                        ? 'bg-emerald-500 border-emerald-500 text-white'
-                        : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400'
-                    }`}
-                  >
-                    {step.done && (
-                      <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5 stroke-current stroke-[3]">
-                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </button>
-
-                  <div className="flex flex-col min-w-0">
-                    <span
-                      className={`text-sm font-semibold truncate ${
-                        step.done
-                          ? 'line-through text-slate-400 dark:text-slate-500'
-                          : 'text-slate-800 dark:text-slate-100'
-                      }`}
-                    >
-                      {step.task}
-                    </span>
-                    {step.sourceName && (
-                      <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
-                        Exercise: {step.sourceName}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
-                      hasLink
-                        ? kind === 'schedule'
-                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                          : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    {kind === 'schedule'
-                      ? '🗓 Schedule'
-                      : kind === 'todo'
-                      ? '✅ Todo'
-                      : 'Add to Schedule/Todo →'}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteStep(step.id);
-                    }}
-                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                    title="Delete step"
-                  >
-                    <DeleteIcon sx={{ fontSize: 16 }} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Inline Add General Strategic Action Step Input */}
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="+ Quickly add a strategy task for your fitness goal…"
-            value={newGeneralStepInput}
-            onChange={(e) => setNewGeneralStepInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleAddStep(newGeneralStepInput);
-                setNewGeneralStepInput('');
-              }
-            }}
-            className="flex-1 text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 dark:focus:border-emerald-500"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              handleAddStep(newGeneralStepInput);
-              setNewGeneralStepInput('');
-            }}
-            disabled={!newGeneralStepInput.trim()}
-            className="px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white text-xs font-bold transition-colors shadow-sm"
-          >
-            Add Task
-          </button>
-        </div>
-      </Box>
+      <StrategyTasksSection
+        goal={goal}
+        actions={actions as StrategyActionItem[]}
+        onSaveActions={async (updated) => saveActionsList(updated as FitnessActionItem[])}
+        placeholder="+ Quickly add a strategy task for your fitness goal…"
+      />
 
       {/* ── 5. STEP-BY-STEP EXERCISE QUESTIONNAIRE DIALOG (With Tailored Unit Selection) ── */}
       <Dialog
@@ -1731,15 +1948,40 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
         PaperProps={{ sx: { borderRadius: '20px' } }}
       >
         <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>
-          Log Workout: {targetExerciseForLog?.name}
+          Partial Progress: {targetExerciseForLog?.name}
         </DialogTitle>
         <DialogContent dividers>
           <Box sx={{ py: 1 }}>
             <Typography sx={{ fontSize: 12.5, color: textMuted, mb: 2 }}>
-              Update your completed amount for this session (Target: {targetExerciseForLog ? formatUnitVal(targetExerciseForLog.targetValue, targetExerciseForLog.unit) : ''}).
+              Choose a predefined slot or enter custom progress (Target: {targetExerciseForLog ? formatUnitVal(targetExerciseForLog.targetValue, targetExerciseForLog.unit) : ''}).
             </Typography>
+
+            {targetExerciseForLog && (
+              <Box sx={{ mb: 2.5 }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, mb: 1 }}>
+                  Predefined Slots:
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {getPredefinedSlots(targetExerciseForLog.unit, targetExerciseForLog.targetValue).map((slot, sIdx) => (
+                    <Chip
+                      key={sIdx}
+                      label={slot.label}
+                      onClick={() => handleApplyPartialSlot(targetExerciseForLog, slot.value, slot.value === targetExerciseForLog.targetValue)}
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: 11.5,
+                        cursor: 'pointer',
+                        bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9',
+                        '&:hover': { bgcolor: '#10b981', color: '#ffffff' },
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            )}
+
             <TextField
-              label="Logged Amount"
+              label="Custom Logged Amount"
               type="number"
               fullWidth
               autoFocus
@@ -1761,7 +2003,7 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
             onClick={handleConfirmQuickLog}
             sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px', bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
           >
-            Update Log
+            Save Progress
           </Button>
         </DialogActions>
       </Dialog>
@@ -1838,227 +2080,91 @@ export default function FitnessTemplate({ goal, onUpdateGoal }: FitnessTemplateP
         </DialogActions>
       </Dialog>
 
-      {/* ── Dialog 4: STRATEGY TASK DETAIL MODAL ── */}
-      <Modal
-        open={taskModalOpen}
-        onClose={() => setTaskModalOpen(false)}
-        closeAfterTransition
+
+
+      {/* Reschedule Goal Target Date Modal */}
+      <Dialog
+        open={rescheduleModalOpen}
+        onClose={() => setRescheduleModalOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '24px',
+            p: 1,
+            backgroundColor: surfaceBg,
+            color: textPrimary,
+          },
+        }}
       >
-        <Fade in={taskModalOpen}>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[28px] w-[90%] sm:w-[440px] shadow-2xl overflow-hidden border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800">
-            {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
-              <p className="text-[1.05rem] font-extrabold text-slate-800 dark:text-slate-100">
-                Task Details
-              </p>
-              <button
-                type="button"
-                onClick={() => setTaskModalOpen(false)}
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <CloseIcon sx={{ fontSize: 18 }} />
-              </button>
-            </div>
+        <DialogTitle className="font-extrabold text-lg">
+          Reschedule Goal Target Date 🗓️
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2, color: textMuted }}>
+            Choose a new target date or pick from suggested extension slots below to adjust your goal timeline.
+          </Typography>
 
-            <div className="p-5 space-y-4 max-h-[78vh] overflow-y-auto">
-              {/* Parent Exercise Name Banner if item action */}
-              {activeStep?.sourceName && (
-                <div className="p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
-                  <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-                    Linked Exercise
-                  </p>
-                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-0.5">
-                    {activeStep.sourceName}
-                  </p>
-                </div>
-              )}
-
-              {/* Task Title Input */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                  Task Title / Strategy Step
-                </label>
-                <input
-                  type="text"
-                  value={taskEditText}
-                  onChange={(e) => setTaskEditText(e.target.value)}
-                  placeholder="e.g. 30-min morning walk routine"
-                  className="w-full text-sm font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              {/* Toggle Convert Options Button */}
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowConvertOptions(!showConvertOptions)}
-                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 hover:border-emerald-400 text-left transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🗓️</span>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        {taskEditKind === 'schedule'
-                          ? 'Converted to Schedule'
-                          : taskEditKind === 'todo'
-                          ? 'Converted to Todo'
-                          : 'Convert to Schedule or Todo'}
-                      </p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        {taskEditKind === 'none'
-                          ? 'Appears in Schedules or Todo lists across app'
-                          : `Currently synced as ${taskEditKind}`}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                    {showConvertOptions ? 'Hide' : 'Configure'}
-                  </span>
-                </button>
-
-                {showConvertOptions && (
-                  <div className="mt-2.5 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 space-y-3">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('none')}
-                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'none'
-                            ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        Plain Step
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('schedule')}
-                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'schedule'
-                            ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        🗓 Schedule
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskEditKind('todo')}
-                        className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
-                          taskEditKind === 'todo'
-                            ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        ✅ Todo
-                      </button>
-                    </div>
-
-                    {taskEditKind !== 'none' && (
-                      <div className="space-y-2.5 pt-1">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                            {taskEditKind === 'schedule' ? 'Schedule Date' : 'Due Date'}
-                          </label>
-                          <input
-                            type="date"
-                            value={taskEditDate}
-                            onChange={(e) => setTaskEditDate(e.target.value)}
-                            className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                          />
-                        </div>
-
-                        {taskEditKind === 'schedule' && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                                Start Time
-                              </label>
-                              <input
-                                type="time"
-                                value={taskEditStartTime}
-                                onChange={(e) => setTaskEditStartTime(e.target.value)}
-                                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                                End Time
-                              </label>
-                              <input
-                                type="time"
-                                value={taskEditEndTime}
-                                onChange={(e) => setTaskEditEndTime(e.target.value)}
-                                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Assignee Input */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                  Assignee (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={taskEditAssignee}
-                  onChange={(e) => setTaskEditAssignee(e.target.value)}
-                  placeholder="e.g. Self, Gym Trainer"
-                  className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeStep) {
-                    handleDeleteStep(activeStep.id);
-                    setTaskModalOpen(false);
-                  }
+          {/* Preset Extension Slots */}
+          <Typography variant="caption" sx={{ fontWeight: 800, color: textMuted, display: 'block', mb: 1, textTransform: 'uppercase' }}>
+            Suggested Extensions:
+          </Typography>
+          <Box className="flex flex-wrap gap-2 mb-4">
+            {[
+              { label: '+7 Days', days: 7 },
+              { label: '+14 Days', days: 14 },
+              { label: '+30 Days', days: 30 },
+              { label: '+60 Days', days: 60 },
+            ].map((slot) => (
+              <Chip
+                key={slot.days}
+                label={slot.label}
+                onClick={() => handleApplyPresetDays(slot.days)}
+                sx={{
+                  fontWeight: 800,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  bgcolor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#eff6ff',
+                  color: '#3b82f6',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  '&:hover': { bgcolor: '#3b82f6', color: '#ffffff' },
                 }}
-                className="px-3 py-2 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
-              >
-                Delete Task
-              </button>
+              />
+            ))}
+          </Box>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTaskModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <Button
-                  variant="contained"
-                  disabled={savingTaskEdit || !taskEditText.trim()}
-                  onClick={handleSaveTaskDetail}
-                  sx={{
-                    borderRadius: '12px',
-                    px: 3,
-                    textTransform: 'none',
-                    fontWeight: 700,
-                    bgcolor: '#10b981',
-                    color: '#fff',
-                    '&:hover': { bgcolor: '#059669' },
-                  }}
-                >
-                  {savingTaskEdit ? 'Saving...' : 'Save Task'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Fade>
-      </Modal>
+          <TextField
+            label="Target End Date"
+            type="date"
+            fullWidth
+            size="small"
+            value={selectedDueDate}
+            onChange={(e) => setSelectedDueDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setRescheduleModalOpen(false)} sx={{ textTransform: 'none', fontWeight: 700 }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={savingReschedule || !selectedDueDate}
+            onClick={handleSaveReschedule}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 800,
+              borderRadius: '12px',
+              bgcolor: '#3b82f6',
+              px: 3,
+              '&:hover': { bgcolor: '#2563eb' },
+            }}
+          >
+            {savingReschedule ? 'Saving...' : 'Save New Target Date'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

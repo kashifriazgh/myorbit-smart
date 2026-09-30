@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, Roboto, Noto_Nastaliq_Urdu, Lalezar, Baloo_Bhaijaan_2 } from 'next/font/google';
+import { Inter, Roboto, Noto_Nastaliq_Urdu, Lalezar, Baloo_Bhaijaan_2, Oswald } from 'next/font/google';
 import './globals.css';
 
 import { Suspense } from 'react';
@@ -22,6 +22,12 @@ const roboto = Roboto({
   subsets: ['latin'],
   weight: ['400', '500', '700'],
   variable: '--font-roboto',
+});
+
+const oswald = Oswald({
+  subsets: ['latin'],
+  weight: ['700'],
+  variable: '--font-oswald',
 });
 
 const notoUrdu = Noto_Nastaliq_Urdu({
@@ -63,7 +69,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={`
-          ${inter.variable} ${roboto.variable} ${notoUrdu.variable} ${lalezar.variable} ${balooBhaijaan2.variable}
+          ${inter.variable} ${roboto.variable} ${oswald.variable} ${notoUrdu.variable} ${lalezar.variable} ${balooBhaijaan2.variable}
           antialiased
 
           /* Layout */
