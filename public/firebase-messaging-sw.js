@@ -1,23 +1,133 @@
 // public/firebase-messaging-sw.js
-// Service Worker for FCM Push Notifications
-// This file MUST be at the root (served from /firebase-messaging-sw.js)
+// Service Worker for FCM & Web Push Notifications with Android Customization
 
 console.log('[SW] firebase-messaging-sw.js loaded.');
 
-// ─── 1. RAW PUSH HANDLER (most reliable — fires for ALL background pushes) ───
-// This handles FCM messages BEFORE Firebase SDK even loads.
-// It fires whenever a push is received in the background.
+// Helper to build type-specific notification options in Service Worker
+function buildSWOptions(data, notification) {
+  const type = data.notificationType || 'general';
+  const entityId = data.entityId || '';
+  const title = notification.title || data.title || getDefaultTitleForType(type);
+  const body = notification.body || data.body || 'You have a new update in MyOrbit.';
+  const appUrl = data.appUrl || getDefaultUrlForType(type, entityId);
+
+  let actions = [
+    { action: 'view', title: '👁 Open' },
+    { action: 'dismiss', title: 'Dismiss' },
+  ];
+
+  switch (type) {
+    case 'todo':
+      actions = [
+        { action: 'action_done', title: '✓ Done' },
+        { action: 'action_snooze', title: '💤 Snooze' },
+        { action: 'view', title: 'Open' },
+      ];
+      break;
+
+    case 'schedule':
+      actions = [
+        { action: 'action_done', title: '✓ Done' },
+        { action: 'action_snooze', title: '⏰ Snooze' },
+        { action: 'view', title: 'Open' },
+      ];
+      break;
+
+    case 'goal':
+      actions = [
+        { action: 'action_log', title: '✓ Log' },
+        { action: 'action_snooze', title: '💤 Later' },
+        { action: 'view', title: 'Open' },
+      ];
+      break;
+
+    case 'overdue':
+      actions = [
+        { action: 'action_done', title: '✓ Complete' },
+        { action: 'action_reschedule', title: '📅 Reschedule' },
+        { action: 'view', title: 'Open' },
+      ];
+      break;
+
+    case 'finance':
+      actions = [
+        { action: 'view', title: '📊 View' },
+        { action: 'dismiss', title: 'Dismiss' },
+      ];
+      break;
+
+    case 'summary_morning':
+    case 'summary_evening':
+      actions = [
+        { action: 'view', title: '👁 View Summary' },
+        { action: 'dismiss', title: 'Dismiss' },
+      ];
+      break;
+  }
+
+  const tagKey = data.tag || (entityId ? `myorbit-${type}-${entityId}` : `myorbit-${type}-${Date.now()}`);
+
+  return {
+    title,
+    options: {
+      body,
+      icon: '/icons/icon-192x192.png',
+      badge: '/icons/icon-192x192.png',
+      tag: tagKey,
+      vibrate: [200, 100, 200, 100, 200], // Vibration pattern for Android system alerts
+      silent: false,                       // Request notification sound
+      renotify: true,                      // Re-trigger sound/vibrate even if tag is updated
+      requireInteraction: true,
+      actions,
+      data: {
+        ...data,
+        notificationType: type,
+        entityId,
+        appUrl,
+        tag: tagKey,
+        timestamp: Date.now(),
+      },
+    },
+  };
+}
+
+function getDefaultTitleForType(type) {
+  switch (type) {
+    case 'todo': return 'Task Reminder 📝';
+    case 'schedule': return 'Schedule Alert 📅';
+    case 'goal': return 'Goal Check-in 🎯';
+    case 'finance': return 'Finance Alert 💰';
+    case 'overdue': return 'Overdue Tasks ⚠️';
+    case 'summary_morning': return 'Good Morning ☀️ — Today\'s Focus';
+    case 'summary_evening': return 'Evening Recap 🌙 — Day Review';
+    default: return 'MyOrbit Notification 🔔';
+  }
+}
+
+function getDefaultUrlForType(type, entityId) {
+  switch (type) {
+    case 'todo': return entityId ? `/to-do/${entityId}` : '/to-do';
+    case 'schedule': return '/';
+    case 'goal': return entityId ? `/goals/${entityId}` : '/goals';
+    case 'overdue': return '/to-do';
+    case 'finance': return '/finance';
+    default: return '/';
+  }
+}
+
+// ─── 1. RAW PUSH HANDLER (Fires for background FCM push alerts) ───
 self.addEventListener('push', (event) => {
-  console.log('[SW] push event received:', event);
+  console.log('[SW] Push event received:', event);
 
   let payload = {};
   try {
     payload = event.data ? event.data.json() : {};
   } catch (e) {
     payload = {
-      notification: {
-        title: 'Orbit Reminder ⏰',
-        body: event.data ? event.data.text() : 'You have a pending task reminder!'
+      data: {
+        title: 'MyOrbit Notification 🔔',
+        body: event.data ? event.data.text() : 'You have a pending reminder!',
+        notificationType: 'general',
       }
     };
   }
@@ -25,34 +135,14 @@ self.addEventListener('push', (event) => {
   const n = payload.notification || {};
   const d = payload.data || {};
 
-  // If standard FCM notification block is present, the SDK's push handler will show it automatically.
-  // Skip manual registration.showNotification to prevent duplicates.
-  // Bypassing automatic SDK display and manual skipping to handle rendering manually on all platforms (reliable for mobile)
-  if (payload.notification) {
-    console.log('[SW] Notification block present. Skipping manual display to prevent duplication.');
-    return;
-  }
-
-  const title = n.title || d.title || 'Orbit Reminder ⏰';
-  const options = {
-    body: n.body || d.body || 'You have a pending task reminder!',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-192x192.png',
-    data: d,
-    requireInteraction: true,
-    tag: d.itemId ? `reminder-${d.itemId}` : 'orbit-reminder',
-    actions: [
-      { action: 'view', title: '👁 View Task' },
-      { action: 'dismiss', title: 'Dismiss' }
-    ]
-  };
+  const { title, options } = buildSWOptions(d, n);
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       const hasFocusedClient = clientList.some((c) => c.focused);
       if (hasFocusedClient) {
-        console.log('[SW] Active window client is focused. Skipping background notification to avoid duplicates.');
-        return;
+        console.log('[SW] Active window is focused. Letting foreground handler manage in-app alert.');
+        // Display toast or silent notification if required
       }
       console.log('[SW] Showing background notification:', title, options);
       return self.registration.showNotification(title, options);
@@ -60,24 +150,63 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// ─── 2. NOTIFICATION CLICK HANDLER ───
+// ─── 2. NOTIFICATION CLICK & INTERACTIVE ACTION HANDLER ───
 self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] notificationclick:', event.action, event.notification.data);
+  console.log('[SW] Notification click action:', event.action, 'Data:', event.notification.data);
   event.notification.close();
 
-  if (event.action === 'dismiss') return;
+  const action = event.action;
+  const data = event.notification.data || {};
+  const appUrl = data.appUrl || getDefaultUrlForType(data.notificationType, data.entityId);
 
-  const appUrl = (event.notification.data && event.notification.data.appUrl) || '/';
+  if (action === 'dismiss') return;
+
+  // Handle background actions without needing full window focus
+  if (action === 'action_done' || action === 'action_snooze') {
+    const apiAction = action === 'action_done' ? 'done' : 'snooze';
+    
+    event.waitUntil(
+      fetch('/api/notifications/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: apiAction,
+          notificationType: data.notificationType,
+          entityId: data.entityId,
+          userId: data.userId,
+        }),
+      })
+        .then((res) => res.json())
+        .then((resData) => {
+          console.log('[SW] Notification action API result:', resData);
+          const confirmTitle = apiAction === 'done' ? '✓ Marked Complete' : '💤 Snoozed';
+          const confirmBody = apiAction === 'done'
+            ? 'Item status updated to done.'
+            : 'Reminder snoozed for 15 minutes.';
+
+          return self.registration.showNotification(confirmTitle, {
+            body: confirmBody,
+            icon: '/icons/icon-192x192.png',
+            tag: `confirm-${data.tag}`,
+            timeout: 3000,
+          });
+        })
+        .catch((err) => {
+          console.error('[SW] Notification action API failed:', err);
+        })
+    );
+    return;
+  }
+
+  // Action 'action_log', 'action_reschedule', 'view', or body click -> open / focus target URL
   const targetUrl = new URL(appUrl, self.location.origin).href;
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Focus existing window if open
       for (const client of clientList) {
         if (client.url === targetUrl && 'focus' in client) {
           return client.focus();
         }
       }
-      // Otherwise open new tab
       if (clients.openWindow) {
         return clients.openWindow(targetUrl);
       }
@@ -85,8 +214,7 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// ─── 3. FIREBASE COMPAT SDK (handles background message enrichment) ───
-// Commented out to prevent standard FCM background handler from intercepting pushes and failing on mobile.
+// ─── 3. FIREBASE COMPAT SDK INITIALIZATION ───
 try {
   importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js');
   importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js');
@@ -111,22 +239,16 @@ if (typeof firebase !== 'undefined') {
     const messaging = firebase.messaging();
     console.log('[SW] Firebase messaging initialized.');
 
-    // onBackgroundMessage fires when the app IS NOT focused (complements the raw push handler above)
     messaging.onBackgroundMessage((payload) => {
       console.log('[SW] onBackgroundMessage payload:', payload);
-      // Note: the raw push handler above will have already shown a notification.
-      // We only need to act here if the raw handler somehow missed it.
-      // Firebase automatically suppresses duplicate notifications, so this is safe.
     });
   } catch (initError) {
     console.error('[SW] Firebase messaging init error:', initError);
   }
-} else {
-  console.warn('[SW] Firebase SDK unavailable ── raw push handler will cover all cases.');
 }
 
 // ─── 4. LIFECYCLE EVENTS ───
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   console.log('[SW] install — skipWaiting');
   self.skipWaiting();
 });

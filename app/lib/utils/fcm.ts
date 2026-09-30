@@ -269,24 +269,38 @@ export async function setupForegroundNotifications(): Promise<void> {
       const n = payload.notification || {};
       const d = (payload.data || {}) as Record<string, string>;
 
-      const title = n.title || d.title || 'Orbit Reminder ⏰';
+      const { buildNotificationOptions } = await import('./notifications');
+      const resolved = buildNotificationOptions({
+        notificationType: (d.notificationType as Parameters<typeof buildNotificationOptions>[0]['notificationType']) || 'general',
+        entityId: d.entityId || d.itemId || '',
+        title: n.title || d.title,
+        body: n.body || d.body,
+        appUrl: d.appUrl,
+        tag: d.tag,
+        extra: d,
+      });
+
       const options: NotificationOptions = {
-        body: n.body || d.body || 'You have a pending task reminder!',
-        icon: '/icons/icon-192x192.png',
-        badge: '/icons/icon-192x192.png',
-        data: d,
-        requireInteraction: true,
-        tag: d.itemId ? `reminder-${d.itemId}` : 'orbit-reminder-fg',
+        body: resolved.body,
+        icon: resolved.icon,
+        badge: resolved.badge,
+        data: resolved.data,
+        tag: resolved.tag,
+        vibrate: resolved.vibrate,
+        silent: resolved.silent,
+        renotify: resolved.renotify,
+        requireInteraction: resolved.requireInteraction,
+        actions: resolved.actions as NotificationAction[],
       };
 
       try {
         const registration = await navigator.serviceWorker.ready;
-        await registration.showNotification(title, options);
+        await registration.showNotification(resolved.title, options);
         console.log('FCM: Foreground notification shown via SW.');
       } catch (swErr) {
         console.warn('FCM: SW showNotification failed, falling back to Notification API:', swErr);
         if (Notification.permission === 'granted') {
-          new Notification(title, options);
+          new Notification(resolved.title, options);
         }
       }
     });

@@ -1558,6 +1558,21 @@ const Schedules: React.FC = () => {
                 </Typography>
               </Box>
 
+              {/* Reminder Send Row inside Modal */}
+              {selectedQuickSchedule && selectedQuickSchedule.id && (
+                <Box className="mb-4">
+                  <ReminderSendButton
+                    itemId={selectedQuickSchedule.id}
+                    itemTitle={selectedQuickSchedule.title}
+                    itemType="schedule"
+                    itemDetailUrl="/"
+                    buttonType="button"
+                    itemDateTime={selectedQuickSchedule.date && selectedQuickSchedule.startTime ? new Date(`${selectedQuickSchedule.date}T${selectedQuickSchedule.startTime}`) : null}
+                    buttonSx={{ width: '100%' }}
+                  />
+                </Box>
+              )}
+
               {/* Action Buttons */}
               <Box className="flex gap-3">
                 <Button

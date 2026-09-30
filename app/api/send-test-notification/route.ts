@@ -140,7 +140,10 @@ export async function POST(req: NextRequest) {
       .filter((device) => device.enabled === true);
 
     if (activeDevices.length === 0) {
-      return NextResponse.json({ error: 'No active device subscriptions found for the target user.' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'No active device subscriptions found for the target user.', code: 'NO_ACTIVE_SUBSCRIPTIONS' },
+        { status: 404 }
+      );
     }
 
     // 4. Generate OAuth 2.0 Access Token
@@ -160,37 +163,101 @@ export async function POST(req: NextRequest) {
       const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
       const title = customTitle || 'Test Notification 🔔';
-      const body = customBody || 'Your device is successfully subscribed to MyOrbit Smart Push Alerts!';
+      const bodyText = customBody || 'Your device is successfully subscribed to MyOrbit Smart Push Alerts!';
       const appUrl = customAppUrl || '/settings/push-notifications';
+      const notificationType = body.notificationType || 'general';
+      const entityId = body.entityId || '';
+
+      // Build type-specific actions
+      let actions = [
+        { action: 'view', title: '👁 View Details' },
+        { action: 'dismiss', title: 'Dismiss' }
+      ];
+
+      if (notificationType === 'todo') {
+        actions = [
+          { action: 'action_done', title: '✓ Done' },
+          { action: 'action_snooze', title: '💤 Snooze' },
+          { action: 'view', title: 'Open' }
+        ];
+      } else if (notificationType === 'schedule') {
+        actions = [
+          { action: 'action_done', title: '✓ Done' },
+          { action: 'action_snooze', title: '⏰ Snooze' },
+          { action: 'view', title: 'Open' }
+        ];
+      } else if (notificationType === 'goal') {
+        actions = [
+          { action: 'action_log', title: '✓ Log' },
+          { action: 'action_snooze', title: '💤 Later' },
+          { action: 'view', title: 'Open' }
+        ];
+      } else if (notificationType === 'overdue') {
+        actions = [
+          { action: 'action_done', title: '✓ Complete' },
+          { action: 'action_reschedule', title: '📅 Reschedule' },
+          { action: 'view', title: 'Open' }
+        ];
+      } else if (notificationType === 'finance') {
+        actions = [
+          { action: 'view', title: '📊 View' },
+          { action: 'dismiss', title: 'Dismiss' }
+        ];
+      }
+
+      const tagKey = body.tag || (entityId ? `myorbit-${notificationType}-${entityId}` : `myorbit-${notificationType}-${Date.now()}`);
 
       const payload = {
         message: {
           token: fid,
           notification: {
             title,
-            body,
+            body: bodyText,
           },
           data: {
             title,
-            body,
+            body: bodyText,
             appUrl,
+            notificationType,
+            entityId,
+            tag: tagKey,
+          },
+          android: {
+            priority: 'HIGH',
+            notification: {
+              sound: 'default',
+              default_sound: true,
+              default_vibrate_timings: true,
+              notification_priority: 'PRIORITY_HIGH',
+              visibility: 'PUBLIC',
+              channel_id: 'myorbit_reminders',
+            },
           },
           webpush: {
+            headers: {
+              Urgency: 'high',
+            },
             notification: {
               title,
-              body,
+              body: bodyText,
               icon: '/icons/icon-192x192.png',
               badge: '/icons/icon-192x192.png',
+              vibrate: [200, 100, 200, 100, 200],
+              silent: false,
+              renotify: true,
               requireInteraction: true,
-              actions: [
-                { action: 'view', title: '👁 View Details' },
-                { action: 'dismiss', title: 'Dismiss' }
-              ],
+              tag: tagKey,
+              actions,
               data: {
+                title,
+                body: bodyText,
                 appUrl,
-              }
-            }
-          }
+                notificationType,
+                entityId,
+                tag: tagKey,
+              },
+            },
+          },
         },
       };
 

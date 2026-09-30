@@ -234,7 +234,7 @@ export default function PushNotificationsPage() {
     }
   };
 
-  const handleSendTestNotification = async () => {
+  const handleSendTestNotification = async (notificationType: string = 'general', customTitle?: string, customBody?: string) => {
     if (!user) return;
     setSendingTest(true);
     setTestFeedback(null);
@@ -244,21 +244,63 @@ export default function PushNotificationsPage() {
       const idToken = await userAuth.currentUser?.getIdToken(true);
       if (!idToken) throw new Error('Could not retrieve authentication session token.');
 
+      let title = customTitle || 'Test Notification 🔔';
+      let bodyText = customBody || 'Your device is successfully subscribed to MyOrbit Smart Push Alerts!';
+      let appUrl = '/settings/push-notifications';
+
+      if (notificationType === 'todo') {
+        title = 'Task Reminder 📝';
+        bodyText = 'Collect wall frames from market — Due Today 10:30 AM';
+        appUrl = '/to-do';
+      } else if (notificationType === 'schedule') {
+        title = 'Schedule Alert 📅';
+        bodyText = 'Call marketing office — Scheduled for 10:00 AM';
+        appUrl = '/';
+      } else if (notificationType === 'goal') {
+        title = 'Fitness Goal Check-in 🎯';
+        bodyText = 'Complete today\'s workout — 🔥 4-day streak';
+        appUrl = '/goals';
+      } else if (notificationType === 'overdue') {
+        title = 'Overdue Tasks Warning ⚠️';
+        bodyText = 'You have 3 pending overdue tasks requiring attention!';
+        appUrl = '/to-do';
+      } else if (notificationType === 'finance') {
+        title = 'Finance Savings Alert 💰';
+        bodyText = 'Savings target deposit confirmed for Emergency Pot';
+        appUrl = '/finance';
+      }
+
       const res = await fetch('/api/send-test-notification', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` }
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({
+          targetUid: user.uid,
+          notificationType,
+          customTitle: title,
+          customBody: bodyText,
+          customAppUrl: appUrl,
+          tag: `test-${notificationType}-${Date.now()}`
+        })
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to dispatch test notification.');
 
-      setTestFeedback({ type: 'success', message: 'Test notification dispatched successfully! Watch your device for the alert.' });
+      setTestFeedback({ type: 'success', message: `${title} dispatched! Check your notification center.` });
     } catch (err) {
       console.error('FCM Test Dispatch failed:', err);
       setTestFeedback({ type: 'error', message: (err as Error).message || 'Failed to dispatch test notification.' });
     } finally {
       setSendingTest(false);
     }
+  };
+
+  const handleTestMultipleSimultaneous = async () => {
+    await handleSendTestNotification('todo');
+    await new Promise((r) => setTimeout(r, 400));
+    await handleSendTestNotification('schedule');
+    await new Promise((r) => setTimeout(r, 400));
+    await handleSendTestNotification('goal');
   };
 
   const isSubscribed = status === 'subscribed';
@@ -361,17 +403,56 @@ export default function PushNotificationsPage() {
                   <span className="text-emerald-300 text-sm font-extrabold">Subscribed</span>
                 </div>
 
-                <button
-                  onClick={handleSendTestNotification}
-                  disabled={sendingTest || isLoading}
-                  className={`px-6 py-2.5 rounded-xl font-extrabold text-xs transition-all duration-200 mt-2 ${
-                    sendingTest
-                      ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
-                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20 hover:scale-105 active:scale-95'
-                  }`}
-                >
-                  {sendingTest ? 'Sending Test alert…' : '🔔 Send Test Notification'}
-                </button>
+                {/* Interactive Notification Type Testers */}
+                <div className="w-full max-w-md space-y-2 mt-2">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 text-center mb-2">
+                    🧪 Test Custom Android/PWA Notification Types
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <button
+                      onClick={() => handleSendTestNotification('todo')}
+                      disabled={sendingTest}
+                      className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800 text-slate-200 font-bold text-left transition-all"
+                    >
+                      📝 Todo Reminder
+                    </button>
+                    <button
+                      onClick={() => handleSendTestNotification('schedule')}
+                      disabled={sendingTest}
+                      className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800 text-slate-200 font-bold text-left transition-all"
+                    >
+                      📅 Schedule Alert
+                    </button>
+                    <button
+                      onClick={() => handleSendTestNotification('goal')}
+                      disabled={sendingTest}
+                      className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800 text-slate-200 font-bold text-left transition-all"
+                    >
+                      🎯 Goal Check-in
+                    </button>
+                    <button
+                      onClick={() => handleSendTestNotification('overdue')}
+                      disabled={sendingTest}
+                      className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800 text-slate-200 font-bold text-left transition-all"
+                    >
+                      ⚠️ Overdue Summary
+                    </button>
+                    <button
+                      onClick={() => handleSendTestNotification('finance')}
+                      disabled={sendingTest}
+                      className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800 text-slate-200 font-bold text-left transition-all"
+                    >
+                      💰 Finance Alert
+                    </button>
+                    <button
+                      onClick={handleTestMultipleSimultaneous}
+                      disabled={sendingTest}
+                      className="p-2.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 hover:bg-amber-500/30 text-amber-300 font-bold text-left transition-all"
+                    >
+                      🚀 Test 3 Coexisting
+                    </button>
+                  </div>
+                </div>
 
                 {testFeedback && (
                   <div className={`mt-1 px-4 py-2.5 rounded-xl text-xs font-semibold max-w-sm text-center ${

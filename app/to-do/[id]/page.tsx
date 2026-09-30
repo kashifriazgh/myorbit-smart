@@ -36,6 +36,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { STATUS_OPTIONS } from '@/app/lib/constant';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import AIStepGeneratorModal from '../../components/to-do/AI/AIStepGeneratorModal';
+import ReminderPromoCard from '@/app/components/to-do/ReminderPromoCard';
 
 // --- Premium UI Helper Components ---
 
@@ -734,138 +735,219 @@ export default function TodoDetailPage() {
         hasSteps={!!todo.steps?.length}
       />
 
+      {/* ── Reminder Promo Card ── */}
+      <Box className="my-4">
+        <ReminderSendButton
+          itemId={todo.id!}
+          itemTitle={todo.title}
+          itemType="task"
+          itemDetailUrl={`/to-do/${todo.id}`}
+          itemDateTime={todo.dueDate ? (todo.dueDate instanceof Timestamp ? todo.dueDate.toDate() : new Date(todo.dueDate)) : null}
+          customTrigger={(openDialog) => (
+            <ReminderPromoCard
+              taskId={todo.id}
+              title="Set the reminder"
+              description="Never miss your task routine!. Get a push notification."
+              buttonLabel="Set Now"
+              onSetNow={(e) => openDialog(e)}
+            />
+          )}
+        />
+      </Box>
+
       <Divider sx={{ my: 2 }} />
 
       {/* ── Mobile-First Execution Dashboard ── */}
-      <Box className="mt-8 space-y-4 px-1">
-        <Box className="mb-8">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold tracking-widest uppercase text-indigo-500">
-              Execution
-            </span>
-            <span
-              className={`flex-1 h-px ${
-                theme?.mode === 'dark' ? 'bg-slate-800' : 'bg-indigo-100'
-              }`}
-            />
-          </div>
-          <h1
-            className={`text-3xl font-bold leading-tight ${
-              theme?.mode === 'dark' ? 'text-slate-100' : 'text-slate-800'
-            }`}
-          >
-            Step-by-Step
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            {todo.steps?.filter((s) => s.status === 'completed').length || 0} of{' '}
-            {todo.steps?.length || 0} steps completed
-          </p>
-        </Box>
-
-        <Stack spacing={2}>
-          <AnimatePresence mode="popLayout">
-            {todo.steps
-              ?.map((step, originalIndex) => ({ ...step, originalIndex }))
-              .sort((a, b) => {
-                if (a.status === 'completed' && b.status !== 'completed') return 1;
-                if (a.status !== 'completed' && b.status === 'completed') return -1;
-                return 0;
-              })
-              .map((step) => (
-                <motion.div
-                  key={step.text}
-                  layout
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 300,
-                    damping: 30,
-                    opacity: { duration: 0.2 },
-                  }}
-                >
-                  <StepCard
-                    step={step}
-                    index={step.originalIndex}
-                    isDark={theme?.mode === 'dark'}
-                    onToggleStep={(newStatus) =>
-                      updateStepStatusLocal(step.originalIndex, newStatus)
-                    }
-                    onStatusChange={(newStatus) =>
-                      updateStepStatusLocal(step.originalIndex, newStatus)
-                    }
-                    onToggleSubStep={(subIdx) =>
-                      handleSubStepToggle(step.originalIndex, subIdx)
-                    }
-                    onDeleteStep={() =>
-                      setConfirmDelete({ type: 'step', stepIndex: step.originalIndex })
-                    }
-                    onDeleteSubStep={async (subIdx) => {
-                      if (!todo?.steps) return;
-                      // Optimistic UI Update
-                      const updated = [...todo.steps];
-                      updated[step.originalIndex].subSteps?.splice(subIdx, 1);
-                      const progress = calculateProgress(updated);
-                      setTodo((prev) =>
-                        prev ? { ...prev, steps: updated, progressPercent: progress } : prev
-                      );
-                      // Firestore update
-                      await updateStepsInFirestore(updated);
-                    }}
-                    onAddSubStep={async (text) => {
-                      const updatedSteps = [...(todo.steps || [])];
-                      if (!updatedSteps[step.originalIndex].subSteps) {
-                        updatedSteps[step.originalIndex].subSteps = [];
-                      }
-                      updatedSteps[step.originalIndex].subSteps!.push({
-                        text,
-                        description: '',
-                        done: false,
-                        status: 'in_progress',
-                      });
-                      await updateStepsInFirestore(updatedSteps);
-                    }}
-                  />
-                </motion.div>
-              ))}
-          </AnimatePresence>
-        </Stack>
-
-        {/* All done state celebration */}
-        {todo.steps?.length > 0 &&
-          todo.steps.every((s) => s.status === 'completed') && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="mt-12 text-center py-8"
+      {!todo.steps || todo.steps.length === 0 ? (
+        <Box className="mt-6 mb-8 text-center px-1">
+          <div className="flex flex-col items-center justify-center p-6 rounded-3xl border-2 border-dashed border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/40 dark:bg-indigo-950/20">
+            {/* Plus button placeholder */}
+            <button
+              type="button"
+              onClick={() => setStepModalOpen(true)}
+              className="w-14 h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 transition-all active:scale-95 mb-3 group cursor-pointer"
+              title="Add First Step"
             >
-              <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-indigo-200 dark:shadow-none">
-                <svg className="w-8 h-8 text-white" viewBox="0 0 24 20" fill="none">
-                  <path
-                    d="M2 10l7 7L22 2"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-              <h2
-                className={`text-xl font-bold ${
-                  theme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-800'
-                }`}
-              >
-                All steps complete!
-              </h2>
-              <p className="text-sm text-slate-400 mt-1">
-                Great work on finishing this task 🎉
-              </p>
-            </motion.div>
-          )}
-      </Box>
+              <svg className="w-7 h-7 transition-transform group-hover:rotate-90 duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </button>
 
-      <Box sx={{ mt: 6, display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <Typography variant="h6" className="font-extrabold text-slate-800 dark:text-slate-100 mb-1" sx={{ fontSize: '1.05rem' }}>
+              Add Action Steps
+            </Typography>
+            <Typography variant="body2" className="text-slate-500 dark:text-slate-400 text-xs mb-4 max-w-xs leading-relaxed">
+              Break down this task into smaller manageable steps to track your progress.
+            </Typography>
+
+            <button
+              type="button"
+              onClick={() => setStepModalOpen(true)}
+              className="py-2 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-all active:scale-95 mb-6 cursor-pointer"
+            >
+              + Add First Step
+            </button>
+
+            {/* Dummy Sample Task / Step Card Placeholder */}
+            <div className="w-full max-w-md text-left opacity-75 pointer-events-none select-none">
+              <div className="text-[10px] font-extrabold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                <span>💡</span> SAMPLE STEP PREVIEW
+              </div>
+              <div className="relative rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex-shrink-0">
+                    1
+                  </span>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200">Example Step: Gather required materials</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">Collect details and reference docs needed to complete task</p>
+                    <div className="mt-3 space-y-1.5 pl-1.5 border-l-2 border-slate-200 dark:border-slate-700">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span className="w-3.5 h-3.5 rounded border border-indigo-500 bg-indigo-500 flex items-center justify-center text-white text-[8px] font-black">✓</span>
+                        <span className="line-through opacity-75">Review requirements list</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span className="w-3.5 h-3.5 rounded border border-slate-300 dark:border-slate-600"></span>
+                        <span>Prepare initial draft</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Box>
+      ) : (
+        <Box className="mt-8 space-y-4 px-1">
+          <Box className="mb-8">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-semibold tracking-widest uppercase text-indigo-500">
+                Execution
+              </span>
+              <span
+                className={`flex-1 h-px ${
+                  theme?.mode === 'dark' ? 'bg-slate-800' : 'bg-indigo-100'
+                }`}
+              />
+            </div>
+            <h1
+              className={`text-3xl font-bold leading-tight ${
+                theme?.mode === 'dark' ? 'text-slate-100' : 'text-slate-800'
+              }`}
+            >
+              Step-by-Step
+            </h1>
+            <p className="text-sm text-slate-400 mt-1">
+              {todo.steps?.filter((s) => s.status === 'completed').length || 0} of{' '}
+              {todo.steps?.length || 0} steps completed
+            </p>
+          </Box>
+
+          <Stack spacing={2}>
+            <AnimatePresence mode="popLayout">
+              {todo.steps
+                ?.map((step, originalIndex) => ({ ...step, originalIndex }))
+                .sort((a, b) => {
+                  if (a.status === 'completed' && b.status !== 'completed') return 1;
+                  if (a.status !== 'completed' && b.status === 'completed') return -1;
+                  return 0;
+                })
+                .map((step) => (
+                  <motion.div
+                    key={step.text}
+                    layout
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 300,
+                      damping: 30,
+                      opacity: { duration: 0.2 },
+                    }}
+                  >
+                    <StepCard
+                      step={step}
+                      index={step.originalIndex}
+                      isDark={theme?.mode === 'dark'}
+                      onToggleStep={(newStatus) =>
+                        updateStepStatusLocal(step.originalIndex, newStatus)
+                      }
+                      onStatusChange={(newStatus) =>
+                        updateStepStatusLocal(step.originalIndex, newStatus)
+                      }
+                      onToggleSubStep={(subIdx) =>
+                        handleSubStepToggle(step.originalIndex, subIdx)
+                      }
+                      onDeleteStep={() =>
+                        setConfirmDelete({ type: 'step', stepIndex: step.originalIndex })
+                      }
+                      onDeleteSubStep={async (subIdx) => {
+                        if (!todo?.steps) return;
+                        // Optimistic UI Update
+                        const updated = [...todo.steps];
+                        updated[step.originalIndex].subSteps?.splice(subIdx, 1);
+                        const progress = calculateProgress(updated);
+                        setTodo((prev) =>
+                          prev ? { ...prev, steps: updated, progressPercent: progress } : prev
+                        );
+                        // Firestore update
+                        await updateStepsInFirestore(updated);
+                      }}
+                      onAddSubStep={async (text) => {
+                        const updatedSteps = [...(todo.steps || [])];
+                        if (!updatedSteps[step.originalIndex].subSteps) {
+                          updatedSteps[step.originalIndex].subSteps = [];
+                        }
+                        updatedSteps[step.originalIndex].subSteps!.push({
+                          text,
+                          description: '',
+                          done: false,
+                          status: 'in_progress',
+                        });
+                        await updateStepsInFirestore(updatedSteps);
+                      }}
+                    />
+                  </motion.div>
+                ))}
+            </AnimatePresence>
+          </Stack>
+
+          {/* All done state celebration */}
+          {todo.steps?.length > 0 &&
+            todo.steps.every((s) => s.status === 'completed') && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mt-12 text-center py-8"
+              >
+                <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-indigo-200 dark:shadow-none">
+                  <svg className="w-8 h-8 text-white" viewBox="0 0 24 20" fill="none">
+                    <path
+                      d="M2 10l7 7L22 2"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <h2
+                  className={`text-xl font-bold ${
+                    theme?.mode === 'dark' ? 'text-slate-200' : 'text-slate-800'
+                  }`}
+                >
+                  All steps complete!
+                </h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  Great work on finishing this task 🎉
+                </p>
+              </motion.div>
+            )}
+        </Box>
+      )}
+
+      <Box sx={{ mt: 6, display: 'flex', gap: 1.5, alignItems: 'center', justifyContent: 'center' }}>
         <Button
           variant="outlined"
           startIcon={<AutoAwesomeIcon />}
@@ -890,15 +972,6 @@ export default function TodoDetailPage() {
           AI Generate
         </Button>
 
-        <ReminderSendButton
-          itemId={todo.id!}
-          itemTitle={todo.title}
-          itemType="task"
-          itemDetailUrl={`/to-do/${todo.id}`}
-          buttonType="button"
-          itemDateTime={todo.dueDate ? (todo.dueDate instanceof Timestamp ? todo.dueDate.toDate() : new Date(todo.dueDate)) : null}
-        />
-
         <IconButton
           onClick={() => setConfirmDelete({ type: 'todo' })}
           sx={{
@@ -914,30 +987,32 @@ export default function TodoDetailPage() {
       </Box>
 
       {/* Floating Action Button for Adding Steps */}
-      <motion.div
-        className="fixed bottom-8 right-8 z-50"
-        initial={{ scale: 0, rotate: -180 }}
-        animate={{ scale: 1, rotate: 0 }}
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-      >
-        <Button
-          variant="contained"
-          onClick={() => setStepModalOpen(true)}
-          sx={{
-            minWidth: '56px',
-            height: '56px',
-            borderRadius: '18px',
-            backgroundColor: '#6366f1',
-            boxShadow: '0 10px 25px -5px rgba(99, 102, 241, 0.4)',
-            '&:hover': { backgroundColor: '#4f46e5' },
-          }}
+      {todo.steps && todo.steps.length > 0 && (
+        <motion.div
+          className="fixed bottom-8 right-8 z-50"
+          initial={{ scale: 0, rotate: -180 }}
+          animate={{ scale: 1, rotate: 0 }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
         >
-          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-        </Button>
-      </motion.div>
+          <Button
+            variant="contained"
+            onClick={() => setStepModalOpen(true)}
+            sx={{
+              minWidth: '56px',
+              height: '56px',
+              borderRadius: '18px',
+              backgroundColor: '#6366f1',
+              boxShadow: '0 10px 25px -5px rgba(99, 102, 241, 0.4)',
+              '&:hover': { backgroundColor: '#4f46e5' },
+            }}
+          >
+            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+          </Button>
+        </motion.div>
+      )}
 
       {/* Add Step Modal */}
       <AddStepModal

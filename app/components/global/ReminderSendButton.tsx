@@ -5,28 +5,23 @@ import moment from 'moment';
 import {
   IconButton,
   Button,
-  Menu,
-  MenuItem,
   Box,
   Divider,
   CircularProgress,
   Snackbar,
   Alert,
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  FormControl,
-  FormLabel,
-  RadioGroup,
-  FormControlLabel,
-  Radio,
-  Checkbox,
-  FormGroup,
   Typography,
   TextField,
+  Checkbox,
+  FormControlLabel,
+  FormGroup,
 } from '@mui/material';
-import NotificationsIcon from '@mui/icons-material/NotificationsActive';
+import {
+  NotificationsActive as NotificationsIcon,
+  Close as CloseIcon,
+} from '@mui/icons-material';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { collection, getDocs, doc, updateDoc, Timestamp } from 'firebase/firestore';
@@ -42,6 +37,15 @@ interface ReminderSendButtonProps {
   buttonSx?: object;
   itemDateTime?: Date | string | null;
   customItemTypeName?: string;
+  customTrigger?: (openDialog: (e: React.MouseEvent<HTMLElement>) => void) => React.ReactNode;
+}
+
+function getComingSundayStr(): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = day === 0 ? 7 : 7 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split('T')[0];
 }
 
 export default function ReminderSendButton({
@@ -54,62 +58,98 @@ export default function ReminderSendButton({
   buttonSx = {},
   itemDateTime = null,
   customItemTypeName: _customItemTypeName,
+  customTrigger,
 }: ReminderSendButtonProps) {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{
     open: boolean;
     message: string;
-    severity: 'success' | 'error';
+    severity: 'success' | 'error' | 'warning' | 'info';
   }>({ open: false, message: '', severity: 'success' });
 
-  // Scheduling states
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<string>('15_before');
-  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
-  const [customMinutes, setCustomMinutes] = useState<number>(45);
-  const [taskDueTime, setTaskDueTime] = useState<string>('07:00');
+  // Unsubscribed Notice Dialog State
+  const [unsubscribedNotice, setUnsubscribedNotice] = useState<{
+    open: boolean;
+    userName: string;
+  }>({ open: false, userName: '' });
 
-  // Sync task due time state when target time changes
+  // Dialog & Minimal Picker States
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
+
+  // Predefined Dates & Times
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const sundayStr = getComingSundayStr();
+
+  const [dateChoice, setDateChoice] = useState<'today' | 'tomorrow' | 'sunday' | 'custom'>('today');
+  const [customDateVal, setCustomDateVal] = useState<string>(todayStr);
+
+  const [timeChoice, setTimeChoice] = useState<string>('07:00'); // '07:00' | '12:00' | '15:00' | '18:00' | '20:00' | 'custom'
+  const [customTimeVal, setCustomTimeVal] = useState<string>('09:00');
+
+  // Sync date & time from itemDateTime if provided
   React.useEffect(() => {
-    if (itemType === 'task') {
-      const parsed = parseItemDateTime(itemDateTime);
+    if (itemDateTime) {
+      let parsed: Date | null = null;
+      if (itemDateTime instanceof Date) parsed = itemDateTime;
+      else if (typeof itemDateTime === 'object' && itemDateTime !== null && 'seconds' in itemDateTime) {
+        parsed = new Date((itemDateTime as { seconds: number }).seconds * 1000);
+      } else {
+        const d = new Date(itemDateTime);
+        if (!isNaN(d.getTime())) parsed = d;
+      }
+
       if (parsed) {
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+        const dd = String(parsed.getDate()).padStart(2, '0');
         const hours = String(parsed.getHours()).padStart(2, '0');
         const minutes = String(parsed.getMinutes()).padStart(2, '0');
-        setTaskDueTime(`${hours}:${minutes}`);
+        const ds = `${yyyy}-${mm}-${dd}`;
+        const ts = `${hours}:${minutes}`;
+
+        if (ds === todayStr) setDateChoice('today');
+        else if (ds === tomorrowStr) setDateChoice('tomorrow');
+        else if (ds === sundayStr) setDateChoice('sunday');
+        else {
+          setDateChoice('custom');
+          setCustomDateVal(ds);
+        }
+
+        if (['07:00', '12:00', '15:00', '18:00', '20:00'].includes(ts)) {
+          setTimeChoice(ts);
+        } else {
+          setTimeChoice('custom');
+          setCustomTimeVal(ts);
+        }
       }
     }
-  }, [itemDateTime, itemType]);
+  }, [itemDateTime, todayStr, tomorrowStr, sundayStr]);
 
-  const handleOpenMenu = (event: React.MouseEvent<HTMLElement>) => {
+  const handleOpenDialog = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleCloseMenu = (event?: React.MouseEvent) => {
-    if (event) event.stopPropagation();
-    setAnchorEl(null);
+    if (user && selectedRecipients.length === 0) {
+      setSelectedRecipients([user.uid]);
+    }
+    setDialogOpen(true);
   };
 
   const handleSendReminder = async (targetUid: string) => {
     if (!user) return;
-    handleCloseMenu();
     setSending(true);
+    setDialogOpen(false);
 
     try {
       const { userAuth } = await import('@/app/lib/firebase');
       const idToken = await userAuth.currentUser?.getIdToken(true);
-      if (!idToken) {
-        throw new Error('Could not retrieve authentication session token.');
-      }
+      if (!idToken) throw new Error('Could not retrieve authentication session token.');
 
       const senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.displayName || 'User';
-
       const isSelf = targetUid === user.uid;
       const notificationMessage = isSelf
         ? `${itemType === 'task' ? 'Task Reminder' : 'Schedule Reminder'} : ${itemTitle}`
@@ -117,85 +157,55 @@ export default function ReminderSendButton({
 
       const res = await fetch('/api/send-test-notification', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
         body: JSON.stringify({
           targetUid,
           title: 'MyOrbit Reminder ⏰',
           bodyText: notificationMessage,
           appUrl: itemDetailUrl,
+          notificationType: itemType === 'task' ? 'todo' : 'schedule',
+          entityId: _itemId,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
+        if (
+          res.status === 404 ||
+          data.code === 'NO_ACTIVE_SUBSCRIPTIONS' ||
+          (data.error && String(data.error).includes('No active device subscriptions'))
+        ) {
+          const targetUserObj = user.sharedWith?.find((u) => u.uid === targetUid);
+          const targetName = isSelf ? 'You' : (targetUserObj?.displayName || 'This user');
+          setUnsubscribedNotice({
+            open: true,
+            userName: targetName,
+          });
+          return;
+        }
         throw new Error(data.error || 'Failed to dispatch notification.');
       }
 
-      setFeedback({
-        open: true,
-        message: 'Reminder notification sent successfully!',
-        severity: 'success',
-      });
+      setFeedback({ open: true, message: 'Reminder notification sent successfully!', severity: 'success' });
     } catch (err) {
       console.error('Failed to send reminder notification:', err);
-      setFeedback({
-        open: true,
-        message: err instanceof Error ? err.message : 'Failed to send reminder.',
-        severity: 'error',
-      });
+      setFeedback({ open: true, message: err instanceof Error ? err.message : 'Failed to send reminder.', severity: 'error' });
     } finally {
       setSending(false);
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const parseItemDateTime = (val: any): Date | null => {
-    if (!val) return null;
-    if (val instanceof Date) return val;
-    if (val && typeof val === 'object') {
-      if (typeof val.toDate === 'function') return val.toDate();
-      if (val.seconds !== undefined) return new Date(val.seconds * 1000);
-      if (val._seconds !== undefined) return new Date(val._seconds * 1000);
-    }
-    const d = new Date(val);
-    return isNaN(d.getTime()) ? null : d;
+  // Helper to compute effective date and time strings
+  const getEffectiveDateStr = (): string => {
+    if (dateChoice === 'today') return todayStr;
+    if (dateChoice === 'tomorrow') return tomorrowStr;
+    if (dateChoice === 'sunday') return sundayStr;
+    return customDateVal || todayStr;
   };
 
-  const parsedDateTime = parseItemDateTime(itemDateTime);
-  const isDateTimeValid = parsedDateTime && !isNaN(parsedDateTime.getTime());
-
-  const calculateReminderDate = () => {
-    let baseDate = isDateTimeValid ? parsedDateTime! : new Date();
-    if (itemType === 'task' && taskDueTime) {
-      const newDate = new Date(baseDate);
-      const [hours, minutes] = taskDueTime.split(':').map(Number);
-      newDate.setHours(hours, minutes, 0, 0);
-      baseDate = newDate;
-    }
-    
-    switch (selectedSlot) {
-      case '2_now':
-        return new Date(Date.now() + 2 * 60000);
-      case 'at_time':
-        return baseDate;
-      case '5_before':
-        return new Date(baseDate.getTime() - 5 * 60000);
-      case '15_before':
-        return new Date(baseDate.getTime() - 15 * 60000);
-      case '30_before':
-        return new Date(baseDate.getTime() - 30 * 60000);
-      case '1h_before':
-        return new Date(baseDate.getTime() - 60 * 60000);
-      case '1d_before':
-        return new Date(baseDate.getTime() - 24 * 60 * 60000);
-      case 'custom':
-        return new Date(Date.now() + customMinutes * 60000);
-      default:
-        return new Date(Date.now() + 15 * 60000);
-    }
+  const getEffectiveTimeStr = (): string => {
+    if (timeChoice === 'custom') return customTimeVal || '09:00';
+    return timeChoice;
   };
 
   const handleScheduleSubmit = async () => {
@@ -205,47 +215,50 @@ export default function ReminderSendButton({
 
     try {
       const { createWhatsAppReminder } = await import('@/app/lib/utils/whatsapp-reminder');
-      
-      // Update todo's dueDate with selected time in Firestore
-      if (itemType === 'task' && taskDueTime) {
-        const newDueDate = parsedDateTime ? new Date(parsedDateTime) : new Date();
-        const [hours, minutes] = taskDueTime.split(':').map(Number);
-        newDueDate.setHours(hours, minutes, 0, 0);
-        
-        const todoRef = doc(db, 'todos', _itemId);
-        await updateDoc(todoRef, {
-          dueDate: Timestamp.fromDate(newDueDate)
-        }).catch((err) => console.error('Failed to update task due date:', err));
+
+      const dateStr = getEffectiveDateStr();
+      const timeStr = getEffectiveTimeStr();
+
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const targetDate = new Date(`${dateStr}T${timeStr}`);
+      if (isNaN(targetDate.getTime())) {
+        targetDate.setHours(hours, minutes, 0, 0);
       }
 
-      const computedDate = calculateReminderDate();
-      // If calculated date is in the past, fall back to 2 minutes from now
-      const reminderDate = computedDate.getTime() <= Date.now()
-        ? new Date(Date.now() + 2 * 60000)
-        : computedDate;
-        
+      const reminderDate = targetDate.getTime() <= Date.now() ? new Date(Date.now() + 2 * 60000) : targetDate;
+
+      // Update Firestore document with reminder date & flag
+      if (_itemId) {
+        const colName = itemType === 'task' ? 'todos' : 'schedules';
+        const docRef = doc(db, colName, _itemId);
+        await updateDoc(docRef, {
+          hasReminder: true,
+          reminderDate: Timestamp.fromDate(reminderDate),
+          updatedAt: new Date(),
+        }).catch((err) => console.error('Failed to update Firestore reminder fields:', err));
+      }
+
       const senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.displayName || 'User';
 
-      // Schedule for each selected user
+      const unsubscribedNames: string[] = [];
+
       const promises = selectedRecipients.map(async (targetUid) => {
         const isSelf = targetUid === user.uid;
         const messageText = isSelf
           ? `${itemType === 'task' ? 'Task Reminder' : 'Schedule Reminder'} : ${itemTitle}`
           : `${senderName} wants you to remind about ${itemType === 'task' ? 'task' : 'schedule'}: "${itemTitle}"`;
 
-        // Fetch target user's active device tokens (FIDs) from Firestore once
         const deviceCol = collection(userDb, 'users', targetUid, 'notificationDevices');
         const deviceSnapshot = await getDocs(deviceCol);
         const activeTokens: string[] = [];
-        deviceSnapshot.forEach((doc) => {
-          const data = doc.data();
-          if (data.enabled && data.fid) {
-            activeTokens.push(data.fid);
-          }
+        deviceSnapshot.forEach((d) => {
+          const data = d.data();
+          if (data.enabled && data.fid) activeTokens.push(data.fid);
         });
 
-        if (activeTokens.length === 0) {
-          console.warn(`No active device tokens found in Firestore for user ${targetUid}`);
+        if (activeTokens.length === 0 && !isSelf) {
+          const targetUserObj = user.sharedWith?.find((u) => u.uid === targetUid);
+          if (targetUserObj?.displayName) unsubscribedNames.push(targetUserObj.displayName);
         }
 
         const config = {
@@ -272,11 +285,19 @@ export default function ReminderSendButton({
 
       await Promise.all(promises);
 
-      setFeedback({
-        open: true,
-        message: `Successfully scheduled reminder for ${moment(reminderDate).format('hh:mm A (MMM D)')}!`,
-        severity: 'success',
-      });
+      if (unsubscribedNames.length > 0) {
+        setFeedback({
+          open: true,
+          message: `Scheduled! Note: ${unsubscribedNames.join(', ')} has not enabled push notifications on their device yet.`,
+          severity: 'warning',
+        });
+      } else {
+        setFeedback({
+          open: true,
+          message: `Successfully scheduled reminder for ${moment(reminderDate).format('ddd, MMM D @ hh:mm A')}!`,
+          severity: 'success',
+        });
+      }
     } catch (err) {
       console.error('Failed to schedule reminder:', err);
       setFeedback({
@@ -289,25 +310,24 @@ export default function ReminderSendButton({
     }
   };
 
-  const handleCloseFeedback = () => {
-    setFeedback((prev) => ({ ...prev, open: false }));
-  };
+  const handleCloseFeedback = () => setFeedback((prev) => ({ ...prev, open: false }));
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   const hasSharedUsers = user.sharedWith && user.sharedWith.length > 0;
-  const computedReminderDate = calculateReminderDate();
-  const isPast = computedReminderDate.getTime() <= Date.now();
+  const effectiveDateStr = getEffectiveDateStr();
+  const effectiveTimeStr = getEffectiveTimeStr();
+  const displayPreviewStr = moment(`${effectiveDateStr}T${effectiveTimeStr}`).format('dddd, MMM D @ hh:mm A');
 
   return (
     <>
-      {buttonType === 'icon' ? (
+      {customTrigger ? (
+        customTrigger(handleOpenDialog)
+      ) : buttonType === 'icon' ? (
         <IconButton
           size={iconSize}
           disabled={sending}
-          onClick={handleOpenMenu}
+          onClick={handleOpenDialog}
           title="Send / Schedule Reminder"
           sx={{
             color: isDark ? '#94a3b8' : '#64748b',
@@ -325,21 +345,16 @@ export default function ReminderSendButton({
         <Button
           variant="outlined"
           disabled={sending}
-          onClick={handleOpenMenu}
-          startIcon={
-            sending ? (
-              <CircularProgress size={16} color="inherit" />
-            ) : (
-              <NotificationsIcon />
-            )
-          }
+          onClick={handleOpenDialog}
+          startIcon={sending ? <CircularProgress size={14} color="inherit" /> : <NotificationsIcon sx={{ fontSize: '1.1rem' }} />}
           sx={{
             borderRadius: '14px',
             textTransform: 'none',
             fontWeight: 700,
-            fontSize: '0.9rem',
-            px: 3,
-            py: 1.5,
+            fontSize: '0.8rem',
+            px: 2,
+            py: 1,
+            whiteSpace: 'nowrap',
             borderColor: '#e2e8f0',
             color: isDark ? '#f1f5f9' : '#475569',
             backgroundColor: isDark ? '#1e293b' : '#f8fafc',
@@ -355,387 +370,315 @@ export default function ReminderSendButton({
         </Button>
       )}
 
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={() => handleCloseMenu()}
-        onClick={(e) => e.stopPropagation()}
-        PaperProps={{
-          sx: {
-            bgcolor: isDark ? '#1e293b' : '#ffffff',
-            color: isDark ? '#f1f5f9' : '#0f172a',
-            border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-            borderRadius: '12px',
-            minWidth: '220px',
-            py: 0.5,
-          },
-        }}
-      >
-        <Box
-          sx={{
-            px: 2,
-            py: 0.75,
-            opacity: 0.6,
-            fontSize: '0.65rem',
-            fontWeight: 850,
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-          }}
-        >
-          Notification Options
-        </Box>
-        <Divider sx={{ my: 0.5, borderColor: isDark ? '#334155' : '#e2e8f0' }} />
-        
-        {hasSharedUsers && [
-          <Box key="instant-title" sx={{ px: 2, py: 0.5, fontSize: '0.7rem', fontWeight: 700, color: 'text.secondary' }}>
-            ⚡ Send Instant Reminder
-          </Box>,
-          ...user.sharedWith.map((su) => (
-            <MenuItem
-              key={su.uid}
-              onClick={() => handleSendReminder(su.uid)}
-              sx={{ fontSize: '0.8rem', fontWeight: 600, py: 0.75, pl: 3 }}
-            >
-              📲 Send to {su.displayName}
-            </MenuItem>
-          )),
-          <Divider key="instant-divider" sx={{ my: 0.5, borderColor: isDark ? '#334155' : '#e2e8f0' }} />
-        ]}
-
-        {/* Scheduled Notification section */}
-        <MenuItem
-          onClick={() => {
-            handleCloseMenu();
-            setSelectedRecipients([user.uid]);
-            setSelectedSlot(isDateTimeValid ? '15_before' : '2_now');
-            setDialogOpen(true);
-          }}
-          sx={{ fontSize: '0.8rem', fontWeight: 700, py: 1 }}
-        >
-          ⏰ Schedule Reminder...
-        </MenuItem>
-      </Menu>
-
+      {/* Sleek & Minimal Reminder Dialog */}
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         onClick={(e) => e.stopPropagation()}
         PaperProps={{
+          className: 'rounded-[28px] overflow-hidden shadow-2xl border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800',
           sx: {
-            borderRadius: '24px',
-            p: 1.5,
-            bgcolor: isDark ? '#1e293b' : '#ffffff',
+            p: 0,
+            width: '90%',
+            maxWidth: '380px',
+            bgcolor: isDark ? '#0f172a' : '#ffffff',
             color: isDark ? '#f1f5f9' : '#0f172a',
-            backgroundImage: 'none',
-            maxWidth: '400px',
-            width: '100%',
+            borderRadius: '28px',
           },
         }}
       >
-        <DialogTitle sx={{ fontWeight: 800, fontSize: '1.1rem', pb: 1 }}>
-          ⏰ Schedule Reminder
-        </DialogTitle>
-        <DialogContent sx={{ py: 1 }}>
-          <Typography variant="body2" sx={{ mb: 3, opacity: 0.8, fontSize: '0.85rem' }}>
-            Set a scheduled push reminder for <strong>&quot;{itemTitle}&quot;</strong>.
+        {/* Header with Close Button matching Schedule Details modal */}
+        <Box className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+          <Typography variant="h6" className="font-extrabold text-slate-800 dark:text-slate-100" sx={{ fontSize: '1.05rem' }}>
+            ⏰ Reminder Options
           </Typography>
-
-          {/* Time delay select */}
-          <FormControl component="fieldset" fullWidth sx={{ mb: 2 }}>
-            <FormLabel 
-              component="legend" 
-              sx={{ 
-                fontSize: '0.75rem', 
-                fontWeight: 700, 
-                color: isDark ? '#94a3b8' : '#475569',
-                mb: 1,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-              }}
-            >
-              🗓 When to remind?
-            </FormLabel>
-            <RadioGroup
-              value={selectedSlot}
-              onChange={(e) => setSelectedSlot(e.target.value)}
-              sx={{ gap: 1 }}
-            >
-              {/* Quick test option */}
-              <FormControlLabel
-                value="2_now"
-                control={<Radio size="small" sx={{ color: isDark ? '#475569' : '#cbd5e1', '&.Mui-checked': { color: '#6366f1' } }} />}
-                label="⚡ Quick Test: In 2 minutes from now"
-                sx={{
-                  m: 0,
-                  px: 1.5,
-                  py: 0.5,
-                  borderRadius: '12px',
-                  border: `1.5px solid ${selectedSlot === '2_now' ? '#6366f1' : (isDark ? '#334155' : '#e2e8f0')}`,
-                  bgcolor: selectedSlot === '2_now' ? (isDark ? 'rgba(99, 102, 241, 0.15)' : '#eff6ff') : 'transparent',
-                  '& .MuiTypography-root': { fontSize: '0.8rem', fontWeight: 700, color: selectedSlot === '2_now' ? '#6366f1' : 'inherit' }
-                }}
-              />
-
-              {/* Relative options section header */}
-              <Box sx={{ mt: 1, mb: 0.5 }}>
-                <Typography variant="caption" sx={{ fontWeight: 800, color: isDark ? '#94a3b8' : '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  🕒 Relative to start/due time
-                </Typography>
-              </Box>
-
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
-                  gap: 1.5,
-                  mt: 0.5,
-                  mb: 1.5,
-                }}
-              >
-                {[
-                  { label: 'At time', value: 'at_time' },
-                  { label: '5 min before', value: '5_before' },
-                  { label: '15 min before (default)', value: '15_before' },
-                  { label: '30 min before', value: '30_before' },
-                  { label: '1 hour before', value: '1h_before' },
-                  { label: '1 day before', value: '1d_before' },
-                ].map((opt) => (
-                  <FormControlLabel
-                    key={opt.value}
-                    value={opt.value}
-                    disabled={!isDateTimeValid}
-                    control={
-                      <Radio 
-                        size="small" 
-                        sx={{
-                          color: isDark ? '#475569' : '#cbd5e1',
-                          '&.Mui-checked': { color: '#6366f1' },
-                          '&.Mui-disabled': { color: isDark ? '#1e293b' : '#f1f5f9' }
-                        }}
-                      />
-                    }
-                    label={opt.label}
-                    sx={{
-                      m: 0,
-                      px: 1.5,
-                      py: 0.5,
-                      borderRadius: '12px',
-                      border: `1.5px solid ${selectedSlot === opt.value ? '#6366f1' : (isDark ? '#334155' : '#e2e8f0')}`,
-                      bgcolor: selectedSlot === opt.value ? (isDark ? 'rgba(99, 102, 241, 0.15)' : '#eff6ff') : 'transparent',
-                      opacity: isDateTimeValid ? 1 : 0.5,
-                      '& .MuiTypography-root': {
-                        fontSize: '0.8rem',
-                        fontWeight: 700,
-                        color: selectedSlot === opt.value ? '#6366f1' : 'inherit'
-                      }
-                    }}
-                  />
-                ))}
-              </Box>
-
-              {/* Custom option */}
-              <Box sx={{ mt: 1, mb: 0.5 }}>
-                <Typography variant="caption" sx={{ fontWeight: 800, color: isDark ? '#94a3b8' : '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  ⚙️ Custom interval
-                </Typography>
-              </Box>
-
-              <FormControlLabel
-                value="custom"
-                control={<Radio size="small" sx={{ color: isDark ? '#475569' : '#cbd5e1', '&.Mui-checked': { color: '#6366f1' } }} />}
-                label="Custom delay in minutes..."
-                sx={{
-                  m: 0,
-                  px: 1.5,
-                  py: 0.5,
-                  borderRadius: '12px',
-                  border: `1.5px solid ${selectedSlot === 'custom' ? '#6366f1' : (isDark ? '#334155' : '#e2e8f0')}`,
-                  bgcolor: selectedSlot === 'custom' ? (isDark ? 'rgba(99, 102, 241, 0.15)' : '#eff6ff') : 'transparent',
-                  '& .MuiTypography-root': { fontSize: '0.8rem', fontWeight: 700, color: selectedSlot === 'custom' ? '#6366f1' : 'inherit' }
-                }}
-              />
-            </RadioGroup>
-          </FormControl>
-
-          {selectedSlot === 'custom' && (
-            <Box sx={{ mb: 2.5 }}>
-              <TextField
-                label="Custom Delay (Minutes)"
-                type="number"
-                fullWidth
-                size="small"
-                value={customMinutes}
-                onChange={(e) => {
-                  const val = Math.max(5, Math.round(Number(e.target.value) / 5) * 5); // force 5 minute interval
-                  setCustomMinutes(val);
-                }}
-                inputProps={{
-                  min: 5,
-                  step: 5,
-                }}
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: '12px',
-                  },
-                }}
-              />
-            </Box>
-          )}
-          {itemType === 'task' && (
-            <Box sx={{ mb: 2.5 }}>
-              <Typography variant="caption" sx={{ fontWeight: 800, color: isDark ? '#94a3b8' : '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', mb: 1 }}>
-                🏁 Task due / work finishing time
-              </Typography>
-              <TextField
-                type="time"
-                fullWidth
-                size="small"
-                value={taskDueTime}
-                onChange={(e) => setTaskDueTime(e.target.value)}
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: '12px',
-                  },
-                }}
-              />
-            </Box>
-          )}
-          {/* Time Preview Box */}
-          <Box 
-            sx={{ 
-              p: 1.5, 
-              mb: 3, 
-              borderRadius: '12px', 
-              bgcolor: isPast ? (isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2') : (isDark ? 'rgba(99, 102, 241, 0.05)' : '#f5f3ff'), 
-              border: `1px dashed ${isPast ? '#ef4444' : (isDark ? '#4f46e5' : '#c7d2fe')}`,
-              textAlign: 'center'
+          <IconButton
+            size="small"
+            onClick={() => setDialogOpen(false)}
+            sx={{
+              bgcolor: isDark ? '#1e293b' : '#f1f5f9',
+              color: isDark ? '#94a3b8' : '#64748b',
+              '&:hover': { bgcolor: isDark ? '#334155' : '#e2e8f0' },
             }}
           >
-            <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, color: isPast ? '#ef4444' : '#6366f1' }}>
-              {isPast ? '⚠️ trigger fall-back (past selected time):' : '⏰ Reminder will trigger at:'}
+            <CloseIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Box>
+
+        {/* Minimal Body Content */}
+        <DialogContent className="p-5" sx={{ p: 2.5 }}>
+          {/* Item Title Chip */}
+          <Box className="rounded-2xl p-3 mb-4" sx={{ bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+            <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-extrabold uppercase tracking-wider block mb-0.5">
+              {itemType === 'task' ? 'Task' : 'Schedule'}
             </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 800, color: isPast ? '#ef4444' : (isDark ? '#f1f5f9' : '#1e293b'), mt: 0.5 }}>
-              {moment(isPast ? new Date(Date.now() + 2 * 60000) : computedReminderDate).format('hh:mm A (dddd, MMMM D)')}
+            <Typography variant="body2" className="font-bold text-slate-800 dark:text-slate-100 truncate">
+              {itemTitle}
             </Typography>
           </Box>
 
-          {/* Recipient select checkboxes */}
-          <FormControl component="fieldset" fullWidth>
-            <FormLabel 
-              component="legend" 
-              sx={{ 
-                fontSize: '0.75rem', 
-                fontWeight: 700, 
-                color: isDark ? '#94a3b8' : '#475569',
-                mb: 1,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-              }}
-            >
-              👤 Send reminder to:
-            </FormLabel>
-            <FormGroup sx={{ gap: 0.5 }}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={selectedRecipients.includes(user.uid)}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setSelectedRecipients(prev => 
-                        checked ? [...prev, user.uid] : prev.filter(id => id !== user.uid)
-                      );
-                    }}
-                    size="small"
-                    sx={{ color: isDark ? '#475569' : '#cbd5e1', '&.Mui-checked': { color: '#6366f1' } }}
-                  />
-                }
-                label="Myself (Self)"
-                sx={{
-                  m: 0,
-                  px: 1,
-                  py: 0.5,
-                  borderRadius: '8px',
-                  '&:hover': { bgcolor: isDark ? '#273549' : '#f8fafc' },
-                  '& .MuiTypography-root': { fontSize: '0.8rem', fontWeight: 600 }
-                }}
-              />
-              
-              {user.sharedWith && user.sharedWith.map((su) => (
+          {/* ⚡ Instant Push Section */}
+          <Box className="mb-4">
+            <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+              <span>⚡</span> INSTANT PUSH NOTIFICATION
+            </Typography>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={sending}
+                onClick={() => handleSendReminder(user.uid)}
+                className="flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 active:scale-95 disabled:opacity-50"
+              >
+                <span>📲</span> Push to Myself Now
+              </button>
+              {hasSharedUsers &&
+                user.sharedWith.map((su) => (
+                  <button
+                    key={su.uid}
+                    type="button"
+                    disabled={sending}
+                    onClick={() => handleSendReminder(su.uid)}
+                    className="flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 active:scale-95 disabled:opacity-50"
+                  >
+                    <span>👥</span> Send to {su.displayName || 'User'}
+                  </button>
+                ))}
+            </div>
+          </Box>
+
+          <Divider sx={{ my: 2.5, borderColor: isDark ? '#1e293b' : '#f1f5f9' }} />
+
+          {/* ⏰ Scheduled Reminder Section */}
+          <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2.5 flex items-center gap-1">
+            <span>⏰</span> SCHEDULE REMINDER FOR LATER
+          </Typography>
+
+          {/* 1. Predefined Day / Date Selection */}
+          <Box className="mb-4">
+            <Typography className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5 block">
+              Day / Date
+            </Typography>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { id: 'today', label: 'Today' },
+                { id: 'tomorrow', label: 'Tomorrow' },
+                { id: 'sunday', label: 'Coming Sunday' },
+                { id: 'custom', label: 'Custom Date' },
+              ].map((item) => {
+                const active = dateChoice === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setDateChoice(item.id as 'today' | 'tomorrow' | 'sunday' | 'custom')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all text-center border ${
+                      active
+                        ? 'bg-amber-500 border-amber-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {dateChoice === 'custom' && (
+              <Box className="mt-2">
+                <TextField
+                  type="date"
+                  fullWidth
+                  size="small"
+                  value={customDateVal}
+                  onChange={(e) => setCustomDateVal(e.target.value)}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', fontSize: '13px' } }}
+                />
+              </Box>
+            )}
+          </Box>
+
+          {/* 2. Predefined Time Selection */}
+          <Box className="mb-4">
+            <Typography className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5 block">
+              Time Slot
+            </Typography>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { id: '07:00', label: 'Morning 7 AM' },
+                { id: '12:00', label: '12:00 PM' },
+                { id: '15:00', label: '03:00 PM' },
+                { id: '18:00', label: 'Evening 6 PM' },
+                { id: '20:00', label: '08:00 PM' },
+                { id: 'custom', label: 'Custom Time' },
+              ].map((slot) => {
+                const active = timeChoice === slot.id;
+                return (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    onClick={() => setTimeChoice(slot.id)}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all text-center border ${
+                      active
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {slot.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {timeChoice === 'custom' && (
+              <Box className="mt-2">
+                <TextField
+                  type="time"
+                  fullWidth
+                  size="small"
+                  value={customTimeVal}
+                  onChange={(e) => setCustomTimeVal(e.target.value)}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', fontSize: '13px' } }}
+                />
+              </Box>
+            )}
+          </Box>
+
+          {/* Optional Shared Recipient Selector */}
+          {hasSharedUsers && (
+            <Box className="mb-4">
+              <Typography className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">
+                RECIPIENTS
+              </Typography>
+              <FormGroup sx={{ gap: 0.25 }}>
                 <FormControlLabel
-                  key={su.uid}
                   control={
                     <Checkbox
-                      checked={selectedRecipients.includes(su.uid)}
+                      checked={selectedRecipients.includes(user.uid)}
                       onChange={(e) => {
                         const checked = e.target.checked;
-                        setSelectedRecipients(prev => 
-                          checked ? [...prev, su.uid] : prev.filter(id => id !== su.uid)
+                        setSelectedRecipients((prev) =>
+                          checked ? [...prev, user.uid] : prev.filter((id) => id !== user.uid)
                         );
                       }}
                       size="small"
                       sx={{ color: isDark ? '#475569' : '#cbd5e1', '&.Mui-checked': { color: '#6366f1' } }}
                     />
                   }
-                  label={su.displayName}
-                  sx={{
-                    m: 0,
-                    px: 1,
-                    py: 0.5,
-                    borderRadius: '8px',
-                    '&:hover': { bgcolor: isDark ? '#273549' : '#f8fafc' },
-                    '& .MuiTypography-root': { fontSize: '0.8rem', fontWeight: 600 }
-                  }}
+                  label="Myself"
+                  sx={{ m: 0, '& .MuiTypography-root': { fontSize: '12px', fontWeight: 600 } }}
                 />
-              ))}
-            </FormGroup>
-          </FormControl>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pt: 2, pb: 1, gap: 1 }}>
-          <Button
-            onClick={() => setDialogOpen(false)}
-            sx={{
-              textTransform: 'none',
-              fontWeight: 700,
-              color: isDark ? '#94a3b8' : '#64748b',
-              borderRadius: '12px',
-              px: 2.5,
-            }}
-          >
-            Cancel
-          </Button>
+                {user.sharedWith.map((su) => (
+                  <FormControlLabel
+                    key={su.uid}
+                    control={
+                      <Checkbox
+                        checked={selectedRecipients.includes(su.uid)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setSelectedRecipients((prev) =>
+                            checked ? [...prev, su.uid] : prev.filter((id) => id !== su.uid)
+                          );
+                        }}
+                        size="small"
+                        sx={{ color: isDark ? '#475569' : '#cbd5e1', '&.Mui-checked': { color: '#6366f1' } }}
+                      />
+                    }
+                    label={su.displayName}
+                    sx={{ m: 0, '& .MuiTypography-root': { fontSize: '12px', fontWeight: 600 } }}
+                  />
+                ))}
+              </FormGroup>
+            </Box>
+          )}
+
+          {/* Live Preview Box */}
+          <Box className="rounded-2xl p-2.5 text-center mb-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40">
+            <Typography variant="caption" className="text-indigo-600 dark:text-indigo-400 font-bold block text-[11px]">
+              ⏰ Remind on {displayPreviewStr}
+            </Typography>
+          </Box>
+
+          {/* Submit Action Button */}
           <Button
             onClick={handleScheduleSubmit}
             variant="contained"
-            disabled={selectedRecipients.length === 0 || sending}
+            disabled={sending || selectedRecipients.length === 0}
+            fullWidth
             sx={{
+              borderRadius: '16px',
+              py: 1.4,
               textTransform: 'none',
-              fontWeight: 700,
-              borderRadius: '12px',
-              px: 3,
-              bgcolor: '#6366f1',
-              '&:hover': { bgcolor: '#4f46e5' },
-              '&.Mui-disabled': {
-                bgcolor: isDark ? '#334155' : '#cbd5e1',
-                color: isDark ? '#64748b' : '#94a3b8',
-              }
+              fontWeight: 800,
+              fontSize: '14px',
+              bgcolor: '#f59e0b',
+              color: '#ffffff',
+              boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+              '&:hover': { bgcolor: '#d97706' },
             }}
           >
-            {sending ? 'Scheduling...' : 'Schedule'}
+            {sending ? 'Saving Reminder...' : 'Confirm & Set Reminder'}
           </Button>
-        </DialogActions>
+        </DialogContent>
+      </Dialog>
+
+      {/* Friendly Notice Dialog for Unsubscribed Target User */}
+      <Dialog
+        open={unsubscribedNotice.open}
+        onClose={() => setUnsubscribedNotice({ open: false, userName: '' })}
+        onClick={(e) => e.stopPropagation()}
+        PaperProps={{
+          className: 'rounded-[24px] overflow-hidden shadow-2xl border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800',
+          sx: {
+            p: 0,
+            width: '90%',
+            maxWidth: '360px',
+            bgcolor: isDark ? '#0f172a' : '#ffffff',
+            color: isDark ? '#f1f5f9' : '#0f172a',
+            borderRadius: '24px',
+          },
+        }}
+      >
+        <Box className="p-6 text-center">
+          <div className="w-14 h-14 mx-auto mb-3 border border-amber-200 dark:border-amber-800/60 rounded-full bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-500 text-2xl shadow-sm">
+            🔔
+          </div>
+          <Typography variant="h6" className="font-extrabold text-slate-800 dark:text-slate-100 mb-1" sx={{ fontSize: '1.1rem' }}>
+            Notifications Not Enabled
+          </Typography>
+          <Typography variant="body2" className="text-slate-600 dark:text-slate-400 mb-4 text-xs font-medium leading-relaxed">
+            <strong className="text-slate-900 dark:text-slate-100">{unsubscribedNotice.userName}</strong> has not enabled or subscribed to push notifications on their device yet.
+          </Typography>
+          <Box className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 mb-5 text-left text-[11px] text-slate-600 dark:text-slate-400 leading-normal">
+            💡 <strong>Tip:</strong> Ask {unsubscribedNotice.userName} to open <strong>MyOrbit ➔ Settings ➔ Push Notifications</strong> on their device to enable notifications.
+          </Box>
+          <Button
+            onClick={() => setUnsubscribedNotice({ open: false, userName: '' })}
+            variant="contained"
+            fullWidth
+            sx={{
+              borderRadius: '14px',
+              py: 1.2,
+              textTransform: 'none',
+              fontWeight: 800,
+              fontSize: '13px',
+              bgcolor: isDark ? '#334155' : '#0f172a',
+              color: '#ffffff',
+              boxShadow: 'none',
+              '&:hover': { bgcolor: isDark ? '#475569' : '#1e293b' },
+            }}
+          >
+            Got it
+          </Button>
+        </Box>
       </Dialog>
 
       <Snackbar
         open={feedback.open}
-        autoHideDuration={3000}
+        autoHideDuration={3500}
         onClose={handleCloseFeedback}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert
-          onClose={handleCloseFeedback}
-          severity={feedback.severity}
-          sx={{ width: '100%', borderRadius: '12px' }}
-        >
+        <Alert onClose={handleCloseFeedback} severity={feedback.severity} sx={{ width: '100%', borderRadius: '12px' }}>
           {feedback.message}
         </Alert>
       </Snackbar>
