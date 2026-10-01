@@ -8,25 +8,13 @@ const forceClean = args.includes('--force') || args.includes('-f') || args.inclu
 
 console.log('🧹 Cleaning up dev environment...');
 
-if (forceClean) {
-  // Remove .next folder (Only on explicit force)
-  if (fs.existsSync('.next')) {
-    console.log('⚠️  Removing .next folder (Full Cold Clean)...');
-    fs.rmSync('.next', { recursive: true, force: true });
-  }
-  
-  // Clear npm cache (Only on explicit force)
-  console.log('⚠️  Clearing npm cache...');
+if (fs.existsSync('.next')) {
+  console.log('🧹 Removing .next folder to prevent cache conflicts...');
   try {
-    require('child_process').execSync('npm cache clean --force', {
-      stdio: 'inherit',
-    });
-  } catch (err) {
-    console.error('Failed to clear npm cache (non-critical):', err.message);
+    fs.rmSync('.next', { recursive: true, force: true });
+  } catch (e) {
+    console.warn('Could not remove .next directory:', e.message);
   }
-} else {
-  console.log('💡 Keeping Next.js compiler cache (.next/cache) to ensure fast startup and quick page navigation.');
-  console.log('👉 To perform a full cold-rebuild clean, run: npm run clean -- --force');
 }
 
 // Always safe to clean lightweight caches

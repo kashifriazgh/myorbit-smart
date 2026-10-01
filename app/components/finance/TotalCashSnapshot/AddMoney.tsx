@@ -1,23 +1,6 @@
-import {
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  TextField,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  Typography,
-  Stack,
-  Avatar,
-  IconButton,
-  Fade,
-  Box,
-  InputAdornment,
-  ListSubheader,
-} from '@mui/material';
-import { useEffect, useState, useMemo } from 'react';
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
 import { TransactionSource, Bank, CustomPaymentHead, TotalCashSnapshot } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
 import {
@@ -30,16 +13,9 @@ import {
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useGoals } from '@/app/lib/context/GoalsContext';
-import {
-  Close as CloseIcon,
-  Add as AddIcon,
-  AccountBalance as BankIcon,
-  Wallet as WalletIcon,
-  AddCard as AddCardIcon,
-  Description as NoteIcon,
-} from '@mui/icons-material';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { getSourceKey } from '../TotalCashSnapshot';
+import { formatCurrency } from '@/app/lib/utilts';
 
 interface Props {
   onSave: (
@@ -53,13 +29,45 @@ interface Props {
     note?: string,
     holderName?: string
   ) => Promise<void>;
+  onDeduct?: (
+    amount: number,
+    source: TransactionSource,
+    bankId?: string,
+    bankName?: string,
+    fromFreeze?: boolean,
+    customPaymentHeadId?: string,
+    customPaymentHeadName?: string,
+    note?: string,
+    holderName?: string
+  ) => Promise<void>;
   saving: boolean;
   snapshot?: TotalCashSnapshot | null;
   externalOpen?: boolean;
   onExternalClose?: () => void;
+  defaultMode?: 'add' | 'deduct';
 }
 
-// Icon map for source types
+const MODES = {
+  add: {
+    label: "Add",
+    cta: "Add money",
+    tab: "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30",
+    btn: "bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/25",
+    text: "text-emerald-600 dark:text-emerald-400",
+    ring: "focus-within:ring-emerald-500/40",
+    sign: "+",
+  },
+  deduct: {
+    label: "Deduct",
+    cta: "Deduct money",
+    tab: "bg-rose-500 text-white shadow-lg shadow-rose-500/30",
+    btn: "bg-rose-500 hover:bg-rose-400 shadow-rose-500/25",
+    text: "text-rose-600 dark:text-rose-400",
+    ring: "focus-within:ring-rose-500/40",
+    sign: "−",
+  },
+};
+
 const SOURCE_ICONS: Record<string, string> = {
   in_hand: '💵',
   bank: '🏦',
@@ -75,26 +83,32 @@ const SOURCE_LABELS: Record<string, string> = {
   easypaisa: 'EasyPaisa',
   jazzcash: 'JazzCash',
   other: 'Other',
-  custom: 'Custom & Goal Wallets',
+  custom: 'Custom Wallet',
 };
 
 const SOURCE_OPTIONS: TransactionSource[] = ['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other', 'custom'];
 
-export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExternalClose }: Props) {
+const fmt = (n: number | string) => Number(n || 0).toLocaleString("en-PK");
+
+export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalOpen, onExternalClose, defaultMode = 'add' }: Props) {
   const { user } = useAuth();
   const { goals, updateLinkedItemStatusInGoal } = useGoals();
   const { theme } = useCustomTheme();
-  const isDark = theme?.mode === 'dark';
+  const _isDark = theme?.mode === 'dark';
 
   const [showModal, setShowModal] = useState(false);
+  const [mode, setMode] = useState<'add' | 'deduct'>(defaultMode);
 
-  // Sync with external open state from FAB
   useEffect(() => {
-    if (externalOpen !== undefined) setShowModal(externalOpen);
-  }, [externalOpen]);
+    if (externalOpen !== undefined) {
+      setShowModal(externalOpen);
+      if (externalOpen) setMode(defaultMode);
+    }
+  }, [externalOpen, defaultMode]);
 
-  const [newAmount, setNewAmount] = useState<number | ''>('');
-  const [newMode, setNewMode] = useState<TransactionSource>('in_hand');
+  const [amount, setAmount] = useState<string>('');
+  const [source, setSource] = useState<TransactionSource>('in_hand');
+  const [toSource, setToSource] = useState<TransactionSource>('in_hand');
   const [note, setNote] = useState('');
 
   // Holder state
@@ -104,19 +118,24 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
   // Bank-specific state
   const [banks, setBanks] = useState<Bank[]>([]);
   const [selectedBank, setSelectedBank] = useState<string>('');
+  const [selectedToBank, setSelectedToBank] = useState<string>('');
   const [newBankName, setNewBankName] = useState('');
+  const [showAddBank, setShowAddBank] = useState(false);
 
   // Custom payment head state
   const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
-  const [selectedCustomPaymentHead, setSelectedCustomPaymentHead] = useState<string>('');
-  const [newCustomPaymentHeadName, setNewCustomPaymentHeadName] = useState('');
+  const [selectedCustomHead, setSelectedCustomHead] = useState<string>('');
+  const [selectedToCustomHead, setSelectedToCustomHead] = useState<string>('');
+  const [newCustomHeadName, setNewCustomHeadName] = useState('');
+  const [showAddCustom, setShowAddCustom] = useState(false);
 
   useEffect(() => {
     if (!user || !showModal) return;
     const fetchBanks = async () => {
       const q = query(collection(db, 'banks'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
-      setBanks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Bank, 'id'>) })));
+      const fetched = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Bank, 'id'>) }));
+      setBanks(fetched);
     };
     fetchBanks();
   }, [user, showModal]);
@@ -126,7 +145,8 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
     const fetchCustom = async () => {
       const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', user.uid));
       const snap = await getDocs(q);
-      setCustomPaymentHeads(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomPaymentHead, 'id'>) })));
+      const fetched = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomPaymentHead, 'id'>) }));
+      setCustomPaymentHeads(fetched);
     };
     fetchCustom();
   }, [user, showModal]);
@@ -169,8 +189,53 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
     return list;
   }, [customPaymentHeads, goals, user?.uid]);
 
-  const goalHeads = useMemo(() => allCustomHeads.filter((h) => !!h.goalTitle || !!h.goalId), [allCustomHeads]);
-  const otherHeads = useMemo(() => allCustomHeads.filter((h) => !h.goalTitle && !h.goalId), [allCustomHeads]);
+  // Requirement 2: Auto-select bank or custom source if only 1 source exists
+  useEffect(() => {
+    if (source === 'bank') {
+      if (banks.length === 1 && !selectedBank) {
+        setSelectedBank(banks[0].id!);
+      }
+    } else if (source === 'custom') {
+      if (allCustomHeads.length === 1 && !selectedCustomHead) {
+        setSelectedCustomHead(allCustomHeads[0].id!);
+      }
+    }
+  }, [source, banks, allCustomHeads, selectedBank, selectedCustomHead]);
+
+  useEffect(() => {
+    if (toSource === 'bank') {
+      if (banks.length === 1 && !selectedToBank) {
+        setSelectedToBank(banks[0].id!);
+      }
+    } else if (toSource === 'custom') {
+      if (allCustomHeads.length === 1 && !selectedToCustomHead) {
+        setSelectedToCustomHead(allCustomHeads[0].id!);
+      }
+    }
+  }, [toSource, banks, allCustomHeads, selectedToBank, selectedToCustomHead]);
+
+  const handleSourceChange = (newSrc: TransactionSource) => {
+    setSource(newSrc);
+    setSelectedHolder('Unassigned');
+    if (newSrc === 'bank') {
+      if (banks.length === 1) setSelectedBank(banks[0].id!);
+      else setSelectedBank('');
+    } else if (newSrc === 'custom') {
+      if (allCustomHeads.length === 1) setSelectedCustomHead(allCustomHeads[0].id!);
+      else setSelectedCustomHead('');
+    }
+  };
+
+  const _handleToSourceChange = (newSrc: TransactionSource) => {
+    setToSource(newSrc);
+    if (newSrc === 'bank') {
+      if (banks.length === 1) setSelectedToBank(banks[0].id!);
+      else setSelectedToBank('');
+    } else if (newSrc === 'custom') {
+      if (allCustomHeads.length === 1) setSelectedToCustomHead(allCustomHeads[0].id!);
+      else setSelectedToCustomHead('');
+    }
+  };
 
   const handleAddBank = async () => {
     if (!user || !newBankName.trim()) return;
@@ -181,63 +246,53 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
     setBanks((prev) => [...prev, newBank]);
     setSelectedBank(newBank.id!);
     setNewBankName('');
+    setShowAddBank(false);
   };
 
   const handleAddCustomPaymentHead = async () => {
-    if (!user || !newCustomPaymentHeadName.trim()) return;
+    if (!user || !newCustomHeadName.trim()) return;
     const docRef = await addDoc(collection(db, 'customPaymentHeads'), {
-      userId: user.uid, name: newCustomPaymentHeadName.trim(), createdAt: Timestamp.now(),
+      userId: user.uid, name: newCustomHeadName.trim(), createdAt: Timestamp.now(),
     });
-    const newHead: CustomPaymentHead = { id: docRef.id, userId: user.uid, name: newCustomPaymentHeadName.trim(), createdAt: Timestamp.now() };
+    const newHead: CustomPaymentHead = { id: docRef.id, userId: user.uid, name: newCustomHeadName.trim(), createdAt: Timestamp.now() };
     setCustomPaymentHeads((prev) => [...prev, newHead]);
-    setSelectedCustomPaymentHead(newHead.id!);
-    setNewCustomPaymentHeadName('');
+    setSelectedCustomHead(newHead.id!);
+    setNewCustomHeadName('');
+    setShowAddCustom(false);
   };
 
-  const handleSaveClick = async () => {
-    if (!newAmount || newAmount <= 0) return;
-
-    let bankId: string | undefined;
-    let bankName: string | undefined;
-    let customPaymentHeadId: string | undefined;
-    let customPaymentHeadName: string | undefined;
-
-    if (newMode === 'bank') {
-      bankId = selectedBank;
-      bankName = banks.find((b) => b.id === selectedBank)?.name;
-      if (!bankId || !bankName) return;
+  const getSourceBalance = (srcType: TransactionSource, bankIdVal?: string, customIdVal?: string) => {
+    if (!snapshot) return 0;
+    if (srcType === 'bank') {
+      const bName = banks.find((b) => b.id === bankIdVal)?.name;
+      return bName ? (snapshot.sources.bank?.[bName] ?? 0) : 0;
     }
-    if (newMode === 'custom') {
-      customPaymentHeadId = selectedCustomPaymentHead;
-      const foundHead = allCustomHeads.find((c) => c.id === selectedCustomPaymentHead || c.name === selectedCustomPaymentHead);
-      customPaymentHeadName = foundHead?.name || selectedCustomPaymentHead;
-      if (!customPaymentHeadId || !customPaymentHeadName) return;
-
-      // Sync status to linked goal if applicable
-      if (foundHead?.goalId) {
-        await updateLinkedItemStatusInGoal(foundHead.goalId, foundHead.id!, 'finance_source', true);
-      }
+    if (srcType === 'custom') {
+      const cName = allCustomHeads.find((c) => c.id === customIdVal || c.name === customIdVal)?.name;
+      return cName ? (snapshot.sources.custom?.[cName] ?? 0) : 0;
     }
-
-    const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
-
-    await onSave(Number(newAmount), newMode, false, bankId, bankName, customPaymentHeadId, customPaymentHeadName, note, holderToSave);
-
-    setShowModal(false);
-    onExternalClose?.();
-    setNewAmount('');
-    setNewMode('in_hand');
-    setSelectedBank('');
-    setSelectedCustomPaymentHead('');
-    setSelectedHolder('Unassigned');
-    setNewHolderName('');
-    setNote('');
+    return (snapshot.sources[srcType] as number) ?? 0;
   };
 
-  const bankName = banks.find((b) => b.id === selectedBank)?.name;
-  const customPaymentHeadName = allCustomHeads.find((c) => c.id === selectedCustomPaymentHead)?.name;
-  const sourceKey = getSourceKey(newMode, bankName, customPaymentHeadName);
+  const fromBalance = getSourceBalance(source, selectedBank, selectedCustomHead);
+  const fromBankName = banks.find((b) => b.id === selectedBank)?.name;
+  const fromCustomName = allCustomHeads.find((c) => c.id === selectedCustomHead)?.name;
+  const sourceKey = getSourceKey(source, fromBankName, fromCustomName);
   const existingHolders = snapshot?.heldBy?.[sourceKey] || [];
+
+  const toBankName = banks.find((b) => b.id === selectedToBank)?.name;
+  const toCustomName = allCustomHeads.find((c) => c.id === selectedToCustomHead)?.name;
+  const toSourceKey = getSourceKey(toSource, toBankName, toCustomName);
+  const _existingToHolders = snapshot?.heldBy?.[toSourceKey] || [];
+
+  const value = parseFloat(amount) || 0;
+  const overdraw = mode !== 'add' && value > fromBalance;
+  const isFromLocked = !!snapshot?.sourceOwnership?.[sourceKey]?.isLocked;
+
+  const valid = value > 0 && !overdraw && !isFromLocked &&
+    (source !== 'bank' || !!selectedBank) &&
+    (source !== 'custom' || !!selectedCustomHead) &&
+    (selectedHolder !== 'new' || !!newHolderName.trim());
 
   const handleClose = () => {
     if (saving) return;
@@ -245,208 +300,332 @@ export default function AddMoney({ onSave, saving, snapshot, externalOpen, onExt
     onExternalClose?.();
   };
 
-  return (
-    <>
-      {!externalOpen && externalOpen === undefined && (
-        <Button
-          variant="contained"
-          onClick={() => setShowModal(true)}
-          startIcon={<AddIcon />}
-          sx={{ borderRadius: 2, fontWeight: 700, textTransform: 'none', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)' }}
-        >
-          Add Money
-        </Button>
-      )}
+  const handleSaveClick = async () => {
+    if (!valid || saving) return;
 
-      <Dialog
-        open={showModal}
-        onClose={handleClose}
-        fullWidth maxWidth="xs"
-        TransitionComponent={Fade}
-        PaperProps={{ sx: { borderRadius: 4, overflow: 'hidden', backgroundColor: isDark ? '#0f172a' : '#ffffff' } }}
+    const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
+
+    if (mode === 'add') {
+      let bankId: string | undefined;
+      let bankName: string | undefined;
+      let customPaymentHeadId: string | undefined;
+      let customPaymentHeadName: string | undefined;
+
+      if (source === 'bank') {
+        bankId = selectedBank;
+        bankName = fromBankName;
+      }
+      if (source === 'custom') {
+        customPaymentHeadId = selectedCustomHead;
+        const foundHead = allCustomHeads.find((c) => c.id === selectedCustomHead || c.name === selectedCustomHead);
+        customPaymentHeadName = foundHead?.name || selectedCustomHead;
+        if (foundHead?.goalId) {
+          await updateLinkedItemStatusInGoal(foundHead.goalId, foundHead.id!, 'finance_source', true);
+        }
+      }
+
+      await onSave(value, source, false, bankId, bankName, customPaymentHeadId, customPaymentHeadName, note, holderToSave);
+    } else if (mode === 'deduct' && onDeduct) {
+      await onDeduct(value, source, selectedBank, fromBankName, false, selectedCustomHead, fromCustomName, note, holderToSave);
+    }
+
+    setShowModal(false);
+    onExternalClose?.();
+    setAmount('');
+    setSource('in_hand');
+    setSelectedBank('');
+    setSelectedCustomHead('');
+    setSelectedHolder('Unassigned');
+    setNewHolderName('');
+    setNote('');
+  };
+
+  if (!showModal) return null;
+
+  const m = MODES[mode];
+
+  return (
+    <div
+      className="fixed inset-0 z-[1300] flex items-end justify-center bg-[#040d1a]/60 backdrop-blur-sm sm:items-center sm:p-4"
+      onClick={handleClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07142a] sm:w-full sm:max-w-full sm:rounded-3xl"
       >
         {/* Header */}
-        <Box sx={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', p: 2.5, color: 'white', position: 'relative' }}>
-          <Stack direction="row" alignItems="center" spacing={1.5}>
-            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', width: 36, height: 36 }}>
-              <AddCardIcon fontSize="small" />
-            </Avatar>
-            <Box>
-              <Typography variant="h6" fontWeight="900" sx={{ lineHeight: 1.2 }}>Add Funds</Typography>
-              <Typography variant="caption" sx={{ opacity: 0.85, fontWeight: 600 }}>Increase your total balance</Typography>
-            </Box>
-          </Stack>
-          <IconButton onClick={handleClose} size="small"
-            sx={{ position: 'absolute', right: 12, top: 12, color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Box>
-
-        <DialogContent sx={{ px: 3, py: 2.5 }}>
-          <Stack spacing={2}>
-
-            {/* Amount */}
-            <TextField
-              fullWidth size="small" label="Amount" type="number"
-              value={newAmount}
-              onChange={(e) => setNewAmount(e.target.value === '' ? '' : Number(e.target.value))}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary' }}>PKR</Typography>
-                  </InputAdornment>
-                ),
-              }}
-              placeholder="0.00" autoFocus
-            />
-
-            {/* Source — icon cards */}
-            <Box>
-              <Typography variant="caption" fontWeight={800} color="text.secondary"
-                sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Add money to which account?
-              </Typography>
-              <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
-                {SOURCE_OPTIONS.map((opt) => (
-                  <Box
-                    key={opt}
-                    onClick={() => { setNewMode(opt); setSelectedBank(''); setSelectedCustomPaymentHead(''); setSelectedHolder('Unassigned'); }}
-                    sx={{
-                      flex: '1 1 28%', p: 1.2, borderRadius: 2, cursor: 'pointer', textAlign: 'center',
-                      border: `2px solid ${newMode === opt ? '#3b82f6' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')}`,
-                      bgcolor: newMode === opt ? (isDark ? 'rgba(59,130,246,0.12)' : '#eff6ff') : 'transparent',
-                      transition: 'all 0.15s ease',
-                      '&:hover': { border: `2px solid #3b82f6`, bgcolor: isDark ? 'rgba(59,130,246,0.08)' : '#eff6ff' },
-                    }}
-                  >
-                    <Typography fontSize="1.2rem">{SOURCE_ICONS[opt]}</Typography>
-                    <Typography variant="caption" fontWeight={700} display="block" sx={{ fontSize: '0.68rem', lineHeight: 1.3 }}>
-                      {SOURCE_LABELS[opt]}
-                    </Typography>
-                  </Box>
-                ))}
-              </Stack>
-            </Box>
-
-            {/* Bank selector */}
-            {newMode === 'bank' && (
-              <Stack spacing={1.5}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Select Bank</InputLabel>
-                  <Select value={selectedBank}
-                    onChange={(e) => { setSelectedBank(e.target.value); setSelectedHolder('Unassigned'); }}
-                    label="Select Bank"
-                    startAdornment={<BankIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
-                    <MenuItem value=""><em>— Select or add new —</em></MenuItem>
-                    {banks.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
-                  </Select>
-                </FormControl>
-                {!selectedBank && (
-                  <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc', border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1'}` }}>
-                    <Typography variant="caption" fontWeight={800} color="primary" sx={{ mb: 1, display: 'block' }}>ADD NEW BANK</Typography>
-                    <Stack direction="row" spacing={1}>
-                      <TextField fullWidth size="small" label="Bank Name" value={newBankName} onChange={(e) => setNewBankName(e.target.value)} />
-                      <Button variant="contained" size="small" onClick={handleAddBank} disabled={!newBankName.trim()} sx={{ whiteSpace: 'nowrap', borderRadius: 1.5 }}>Add</Button>
-                    </Stack>
-                  </Box>
-                )}
-              </Stack>
-            )}
-
-            {/* Custom wallet selector */}
-            {newMode === 'custom' && (
-              <Stack spacing={1.5}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Select Custom Wallet</InputLabel>
-                  <Select value={selectedCustomPaymentHead}
-                    onChange={(e) => { setSelectedCustomPaymentHead(e.target.value); setSelectedHolder('Unassigned'); }}
-                    label="Select Custom Wallet"
-                    startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}>
-                    <MenuItem value=""><em>— Select or add new —</em></MenuItem>
-                    {goalHeads.length > 0 && [
-                      <ListSubheader key="hdr-goal" sx={{ fontWeight: 800, color: '#f59e0b', bgcolor: isDark ? '#1e293b' : '#fff', lineHeight: '32px' }}>
-                        🎯 Goal Sources of Fund
-                      </ListSubheader>,
-                      ...goalHeads.map((h) => (
-                        <MenuItem key={h.id} value={h.id}>
-                          🎯 {h.name} {h.goalTitle ? `(Goal: ${h.goalTitle})` : ''}
-                        </MenuItem>
-                      )),
-                    ]}
-
-                    {otherHeads.length > 0 && [
-                      <ListSubheader key="hdr-other" sx={{ fontWeight: 800, color: 'text.secondary', bgcolor: isDark ? '#1e293b' : '#fff', lineHeight: '32px' }}>
-                        🗂️ Custom Wallets
-                      </ListSubheader>,
-                      ...otherHeads.map((h) => (
-                        <MenuItem key={h.id} value={h.id}>
-                          {h.name}
-                        </MenuItem>
-                      )),
-                    ]}
-                  </Select>
-                </FormControl>
-                {!selectedCustomPaymentHead && (
-                  <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc', border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1'}` }}>
-                    <Typography variant="caption" fontWeight={800} color="secondary" sx={{ mb: 1, display: 'block' }}>ADD NEW WALLET</Typography>
-                    <Stack direction="row" spacing={1}>
-                      <TextField fullWidth size="small" label="Wallet Name" value={newCustomPaymentHeadName} onChange={(e) => setNewCustomPaymentHeadName(e.target.value)} />
-                      <Button variant="contained" color="secondary" size="small" onClick={handleAddCustomPaymentHead} disabled={!newCustomPaymentHeadName.trim()} sx={{ whiteSpace: 'nowrap', borderRadius: 1.5 }}>Add</Button>
-                    </Stack>
-                  </Box>
-                )}
-              </Stack>
-            )}
-
-            {/* Holder assignment */}
-            <Box sx={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}`, borderRadius: 2, p: 1.5 }}>
-              <Typography variant="caption" fontWeight={800} color="primary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Assign to a person (optional)
-              </Typography>
-              <Stack spacing={1.5}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>For person</InputLabel>
-                  <Select value={selectedHolder} onChange={(e) => setSelectedHolder(e.target.value)} label="For person">
-                    <MenuItem value="Unassigned">Self</MenuItem>
-                    {existingHolders.map((h) => <MenuItem key={h.holderName} value={h.holderName}>{h.holderName}</MenuItem>)}
-                    <MenuItem value="new"><em>+ Add new person</em></MenuItem>
-                  </Select>
-                </FormControl>
-                {selectedHolder === 'new' && (
-                  <TextField fullWidth size="small" label="Person Name" value={newHolderName} onChange={(e) => setNewHolderName(e.target.value)} placeholder="e.g. Ali, Wife, etc." />
-                )}
-              </Stack>
-            </Box>
-
-            {/* Note */}
-            <TextField
-              fullWidth size="small" label="Note (optional)" value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Salary, Birthday gift, etc."
-              multiline rows={2}
-              InputProps={{ startAdornment: <NoteIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18, mt: 0.5, alignSelf: 'flex-start' }} /> }}
-            />
-          </Stack>
-        </DialogContent>
-
-        <DialogActions sx={{ px: 3, py: 2, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#fafafa', borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f0f0f0'}` }}>
-          <Button onClick={handleClose} sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'none' }}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleSaveClick}
-            disabled={
-              saving ||
-              (newMode === 'bank' && !selectedBank) ||
-              (newMode === 'custom' && !selectedCustomPaymentHead) ||
-              (selectedHolder === 'new' && !newHolderName.trim()) ||
-              !newAmount || newAmount <= 0
-            }
-            sx={{ borderRadius: 2, fontWeight: 800, px: 3.5, textTransform: 'none', boxShadow: '0 4px 14px rgba(59,130,246,0.35)' }}
+        <div className="flex items-center justify-between px-6 pb-3 pt-5 border-b border-slate-100 dark:border-white/5">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Update balance</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Add or deduct funds from your accounts</p>
+          </div>
+          <button
+            onClick={handleClose}
+            aria-label="Close"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10"
           >
-            {saving ? 'Processing…' : 'Add Funds'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </>
+            ✕
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
+          {/* Mode tabs (Add and Deduct) */}
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5 dark:bg-white/5">
+            {(Object.keys(MODES) as Array<keyof typeof MODES>).map((key) => {
+              const v = MODES[key];
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMode(key)}
+                  className={`rounded-xl py-2.5 text-sm font-bold transition ${
+                    mode === key ? v.tab : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
+                  }`}
+                >
+                  {v.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Amount Input */}
+          <div>
+            <label
+              className={`flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 ring-2 ring-transparent transition dark:border-white/10 dark:bg-white/5 ${m.ring}`}
+            >
+              <span className={`text-3xl font-extrabold ${m.text}`}>{m.sign}</span>
+              <span className="text-base font-semibold text-slate-400">PKR</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+                placeholder="0"
+                autoFocus
+                className="w-full bg-transparent text-3xl font-bold text-slate-900 placeholder-slate-300 focus:outline-none dark:text-white dark:placeholder-slate-600"
+              />
+            </label>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {[500, 1000, 5000, 10000].map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setAmount(String(value + q))}
+                  className="rounded-full border border-slate-200 px-3.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-teal-400 hover:text-teal-600 dark:border-white/10 dark:text-slate-300 dark:hover:text-teal-300"
+                >
+                  +{fmt(q)}
+                </button>
+              ))}
+            </div>
+            {overdraw && (
+              <p className="mt-2 text-xs font-semibold text-rose-500">
+                ⚠️ Selected source only has {formatCurrency(fromBalance, 'PKR')}.
+              </p>
+            )}
+            {isFromLocked && (
+              <p className="mt-2 text-xs font-semibold text-rose-500">
+                🔒 This source is locked. Unlock it in Account Breakdown to make changes.
+              </p>
+            )}
+          </div>
+
+          {/* Source Selection Grid */}
+          <div>
+            <p className="mb-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+              {mode === "add" ? "Add to account" : "Deduct from account"}
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {SOURCE_OPTIONS.map((sKey) => {
+                const selected = source === sKey;
+                const bal = getSourceBalance(sKey, selectedBank, selectedCustomHead);
+                const label = SOURCE_LABELS[sKey];
+                const icon = SOURCE_ICONS[sKey];
+
+                return (
+                  <button
+                    key={sKey}
+                    type="button"
+                    onClick={() => handleSourceChange(sKey)}
+                    className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition focus:outline-none ${
+                      selected
+                        ? "border-teal-500 bg-teal-500/10 ring-2 ring-teal-500/40"
+                        : "border-slate-200 bg-slate-50 hover:border-teal-400/60 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+                    }`}
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400/20 to-cyan-400/20 text-lg">
+                      {icon}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-slate-800 dark:text-white">
+                        {label}
+                      </span>
+                      <span className="block truncate text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        {formatCurrency(bal, 'PKR')}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Bank Sub-selector */}
+            {source === 'bank' && (
+              <div className="mt-3.5 space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 dark:border-white/10 dark:bg-white/5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Select Bank Account</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBank((p) => !p)}
+                    className="text-xs font-bold text-teal-600 hover:underline dark:text-teal-400"
+                  >
+                    + New Bank
+                  </button>
+                </div>
+                <select
+                  value={selectedBank}
+                  onChange={(e) => setSelectedBank(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-semibold text-slate-800 focus:outline-none dark:border-white/10 dark:bg-[#0b1d38] dark:text-white"
+                >
+                  <option value="">— Select Bank —</option>
+                  {banks.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      🏦 {b.name} ({formatCurrency(snapshot?.sources.bank?.[b.name] ?? 0, 'PKR')})
+                    </option>
+                  ))}
+                </select>
+
+                {showAddBank && (
+                  <div className="flex gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="Bank name (e.g. Meezan, HBL)"
+                      value={newBankName}
+                      onChange={(e) => setNewBankName(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none dark:border-white/10 dark:bg-[#040d1a] dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddBank}
+                      disabled={!newBankName.trim()}
+                      className="rounded-xl bg-teal-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-teal-400 disabled:opacity-40"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Custom Sub-selector */}
+            {source === 'custom' && (
+              <div className="mt-3.5 space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 dark:border-white/10 dark:bg-white/5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Select Custom Wallet</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCustom((p) => !p)}
+                    className="text-xs font-bold text-teal-600 hover:underline dark:text-teal-400"
+                  >
+                    + New Wallet
+                  </button>
+                </div>
+                <select
+                  value={selectedCustomHead}
+                  onChange={(e) => setSelectedCustomHead(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-semibold text-slate-800 focus:outline-none dark:border-white/10 dark:bg-[#0b1d38] dark:text-white"
+                >
+                  <option value="">— Select Wallet —</option>
+                  {allCustomHeads.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      🎯 {h.name} {h.goalTitle ? `(Goal: ${h.goalTitle})` : ''} ({formatCurrency(snapshot?.sources.custom?.[h.name] ?? 0, 'PKR')})
+                    </option>
+                  ))}
+                </select>
+
+                {showAddCustom && (
+                  <div className="flex gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="Wallet name (e.g. Emergency, Savings)"
+                      value={newCustomHeadName}
+                      onChange={(e) => setNewCustomHeadName(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none dark:border-white/10 dark:bg-[#040d1a] dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomPaymentHead}
+                      disabled={!newCustomHeadName.trim()}
+                      className="rounded-xl bg-teal-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-teal-400 disabled:opacity-40"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Holder assignment for From source */}
+            {existingHolders.length > 0 && (
+              <div className="mt-3">
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Person holder (optional)</label>
+                <select
+                  value={selectedHolder}
+                  onChange={(e) => setSelectedHolder(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-semibold text-slate-800 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
+                >
+                  <option value="Unassigned">Self (Default)</option>
+                  {existingHolders.map((h) => (
+                    <option key={h.holderName} value={h.holderName}>
+                      👤 {h.holderName} ({formatCurrency(h.amount, 'PKR')})
+                    </option>
+                  ))}
+                  <option value="new">+ Add new person</option>
+                </select>
+                {selectedHolder === 'new' && (
+                  <input
+                    type="text"
+                    placeholder="Person Name (e.g. Ali, Wife)"
+                    value={newHolderName}
+                    onChange={(e) => setNewHolderName(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Note */}
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Add a note (optional)"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/30 dark:border-white/10 dark:bg-white/5 dark:text-white"
+          />
+        </div>
+
+        {/* Sticky footer */}
+        <div className="flex gap-3 border-t border-slate-200 bg-white/80 px-6 py-4 backdrop-blur dark:border-white/10 dark:bg-[#07142a]/80">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="rounded-2xl border border-slate-200 px-6 py-3.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!valid || saving}
+            onClick={handleSaveClick}
+            className={`flex-1 rounded-2xl py-3.5 text-sm font-bold text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-40 ${m.btn}`}
+          >
+            {saving ? 'Processing...' : `${m.cta}${value > 0 ? ` · ${formatCurrency(value, 'PKR')}` : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

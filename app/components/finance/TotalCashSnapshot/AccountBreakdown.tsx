@@ -12,7 +12,6 @@ import {
   TextField,
   FormControlLabel,
   Switch,
-  Divider,
   Select,
   MenuItem,
   FormControl,
@@ -29,6 +28,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import LockIcon from '@mui/icons-material/Lock';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { db } from '@/app/lib/firebase';
 import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 
@@ -80,11 +81,16 @@ export default function AccountBreakdown({
     fetchCustom();
   }, [userId]);
 
+  const [showTransferHolders, setShowTransferHolders] = useState(false);
+  const [showCustomDetails, setShowCustomDetails] = useState(false);
+
   const handleOpenEditOwnership = (key: string, displayName: string) => {
-    const current = snapshot.sourceOwnership?.[key] || { hasOwnThisMoney: true, ownerName: '', isLocked: false };
-    setHasOwnThisMoney(current.hasOwnThisMoney !== false);
-    setOwnerName(current.ownerName || current.ownserName || '');
-    setIsLocked(current.isLocked === true);
+    const isCustomKey = key.startsWith('custom:');
+    const current = snapshot.sourceOwnership?.[key];
+    const defaultOwn = isCustomKey ? false : true;
+    setHasOwnThisMoney(current ? current.hasOwnThisMoney !== false : defaultOwn);
+    setOwnerName(current?.ownerName || current?.ownserName || '');
+    setIsLocked(current?.isLocked === true);
     setLocalHolders(snapshot.heldBy?.[key] || []);
     setNewHolderName('');
     setTransferAmount('');
@@ -93,6 +99,8 @@ export default function AccountBreakdown({
     setPendingTransfers([]);
     setTransferError('');
     setTransferSuccess('');
+    setShowTransferHolders(false);
+    setShowCustomDetails(false);
     setEditOwnership({ key, displayName });
   };
 
@@ -107,9 +115,9 @@ export default function AccountBreakdown({
       const updatedOwnership = {
         ...(snapshot.sourceOwnership || {}),
         [editOwnership.key]: {
-          hasOwnThisMoney: isCustom ? true : hasOwnThisMoney,
-          ownerName: isCustom ? '' : val,
-          ownserName: isCustom ? '' : val,
+          hasOwnThisMoney,
+          ownerName: val,
+          ownserName: val,
           isLocked,
         },
       };
@@ -465,262 +473,269 @@ export default function AccountBreakdown({
         </DialogTitle>
         <DialogContent sx={{ mt: 1 }}>
           <Stack spacing={3}>
-            {isCustom ? (
-              <>
-                {/* Lock custom source */}
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={isLocked}
-                      onChange={(e) => setIsLocked(e.target.checked)}
-                      color="error"
-                    />
-                  }
-                  label={
-                    <Box>
-                      <Typography fontSize="0.9rem" fontWeight={600}>
-                        Lock this Source
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Prevent any deductions or transfers from this source
-                      </Typography>
-                    </Box>
-                  }
+            {/* Ownership and Lock toggles (available for all sources) */}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={hasOwnThisMoney}
+                  onChange={(e) => setHasOwnThisMoney(e.target.checked)}
+                  color="primary"
                 />
+              }
+              label={
+                <Typography fontSize="0.9rem" fontWeight={600}>
+                  I own this money
+                </Typography>
+              }
+            />
 
-                <Divider sx={{ my: 1 }} />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={isLocked}
+                  onChange={(e) => setIsLocked(e.target.checked)}
+                  color="error"
+                />
+              }
+              label={
+                <Box>
+                  <Typography fontSize="0.9rem" fontWeight={600}>
+                    Lock this Source
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Prevent any deductions or transfers from this source
+                  </Typography>
+                </Box>
+              }
+            />
 
-                {/* Total amount overview */}
-                <Box sx={{ p: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#f8fafc', borderRadius: 2, border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}` }}>
-                  <Typography variant="caption" color="text.secondary" fontWeight={800} display="block" sx={{ letterSpacing: '0.5px' }}>
-                    TOTAL AMOUNT IN SOURCE
-                  </Typography>
-                  <Typography variant="h5" fontWeight="900" color="primary">
-                    {formatCurrency(totalAmount, currency)}
-                  </Typography>
-                  <Box display="flex" justifyContent="space-between" mt={1.5}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" fontWeight="700">Self</Typography>
-                      <Typography variant="body2" fontWeight="800">{formatCurrency(unassignedAmount, currency)}</Typography>
-                    </Box>
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="caption" color="text.secondary" fontWeight="700">Assigned to Holders</Typography>
-                      <Typography variant="body2" fontWeight="800">{formatCurrency(assignedSum, currency)}</Typography>
-                    </Box>
-                  </Box>
+            {!hasOwnThisMoney && (
+              <TextField
+                fullWidth
+                label="Real Owner's Name"
+                placeholder="e.g., Mother, Wife, John Doe"
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && ownerName.trim() && !savingOwnership) {
+                    handleSaveOwnership();
+                  }
+                }}
+              />
+            )}
+
+            {isCustom && (
+              <>
+                <Box mt={1}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setShowCustomDetails((prev) => !prev)}
+                    endIcon={showCustomDetails ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, width: '100%' }}
+                  >
+                    {showCustomDetails ? 'Hide Holders & Balance Details' : 'Show Holders & Balance Details'}
+                  </Button>
                 </Box>
 
-                {/* List of current holders */}
-                <Box>
-                  <Typography variant="caption" color="text.secondary" fontWeight={800} display="block" sx={{ mb: 1, letterSpacing: '0.5px' }}>
-                    👥 CURRENT HOLDERS
-                  </Typography>
-                  <Stack spacing={1}>
-                    {/* Self holder */}
-                    <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ p: 1, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#ffffff', borderRadius: 1, border: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9'}` }}>
-                      <Typography fontSize="0.85rem" fontWeight="600">👤 Self</Typography>
-                      <Typography fontSize="0.85rem" fontWeight="700">{formatCurrency(unassignedAmount, currency)}</Typography>
-                    </Box>
-                    {localHolders.map((h) => (
-                      <Box key={h.holderName} display="flex" justifyContent="space-between" alignItems="center" sx={{ p: 1, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#ffffff', borderRadius: 1, border: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9'}` }}>
-                        <Typography fontSize="0.85rem" fontWeight="600">👤 {h.holderName}</Typography>
-                        <Typography fontSize="0.85rem" fontWeight="700">{formatCurrency(h.amount, currency)}</Typography>
+                <Collapse in={showCustomDetails}>
+                  <Stack spacing={2} sx={{ mt: 2 }}>
+                    {/* Total amount overview */}
+                    <Box sx={{ p: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#f8fafc', borderRadius: 2, border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'}` }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={800} display="block" sx={{ letterSpacing: '0.5px' }}>
+                        TOTAL AMOUNT IN SOURCE
+                      </Typography>
+                      <Typography variant="h5" fontWeight="900" color="primary">
+                        {formatCurrency(totalAmount, currency)}
+                      </Typography>
+                      <Box display="flex" justifyContent="space-between" mt={1.5}>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" fontWeight="700">Self</Typography>
+                          <Typography variant="body2" fontWeight="800">{formatCurrency(unassignedAmount, currency)}</Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography variant="caption" color="text.secondary" fontWeight="700">Assigned to Holders</Typography>
+                          <Typography variant="body2" fontWeight="800">{formatCurrency(assignedSum, currency)}</Typography>
+                        </Box>
                       </Box>
-                    ))}
-                  </Stack>
-                </Box>
-
-                {/* Add Holder Form */}
-                <Box>
-                  <Typography variant="caption" color="text.secondary" fontWeight={800} display="block" sx={{ mb: 1, letterSpacing: '0.5px' }}>
-                    ➕ ADD NEW HOLDER
-                  </Typography>
-                  <Stack direction="row" spacing={1}>
-                    <TextField
-                      size="small"
-                      fullWidth
-                      placeholder="e.g. John, Wife, Emergency Pot"
-                      value={newHolderName}
-                      onChange={(e) => setNewHolderName(e.target.value)}
-                    />
-                    <Button
-                      variant="outlined"
-                      onClick={() => {
-                        const name = newHolderName.trim();
-                        if (!name) return;
-                        if (localHolders.some(h => h.holderName.toLowerCase() === name.toLowerCase())) {
-                          setTransferError('Holder name already exists.');
-                          return;
-                        }
-                        setLocalHolders([...localHolders, { holderName: name, amount: 0 }]);
-                        setNewHolderName('');
-                        setTransferError('');
-                      }}
-                      sx={{ minWidth: 90, textTransform: 'none', fontWeight: 800 }}
-                      startIcon={<PersonAddIcon sx={{ fontSize: 16 }} />}
-                    >
-                      Add
-                    </Button>
-                  </Stack>
-                </Box>
-
-                {/* Transfer Funds between holders utility */}
-                <Box sx={{ p: 2, bgcolor: isDark ? 'rgba(99,102,241,0.03)' : '#fefeff', borderRadius: 2, border: `1px dashed ${isDark ? 'rgba(99,102,241,0.2)' : '#c084fc'}` }}>
-                  <Typography variant="caption" color="secondary" fontWeight={800} display="block" sx={{ mb: 1.5, letterSpacing: '0.5px' }}>
-                    🔄 TRANSFER BETWEEN HOLDERS
-                  </Typography>
-                  <Stack spacing={1.5}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <FormControl fullWidth size="small">
-                        <InputLabel>From</InputLabel>
-                        <Select
-                          value={transferFrom}
-                          label="From"
-                          onChange={(e) => setTransferFrom(e.target.value)}
-                        >
-                          <MenuItem value="Self">Self (₨{unassignedAmount.toLocaleString()})</MenuItem>
-                          {localHolders.map(h => (
-                            <MenuItem key={h.holderName} value={h.holderName}>
-                              {h.holderName} (₨{h.amount.toLocaleString()})
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                      <SwapHorizIcon sx={{ color: 'text.secondary' }} />
-                      <FormControl fullWidth size="small">
-                        <InputLabel>To</InputLabel>
-                        <Select
-                          value={transferTo}
-                          label="To"
-                          onChange={(e) => setTransferTo(e.target.value)}
-                        >
-                          <MenuItem value="Self">Self (₨{unassignedAmount.toLocaleString()})</MenuItem>
-                          {localHolders.map(h => (
-                            <MenuItem key={h.holderName} value={h.holderName}>
-                              {h.holderName} (₨{h.amount.toLocaleString()})
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Stack>
-
-                    <Stack direction="row" spacing={1}>
-                      <TextField
-                        size="small"
-                        fullWidth
-                        type="number"
-                        label="Amount to Transfer"
-                        placeholder="0.00"
-                        value={transferAmount}
-                        onChange={(e) => setTransferAmount(e.target.value)}
-                      />
-                      <Button
-                        variant="contained"
-                        color="secondary"
-                        onClick={() => {
-                          const amt = parseFloat(transferAmount);
-                          if (isNaN(amt) || amt <= 0) {
-                            setTransferError('Please enter a valid amount.');
-                            return;
-                          }
-                          if (transferFrom === transferTo) {
-                            setTransferError('Source and destination holders must be different.');
-                            return;
-                          }
-                          const available = transferFrom === 'Self'
-                            ? unassignedAmount
-                            : (localHolders.find(h => h.holderName === transferFrom)?.amount ?? 0);
-
-                          if (amt > available) {
-                            setTransferError(`Insufficient funds in ${transferFrom}. (Available: ₨${available.toLocaleString()})`);
-                            return;
-                          }
-
-                          const updated = localHolders.map(h => {
-                            let newAmt = h.amount;
-                            if (h.holderName === transferFrom) newAmt -= amt;
-                            if (h.holderName === transferTo) newAmt += amt;
-                            return { ...h, amount: newAmt };
-                          });
-
-                          setLocalHolders(updated);
-                          setPendingTransfers([...pendingTransfers, { amount: amt, fromHolder: transferFrom, toHolder: transferTo }]);
-                          setTransferAmount('');
-                          setTransferError('');
-                          setTransferSuccess(`Transferred ₨${amt.toLocaleString()} from ${transferFrom} to ${transferTo}!`);
-                          setTimeout(() => setTransferSuccess(''), 3000);
-                        }}
-                        sx={{ minWidth: 100, textTransform: 'none', fontWeight: 800 }}
-                      >
-                        Transfer
-                      </Button>
-                    </Stack>
-
-                    {transferError && (
-                      <Typography color="error" variant="caption" fontWeight="bold">
-                        ⚠️ {transferError}
-                      </Typography>
-                    )}
-                    {transferSuccess && (
-                      <Typography color="success.main" variant="caption" fontWeight="bold">
-                        ✅ {transferSuccess}
-                      </Typography>
-                    )}
-                  </Stack>
-                </Box>
-              </>
-            ) : (
-              <>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={hasOwnThisMoney}
-                      onChange={(e) => setHasOwnThisMoney(e.target.checked)}
-                      color="primary"
-                    />
-                  }
-                  label={
-                    <Typography fontSize="0.9rem" fontWeight={600}>
-                      I own this money
-                    </Typography>
-                  }
-                />
-
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={isLocked}
-                      onChange={(e) => setIsLocked(e.target.checked)}
-                      color="error"
-                    />
-                  }
-                  label={
-                    <Box>
-                      <Typography fontSize="0.9rem" fontWeight={600}>
-                        Lock this Source
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Prevent any deductions or transfers from this source
-                      </Typography>
                     </Box>
-                  }
-                />
 
-                {!hasOwnThisMoney && (
-                  <TextField
-                    fullWidth
-                    label="Real Owner's Name"
-                    placeholder="e.g., Mother, Wife, John Doe"
-                    value={ownerName}
-                    onChange={(e) => setOwnerName(e.target.value)}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && ownerName.trim() && !savingOwnership) {
-                        handleSaveOwnership();
-                      }
-                    }}
-                  />
-                )}
+                    {/* List of current holders */}
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" fontWeight={800} display="block" sx={{ mb: 1, letterSpacing: '0.5px' }}>
+                        👥 CURRENT HOLDERS
+                      </Typography>
+                      <Stack spacing={1}>
+                        {/* Self holder */}
+                        <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ p: 1, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#ffffff', borderRadius: 1, border: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9'}` }}>
+                          <Typography fontSize="0.85rem" fontWeight="600">👤 Self</Typography>
+                          <Typography fontSize="0.85rem" fontWeight="700">{formatCurrency(unassignedAmount, currency)}</Typography>
+                        </Box>
+                        {localHolders.map((h) => (
+                          <Box key={h.holderName} display="flex" justifyContent="space-between" alignItems="center" sx={{ p: 1, bgcolor: isDark ? 'rgba(255,255,255,0.01)' : '#ffffff', borderRadius: 1, border: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9'}` }}>
+                            <Typography fontSize="0.85rem" fontWeight="600">👤 {h.holderName}</Typography>
+                            <Typography fontSize="0.85rem" fontWeight="700">{formatCurrency(h.amount, currency)}</Typography>
+                          </Box>
+                        ))}
+                      </Stack>
+                    </Box>
+
+                    {/* Add Holder Form */}
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" fontWeight={800} display="block" sx={{ mb: 1, letterSpacing: '0.5px' }}>
+                        ➕ ADD NEW HOLDER
+                      </Typography>
+                      <Stack direction="row" spacing={1}>
+                        <TextField
+                          size="small"
+                          fullWidth
+                          placeholder="e.g. John, Wife, Emergency Pot"
+                          value={newHolderName}
+                          onChange={(e) => setNewHolderName(e.target.value)}
+                        />
+                        <Button
+                          variant="outlined"
+                          onClick={() => {
+                            const name = newHolderName.trim();
+                            if (!name) return;
+                            if (localHolders.some(h => h.holderName.toLowerCase() === name.toLowerCase())) {
+                              setTransferError('Holder name already exists.');
+                              return;
+                            }
+                            setLocalHolders([...localHolders, { holderName: name, amount: 0 }]);
+                            setNewHolderName('');
+                            setTransferError('');
+                          }}
+                          sx={{ minWidth: 90, textTransform: 'none', fontWeight: 800 }}
+                          startIcon={<PersonAddIcon sx={{ fontSize: 16 }} />}
+                        >
+                          Add
+                        </Button>
+                      </Stack>
+                    </Box>
+
+                    {/* Collapsible Transfer holdership option */}
+                    <Box sx={{ pt: 1 }}>
+                      <Button
+                        size="small"
+                        variant="text"
+                        color="secondary"
+                        onClick={() => setShowTransferHolders((prev) => !prev)}
+                        startIcon={<SwapHorizIcon sx={{ fontSize: 16 }} />}
+                        sx={{ textTransform: 'none', fontWeight: 800, px: 0 }}
+                      >
+                        {showTransferHolders ? 'Hide transfer holdership' : 'Transfer holdership'}
+                      </Button>
+
+                      <Collapse in={showTransferHolders}>
+                        <Box sx={{ mt: 1.5, p: 2, bgcolor: isDark ? 'rgba(99,102,241,0.03)' : '#fefeff', borderRadius: 2, border: `1.5px solid ${isDark ? 'rgba(99,102,241,0.2)' : '#c084fc'}` }}>
+                          <Typography variant="caption" color="secondary" fontWeight={800} display="block" sx={{ mb: 1.5, letterSpacing: '0.5px' }}>
+                            🔄 TRANSFER BETWEEN HOLDERS
+                          </Typography>
+                          <Stack spacing={1.5}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <FormControl fullWidth size="small">
+                                <InputLabel>From</InputLabel>
+                                <Select
+                                  value={transferFrom}
+                                  label="From"
+                                  onChange={(e) => setTransferFrom(e.target.value)}
+                                >
+                                  <MenuItem value="Self">Self (₨{unassignedAmount.toLocaleString()})</MenuItem>
+                                  {localHolders.map(h => (
+                                    <MenuItem key={h.holderName} value={h.holderName}>
+                                      {h.holderName} (₨{h.amount.toLocaleString()})
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                              <SwapHorizIcon sx={{ color: 'text.secondary' }} />
+                              <FormControl fullWidth size="small">
+                                <InputLabel>To</InputLabel>
+                                <Select
+                                  value={transferTo}
+                                  label="To"
+                                  onChange={(e) => setTransferTo(e.target.value)}
+                                >
+                                  <MenuItem value="Self">Self (₨{unassignedAmount.toLocaleString()})</MenuItem>
+                                  {localHolders.map(h => (
+                                    <MenuItem key={h.holderName} value={h.holderName}>
+                                      {h.holderName} (₨{h.amount.toLocaleString()})
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            </Stack>
+
+                            <Stack direction="row" spacing={1}>
+                              <TextField
+                                size="small"
+                                fullWidth
+                                type="number"
+                                label="Amount to Transfer"
+                                placeholder="0.00"
+                                value={transferAmount}
+                                onChange={(e) => setTransferAmount(e.target.value)}
+                              />
+                              <Button
+                                variant="contained"
+                                color="secondary"
+                                onClick={() => {
+                                  const amt = parseFloat(transferAmount);
+                                  if (isNaN(amt) || amt <= 0) {
+                                    setTransferError('Please enter a valid amount.');
+                                    return;
+                                  }
+                                  if (transferFrom === transferTo) {
+                                    setTransferError('Source and destination holders must be different.');
+                                    return;
+                                  }
+                                  const available = transferFrom === 'Self'
+                                    ? unassignedAmount
+                                    : (localHolders.find(h => h.holderName === transferFrom)?.amount ?? 0);
+
+                                  if (amt > available) {
+                                    setTransferError(`Insufficient funds in ${transferFrom}. (Available: ₨${available.toLocaleString()})`);
+                                    return;
+                                  }
+
+                                  const updated = localHolders.map(h => {
+                                    let newAmt = h.amount;
+                                    if (h.holderName === transferFrom) newAmt -= amt;
+                                    if (h.holderName === transferTo) newAmt += amt;
+                                    return { ...h, amount: newAmt };
+                                  });
+
+                                  setLocalHolders(updated);
+                                  setPendingTransfers([...pendingTransfers, { amount: amt, fromHolder: transferFrom, toHolder: transferTo }]);
+                                  setTransferAmount('');
+                                  setTransferError('');
+                                  setTransferSuccess(`Transferred ₨${amt.toLocaleString()} from ${transferFrom} to ${transferTo}!`);
+                                  setTimeout(() => setTransferSuccess(''), 3000);
+                                }}
+                                sx={{ minWidth: 100, textTransform: 'none', fontWeight: 800 }}
+                              >
+                                Transfer
+                              </Button>
+                            </Stack>
+
+                            {transferError && (
+                              <Typography color="error" variant="caption" fontWeight="bold">
+                                ⚠️ {transferError}
+                              </Typography>
+                            )}
+                            {transferSuccess && (
+                              <Typography color="success.main" variant="caption" fontWeight="bold">
+                                ✅ {transferSuccess}
+                              </Typography>
+                            )}
+                          </Stack>
+                        </Box>
+                      </Collapse>
+                    </Box>
+                  </Stack>
+                </Collapse>
               </>
             )}
           </Stack>

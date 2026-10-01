@@ -21,6 +21,7 @@ import {
 import {
   NotificationsActive as NotificationsIcon,
   Close as CloseIcon,
+  AccessTime as AccessTimeIcon,
 } from '@mui/icons-material';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
@@ -39,6 +40,105 @@ interface ReminderSendButtonProps {
   customItemTypeName?: string;
   customTrigger?: (openDialog: (e: React.MouseEvent<HTMLElement>) => void) => React.ReactNode;
 }
+
+export interface TimePeriod {
+  id: string;
+  name: string;
+  range: string;
+  icon: string;
+  hours: { value: string; label: string }[];
+}
+
+export const TIME_PERIODS: TimePeriod[] = [
+  {
+    id: 'midnight',
+    name: 'Midnight',
+    range: '12 AM – 4 AM',
+    icon: '🌙',
+    hours: [
+      { value: '01:00', label: '1 AM' },
+      { value: '02:00', label: '2 AM' },
+      { value: '03:00', label: '3 AM' },
+    ],
+  },
+  {
+    id: 'dawn',
+    name: 'Dawn',
+    range: '4 AM – 7 AM',
+    icon: '🌅',
+    hours: [
+      { value: '04:00', label: '4 AM' },
+      { value: '05:00', label: '5 AM' },
+      { value: '06:00', label: '6 AM' },
+    ],
+  },
+  {
+    id: 'morning',
+    name: 'Morning',
+    range: '7 AM – 10 AM',
+    icon: '☀️',
+    hours: [
+      { value: '07:00', label: '7 AM' },
+      { value: '08:00', label: '8 AM' },
+      { value: '09:00', label: '9 AM' },
+    ],
+  },
+  {
+    id: 'late_morning',
+    name: 'Late Morning',
+    range: '10 AM – 12 PM',
+    icon: '🌤️',
+    hours: [
+      { value: '10:00', label: '10 AM' },
+      { value: '11:00', label: '11 AM' },
+      { value: '12:00', label: '12 PM' },
+    ],
+  },
+  {
+    id: 'afternoon',
+    name: 'Afternoon',
+    range: '12 PM – 4 PM',
+    icon: '🌞',
+    hours: [
+      { value: '13:00', label: '1 PM' },
+      { value: '14:00', label: '2 PM' },
+      { value: '15:00', label: '3 PM' },
+    ],
+  },
+  {
+    id: 'evening',
+    name: 'Evening',
+    range: '4 PM – 7 PM',
+    icon: '🌇',
+    hours: [
+      { value: '16:00', label: '4 PM' },
+      { value: '17:00', label: '5 PM' },
+      { value: '18:00', label: '6 PM' },
+    ],
+  },
+  {
+    id: 'night',
+    name: 'Night',
+    range: '7 PM – 10 PM',
+    icon: '🌆',
+    hours: [
+      { value: '19:00', label: '7 PM' },
+      { value: '20:00', label: '8 PM' },
+      { value: '21:00', label: '9 PM' },
+    ],
+  },
+  {
+    id: 'late_night',
+    name: 'Late Night',
+    range: '10 PM – 12 AM',
+    icon: '🌙',
+    hours: [
+      { value: '22:00', label: '10 PM' },
+      { value: '23:00', label: '11 PM' },
+      { value: '00:00', label: '12 AM' },
+    ],
+  },
+];
 
 function getComingSundayStr(): string {
   const d = new Date();
@@ -81,7 +181,7 @@ export default function ReminderSendButton({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
 
-  // Predefined Dates & Times
+  // Predefined Dates
   const todayStr = new Date().toISOString().split('T')[0];
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
   const sundayStr = getComingSundayStr();
@@ -89,7 +189,9 @@ export default function ReminderSendButton({
   const [dateChoice, setDateChoice] = useState<'today' | 'tomorrow' | 'sunday' | 'custom'>('today');
   const [customDateVal, setCustomDateVal] = useState<string>(todayStr);
 
-  const [timeChoice, setTimeChoice] = useState<string>('07:00'); // '07:00' | '12:00' | '15:00' | '18:00' | '20:00' | 'custom'
+  // Time Period & Hour Selector States
+  const [activePeriodId, setActivePeriodId] = useState<string>('morning');
+  const [timeChoice, setTimeChoice] = useState<string>('07:00');
   const [customTimeVal, setCustomTimeVal] = useState<string>('09:00');
 
   // Sync date & time from itemDateTime if provided
@@ -122,7 +224,10 @@ export default function ReminderSendButton({
           setCustomDateVal(ds);
         }
 
-        if (['07:00', '12:00', '15:00', '18:00', '20:00'].includes(ts)) {
+        // Find which period contains this hour
+        const matchingPeriod = TIME_PERIODS.find((p) => p.hours.some((h) => h.value === ts));
+        if (matchingPeriod) {
+          setActivePeriodId(matchingPeriod.id);
           setTimeChoice(ts);
         } else {
           setTimeChoice('custom');
@@ -158,7 +263,7 @@ export default function ReminderSendButton({
 
       const res = await fetch('/api/send-test-notification', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
           targetUid,
           title: 'MyOrbit Reminder ⏰',
@@ -177,7 +282,7 @@ export default function ReminderSendButton({
           (data.error && String(data.error).includes('No active device subscriptions'))
         ) {
           const targetUserObj = user.sharedWith?.find((u) => u.uid === targetUid);
-          const targetName = isSelf ? 'You' : (targetUserObj?.displayName || 'This user');
+          const targetName = isSelf ? 'You' : targetUserObj?.displayName || 'This user';
           setUnsubscribedNotice({
             open: true,
             userName: targetName,
@@ -190,13 +295,17 @@ export default function ReminderSendButton({
       setFeedback({ open: true, message: 'Reminder notification sent successfully!', severity: 'success' });
     } catch (err) {
       console.error('Failed to send reminder notification:', err);
-      setFeedback({ open: true, message: err instanceof Error ? err.message : 'Failed to send reminder.', severity: 'error' });
+      setFeedback({
+        open: true,
+        message: err instanceof Error ? err.message : 'Failed to send reminder.',
+        severity: 'error',
+      });
     } finally {
       setSending(false);
     }
   };
 
-  // Helper to compute effective date and time strings
+  // Helper to compute effective date
   const getEffectiveDateStr = (): string => {
     if (dateChoice === 'today') return todayStr;
     if (dateChoice === 'tomorrow') return tomorrowStr;
@@ -204,9 +313,23 @@ export default function ReminderSendButton({
     return customDateVal || todayStr;
   };
 
+  // Helper to compute effective time WITH 2-MINUTE OFFSET (e.g. 7:00 AM -> 7:02 AM)
+  // to avoid cron/worker job delay misses when checking hour window
   const getEffectiveTimeStr = (): string => {
-    if (timeChoice === 'custom') return customTimeVal || '09:00';
-    return timeChoice;
+    let rawTime = '07:00';
+    if (timeChoice === 'custom') {
+      rawTime = customTimeVal || '09:00';
+    } else {
+      rawTime = timeChoice;
+    }
+
+    const [h, m] = rawTime.split(':').map(Number);
+    // If exact hour selected (0 minutes), set minute to 2 (e.g., 07:02) for reliable cron pickup
+    if (m === 0) {
+      const paddedH = String(h).padStart(2, '0');
+      return `${paddedH}:02`;
+    }
+    return rawTime;
   };
 
   const handleScheduleSubmit = async () => {
@@ -218,7 +341,7 @@ export default function ReminderSendButton({
       const { createWhatsAppReminder } = await import('@/app/lib/utils/whatsapp-reminder');
 
       const dateStr = getEffectiveDateStr();
-      const timeStr = getEffectiveTimeStr();
+      const timeStr = getEffectiveTimeStr(); // contains +2 minute offset
 
       const [hours, minutes] = timeStr.split(':').map(Number);
       const targetDate = new Date(`${dateStr}T${timeStr}`);
@@ -320,6 +443,8 @@ export default function ReminderSendButton({
   const effectiveTimeStr = getEffectiveTimeStr();
   const displayPreviewStr = moment(`${effectiveDateStr}T${effectiveTimeStr}`).format('dddd, MMM D @ hh:mm A');
 
+  const activePeriod = TIME_PERIODS.find((p) => p.id === activePeriodId) || TIME_PERIODS[2];
+
   return (
     <>
       {customTrigger ? (
@@ -347,7 +472,9 @@ export default function ReminderSendButton({
           variant="outlined"
           disabled={sending}
           onClick={handleOpenDialog}
-          startIcon={sending ? <CircularProgress size={14} color="inherit" /> : <NotificationsIcon sx={{ fontSize: '1.1rem' }} />}
+          startIcon={
+            sending ? <CircularProgress size={14} color="inherit" /> : <NotificationsIcon sx={{ fontSize: '1.1rem' }} />
+          }
           sx={{
             borderRadius: '14px',
             textTransform: 'none',
@@ -377,11 +504,12 @@ export default function ReminderSendButton({
         onClose={() => setDialogOpen(false)}
         onClick={(e) => e.stopPropagation()}
         PaperProps={{
-          className: 'rounded-[28px] overflow-hidden shadow-2xl border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800',
+          className:
+            'rounded-[28px] overflow-hidden shadow-2xl border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800',
           sx: {
             p: 0,
-            width: '90%',
-            maxWidth: '380px',
+            width: '92%',
+            maxWidth: '420px',
             bgcolor: isDark ? '#0f172a' : '#ffffff',
             color: isDark ? '#f1f5f9' : '#0f172a',
             borderRadius: '28px',
@@ -390,7 +518,11 @@ export default function ReminderSendButton({
       >
         {/* Header with Close Button matching Schedule Details modal */}
         <Box className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
-          <Typography variant="h6" className="font-extrabold text-slate-800 dark:text-slate-100" sx={{ fontSize: '1.05rem' }}>
+          <Typography
+            variant="h6"
+            className="font-extrabold text-slate-800 dark:text-slate-100"
+            sx={{ fontSize: '1.05rem' }}
+          >
             ⏰ Reminder Options
           </Typography>
           <IconButton
@@ -409,8 +541,17 @@ export default function ReminderSendButton({
         {/* Minimal Body Content */}
         <DialogContent className="p-5" sx={{ p: 2.5 }}>
           {/* Item Title Chip */}
-          <Box className="rounded-2xl p-3 mb-4" sx={{ bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
-            <Typography variant="caption" className="text-slate-400 dark:text-slate-500 font-extrabold uppercase tracking-wider block mb-0.5">
+          <Box
+            className="rounded-2xl p-3 mb-4"
+            sx={{
+              bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc',
+              border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+            }}
+          >
+            <Typography
+              variant="caption"
+              className="text-slate-400 dark:text-slate-500 font-extrabold uppercase tracking-wider block mb-0.5"
+            >
               {itemType === 'task' ? 'Task' : 'Schedule'}
             </Typography>
             <Typography variant="body2" className="font-bold text-slate-800 dark:text-slate-100 truncate">
@@ -498,36 +639,97 @@ export default function ReminderSendButton({
             )}
           </Box>
 
-          {/* 2. Predefined Time Selection */}
+          {/* 2. 24-Hour Time Period & Sub-Hour Picker */}
           <Box className="mb-4">
-            <Typography className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5 block">
-              Time Slot
-            </Typography>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                { id: '07:00', label: 'Morning 7 AM' },
-                { id: '12:00', label: '12:00 PM' },
-                { id: '15:00', label: '03:00 PM' },
-                { id: '18:00', label: 'Evening 6 PM' },
-                { id: '20:00', label: '08:00 PM' },
-                { id: 'custom', label: 'Custom Time' },
-              ].map((slot) => {
-                const active = timeChoice === slot.id;
+            <div className="flex items-center justify-between mb-1.5">
+              <Typography className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                24-Hour Time Schedule
+              </Typography>
+              {timeChoice !== 'custom' && (
+                <span className="text-[10px] font-medium text-amber-500 dark:text-amber-400">
+                  +2 min offset applied
+                </span>
+              )}
+            </div>
+
+            {/* 8 Time Periods Grid (24 Hours) */}
+            <div className="grid grid-cols-2 gap-1.5 mb-2.5">
+              {TIME_PERIODS.map((period) => {
+                const isPeriodActive = activePeriodId === period.id && timeChoice !== 'custom';
                 return (
                   <button
-                    key={slot.id}
+                    key={period.id}
                     type="button"
-                    onClick={() => setTimeChoice(slot.id)}
-                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all text-center border ${
-                      active
+                    onClick={() => {
+                      setActivePeriodId(period.id);
+                      // Default selection to first hour of chosen period
+                      setTimeChoice(period.hours[0].value);
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex flex-col items-start text-left border ${
+                      isPeriodActive
                         ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
-                    {slot.label}
+                    <div className="flex items-center gap-1 w-full justify-between">
+                      <span className="truncate">
+                        {period.icon} {period.name}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-[9px] font-medium mt-0.5 ${
+                        isPeriodActive ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'
+                      }`}
+                    >
+                      {period.range}
+                    </span>
                   </button>
                 );
               })}
+            </div>
+
+            {/* Sub-hours for active period */}
+            {timeChoice !== 'custom' && activePeriod && (
+              <Box className="p-2.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 mb-2">
+                <Typography className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 mb-1.5 block">
+                  Select Hour for {activePeriod.icon} {activePeriod.name} ({activePeriod.range}):
+                </Typography>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {activePeriod.hours.map((h) => {
+                    const isSelected = timeChoice === h.value;
+                    return (
+                      <button
+                        key={h.value}
+                        type="button"
+                        onClick={() => setTimeChoice(h.value)}
+                        className={`py-1.5 px-2 rounded-lg text-xs font-extrabold transition-all text-center border ${
+                          isSelected
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm scale-105'
+                            : 'bg-white dark:bg-slate-800 border-indigo-200 dark:border-indigo-800 text-slate-700 dark:text-slate-200 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+                        }`}
+                      >
+                        {h.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Box>
+            )}
+
+            {/* Custom Time Option */}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setTimeChoice(timeChoice === 'custom' ? '07:00' : 'custom')}
+                className={`text-[11px] font-bold transition-colors flex items-center gap-1 ${
+                  timeChoice === 'custom'
+                    ? 'text-indigo-600 dark:text-indigo-400 underline'
+                    : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                }`}
+              >
+                <AccessTimeIcon sx={{ fontSize: 13 }} />
+                {timeChoice === 'custom' ? 'Switch back to 24-Hr Presets' : 'Or set Custom Time'}
+              </button>
             </div>
 
             {timeChoice === 'custom' && (
@@ -595,7 +797,7 @@ export default function ReminderSendButton({
           {/* Live Preview Box */}
           <Box className="rounded-2xl p-2.5 text-center mb-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40">
             <Typography variant="caption" className="text-indigo-600 dark:text-indigo-400 font-bold block text-[11px]">
-              ⏰ Remind on {displayPreviewStr}
+              ⏰ Scheduled for {displayPreviewStr}
             </Typography>
           </Box>
 
@@ -628,7 +830,8 @@ export default function ReminderSendButton({
         onClose={() => setUnsubscribedNotice({ open: false, userName: '' })}
         onClick={(e) => e.stopPropagation()}
         PaperProps={{
-          className: 'rounded-[24px] overflow-hidden shadow-2xl border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800',
+          className:
+            'rounded-[24px] overflow-hidden shadow-2xl border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800',
           sx: {
             p: 0,
             width: '90%',
@@ -643,14 +846,23 @@ export default function ReminderSendButton({
           <div className="w-14 h-14 mx-auto mb-3 border border-amber-200 dark:border-amber-800/60 rounded-full bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-500 text-2xl shadow-sm">
             🔔
           </div>
-          <Typography variant="h6" className="font-extrabold text-slate-800 dark:text-slate-100 mb-1" sx={{ fontSize: '1.1rem' }}>
+          <Typography
+            variant="h6"
+            className="font-extrabold text-slate-800 dark:text-slate-100 mb-1"
+            sx={{ fontSize: '1.1rem' }}
+          >
             Notifications Not Enabled
           </Typography>
-          <Typography variant="body2" className="text-slate-600 dark:text-slate-400 mb-4 text-xs font-medium leading-relaxed">
-            <strong className="text-slate-900 dark:text-slate-100">{unsubscribedNotice.userName}</strong> has not enabled or subscribed to push notifications on their device yet.
+          <Typography
+            variant="body2"
+            className="text-slate-600 dark:text-slate-400 mb-4 text-xs font-medium leading-relaxed"
+          >
+            <strong className="text-slate-900 dark:text-slate-100">{unsubscribedNotice.userName}</strong> has not enabled
+            or subscribed to push notifications on their device yet.
           </Typography>
           <Box className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 mb-5 text-left text-[11px] text-slate-600 dark:text-slate-400 leading-normal">
-            💡 <strong>Tip:</strong> Ask {unsubscribedNotice.userName} to open <strong>MyOrbit ➔ Settings ➔ Push Notifications</strong> on their device to enable notifications.
+            💡 <strong>Tip:</strong> Ask {unsubscribedNotice.userName} to open{' '}
+            <strong>MyOrbit ➔ Settings ➔ Push Notifications</strong> on their device to enable notifications.
           </Box>
           <Button
             onClick={() => setUnsubscribedNotice({ open: false, userName: '' })}

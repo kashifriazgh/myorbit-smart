@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter, Roboto, Noto_Nastaliq_Urdu, Lalezar, Baloo_Bhaijaan_2, Oswald } from 'next/font/google';
 import './globals.css';
 
@@ -48,14 +48,20 @@ const balooBhaijaan2 = Baloo_Bhaijaan_2({
   variable: '--font-baloo-bhaijaan',
 });
 
+export const viewport: Viewport = {
+  themeColor: '#2563eb',
+};
+
 export const metadata: Metadata = {
   title: 'My Orbit - Your Personal Productivity Tool',
   description:
     'Organize your tasks, track your habits, and boost your productivity with My Orbit.',
   manifest: '/manifest.json',
-  themeColor: '#2563eb',
   icons: {
-    icon: '/icons/icon-192x192.png',
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico' },
+    ],
     apple: '/icons/icon-192x192.png',
   },
 };

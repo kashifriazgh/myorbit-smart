@@ -247,13 +247,108 @@ if (typeof firebase !== 'undefined') {
   }
 }
 
-// ─── 4. LIFECYCLE EVENTS ───
-self.addEventListener('install', () => {
-  console.log('[SW] install — skipWaiting');
+// ─── 4. LIFECYCLE EVENTS + APP SHELL PRE-CACHE ───
+
+const SHELL_CACHE = 'myorbit-app-shell-v1';
+
+// Critical assets to cache immediately on install for instant PWA launch
+const APP_SHELL_ASSETS = [
+  '/',
+  '/offline',
+  '/favicon.svg',
+  '/favicon.ico',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
+  '/manifest.json',
+];
+
+self.addEventListener('install', (event) => {
+  console.log('[SW] install — pre-caching app shell');
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(SHELL_CACHE).then((cache) => {
+      return cache.addAll(APP_SHELL_ASSETS).catch((err) => {
+        console.warn('[SW] Pre-cache partial failure (non-critical):', err);
+      });
+    })
+  );
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[SW] activate — clients.claim');
-  event.waitUntil(self.clients.claim());
+  console.log('[SW] activate — claiming clients & pruning old caches');
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Remove old shell cache versions
+      caches.keys().then((keys) =>
+        Promise.all(
+          keys
+            .filter((k) => k.startsWith('myorbit-app-shell-') && k !== SHELL_CACHE)
+            .map((k) => caches.delete(k))
+        )
+      ),
+    ])
+  );
+});
+
+// ─── 5. FETCH HANDLER — Stale-While-Revalidate for navigation + Cache-First for static ───
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Skip non-GET, chrome-extension, Firebase, API routes
+  if (
+    event.request.method !== 'GET' ||
+    url.protocol === 'chrome-extension:' ||
+    url.hostname.includes('firestore.googleapis.com') ||
+    url.hostname.includes('identitytoolkit.googleapis.com') ||
+    url.hostname.includes('securetoken.googleapis.com') ||
+    url.pathname.startsWith('/api/')
+  ) {
+    return;
+  }
+
+  // ── Navigation requests (page loads): Stale-While-Revalidate ──
+  // Serve from cache immediately, update in background. Critical for offline & slow networks.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      caches.match(event.request, { ignoreSearch: true }).then((cached) => {
+        const networkFetch = fetch(event.request)
+          .then((response) => {
+            if (response && response.status === 200) {
+              const clone = response.clone();
+              caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, clone));
+            }
+            return response;
+          })
+          .catch(() => {
+            // Network failed — serve cached offline page
+            return caches.match('/offline') || cached;
+          });
+
+        // Serve cached immediately, revalidate in background
+        return cached || networkFetch;
+      })
+    );
+    return;
+  }
+
+  // ── Static assets (_next/static, icons, fonts): Cache-First ──
+  if (
+    url.pathname.startsWith('/_next/static/') ||
+    url.pathname.startsWith('/icons/') ||
+    url.pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|otf|eot)$/i)
+  ) {
+    event.respondWith(
+      caches.match(event.request).then(
+        (cached) => cached || fetch(event.request).then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+      )
+    );
+    return;
+  }
 });

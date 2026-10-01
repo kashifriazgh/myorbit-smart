@@ -118,10 +118,24 @@ export default function DeductMoney({ snapshot, onDeduct, saving, externalOpen, 
     fetchCustom();
   }, [user]);
 
+  // Auto-select bank or custom head if only 1 source exists
+  useEffect(() => {
+    if (source === 'bank' && banks.length === 1 && !selectedBank) {
+      setSelectedBank(banks[0].id!);
+    } else if (source === 'custom' && customPaymentHeads.length === 1 && !selectedCustomPaymentHead) {
+      setSelectedCustomPaymentHead(customPaymentHeads[0].id!);
+    }
+  }, [source, banks, customPaymentHeads, selectedBank, selectedCustomPaymentHead]);
+
   // Reset selected holder when source changes
   useEffect(() => {
     setSelectedHolder('Unassigned');
-  }, [source, selectedBank, selectedCustomPaymentHead]);
+    if (source === 'bank' && banks.length === 1) {
+      setSelectedBank(banks[0].id!);
+    } else if (source === 'custom' && customPaymentHeads.length === 1) {
+      setSelectedCustomPaymentHead(customPaymentHeads[0].id!);
+    }
+  }, [source, selectedBank, selectedCustomPaymentHead, banks, customPaymentHeads]);
 
   const handleSaveClick = async () => {
     if (!amount || amount <= 0) return;

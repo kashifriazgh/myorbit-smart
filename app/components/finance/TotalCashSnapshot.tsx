@@ -1,6 +1,6 @@
 'use client';
 
-import { Box, Typography, CircularProgress, IconButton, Tooltip, Fab } from '@mui/material';
+import { Box, Typography, CircularProgress, IconButton, Tooltip, Fab, Dialog, DialogTitle, DialogContent, DialogActions, Button, Stack } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import Visibility from '@mui/icons-material/Visibility';
@@ -12,6 +12,7 @@ import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import HistoryIcon from '@mui/icons-material/History';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import SyncIcon from '@mui/icons-material/Sync';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { db } from '@/app/lib/firebase';
 import {
@@ -54,32 +55,54 @@ export const getSourceKey = (
   return source;
 };
 
+/** Compute the overall total amount across all sources */
+function computeTotalAmount(snapshot: TotalCashSnapshot): number {
+  let total = 0;
+  const { sources } = snapshot;
+  if (!sources) return 0;
+
+  for (const val of Object.values(sources)) {
+    if (typeof val === 'number') {
+      total += val;
+    } else if (val && typeof val === 'object' && val !== null) {
+      for (const subVal of Object.values(val as Record<string, number>)) {
+        if (typeof subVal === 'number') {
+          total += subVal;
+        }
+      }
+    }
+  }
+  return total;
+}
+
 /** Compute the amount the user actually owns (excluding sources owned by others) */
 function computeOwnedAmount(snapshot: TotalCashSnapshot): number {
   let owned = 0;
   const { sources, sourceOwnership } = snapshot;
+  if (!sources) return 0;
 
-  const isOwned = (key: string) => {
+  const isOwned = (key: string, isCustom = false) => {
     const o = sourceOwnership?.[key];
-    return !o || o.hasOwnThisMoney !== false;
+    if (o && typeof o.hasOwnThisMoney === 'boolean') {
+      return o.hasOwnThisMoney;
+    }
+    // Built-in sources default to true ('own')
+    // Custom created sources default to false (not 'own')
+    return !isCustom;
   };
 
-  // in_hand, easypaisa, jazzcash, other
-  const simpleKeys: (keyof typeof sources)[] = ['in_hand', 'easypaisa', 'jazzcash', 'other'];
-  for (const k of simpleKeys) {
-    if (isOwned(k as string)) {
-      owned += (sources[k] as number) ?? 0;
+  for (const [key, val] of Object.entries(sources)) {
+    if (key === 'bank' && typeof val === 'object' && val !== null) {
+      for (const [bankName, bankAmt] of Object.entries(val as Record<string, number>)) {
+        if (isOwned(`bank:${bankName}`, false)) owned += bankAmt;
+      }
+    } else if (key === 'custom' && typeof val === 'object' && val !== null) {
+      for (const [customName, customAmt] of Object.entries(val as Record<string, number>)) {
+        if (isOwned(`custom:${customName}`, true)) owned += customAmt;
+      }
+    } else if (typeof val === 'number') {
+      if (isOwned(key, false)) owned += val;
     }
-  }
-
-  // bank
-  for (const [bankName, bankAmt] of Object.entries(sources.bank || {})) {
-    if (isOwned(`bank:${bankName}`)) owned += bankAmt;
-  }
-
-  // custom
-  for (const [customName, customAmt] of Object.entries(sources.custom || {})) {
-    if (isOwned(`custom:${customName}`)) owned += customAmt;
   }
 
   return owned;
@@ -99,10 +122,12 @@ export default function TotalCashSnapshotComponent({
   const [saving, setSaving] = useState(false);
   const [showTotal, setShowTotal] = useState(false);
   const [showTransactionHistory, setShowTransactionHistory] = useState(false);
+  const [showLoanInfoModal, setShowLoanInfoModal] = useState(false);
   const [fabOpen, setFabOpen] = useState(false);
 
   // Dialog open states driven by FAB
   const [openAdd, setOpenAdd] = useState(false);
+  const [moneyDialogMode, setMoneyDialogMode] = useState<'add' | 'deduct'>('add');
   const [openDeduct, setOpenDeduct] = useState(false);
   const [openTransfer, setOpenTransfer] = useState(false);
   const [openLoan, setOpenLoan] = useState(false);
@@ -134,10 +159,10 @@ export default function TotalCashSnapshotComponent({
         const cache = JSON.parse(cachedRaw);
         const age = Date.now() - new Date(cache.timestamp).getTime();
         // Use cache if it is fresh (less than 10 minutes old)
-        if (age < 10 * 60 * 1000) {
+        if (age < 10 * 60 * 1000 && cache.snapshot) {
           setSnapshot(cache.snapshot);
-          setLoans(cache.loans);
-          setLiabilities(cache.liabilities);
+          setLoans(cache.loans || []);
+          setLiabilities(cache.liabilities || []);
           setIsCached(true);
           setNeedsFetch(false);
           setLoading(false);
@@ -150,7 +175,7 @@ export default function TotalCashSnapshotComponent({
     setNeedsFetch(true);
   }, [userId]);
 
-  // Set up Firebase subscriptions conditionally
+  // Set up Firebase subscriptions only when needed
   useEffect(() => {
     if (!userId || !needsFetch) return;
 
@@ -236,9 +261,9 @@ export default function TotalCashSnapshotComponent({
     };
   }, [userId, needsFetch]);
 
-  // Atomically save to cache when loaded
+  // Atomically save to cache when snapshot changes
   useEffect(() => {
-    if (!userId || !needsFetch || loading || !snapshot) return;
+    if (!userId || loading || !snapshot) return;
     const timer = setTimeout(() => {
       try {
         localStorage.setItem(
@@ -254,9 +279,9 @@ export default function TotalCashSnapshotComponent({
       } catch (e) {
         console.warn('Failed to save finance cache:', e);
       }
-    }, 1000);
+    }, 500);
     return () => clearTimeout(timer);
-  }, [userId, needsFetch, loading, snapshot, loans, liabilities]);
+  }, [userId, loading, snapshot, loans, liabilities]);
 
   // Automatically trigger fetch when any transaction dialog opens
   useEffect(() => {
@@ -696,7 +721,7 @@ export default function TotalCashSnapshotComponent({
     }
   };
 
-  const totalDisplay = snapshot?.totalAmount || 0;
+  const totalDisplay = snapshot ? computeTotalAmount(snapshot) : 0;
   const ownedDisplay = snapshot ? computeOwnedAmount(snapshot) : 0;
 
   if (loading || !theme || !snapshot) {
@@ -712,13 +737,13 @@ export default function TotalCashSnapshotComponent({
       icon: <AddCircleOutlineIcon />,
       label: 'Add Money',
       color: '#22c55e',
-      onClick: () => { setFabOpen(false); setOpenAdd(true); },
+      onClick: () => { setFabOpen(false); setMoneyDialogMode('add'); setOpenAdd(true); },
     },
     {
       icon: <RemoveCircleOutlineIcon />,
       label: 'Deduct',
       color: '#ef4444',
-      onClick: () => { setFabOpen(false); setOpenDeduct(true); },
+      onClick: () => { setFabOpen(false); setMoneyDialogMode('deduct'); setOpenAdd(true); },
     },
     {
       icon: <SwapHorizIcon />,
@@ -892,9 +917,55 @@ export default function TotalCashSnapshotComponent({
           <Typography variant="h5" fontWeight="900" color={isDark ? '#c4b5fd' : '#5b21b6'}>
             {formatCurrency(ownedDisplay, currency)}
           </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.3, display: 'block' }}>
-            Excluding others&apos; funds
-          </Typography>
+          <Box mt={0.8}>
+            {totalsData.toReceive > 0 && (
+              <Box display="flex" alignItems="center" gap={0.5}>
+                <Typography variant="caption" sx={{ color: isDark ? '#34d399' : '#059669', fontWeight: 700, fontSize: '0.7rem', display: 'block' }}>
+                  + {formatCurrency(totalsData.toReceive, currency)}
+                </Typography>
+                <IconButton
+                  size="small"
+                  onClick={() => setShowLoanInfoModal(true)}
+                  sx={{ p: 0.1, color: isDark ? '#34d399' : '#059669', '&:hover': { bgcolor: 'rgba(16,185,129,0.1)' } }}
+                  title="View details"
+                >
+                  <InfoOutlinedIcon sx={{ fontSize: 12 }} />
+                </IconButton>
+              </Box>
+            )}
+            {totalsData.toPay > 0 && (
+              <Box display="flex" alignItems="center" gap={0.5} mt={totalsData.toReceive > 0 ? 0.2 : 0}>
+                <Typography variant="caption" sx={{ color: isDark ? '#f87171' : '#dc2626', fontWeight: 700, fontSize: '0.7rem', display: 'block' }}>
+                  - {formatCurrency(totalsData.toPay, currency)}
+                </Typography>
+                {totalsData.toReceive === 0 && (
+                  <IconButton
+                    size="small"
+                    onClick={() => setShowLoanInfoModal(true)}
+                    sx={{ p: 0.1, color: isDark ? '#f87171' : '#dc2626', '&:hover': { bgcolor: 'rgba(239,68,68,0.1)' } }}
+                    title="View details"
+                  >
+                    <InfoOutlinedIcon sx={{ fontSize: 12 }} />
+                  </IconButton>
+                )}
+              </Box>
+            )}
+            {totalsData.toReceive === 0 && totalsData.toPay === 0 && (
+              <Box display="flex" alignItems="center" gap={0.5}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, fontSize: '0.7rem' }}>
+                  Rs 0 (Loans)
+                </Typography>
+                <IconButton
+                  size="small"
+                  onClick={() => setShowLoanInfoModal(true)}
+                  sx={{ p: 0.1, color: 'text.secondary' }}
+                  title="View details"
+                >
+                  <InfoOutlinedIcon sx={{ fontSize: 12 }} />
+                </IconButton>
+              </Box>
+            )}
+          </Box>
         </Box>
 
         {/* Total Card */}
@@ -1021,10 +1092,12 @@ export default function TotalCashSnapshotComponent({
       {/* Dialog components controlled by FAB */}
       <AddMoney
         onSave={handleAddMoney}
+        onDeduct={handleDeductMoney}
         saving={saving}
         snapshot={snapshot}
         externalOpen={openAdd}
         onExternalClose={() => setOpenAdd(false)}
+        defaultMode={moneyDialogMode}
       />
       <DeductMoney
         snapshot={snapshot}
@@ -1051,6 +1124,63 @@ export default function TotalCashSnapshotComponent({
         open={openLiability}
         onClose={() => setOpenLiability(false)}
       />
+
+      {/* Modal for Loan & Liability Info */}
+      <Dialog
+        open={showLoanInfoModal}
+        onClose={() => setShowLoanInfoModal(false)}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            p: 1,
+            backgroundColor: isDark ? '#0f172a' : '#ffffff',
+          },
+        }}
+      >
+        <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <InfoOutlinedIcon color="error" />
+            <Typography variant="h6" fontWeight="900">Loan & Liability Info</Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setShowLoanInfoModal(false)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 1 }}>
+          <Stack spacing={2}>
+            <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? 'rgba(16,185,129,0.08)' : '#ecfdf5', border: '1px solid rgba(16,185,129,0.2)' }}>
+              <Typography variant="caption" fontWeight="800" color="#059669" display="block">
+                AMOUNT YOU WILL RECEIVE
+              </Typography>
+              <Typography variant="h6" fontWeight="900" color="#059669">
+                + {formatCurrency(totalsData.toReceive, currency)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+                The amount from the loan or liability you will receive.
+              </Typography>
+            </Box>
+
+            <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? 'rgba(239,68,68,0.08)' : '#fef2f2', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <Typography variant="caption" fontWeight="800" color="#e11d48" display="block">
+                AMOUNT YOU WILL PAY BACK
+              </Typography>
+              <Typography variant="h6" fontWeight="900" color="#e11d48">
+                - {formatCurrency(totalsData.toPay, currency)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+                The amount from the loan or liability you need to pay back.
+              </Typography>
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setShowLoanInfoModal(false)} variant="contained" sx={{ borderRadius: 2, fontWeight: 800 }}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
 
       {/* See Transaction History */}

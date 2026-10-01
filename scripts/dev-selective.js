@@ -9,6 +9,16 @@ const args = process.argv.slice(2);
 const watchDirs =
   args.length > 0 ? args : ['app/components', 'app/lib', 'app/page.tsx'];
 
+// Auto-clean production .next folder if it exists (prevents ENOENT & middleware-manifest errors)
+if (fs.existsSync('.next') && fs.existsSync(path.join('.next', 'BUILD_ID'))) {
+  console.log('🧹 Cleaning production .next build cache for dev server...');
+  try {
+    fs.rmSync('.next', { recursive: true, force: true });
+  } catch (err) {
+    console.warn('Could not clear .next:', err.message);
+  }
+}
+
 console.log(`🚀 Starting Next.js dev server with optimized watching...`);
 console.log(`📁 Watching directories: ${watchDirs.join(', ')}`);
 

@@ -140,6 +140,22 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
     fetchCustom();
   }, [user]);
 
+  useEffect(() => {
+    if (fromSource === 'bank' && banks.length === 1 && !fromBankId) {
+      setFromBankId(banks[0].id!);
+    } else if (fromSource === 'custom' && customPaymentHeads.length === 1 && !fromCustomId) {
+      setFromCustomId(customPaymentHeads[0].id!);
+    }
+  }, [fromSource, banks, customPaymentHeads, fromBankId, fromCustomId]);
+
+  useEffect(() => {
+    if (toSource === 'bank' && banks.length === 1 && !toBankId) {
+      setToBankId(banks[0].id!);
+    } else if (toSource === 'custom' && customPaymentHeads.length === 1 && !toCustomId) {
+      setToCustomId(customPaymentHeads[0].id!);
+    }
+  }, [toSource, banks, customPaymentHeads, toBankId, toCustomId]);
+
   // Derived names
   const fromBankName = banks.find((b) => b.id === fromBankId)?.name;
   const fromCustomName = customPaymentHeads.find((c) => c.id === fromCustomId)?.name;
