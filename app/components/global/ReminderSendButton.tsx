@@ -35,7 +35,7 @@ interface ReminderSendButtonProps {
   buttonType?: 'icon' | 'button';
   iconSize?: 'small' | 'medium' | 'large';
   buttonSx?: object;
-  itemDateTime?: Date | string | null;
+  itemDateTime?: Date | string | { seconds: number } | null;
   customItemTypeName?: string;
   customTrigger?: (openDialog: (e: React.MouseEvent<HTMLElement>) => void) => React.ReactNode;
 }
@@ -96,10 +96,11 @@ export default function ReminderSendButton({
   React.useEffect(() => {
     if (itemDateTime) {
       let parsed: Date | null = null;
-      if (itemDateTime instanceof Date) parsed = itemDateTime;
-      else if (typeof itemDateTime === 'object' && itemDateTime !== null && 'seconds' in itemDateTime) {
-        parsed = new Date((itemDateTime as { seconds: number }).seconds * 1000);
-      } else {
+      if (itemDateTime instanceof Date) {
+        parsed = itemDateTime;
+      } else if (typeof itemDateTime === 'object' && itemDateTime !== null && 'seconds' in itemDateTime) {
+        parsed = new Date(itemDateTime.seconds * 1000);
+      } else if (typeof itemDateTime === 'string') {
         const d = new Date(itemDateTime);
         if (!isNaN(d.getTime())) parsed = d;
       }

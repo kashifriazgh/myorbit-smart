@@ -280,7 +280,15 @@ export async function setupForegroundNotifications(): Promise<void> {
         extra: d,
       });
 
-      const options: NotificationOptions = {
+      interface ExtendedNotificationOptions extends NotificationOptions {
+        vibrate?: number[];
+        renotify?: boolean;
+        silent?: boolean;
+        requireInteraction?: boolean;
+        actions?: Array<{ action: string; title: string; icon?: string }>;
+      }
+
+      const options: ExtendedNotificationOptions = {
         body: resolved.body,
         icon: resolved.icon,
         badge: resolved.badge,
@@ -290,7 +298,7 @@ export async function setupForegroundNotifications(): Promise<void> {
         silent: resolved.silent,
         renotify: resolved.renotify,
         requireInteraction: resolved.requireInteraction,
-        actions: resolved.actions as NotificationAction[],
+        actions: resolved.actions,
       };
 
       try {
