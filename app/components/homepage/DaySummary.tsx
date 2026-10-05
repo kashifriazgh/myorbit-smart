@@ -200,14 +200,14 @@ function StatTile({ type, label, hint, count, done, href, loading, isDark }: Sta
       </span>
       <div>
         {loading ? (
-          <div className="h-8 w-8 animate-pulse rounded bg-slate-200/60 dark:bg-slate-700/60" />
+          <div className="h-8 w-16 animate-pulse rounded bg-slate-200/60 dark:bg-slate-700/60" />
         ) : (
-          <p className={`text-3xl font-semibold tabular-nums ${tone.number}`}>{count}</p>
+          <p className={`text-2xl sm:text-3xl font-semibold tabular-nums ${tone.number}`}>
+            {done}/{count}
+          </p>
         )}
         <p className={`mt-1 text-sm font-medium ${tone.label}`}>{label}</p>
-        <p className={`text-xs ${tone.hint}`}>
-          {count > 0 && !loading ? `${done} of ${count} done` : hint}
-        </p>
+        <p className={`text-xs ${tone.hint}`}>{hint}</p>
       </div>
     </Link>
   );

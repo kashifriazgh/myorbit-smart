@@ -39,6 +39,8 @@ interface ReminderSendButtonProps {
   itemDateTime?: Date | string | { seconds: number } | null;
   customItemTypeName?: string;
   customTrigger?: (openDialog: (e: React.MouseEvent<HTMLElement>) => void) => React.ReactNode;
+  /** When true, the reminder options dialog spans the full screen width */
+  dialogFullWidth?: boolean;
 }
 
 export interface TimePeriod {
@@ -140,12 +142,22 @@ export const TIME_PERIODS: TimePeriod[] = [
   },
 ];
 
+// Format a Date as YYYY-MM-DD in the user's LOCAL timezone.
+// (toISOString() returns UTC, which shifts the date for users ahead of UTC,
+// e.g. PKT between 00:00–05:00 would resolve "today" to yesterday.)
+function toLocalDateStr(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function getComingSundayStr(): string {
   const d = new Date();
   const day = d.getDay();
   const diff = day === 0 ? 7 : 7 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().split('T')[0];
+  return toLocalDateStr(d);
 }
 
 export default function ReminderSendButton({
@@ -159,6 +171,7 @@ export default function ReminderSendButton({
   itemDateTime = null,
   customItemTypeName: _customItemTypeName,
   customTrigger,
+  dialogFullWidth = false,
 }: ReminderSendButtonProps) {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
@@ -182,8 +195,8 @@ export default function ReminderSendButton({
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
 
   // Predefined Dates
-  const todayStr = new Date().toISOString().split('T')[0];
-  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const todayStr = toLocalDateStr(new Date());
+  const tomorrowStr = toLocalDateStr(new Date(Date.now() + 86400000));
   const sundayStr = getComingSundayStr();
 
   const [dateChoice, setDateChoice] = useState<'today' | 'tomorrow' | 'sunday' | 'custom'>('today');
@@ -332,24 +345,45 @@ export default function ReminderSendButton({
     return rawTime;
   };
 
+  // Resolve the final reminder Date from the selected day + hour.
+  // If "Today" is selected but that hour has already passed, roll forward to the
+  // same hour tomorrow (previously this silently fell back to "now + 2 min").
+  const resolveReminderDate = (): { date: Date; rolledToTomorrow: boolean; isPast: boolean } => {
+    const dateStr = getEffectiveDateStr();
+    const timeStr = getEffectiveTimeStr();
+    const [y, mo, d] = dateStr.split('-').map(Number);
+    const [h, mi] = timeStr.split(':').map(Number);
+    const target = new Date(y, (mo || 1) - 1, d || 1, h || 0, mi || 0, 0, 0);
+
+    if (target.getTime() > Date.now()) {
+      return { date: target, rolledToTomorrow: false, isPast: false };
+    }
+    if (dateChoice === 'today') {
+      const next = new Date(target);
+      next.setDate(next.getDate() + 1);
+      return { date: next, rolledToTomorrow: true, isPast: false };
+    }
+    return { date: target, rolledToTomorrow: false, isPast: true };
+  };
+
   const handleScheduleSubmit = async () => {
     if (!user || selectedRecipients.length === 0) return;
+
+    const { date: reminderDate, isPast } = resolveReminderDate();
+    if (isPast) {
+      setFeedback({
+        open: true,
+        message: 'The selected date & time is in the past. Please pick a future time.',
+        severity: 'warning',
+      });
+      return;
+    }
+
     setSending(true);
     setDialogOpen(false);
 
     try {
       const { createWhatsAppReminder } = await import('@/app/lib/utils/whatsapp-reminder');
-
-      const dateStr = getEffectiveDateStr();
-      const timeStr = getEffectiveTimeStr(); // contains +2 minute offset
-
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      const targetDate = new Date(`${dateStr}T${timeStr}`);
-      if (isNaN(targetDate.getTime())) {
-        targetDate.setHours(hours, minutes, 0, 0);
-      }
-
-      const reminderDate = targetDate.getTime() <= Date.now() ? new Date(Date.now() + 2 * 60000) : targetDate;
 
       // Update Firestore document with reminder date & flag
       if (_itemId) {
@@ -439,9 +473,8 @@ export default function ReminderSendButton({
   if (!user) return null;
 
   const hasSharedUsers = user.sharedWith && user.sharedWith.length > 0;
-  const effectiveDateStr = getEffectiveDateStr();
-  const effectiveTimeStr = getEffectiveTimeStr();
-  const displayPreviewStr = moment(`${effectiveDateStr}T${effectiveTimeStr}`).format('dddd, MMM D @ hh:mm A');
+  const resolved = resolveReminderDate();
+  const displayPreviewStr = moment(resolved.date).format('dddd, MMM D @ hh:mm A');
 
   const activePeriod = TIME_PERIODS.find((p) => p.id === activePeriodId) || TIME_PERIODS[2];
 
@@ -508,8 +541,10 @@ export default function ReminderSendButton({
             'rounded-[28px] overflow-hidden shadow-2xl border outline-none bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800',
           sx: {
             p: 0,
-            width: '92%',
-            maxWidth: '420px',
+            width: dialogFullWidth ? '100%' : { xs: '100%', sm: '92%' },
+            maxWidth: dialogFullWidth ? '100%' : { xs: '100%', sm: '420px' },
+            // Remove MUI's default 32px side margins on mobile so it spans edge-to-edge
+            mx: dialogFullWidth ? 0 : { xs: 0, sm: 4 },
             bgcolor: isDark ? '#0f172a' : '#ffffff',
             color: isDark ? '#f1f5f9' : '#0f172a',
             borderRadius: '28px',
@@ -799,13 +834,23 @@ export default function ReminderSendButton({
             <Typography variant="caption" className="text-indigo-600 dark:text-indigo-400 font-bold block text-[11px]">
               ⏰ Scheduled for {displayPreviewStr}
             </Typography>
+            {resolved.rolledToTomorrow && (
+              <Typography variant="caption" className="text-amber-600 dark:text-amber-400 font-semibold block text-[10px] mt-0.5">
+                Today&apos;s selected hour has passed — moved to tomorrow
+              </Typography>
+            )}
+            {resolved.isPast && (
+              <Typography variant="caption" className="text-red-500 font-semibold block text-[10px] mt-0.5">
+                This time is in the past — please choose a future time
+              </Typography>
+            )}
           </Box>
 
           {/* Submit Action Button */}
           <Button
             onClick={handleScheduleSubmit}
             variant="contained"
-            disabled={sending || selectedRecipients.length === 0}
+            disabled={sending || selectedRecipients.length === 0 || resolved.isPast}
             fullWidth
             sx={{
               borderRadius: '16px',

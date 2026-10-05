@@ -1,5 +1,5 @@
 'use client';
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { useAuth } from './lib/context/userContext';
 import { useCustomTheme } from './lib/context/themeContext';
 import GuestUserBanner from './components/global/GuestUserBanner';
@@ -58,24 +58,19 @@ export default function Homepage() {
 
   // Check for cached user so we can show the shell immediately on PWA launch
   // instead of blocking on Firebase auth state resolution
-  const [hasCachedUser, setHasCachedUser] = useState(false);
-  useEffect(() => {
-    try {
-      const cached = localStorage.getItem('myorbit_cached_user');
-      if (cached) setHasCachedUser(true);
-    } catch {
-      // localStorage not available (SSR / private mode)
+  const [hasCachedUser] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return !!localStorage.getItem('myorbit_cached_user');
     }
-  }, []);
+    return false;
+  });
 
-  // Show skeleton shell if:
-  // - Auth is still loading AND we have no cached user (cold launch, no cache)
-  // - This means: if cached user exists, we skip the spinner entirely → instant render
+  // Show skeleton shell ONLY if auth is still loading and we have no cached user
   if (loading && !hasCachedUser) {
     return <HomepageSkeleton isDark={isDark} />;
   }
 
-  if (!user) {
+  if (!user && !hasCachedUser) {
     return <HomepageSkeleton isDark={isDark} />;
   }
 

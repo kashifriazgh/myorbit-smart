@@ -22,7 +22,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './userContext';
-import { loadGoalsCache, saveGoalsCache, clearGoalsCache } from '../utils/goalsCache';
+import { loadGoalsCache, saveGoalsCache } from '../utils/goalsCache';
 import { deleteSchedule, updateSchedule } from '../functions/schedules';
 import { invalidateTodosCache } from '../utils/todosCache';
 import { invalidateSchedulesCache } from '../utils/schedulesCache';
@@ -190,7 +190,6 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     if (!userId) {
       setGoals([]);
       setLoading(false);
-      clearGoalsCache();
       return;
     }
 

@@ -36,9 +36,32 @@ const UserContext = createContext<UserContextType>({
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<FirestoreUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isGuest, setIsGuest] = useState(false);
+  const [user, setUser] = useState<FirestoreUser | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('myorbit_cached_user');
+        if (cached) return JSON.parse(cached);
+      } catch (e) {
+        console.error('Error parsing initial cached user:', e);
+      }
+    }
+    return null;
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return !localStorage.getItem('myorbit_cached_user');
+    }
+    return true;
+  });
+  const [isGuest, setIsGuest] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('myorbit_cached_user');
+        if (cached) return JSON.parse(cached)?.isGuest ?? false;
+      } catch {}
+    }
+    return false;
+  });
   const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null);
   const [contextParagraph, setContextParagraph] = useState<string>('');
 
@@ -177,6 +200,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               }
             }
           } else {
+            // When offline, Firestore emits a cache-only snapshot where the doc
+            // "doesn't exist" simply because it isn't cached yet. Don't wipe the
+            // locally cached session in that case — keep showing cached content.
+            if ((snap as { metadata: { fromCache: boolean } }).metadata.fromCache) {
+              console.log('📴 Offline: user doc not in cache, keeping cached session');
+              return;
+            }
             console.warn('⚠️ No Firestore user document found.');
             Cookies.remove('uid', { path: '/' });
             Cookies.remove('role', { path: '/' });

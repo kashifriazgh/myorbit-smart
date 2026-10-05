@@ -7,8 +7,6 @@ const CACHE_UID_KEY = 'schedules_cache_uid';
 const CACHE_TS_KEY = 'schedules_cache_ts';
 const REFRESH_FLAG_KEY = 'schedules_needs_refresh';
 
-const MAX_CACHE_AGE_MS = 30 * 60 * 1000; // 30 minutes
-
 export function saveSchedulesCache(schedules: SchedulesProps[], uid: string): void {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(schedules));
@@ -23,16 +21,7 @@ export function saveSchedulesCache(schedules: SchedulesProps[], uid: string): vo
 export function loadSchedulesCache(uid: string): SchedulesProps[] | null {
   try {
     const cachedUid = localStorage.getItem(CACHE_UID_KEY);
-    if (cachedUid !== uid) return null;
-
-    const refreshFlag = localStorage.getItem(REFRESH_FLAG_KEY);
-    if (refreshFlag === 'true') return null;
-
-    const ts = localStorage.getItem(CACHE_TS_KEY);
-    if (ts) {
-      const age = Date.now() - new Date(ts).getTime();
-      if (age > MAX_CACHE_AGE_MS) return null;
-    }
+    if (uid && cachedUid && cachedUid !== uid) return null;
 
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;

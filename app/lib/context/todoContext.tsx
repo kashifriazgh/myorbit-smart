@@ -27,7 +27,6 @@ import {
   loadTodosCache,
   saveTodosCache,
   invalidateTodosCache,
-  clearTodosCache,
 } from '@/app/lib/utils/todosCache';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,7 +100,6 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setTodos([]);
       setLoading(false);
       setDataSource('loading');
-      clearTodosCache();
       return;
     }
 

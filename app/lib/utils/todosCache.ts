@@ -19,9 +19,6 @@ const CACHE_UID_KEY = 'todos_cache_uid';
 const CACHE_TS_KEY = 'todos_cache_ts';
 const REFRESH_FLAG_KEY = 'todos_needs_refresh';
 
-/** Maximum age of the cache before it is considered stale (ms). Default: 30 minutes. */
-const MAX_CACHE_AGE_MS = 30 * 60 * 1000;
-
 // ─── Serialisation helpers ────────────────────────────────────────────────────
 
 /** Convert a Todo[] to a JSON-safe representation (dates as ISO strings). */
@@ -74,16 +71,7 @@ export function saveTodosCache(todos: Todo[], uid: string): void {
 export function loadTodosCache(uid: string): { todos: Todo[]; source: 'cache' } | null {
   try {
     const cachedUid = localStorage.getItem(CACHE_UID_KEY);
-    if (cachedUid !== uid) return null;
-
-    const refreshFlag = localStorage.getItem(REFRESH_FLAG_KEY);
-    if (refreshFlag === 'true') return null;
-
-    const ts = localStorage.getItem(CACHE_TS_KEY);
-    if (ts) {
-      const age = Date.now() - new Date(ts).getTime();
-      if (age > MAX_CACHE_AGE_MS) return null;
-    }
+    if (uid && cachedUid && cachedUid !== uid) return null;
 
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;

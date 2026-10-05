@@ -743,6 +743,7 @@ export default function TodoDetailPage() {
           itemType="task"
           itemDetailUrl={`/to-do/${todo.id}`}
           itemDateTime={todo.dueDate ? (todo.dueDate instanceof Timestamp ? todo.dueDate.toDate() : new Date(todo.dueDate)) : null}
+          dialogFullWidth
           customTrigger={(openDialog) => (
             <ReminderPromoCard
               taskId={todo.id}

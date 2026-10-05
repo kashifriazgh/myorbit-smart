@@ -22,7 +22,6 @@ import {
   loadSchedulesCache,
   saveSchedulesCache,
   invalidateSchedulesCache,
-  clearSchedulesCache,
 } from '@/app/lib/utils/schedulesCache';
 import { useGoals } from './GoalsContext';
 
@@ -64,7 +63,6 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
       setAllSchedules([]);
       setLoading(false);
       setDataSource('loading');
-      clearSchedulesCache();
       return;
     }
 

@@ -397,30 +397,19 @@ export default function LoanRecordsPage() {
   };
 
   const handleUpdateProgress = async () => {
-    alert("Update Progress button clicked! Selected Loan ID: " + selectedLoan?.id + ", Amount entered: " + updateAmount);
-    if (!selectedLoan?.id || !updateAmount || !user) {
-      alert("Missing required fields. loanId: " + selectedLoan?.id + ", amount: " + updateAmount + ", user: " + !!user);
-      return;
-    }
+    if (!selectedLoan?.id || !updateAmount || !user) return;
     const paidValue = parseFloat(updateAmount);
-    if (isNaN(paidValue) || paidValue < 0) {
-      alert("Invalid paid value entered: " + updateAmount);
-      return;
-    }
+    if (isNaN(paidValue) || paidValue < 0) return;
 
     setActionLoading(true);
     try {
       const isSettled = paidValue >= selectedLoan.amount;
       const delta = paidValue - (selectedLoan.paidAmount || 0);
 
-      alert("Computed delta: " + delta + ", isSettled: " + isSettled);
-
       if (delta !== 0) {
-        alert("Fetching cash snapshot for user: " + user.uid);
         const docRef = doc(db, 'totalCashSnapshots', user.uid);
         const docSnap = await getDoc(docRef);
-        alert("Snapshot fetched. Document exists: " + docSnap.exists());
-        
+
         const snapshotData = docSnap.exists()
           ? (docSnap.data() as TotalCashSnapshot)
           : {
@@ -458,8 +447,6 @@ export default function LoanRecordsPage() {
         const [sourceType, subName] = selectedSource.split(':');
         const sourceKey = sourceType === 'bank' ? `bank:${subName}` : sourceType === 'custom' ? `custom:${subName}` : sourceType;
         const holderToSave = selectedHolder === 'Unassigned' ? null : selectedHolder;
-
-        alert("Modifying balances for account type: " + sourceType + ", sub-account: " + subName);
 
         if (selectedLoan.type === 'borrow') {
           if (sourceType === 'bank' && subName) {
@@ -514,10 +501,8 @@ export default function LoanRecordsPage() {
           totalAmount: newTotal,
         };
 
-        alert("Saving updated cash snapshot document...");
         await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
         setSnapshot(updatedSnapshot);
-        alert("Cash snapshot saved successfully.");
 
         const bankId = sourceType === 'bank' ? (banks.find(b => b.name === subName)?.id || null) : null;
         const customHeadId = sourceType === 'custom' ? (customPaymentHeads.find(c => c.name === subName)?.id || null) : null;
@@ -539,7 +524,6 @@ export default function LoanRecordsPage() {
             : `Loan Recovery Revision from ${selectedLoan.counterparty}`;
         }
 
-        alert("Adding cash transaction audit record...");
         await addDoc(collection(db, 'cashTransactions'), {
           userId: user.uid,
           amount: absDelta,
@@ -553,16 +537,13 @@ export default function LoanRecordsPage() {
           ...(sourceType === 'custom' ? { customPaymentHeadId: customHeadId || null, customPaymentHeadName: subName || null } : {}),
           createdAt: serverTimestamp(),
         });
-        alert("Audit record added successfully.");
       }
 
-      alert("Updating loan record status...");
       await updateDoc(doc(db, 'loans', selectedLoan.id), {
         paidAmount: paidValue,
         isSettled,
         updatedAt: new Date(),
       });
-      alert("Loan record updated successfully.");
 
       setProgressDialogOpen(false);
       setSelectedLoan(null);

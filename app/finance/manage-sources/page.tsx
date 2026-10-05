@@ -1,83 +1,680 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Container, 
-  IconButton, 
-  Button, 
-  Stack, 
-  Card, 
-  Divider, 
-  Dialog, 
-  DialogTitle, 
-  DialogContent, 
-  DialogContentText, 
-  DialogActions,
-  CircularProgress,
-  Breadcrumbs,
-  Alert,
-  Avatar,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  TextField,
-  Chip,
-  Switch,
-  FormControlLabel
-} from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
-import PaymentsIcon from '@mui/icons-material/Payments';
-import WalletIcon from '@mui/icons-material/AccountBalanceWallet';
-import WarningIcon from '@mui/icons-material/Warning';
-import AddIcon from '@mui/icons-material/Add';
-import PersonIcon from '@mui/icons-material/Person';
-import CloseIcon from '@mui/icons-material/Close';
-import LockIcon from '@mui/icons-material/Lock';
-import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
-import EditIcon from '@mui/icons-material/Edit';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/app/lib/context/userContext';
-import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useGoals } from '@/app/lib/context/GoalsContext';
 import { db } from '@/app/lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, addDoc, collection, Timestamp } from 'firebase/firestore';
-import { TotalCashSnapshot } from '@/app/lib/interface';
-import { formatCurrency } from '@/app/lib/utilts';
+import { TotalCashSnapshot, HolderAmount } from '@/app/lib/interface';
+
+/* ================= Helpers ================= */
+const SELF = 'You';
+const ALL = '__all__';
+
+const normName = (n = '') => {
+  const t = n.trim().replace(/\s+/g, ' ');
+  return ['you', 'me', 'self', 'myself'].includes(t.toLowerCase()) ? SELF : t;
+};
+const money = (n: number) => `Rs ${Math.round(n || 0).toLocaleString('en-US')}`;
+const sum = (holders: Array<{ name: string; amount: number }>) => holders.reduce((s, h) => s + (h.amount || 0), 0);
+
+const PALETTE = ['bg-violet-500', 'bg-amber-500', 'bg-rose-500', 'bg-teal-500', 'bg-sky-500', 'bg-orange-500'];
+const colorFor = (name: string) => {
+  if (name === SELF || name === 'Self') return 'bg-emerald-500';
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+};
+
+/** Holders array after moving `amount` from `from` to `to` (from === ALL moves everything). */
+function computeHolders(
+  holders: Array<{ name: string; amount: number }>,
+  from: string,
+  to: string,
+  amount: number
+) {
+  if (from === ALL) return [{ name: to, amount: sum(holders) }];
+  const next = holders.map((h) => ({ ...h }));
+  const src = next.find((h) => h.name === from);
+  if (src) src.amount -= amount;
+  const dest = next.find((h) => h.name === to);
+  if (dest) dest.amount += amount;
+  else next.push({ name: to, amount });
+  return next.filter((h) => h.amount > 0);
+}
+
+/* ================= Shared styles ================= */
+const cardStyle = 'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/5';
+const textMain = 'text-slate-900 dark:text-slate-100';
+const textSub = 'text-slate-500 dark:text-slate-400';
+const inputStyle =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100';
+const btnPrimary =
+  'rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-emerald-500 dark:text-[#040d1a] dark:hover:bg-emerald-400';
+const btnGhost =
+  'rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10';
+const btnDanger =
+  'rounded-lg bg-rose-600 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40';
+
+/* ================= Icons ================= */
+const Svg = ({ children, className = 'h-5 w-5' }: { children: React.ReactNode; className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {children}
+  </svg>
+);
+
+const KindIcon = ({ kind }: { kind: string }) => {
+  switch (kind) {
+    case 'bank':
+      return (
+        <Svg>
+          <path d="M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18M12 3 3 8h18z" />
+        </Svg>
+      );
+    case 'custom':
+    case 'fund':
+    case 'easypaisa':
+    case 'jazzcash':
+      return (
+        <Svg>
+          <path d="M4 19V5M4 19h16M8 15l3-4 3 2 5-6" />
+        </Svg>
+      );
+    case 'in_hand':
+      return (
+        <Svg>
+          <rect x="2" y="6" width="20" height="12" rx="2" />
+          <circle cx="12" cy="12" r="3" />
+        </Svg>
+      );
+    default:
+      return (
+        <Svg>
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="5" />
+          <circle cx="12" cy="12" r="1.5" />
+        </Svg>
+      );
+  }
+};
+
+const CloseIcon = () => (
+  <Svg className="h-4 w-4">
+    <path d="M6 6l12 12M18 6 6 18" />
+  </Svg>
+);
+
+const TrashIcon = () => (
+  <Svg className="h-4 w-4">
+    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+  </Svg>
+);
+
+const ArrowIcon = () => (
+  <Svg className="h-4 w-4">
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </Svg>
+);
+
+const PlusIcon = () => (
+  <Svg className="h-4 w-4">
+    <path d="M12 5v14M5 12h14" />
+  </Svg>
+);
+
+/* ================= Shared HolderSplit ================= */
+function HolderSplit({
+  holders,
+  onDeleteHolder,
+}: {
+  holders: Array<{ name: string; amount: number }>;
+  onDeleteHolder?: (holderName: string) => void;
+}) {
+  const total = sum(holders) || 1;
+  return (
+    <div>
+      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+        {holders.map((h) => (
+          <div
+            key={h.name}
+            className={`${colorFor(h.name)} transition-all duration-500`}
+            style={{ width: `${(h.amount / total) * 100}%` }}
+            title={`${h.name}: ${money(h.amount)}`}
+          />
+        ))}
+      </div>
+      <ul className="mt-3 space-y-1.5">
+        {holders.map((h) => (
+          <li key={h.name} className="flex items-center justify-between gap-3 text-sm">
+            <span className={`flex min-w-0 items-center gap-2 ${textMain}`}>
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${colorFor(h.name)}`} />
+              <span className="truncate">{h.name}</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <span className={`shrink-0 tabular-nums ${textSub}`}>
+                {money(h.amount)} · {Math.round((h.amount / total) * 100)}%
+              </span>
+              {onDeleteHolder && h.name !== SELF && h.name !== 'Self' && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteHolder(h.name)}
+                  className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 text-xs font-bold transition-colors"
+                  title={`Delete holder ${h.name}`}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Modal({
+  title,
+  subtitle,
+  onClose,
+  children,
+  footer,
+}: {
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer: React.ReactNode;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 sm:items-center sm:p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-xl dark:border dark:border-white/10 dark:bg-[#0a1628] sm:rounded-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+          <div>
+            <h3 className={`text-base font-semibold ${textMain}`}>{title}</h3>
+            {subtitle && <p className={`mt-0.5 text-xs ${textSub}`}>{subtitle}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+        <div className="space-y-5 overflow-y-auto px-5 py-4">{children}</div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3 dark:border-white/10">{footer}</div>
+      </div>
+    </div>
+  );
+}
+
+const Label = ({ children }: { children: React.ReactNode }) => (
+  <p className={`mb-1.5 text-xs font-medium uppercase tracking-wide ${textSub}`}>{children}</p>
+);
+
+function PersonChips({
+  people,
+  onPick,
+  selected,
+}: {
+  people: string[];
+  onPick: (person: string) => void;
+  selected?: string;
+}) {
+  if (!people.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {people.map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => onPick(p)}
+          className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+            selected === p
+              ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+              : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10'
+          }`}
+        >
+          {p}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ================= Transfer holder dialog ================= */
+function TransferDialog({
+  name,
+  holders,
+  people,
+  onClose,
+  onConfirm,
+}: {
+  name: string;
+  holders: Array<{ name: string; amount: number }>;
+  people: string[];
+  onClose: () => void;
+  onConfirm: (data: { from: string; to: string; amount: number }) => Promise<void> | void;
+}) {
+  const total = sum(holders);
+  const [from, setFrom] = useState(
+    [...holders].sort((a, b) => b.amount - a.amount)[0]?.name || SELF
+  );
+  const [to, setTo] = useState('');
+  const [amountStr, setAmountStr] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const fromAll = from === ALL;
+  const max = fromAll ? total : holders.find((h) => h.name === from)?.amount ?? 0;
+  const amount = fromAll ? total : Number(amountStr || 0);
+  const dest = normName(to);
+
+  const sameTarget = fromAll ? holders.length === 1 && holders[0].name === dest : dest === from;
+  const error = !fromAll && amount > max ? `Maximum is ${money(max)}` : dest && sameTarget ? 'Choose a different holder' : '';
+  const valid = !!dest && amount > 0 && amount <= max && !sameTarget;
+
+  const after = valid ? computeHolders(holders, from, dest, amount) : holders;
+  const suggestions = people.filter((p) => p !== from);
+
+  const handleConfirm = async () => {
+    if (!valid || submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm({ from, to: dest, amount });
+    } catch (err) {
+      console.error(err);
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Transfer holder"
+      subtitle={`${name} · ${money(total)}`}
+      onClose={() => !submitting && onClose()}
+      footer={
+        <>
+          <button type="button" className={btnGhost} disabled={submitting} onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={`${btnPrimary} inline-flex items-center justify-center gap-2`}
+            disabled={!valid || submitting}
+            onClick={handleConfirm}
+          >
+            {submitting ? (
+              <>
+                <svg className="h-4 w-4 animate-spin text-current" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span>Transferring...</span>
+              </>
+            ) : (
+              'Confirm transfer'
+            )}
+          </button>
+        </>
+      }
+    >
+      <div>
+        <Label>Move from</Label>
+        <div className="space-y-1.5">
+          {[...holders, ...(holders.length > 1 ? [{ name: ALL, amount: total }] : [])].map((h) => (
+            <button
+              key={h.name}
+              type="button"
+              onClick={() => {
+                setFrom(h.name);
+                setAmountStr('');
+              }}
+              aria-pressed={from === h.name}
+              className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                from === h.name
+                  ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10'
+                  : 'border-slate-200 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5'
+              }`}
+            >
+              <span className={`flex items-center gap-2 ${textMain}`}>
+                <span className={`h-2.5 w-2.5 rounded-full ${h.name === ALL ? 'bg-slate-400' : colorFor(h.name)}`} />
+                {h.name === ALL ? 'All holders (whole amount)' : h.name}
+              </span>
+              <span className={`tabular-nums ${textSub}`}>{money(h.amount)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <Label>Move to</Label>
+        <input
+          className={inputStyle}
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          placeholder="Type a name, or tap one below"
+        />
+        <PersonChips people={suggestions} onPick={setTo} selected={dest} />
+      </div>
+
+      <div>
+        <Label>Amount</Label>
+        <input
+          className={`${inputStyle} tabular-nums`}
+          inputMode="numeric"
+          disabled={fromAll}
+          value={fromAll ? String(total) : amountStr}
+          onChange={(e) => setAmountStr(e.target.value.replace(/[^\d]/g, ''))}
+          placeholder="0"
+        />
+        {!fromAll && (
+          <div className="mt-2 flex gap-1.5">
+            {[25, 50, 75, 100].map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setAmountStr(String(Math.round((max * p) / 100)))}
+                className={`${btnGhost} !px-2.5 !py-1 !text-xs`}
+              >
+                {p === 100 ? 'Full' : `${p}%`}
+              </button>
+            ))}
+          </div>
+        )}
+        {error && <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+      </div>
+
+      <div className="rounded-xl bg-slate-50 p-3 dark:bg-white/5">
+        <Label>{valid ? 'After transfer' : 'Current split'}</Label>
+        <HolderSplit holders={after} />
+      </div>
+    </Modal>
+  );
+}
+
+/* ================= Ownership dialog ================= */
+function OwnershipDialog({
+  name,
+  owner: currentOwner,
+  isLocked: currentIsLocked,
+  people,
+  onClose,
+  onSave,
+}: {
+  name: string;
+  owner: string;
+  isLocked: boolean;
+  people: string[];
+  onClose: () => void;
+  onSave: (data: { owner: string; isLocked: boolean }) => void;
+}) {
+  const [type, setType] = useState(currentOwner === SELF ? 'self' : 'other');
+  const [ownerName, setOwnerName] = useState(currentOwner === SELF ? '' : currentOwner);
+  const [isLocked, setIsLocked] = useState(currentIsLocked);
+
+  const owner = type === 'self' ? SELF : normName(ownerName);
+  const others = people.filter((p) => p !== SELF);
+
+  return (
+    <Modal
+      title="Change ownership & settings"
+      subtitle={name}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className={btnGhost} onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={btnPrimary}
+            disabled={!owner}
+            onClick={() => onSave({ owner, isLocked })}
+          >
+            Save settings
+          </button>
+        </>
+      }
+    >
+      <div>
+        <Label>Whose money is this?</Label>
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-white/10">
+          {[
+            ['self', 'Mine'],
+            ['other', "Someone else's"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setType(key)}
+              aria-pressed={type === key}
+              className={`rounded-lg py-2 text-sm font-medium transition-colors ${
+                type === key
+                  ? 'bg-white text-slate-900 shadow-sm dark:bg-[#0a1628] dark:text-slate-100'
+                  : `${textSub} hover:text-slate-700`
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {type === 'other' && (
+        <div>
+          <Label>Owner name</Label>
+          <input
+            className={inputStyle}
+            value={ownerName}
+            onChange={(e) => setOwnerName(e.target.value)}
+            placeholder="e.g. Ammi, Abbu, Friend"
+            autoFocus
+          />
+          <PersonChips people={others} onPick={setOwnerName} selected={normName(ownerName)} />
+        </div>
+      )}
+
+      {/* Lock Source Toggle */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/5">
+        <label className="flex items-center justify-between gap-3 cursor-pointer">
+          <div>
+            <span className={`text-sm font-medium flex items-center gap-1.5 ${textMain}`}>
+              🔒 Lock Source
+            </span>
+            <p className={`text-xs ${textSub}`}>Prevent any deductions or transfers from this source</p>
+          </div>
+          <input
+            type="checkbox"
+            checked={isLocked}
+            onChange={(e) => setIsLocked(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-white/20 dark:bg-white/10"
+          />
+        </label>
+      </div>
+
+      <p className={`rounded-lg bg-slate-50 p-3 text-xs leading-relaxed dark:bg-white/5 ${textSub}`}>
+        Ownership says <b>whose money</b> this is. The holder says <b>who has it right now</b>. Changing the owner does not move the money.
+      </p>
+    </Modal>
+  );
+}
+
+/* ================= SourceCard Component (Identical to AccountBreakdown) ================= */
+interface SourceCardProps {
+  name: string;
+  kind: string;
+  builtIn: boolean;
+  owner: string;
+  isLocked: boolean;
+  holders: Array<{ name: string; amount: number }>;
+  onTransfer?: () => void;
+  onOwnership?: () => void;
+  onDelete?: () => void;
+  onAddHolder?: () => void;
+  onDeleteHolder?: (holderName: string) => void;
+}
+
+function SourceCard({
+  name,
+  kind,
+  builtIn,
+  owner,
+  isLocked,
+  holders,
+  onTransfer,
+  onOwnership,
+  onDelete,
+  onAddHolder,
+  onDeleteHolder,
+}: SourceCardProps) {
+  const total = sum(holders);
+  const ownedByMe = owner === SELF;
+
+  return (
+    <article className={`${cardStyle} flex flex-col p-3.5 sm:p-4`}>
+      {/* Header: Left = Icon + Name + Badge, Right = Total Amount + Owned by pill right below */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+            <KindIcon kind={kind} />
+          </span>
+          <div className="min-w-0">
+            <h3 className={`truncate text-sm font-semibold ${textMain}`}>{name}</h3>
+            <span className={`text-[11px] ${textSub}`}>{builtIn ? 'Built-in' : 'Custom'}</span>
+          </div>
+        </div>
+
+        {/* Right side: Amount and Owned by pill right below it */}
+        <div className="flex flex-col items-end shrink-0">
+          <p className={`text-base sm:text-lg font-semibold tabular-nums ${textMain}`}>{money(total)}</p>
+          <div className="mt-0.5 flex items-center gap-1.5 flex-wrap justify-end">
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                ownedByMe
+                  ? 'bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200'
+                  : 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
+              }`}
+            >
+              {ownedByMe ? 'Owned by you' : `Owned by ${owner}`}
+            </span>
+            {isLocked && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">
+                🔒 Locked
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Only show HolderSplit for non-built-in / custom sources */}
+      {!builtIn && (
+        <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-white/10">
+          <HolderSplit holders={holders} onDeleteHolder={onDeleteHolder} />
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3 dark:border-white/10">
+        {!builtIn && onTransfer && (
+          <button
+            type="button"
+            onClick={onTransfer}
+            className={`${btnPrimary} flex flex-1 items-center justify-center gap-1.5 !py-1.5 !text-xs`}
+          >
+            Transfer holder <ArrowIcon />
+          </button>
+        )}
+        {!builtIn && onAddHolder && (
+          <button
+            type="button"
+            onClick={onAddHolder}
+            className={`${btnGhost} !py-1.5 !text-xs`}
+          >
+            + Holder
+          </button>
+        )}
+        {onOwnership && (
+          <button
+            type="button"
+            onClick={onOwnership}
+            className={`${btnGhost} ${builtIn && !onDelete ? 'w-full' : ''} !py-1.5 !text-xs`}
+          >
+            Ownership
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100 dark:border-rose-900/30 dark:bg-rose-950/20 dark:text-rose-400 transition-colors"
+            title="Delete Source"
+          >
+            <TrashIcon />
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+/* ================= Main Page ================= */
+interface SourceItem {
+  id: string;
+  name: string;
+  kind: string;
+  builtIn: boolean;
+  owner: string;
+  isLocked: boolean;
+  total: number;
+  holders: Array<{ name: string; amount: number }>;
+  type: 'builtin' | 'bank' | 'custom';
+}
 
 export default function ManageSourcesPage() {
   const { user } = useAuth();
   const { goals } = useGoals();
-  const { theme } = useCustomTheme();
-  const isDark = theme?.mode === 'dark';
-  
+
   const [snapshot, setSnapshot] = useState<TotalCashSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState<{ type: 'bank' | 'custom', name: string } | null>(null);
-  const [processing, setProcessing] = useState(false);
 
-  // New source state
+  // Modals state
+  const [modal, setModal] = useState<{ type: 'transfer' | 'owner'; id: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<{ type: 'bank' | 'custom'; name: string } | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [toast, setToast] = useState('');
+
+  // Add source state
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [newSourceType, setNewSourceType] = useState<'bank' | 'custom'>('bank');
   const [newSourceName, setNewSourceName] = useState('');
   const [addingSource, setAddingSource] = useState(false);
 
-  // Edit Bank Owner state
-  const [editBankOwnerState, setEditBankOwnerState] = useState<{
-    name: string;
-    isSelf: boolean;
-    ownerName: string;
-  } | null>(null);
-  const [savingBankOwner, setSavingBankOwner] = useState(false);
-
-  // New holder state (Custom heads only)
+  // Add holder state
   const [addHolderState, setAddHolderState] = useState<{ type: 'custom'; name: string } | null>(null);
   const [newHolderName, setNewHolderName] = useState('');
   const [addingHolder, setAddingHolder] = useState(false);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const getSourceKey = (type: 'bank' | 'custom', name: string): string => {
     if (type === 'bank') return `bank:${name}`;
@@ -100,17 +697,128 @@ export default function ManageSourcesPage() {
     fetchSnapshot();
   }, [user]);
 
+  // Construct items list from snapshot
+  const sourcesList: SourceItem[] = useMemo(() => {
+    if (!snapshot || !snapshot.sources) return [];
+    const list: SourceItem[] = [];
+
+    const getOwner = (key: string, isCustom: boolean) => {
+      const o = snapshot.sourceOwnership?.[key];
+      if (o && o.hasOwnThisMoney === false) {
+        return o.ownerName || o.ownserName || 'Someone else';
+      }
+      return isCustom ? 'Someone else' : SELF;
+    };
+
+    const getIsLocked = (key: string) => {
+      return snapshot.sourceOwnership?.[key]?.isLocked === true;
+    };
+
+    const getHolders = (key: string, totalAmt: number) => {
+      const raw = snapshot.heldBy?.[key] || [];
+      const namedSum = raw.reduce((s, h) => s + (h.amount || 0), 0);
+      const unassigned = Math.max(0, totalAmt - namedSum);
+
+      const holders: Array<{ name: string; amount: number }> = [];
+      if (unassigned > 0 || raw.length === 0) {
+        holders.push({ name: SELF, amount: unassigned });
+      }
+      for (const h of raw) {
+        if (h.amount > 0) {
+          holders.push({ name: h.holderName === 'Self' ? SELF : h.holderName, amount: h.amount });
+        }
+      }
+      return holders;
+    };
+
+    // 1. Built-in Channels
+    const standardKeys = [
+      { key: 'in_hand', name: 'Cash in Hand', kind: 'in_hand' },
+      { key: 'easypaisa', name: 'EasyPaisa', kind: 'easypaisa' },
+      { key: 'jazzcash', name: 'JazzCash', kind: 'jazzcash' },
+      { key: 'other', name: 'Other Wallet', kind: 'other' },
+    ];
+
+    for (const item of standardKeys) {
+      const amt = (snapshot.sources[item.key as keyof typeof snapshot.sources] as number) ?? 0;
+      list.push({
+        id: item.key,
+        name: item.name,
+        kind: item.kind,
+        builtIn: true,
+        owner: getOwner(item.key, false),
+        isLocked: getIsLocked(item.key),
+        total: amt,
+        holders: getHolders(item.key, amt),
+        type: 'builtin',
+      });
+    }
+
+    // 2. Bank Accounts
+    if (snapshot.sources.bank && typeof snapshot.sources.bank === 'object') {
+      for (const [bankName, amt] of Object.entries(snapshot.sources.bank)) {
+        const key = `bank:${bankName}`;
+        list.push({
+          id: key,
+          name: bankName,
+          kind: 'bank',
+          builtIn: true,
+          owner: getOwner(key, false),
+          isLocked: getIsLocked(key),
+          total: amt,
+          holders: getHolders(key, amt),
+          type: 'bank',
+        });
+      }
+    }
+
+    // 3. Custom Payment Heads
+    if (snapshot.sources.custom && typeof snapshot.sources.custom === 'object') {
+      for (const [customName, amt] of Object.entries(snapshot.sources.custom)) {
+        const key = `custom:${customName}`;
+        list.push({
+          id: key,
+          name: customName,
+          kind: 'custom',
+          builtIn: false,
+          owner: getOwner(key, true),
+          isLocked: getIsLocked(key),
+          total: amt,
+          holders: getHolders(key, amt),
+          type: 'custom',
+        });
+      }
+    }
+
+    return list;
+  }, [snapshot]);
+
+  const people = useMemo(() => {
+    const set = new Set([SELF]);
+    sourcesList.forEach((s) => {
+      set.add(s.owner);
+      s.holders.forEach((h) => set.add(h.name));
+    });
+    return [...set];
+  }, [sourcesList]);
+
+  const activeSource = modal && sourcesList.find((s) => s.id === modal.id);
+
+  // Delete Source
   const handleDeleteSource = async () => {
     if (!deletingId || !snapshot || !user) return;
 
-    // Protection check: Check if custom source is linked to a Goal
     if (deletingId.type === 'custom') {
       const srcNameClean = deletingId.name.trim().toLowerCase();
       const linkedGoal = (goals || []).find((g) => {
         if (g.linkedSourceId && g.linkedSourceId.trim().toLowerCase() === srcNameClean) return true;
         return (g.steps || []).some((s) => {
           if (s.linkedType === 'finance_source' && s.title) {
-            const name = s.title.replace(/^Source of Fund:\s*/i, '').replace(/^Finance Fund:\s*/i, '').trim().toLowerCase();
+            const name = s.title
+              .replace(/^Source of Fund:\s*/i, '')
+              .replace(/^Finance Fund:\s*/i, '')
+              .trim()
+              .toLowerCase();
             return name === srcNameClean;
           }
           return false;
@@ -118,7 +826,9 @@ export default function ManageSourcesPage() {
       });
 
       if (linkedGoal) {
-        alert(`⚠️ Cannot delete source "${deletingId.name}". It is associated with Goal "${linkedGoal.title}". Please delete or remove the Source of Fund milestone from the Goal detail page first.`);
+        alert(
+          `⚠️ Cannot delete source "${deletingId.name}". It is associated with Goal "${linkedGoal.title}". Please delete or remove the Source of Fund milestone from the Goal detail page first.`
+        );
         setDeletingId(null);
         return;
       }
@@ -150,13 +860,14 @@ export default function ManageSourcesPage() {
       };
 
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
-      await setDoc(docRef, { 
-        ...updatedSnapshot, 
-        updatedAt: serverTimestamp() 
+      await setDoc(docRef, {
+        ...updatedSnapshot,
+        updatedAt: serverTimestamp(),
       });
 
       setSnapshot(updatedSnapshot);
       setDeletingId(null);
+      setToast(`Deleted ${deletingId.name}`);
     } catch (err) {
       console.error('Error deleting source:', err);
     } finally {
@@ -164,6 +875,7 @@ export default function ManageSourcesPage() {
     }
   };
 
+  // Add Source
   const handleAddSource = async () => {
     if (!newSourceName.trim() || !user || !snapshot) return;
     setAddingSource(true);
@@ -171,15 +883,13 @@ export default function ManageSourcesPage() {
     try {
       const name = newSourceName.trim();
       const collectionName = newSourceType === 'bank' ? 'banks' : 'customPaymentHeads';
-      
-      // 1. Add to dedicated collection
+
       await addDoc(collection(db, collectionName), {
         userId: user.uid,
         name,
         createdAt: Timestamp.now(),
       });
 
-      // 2. Update snapshot sources with 0 balance
       const updatedSources = { ...snapshot.sources };
       if (newSourceType === 'bank') {
         updatedSources.bank = { ...updatedSources.bank, [name]: 0 };
@@ -194,14 +904,15 @@ export default function ManageSourcesPage() {
       };
 
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
-      await setDoc(docRef, { 
-        ...updatedSnapshot, 
-        updatedAt: serverTimestamp() 
+      await setDoc(docRef, {
+        ...updatedSnapshot,
+        updatedAt: serverTimestamp(),
       });
 
       setSnapshot(updatedSnapshot);
       setAddModalOpen(false);
       setNewSourceName('');
+      setToast(`Created ${name}`);
     } catch (err) {
       console.error('Error adding source:', err);
     } finally {
@@ -209,48 +920,85 @@ export default function ManageSourcesPage() {
     }
   };
 
-  const handleSaveBankOwner = async () => {
-    if (!editBankOwnerState || !user || !snapshot) return;
-    setSavingBankOwner(true);
+  // Transfer Holder
+  const handleTransfer = async ({ from, to, amount }: { from: string; to: string; amount: number }) => {
+    if (!activeSource || !user || !snapshot) return;
+
+    const nextHolders = computeHolders(activeSource.holders, from, to, amount);
+    const namedHolders: HolderAmount[] = nextHolders
+      .filter((h) => h.name !== SELF && h.name !== 'Self' && h.amount > 0)
+      .map((h) => ({ holderName: h.name, amount: h.amount }));
+
+    const updatedHeldBy = {
+      ...(snapshot.heldBy || {}),
+      [activeSource.id]: namedHolders,
+    };
+
+    const updatedSnapshot: TotalCashSnapshot = {
+      ...snapshot,
+      heldBy: updatedHeldBy,
+      updatedAt: new Date(),
+    };
 
     try {
-      const { name, isSelf, ownerName } = editBankOwnerState;
-      const sourceKey = `bank:${name}`;
-      const cleanOwnerName = isSelf ? '' : ownerName.trim();
-
-      const currentOwnership = snapshot.sourceOwnership || {};
-      const updatedOwnership = {
-        ...currentOwnership,
-        [sourceKey]: {
-          hasOwnThisMoney: isSelf,
-          ownerName: cleanOwnerName,
-          ownserName: cleanOwnerName,
-          isLocked: currentOwnership[sourceKey]?.isLocked || false,
-        },
-      };
-
-      const updatedSnapshot: TotalCashSnapshot = {
-        ...snapshot,
-        sourceOwnership: updatedOwnership,
-        updatedAt: new Date(),
-      };
-
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
-      await setDoc(docRef, {
-        ...updatedSnapshot,
-        updatedAt: serverTimestamp(),
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+
+      await addDoc(collection(db, 'cashTransactions'), {
+        userId: user.uid,
+        amount: from === ALL ? activeSource.total : amount,
+        type: 'transfer',
+        source: activeSource.kind === 'bank' ? 'bank' : activeSource.kind === 'custom' ? 'custom' : activeSource.kind,
+        category: 'transfer',
+        note: `Transferred ${money(from === ALL ? activeSource.total : amount)} from ${from} to ${to} in ${activeSource.name}`,
+        fromHolderName: from === SELF || from === ALL ? null : from,
+        toHolderName: to === SELF ? null : to,
+        createdAt: serverTimestamp(),
       });
 
       setSnapshot(updatedSnapshot);
-      setEditBankOwnerState(null);
+      setModal(null);
+      setToast(`Moved ${money(from === ALL ? activeSource.total : amount)} to ${to}`);
     } catch (err) {
-      console.error('Error updating bank ownership:', err);
-      alert('Failed to save bank ownership.');
-    } finally {
-      setSavingBankOwner(false);
+      console.error('Failed to save transfer:', err);
     }
   };
 
+  // Ownership & Lock Save
+  const handleOwnershipSave = async ({ owner, isLocked }: { owner: string; isLocked: boolean }) => {
+    if (!activeSource || !user || !snapshot) return;
+
+    const hasOwnThisMoney = owner === SELF;
+    const ownerNameVal = hasOwnThisMoney ? '' : owner;
+
+    const updatedOwnership = {
+      ...(snapshot.sourceOwnership || {}),
+      [activeSource.id]: {
+        hasOwnThisMoney,
+        ownerName: ownerNameVal,
+        ownserName: ownerNameVal,
+        isLocked,
+      },
+    };
+
+    const updatedSnapshot: TotalCashSnapshot = {
+      ...snapshot,
+      sourceOwnership: updatedOwnership,
+      updatedAt: new Date(),
+    };
+
+    try {
+      const docRef = doc(db, 'totalCashSnapshots', user.uid);
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+      setSnapshot(updatedSnapshot);
+      setModal(null);
+      setToast(`${activeSource.name} updated`);
+    } catch (err) {
+      console.error('Failed to save ownership:', err);
+    }
+  };
+
+  // Add Holder
   const handleAddHolder = async () => {
     if (!newHolderName.trim() || !addHolderState || !user || !snapshot) return;
     setAddingHolder(true);
@@ -258,17 +1006,16 @@ export default function ManageSourcesPage() {
     try {
       const name = newHolderName.trim();
       const sourceKey = getSourceKey(addHolderState.type, addHolderState.name);
-      
+
       const updatedHeldBy = snapshot.heldBy ? { ...snapshot.heldBy } : {};
       const holders = [...(updatedHeldBy[sourceKey] || [])];
-      
-      // Check if holder already exists
-      if (holders.some(h => h.holderName.toLowerCase() === name.toLowerCase())) {
+
+      if (holders.some((h) => h.holderName.toLowerCase() === name.toLowerCase())) {
         alert('Holder with this name already exists in this source.');
         setAddingHolder(false);
         return;
       }
-      
+
       holders.push({ holderName: name, amount: 0 });
       updatedHeldBy[sourceKey] = holders;
 
@@ -279,14 +1026,15 @@ export default function ManageSourcesPage() {
       };
 
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
-      await setDoc(docRef, { 
-        ...updatedSnapshot, 
-        updatedAt: serverTimestamp() 
+      await setDoc(docRef, {
+        ...updatedSnapshot,
+        updatedAt: serverTimestamp(),
       });
 
       setSnapshot(updatedSnapshot);
       setAddHolderState(null);
       setNewHolderName('');
+      setToast(`Added holder ${name}`);
     } catch (err) {
       console.error('Error adding holder:', err);
     } finally {
@@ -294,11 +1042,12 @@ export default function ManageSourcesPage() {
     }
   };
 
+  // Delete Holder
   const handleDeleteHolder = async (sourceKey: string, holderName: string) => {
     if (!snapshot || !user) return;
-    
+
     const holders = snapshot.heldBy?.[sourceKey] || [];
-    const holder = holders.find(h => h.holderName === holderName);
+    const holder = holders.find((h) => h.holderName === holderName);
     if (!holder) return;
 
     if (holder.amount > 0) {
@@ -310,7 +1059,7 @@ export default function ManageSourcesPage() {
 
     try {
       const updatedHeldBy = { ...snapshot.heldBy };
-      updatedHeldBy[sourceKey] = holders.filter(h => h.holderName !== holderName);
+      updatedHeldBy[sourceKey] = holders.filter((h) => h.holderName !== holderName);
 
       const updatedSnapshot: TotalCashSnapshot = {
         ...snapshot,
@@ -319,12 +1068,13 @@ export default function ManageSourcesPage() {
       };
 
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
-      await setDoc(docRef, { 
-        ...updatedSnapshot, 
-        updatedAt: serverTimestamp() 
+      await setDoc(docRef, {
+        ...updatedSnapshot,
+        updatedAt: serverTimestamp(),
       });
 
       setSnapshot(updatedSnapshot);
+      setToast(`Deleted holder ${holderName}`);
     } catch (err) {
       console.error('Error deleting holder:', err);
     }
@@ -332,724 +1082,341 @@ export default function ManageSourcesPage() {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
-        <CircularProgress />
-      </Box>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+      </div>
     );
   }
 
   if (!snapshot) return null;
 
+  const builtInSources = sourcesList.filter((s) => s.type === 'builtin');
+  const bankSources = sourcesList.filter((s) => s.type === 'bank');
+  const customSources = sourcesList.filter((s) => s.type === 'custom');
+
   return (
-    <Container maxWidth="md" sx={{ py: { xs: 2.5, sm: 4 }, px: { xs: 2, sm: 3 } }}>
-      {/* Breadcrumb Navigation */}
-      <Breadcrumbs sx={{ mb: 2.5 }}>
-        <Link href="/finance" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <Typography variant="body2" sx={{ '&:hover': { color: 'primary.main' } }}>Finance</Typography>
-        </Link>
-        <Typography variant="body2" color="text.primary" fontWeight={700}>Manage Sources</Typography>
-      </Breadcrumbs>
-
-      {/* Mobile-first Header */}
-      <Box 
-        sx={{ 
-          mb: 3.5, 
-          display: 'flex', 
-          flexDirection: { xs: 'column', sm: 'row' }, 
-          alignItems: { xs: 'stretch', sm: 'center' }, 
-          justifyContent: 'space-between',
-          gap: 2 
-        }}
-      >
-        <Box>
-          <Typography variant="h4" fontWeight="900" sx={{ letterSpacing: '-0.5px', fontSize: { xs: '1.6rem', sm: '2.125rem' } }}>
+    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
+            <Link href="/finance" className="hover:text-emerald-500 transition-colors">
+              Finance
+            </Link>
+            <span>/</span>
+            <span className="text-slate-900 dark:text-slate-100 font-medium">Manage Sources</span>
+          </div>
+          <h1 className={`text-2xl sm:text-3xl font-bold tracking-tight ${textMain}`}>
             Source Management
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            View and manage your cash storage locations & holders
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1.5} sx={{ width: { xs: '100%', sm: 'auto' } }}>
-          <Button 
-            startIcon={<AddIcon />} 
-            variant="contained" 
+          </h1>
+          <p className={`text-sm ${textSub} mt-0.5`}>
+            Configure your financial locations, accounts & holders
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
             onClick={() => setAddModalOpen(true)}
-            sx={{ 
-              borderRadius: 2.5, 
-              fontWeight: 800, 
-              flex: { xs: 1, sm: 'initial' },
-              py: 1,
-              px: 2.5,
-              fontSize: '0.875rem'
-            }}
+            className={`${btnPrimary} flex items-center gap-1.5`}
           >
-            Add Source
-          </Button>
-          <Link href="/finance" passHref style={{ textDecoration: 'none' }}>
-            <Button 
-              startIcon={<ArrowBackIcon />} 
-              variant="outlined" 
-              sx={{ borderRadius: 2.5, fontWeight: 700, py: 1, px: 2 }}
-            >
-              Back
-            </Button>
+            <PlusIcon /> Add Source
+          </button>
+          <Link href="/finance" className={btnGhost}>
+            Back
           </Link>
-        </Stack>
-      </Box>
+        </div>
+      </div>
 
-      <Stack spacing={3}>
-        {/* Built-in Channels Section (Strictly Self Owned Only) */}
-        <Box>
-          <Typography 
-            variant="caption" 
-            fontWeight="800" 
-            color="text.secondary" 
-            sx={{ mb: 1.2, display: 'flex', alignItems: 'center', gap: 0.8, textTransform: 'uppercase', letterSpacing: '0.8px' }}
-          >
-            <LockIcon sx={{ fontSize: 15 }} /> BUILT-IN CHANNELS
-          </Typography>
-          <Card 
-            elevation={0}
-            sx={{ 
-              borderRadius: 3, 
-              bgcolor: isDark ? '#1e293b' : '#ffffff',
-              backgroundImage: 'none',
-              border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'}`,
-              overflow: 'hidden'
-            }}
-          >
-            {['in_hand', 'easypaisa', 'jazzcash', 'other'].map((name, idx, arr) => {
-              const amt = (snapshot.sources[name] as number) ?? 0;
-              return (
-                <Box key={name}>
-                  <Box 
-                    sx={{ 
-                      p: { xs: 2, sm: 2.5 }, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'space-between',
-                      gap: 2
-                    }}
-                  >
-                    <Box display="flex" alignItems="center" gap={1.5}>
-                      <Avatar 
-                        sx={{ 
-                          width: 40, 
-                          height: 40, 
-                          bgcolor: isDark ? 'rgba(99,102,241,0.15)' : '#eef2ff', 
-                          color: 'primary.main',
-                          borderRadius: 2.5
-                        }}
-                      >
-                        <WalletIcon sx={{ fontSize: 20 }} />
-                      </Avatar>
-                      <Box>
-                        <Typography variant="body1" fontWeight="700" sx={{ textTransform: 'capitalize', fontSize: { xs: '0.92rem', sm: '1rem' } }}>
-                          {name.replace('_', ' ')}
-                        </Typography>
-                        <Chip 
-                          label="Self Owned Only" 
-                          size="small" 
-                          sx={{ 
-                            height: 18, 
-                            fontSize: '0.65rem', 
-                            fontWeight: 700, 
-                            bgcolor: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9',
-                            color: isDark ? '#94a3b8' : 'text.secondary',
-                            mt: 0.3
-                          }} 
-                        />
-                      </Box>
-                    </Box>
-                    <Typography variant="subtitle1" fontWeight="900" color="text.primary" sx={{ fontSize: { xs: '0.95rem', sm: '1.1rem' } }}>
-                      {formatCurrency(amt, 'PKR')}
-                    </Typography>
-                  </Box>
-                  {idx < arr.length - 1 && <Divider sx={{ opacity: isDark ? 0.2 : 0.5 }} />}
-                </Box>
-              );
-            })}
-          </Card>
-        </Box>
+      {/* 1. Built-in Channels */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Built-in Channels
+          </span>
+        </div>
 
-        {/* Bank Accounts Section (Editable Ownership Label) */}
-        <Box>
-          <Typography 
-            variant="caption" 
-            fontWeight="800" 
-            color="primary" 
-            sx={{ mb: 1.2, display: 'flex', alignItems: 'center', gap: 0.8, textTransform: 'uppercase', letterSpacing: '0.8px' }}
-          >
-            <AccountBalanceIcon sx={{ fontSize: 16 }} /> BANK ACCOUNTS
-          </Typography>
-          <Card 
-            elevation={0}
-            sx={{ 
-              borderRadius: 3, 
-              bgcolor: isDark ? '#1e293b' : '#ffffff',
-              backgroundImage: 'none',
-              border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'}`,
-              overflow: 'hidden'
-            }}
-          >
-            {Object.keys(snapshot.sources.bank || {}).length === 0 ? (
-              <Box sx={{ p: 4, textAlign: 'center' }}>
-                <AccountBalanceIcon sx={{ fontSize: 32, color: 'text.secondary', opacity: 0.4, mb: 1 }} />
-                <Typography variant="body2" color="text.secondary">No bank accounts added yet</Typography>
-                <Button 
-                  size="small" 
-                  startIcon={<AddIcon />} 
-                  onClick={() => { setNewSourceType('bank'); setAddModalOpen(true); }}
-                  sx={{ mt: 1.5, fontWeight: 700, borderRadius: 2 }}
-                >
-                  Add Bank Account
-                </Button>
-              </Box>
-            ) : (
-              Object.entries(snapshot.sources.bank).map(([name, amt], idx, arr) => {
-                const sourceKey = `bank:${name}`;
-                const ownership = snapshot.sourceOwnership?.[sourceKey];
-                const isSelfOwned = ownership ? ownership.hasOwnThisMoney !== false : true;
-                const ownerNameVal = ownership?.ownerName || ownership?.ownserName || '';
-                const chipLabel = isSelfOwned ? 'My Self Account' : `${ownerNameVal} Account`;
-
-                return (
-                  <Box key={name}>
-                    <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
-                      <Box 
-                        sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'space-between',
-                          gap: 1.5 
-                        }}
-                      >
-                        <Box display="flex" alignItems="center" gap={1.5}>
-                          <Avatar 
-                            sx={{ 
-                              width: 40, 
-                              height: 40, 
-                              bgcolor: isDark ? 'rgba(59,130,246,0.15)' : '#eff6ff', 
-                              color: '#3b82f6',
-                              borderRadius: 2.5
-                            }}
-                          >
-                            <AccountBalanceIcon sx={{ fontSize: 20 }} />
-                          </Avatar>
-                          <Box>
-                            <Typography variant="body1" fontWeight="700" sx={{ fontSize: { xs: '0.95rem', sm: '1rem' } }}>
-                              {name}
-                            </Typography>
-                            <Box display="flex" alignItems="center" gap={1} mt={0.3}>
-                              <Typography variant="caption" color="primary" fontWeight="800">
-                                {formatCurrency(amt, 'PKR')}
-                              </Typography>
-                              <Chip 
-                                icon={<PersonOutlineIcon sx={{ fontSize: '11px !important', color: 'inherit' }} />}
-                                label={chipLabel} 
-                                size="small" 
-                                onClick={() => setEditBankOwnerState({
-                                  name,
-                                  isSelf: isSelfOwned,
-                                  ownerName: ownerNameVal
-                                })}
-                                title="Click to change account owner"
-                                sx={{ 
-                                  height: 20, 
-                                  fontSize: '0.67rem', 
-                                  fontWeight: 700, 
-                                  cursor: 'pointer',
-                                  bgcolor: isSelfOwned
-                                    ? (isDark ? 'rgba(59,130,246,0.15)' : '#eff6ff')
-                                    : (isDark ? 'rgba(245,158,11,0.15)' : '#fffbeb'),
-                                  color: isSelfOwned
-                                    ? (isDark ? '#93c5fd' : '#1d4ed8')
-                                    : (isDark ? '#fcd34d' : '#b45309'),
-                                  border: `1px solid ${
-                                    isSelfOwned
-                                      ? (isDark ? 'rgba(59,130,246,0.3)' : '#bfdbfe')
-                                      : (isDark ? 'rgba(245,158,11,0.3)' : '#fde68a')
-                                  }`,
-                                  '&:hover': {
-                                    filter: 'brightness(0.95)'
-                                  }
-                                }} 
-                              />
-                            </Box>
-                          </Box>
-                        </Box>
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <IconButton
-                            size="small"
-                            onClick={() => setEditBankOwnerState({
-                              name,
-                              isSelf: isSelfOwned,
-                              ownerName: ownerNameVal
-                            })}
-                            sx={{ p: 0.8, color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
-                            title="Edit Owner"
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton 
-                            color="error" 
-                            size="small" 
-                            onClick={() => setDeletingId({ type: 'bank', name })}
-                            sx={{ bgcolor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.25)' }, p: 0.8 }}
-                            title="Delete Source"
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Stack>
-                      </Box>
-                    </Box>
-                    {idx < arr.length - 1 && <Divider sx={{ opacity: isDark ? 0.2 : 0.5 }} />}
-                  </Box>
-                );
-              })
-            )}
-          </Card>
-        </Box>
-
-        {/* Custom Heads Section (Has Add Holder & Custom Holders) */}
-        <Box>
-          <Typography 
-            variant="caption" 
-            fontWeight="800" 
-            color="secondary" 
-            sx={{ mb: 1.2, display: 'flex', alignItems: 'center', gap: 0.8, textTransform: 'uppercase', letterSpacing: '0.8px' }}
-          >
-            <PaymentsIcon sx={{ fontSize: 16 }} /> CUSTOM PAYMENT HEADS
-          </Typography>
-          <Card 
-            elevation={0}
-            sx={{ 
-              borderRadius: 3, 
-              bgcolor: isDark ? '#1e293b' : '#ffffff',
-              backgroundImage: 'none',
-              border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'}`,
-              overflow: 'hidden'
-            }}
-          >
-            {Object.keys(snapshot.sources.custom || {}).length === 0 ? (
-              <Box sx={{ p: 4, textAlign: 'center' }}>
-                <PaymentsIcon sx={{ fontSize: 32, color: 'text.secondary', opacity: 0.4, mb: 1 }} />
-                <Typography variant="body2" color="text.secondary">No custom payment heads added yet</Typography>
-                <Button 
-                  size="small" 
-                  color="secondary"
-                  startIcon={<AddIcon />} 
-                  onClick={() => { setNewSourceType('custom'); setAddModalOpen(true); }}
-                  sx={{ mt: 1.5, fontWeight: 700, borderRadius: 2 }}
-                >
-                  Add Custom Source
-                </Button>
-              </Box>
-            ) : (
-              Object.entries(snapshot.sources.custom).map(([name, amt], idx, arr) => {
-                const sourceKey = `custom:${name}`;
-                const holders = snapshot.heldBy?.[sourceKey] || [];
-                return (
-                  <Box key={name}>
-                    <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
-                      <Box 
-                        sx={{ 
-                          display: 'flex', 
-                          flexDirection: { xs: 'column', sm: 'row' }, 
-                          alignItems: { xs: 'flex-start', sm: 'center' }, 
-                          justifyContent: 'space-between',
-                          gap: 1.5 
-                        }}
-                      >
-                        <Box display="flex" alignItems="center" gap={1.5}>
-                          <Avatar 
-                            sx={{ 
-                              width: 40, 
-                              height: 40, 
-                              bgcolor: isDark ? 'rgba(168,85,247,0.15)' : '#faf5ff', 
-                              color: '#a855f7',
-                              borderRadius: 2.5
-                            }}
-                          >
-                            <PaymentsIcon sx={{ fontSize: 20 }} />
-                          </Avatar>
-                          <Box>
-                            <Typography variant="body1" fontWeight="700" sx={{ fontSize: { xs: '0.95rem', sm: '1rem' } }}>
-                              {name}
-                            </Typography>
-                            <Typography variant="caption" color="secondary" fontWeight="800">
-                              {formatCurrency(amt, 'PKR')}
-                            </Typography>
-                          </Box>
-                        </Box>
-                        <Stack 
-                          direction="row" 
-                          spacing={1} 
-                          alignItems="center" 
-                          sx={{ 
-                            width: { xs: '100%', sm: 'auto' }, 
-                            justifyContent: { xs: 'space-between', sm: 'flex-end' },
-                            pt: { xs: 0.5, sm: 0 }
-                          }}
-                        >
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            color="secondary"
-                            startIcon={<AddIcon sx={{ fontSize: 14 }} />}
-                            onClick={() => setAddHolderState({ type: 'custom', name })}
-                            sx={{ 
-                              borderRadius: 2, 
-                              textTransform: 'none', 
-                              fontSize: '0.75rem', 
-                              py: 0.6, 
-                              px: 1.5,
-                              fontWeight: 700 
-                            }}
-                          >
-                            Add Holder
-                          </Button>
-                          <IconButton 
-                            color="error" 
-                            size="small" 
-                            onClick={() => setDeletingId({ type: 'custom', name })}
-                            sx={{ bgcolor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.25)' }, p: 0.8 }}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Stack>
-                      </Box>
-                      
-                      {/* Holders List */}
-                      {holders.length > 0 && (
-                        <Box sx={{ mt: 2, pl: 1.5, borderLeft: `2.5px solid ${isDark ? 'rgba(168,85,247,0.3)' : '#e9d5ff'}` }}>
-                          <Typography variant="caption" color="text.secondary" fontWeight="800" sx={{ display: 'block', mb: 1, letterSpacing: '0.5px' }}>
-                            SECONDARY HOLDERS:
-                          </Typography>
-                          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ gap: 1 }}>
-                            {holders.map((h) => (
-                              <Box 
-                                key={h.holderName} 
-                                sx={{ 
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  px: 1.2, 
-                                  py: 0.6, 
-                                  borderRadius: 2, 
-                                  bgcolor: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc',
-                                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}`
-                                }}
-                              >
-                                <Typography variant="caption" fontWeight="600" sx={{ mr: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  👤 {h.holderName}
-                                </Typography>
-                                <Typography variant="caption" color="secondary" fontWeight="800" sx={{ mr: 0.5 }}>
-                                  {formatCurrency(h.amount, 'PKR')}
-                                </Typography>
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleDeleteHolder(sourceKey, h.holderName)}
-                                  sx={{ 
-                                    p: 0.2, 
-                                    ml: 0.5, 
-                                    color: 'text.secondary', 
-                                    '&:hover': { color: 'error.main', bgcolor: 'rgba(239,68,68,0.08)' } 
-                                  }}
-                                >
-                                  <CloseIcon sx={{ fontSize: 12 }} />
-                                </IconButton>
-                              </Box>
-                            ))}
-                          </Stack>
-                        </Box>
-                      )}
-                    </Box>
-                    {idx < arr.length - 1 && <Divider sx={{ opacity: isDark ? 0.2 : 0.5 }} />}
-                  </Box>
-                );
-              })
-            )}
-          </Card>
-        </Box>
-      </Stack>
-
-      {/* Edit Bank Owner Dialog */}
-      <Dialog
-        open={!!editBankOwnerState}
-        onClose={() => !savingBankOwner && setEditBankOwnerState(null)}
-        PaperProps={{
-          sx: { 
-            borderRadius: 4, 
-            p: 1, 
-            maxWidth: 420, 
-            width: '100%',
-            bgcolor: isDark ? '#0f172a' : '#ffffff',
-            color: isDark ? '#f8fafc' : 'inherit',
-            backgroundImage: 'none',
-            border: isDark ? '1px solid rgba(255,255,255,0.1)' : 'none'
-          }
-        }}
-      >
-        <Box sx={{ p: 2, pb: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Avatar sx={{ bgcolor: 'primary.main', color: 'white', borderRadius: 2.5 }}>
-            <AccountBalanceIcon />
-          </Avatar>
-          <Box>
-            <Typography variant="h6" fontWeight="900">Bank Account Owner</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Configure owner for {editBankOwnerState?.name}
-            </Typography>
-          </Box>
-        </Box>
-
-        <DialogContent sx={{ mt: 2 }}>
-          <Stack spacing={2.5}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={editBankOwnerState?.isSelf ?? true}
-                  onChange={(e) =>
-                    setEditBankOwnerState((prev) =>
-                      prev ? { ...prev, isSelf: e.target.checked } : null
-                    )
-                  }
-                  color="primary"
-                />
-              }
-              label={
-                <Box>
-                  <Typography fontSize="0.9rem" fontWeight={700}>
-                    I own this account (My Self Account)
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    This balance will be counted towards &quot;I Own&quot; total
-                  </Typography>
-                </Box>
-              }
+        <div className="grid grid-cols-1 gap-4 sm:gap-4 sm:grid-cols-2">
+          {builtInSources.map((s) => (
+            <SourceCard
+              key={s.id}
+              name={s.name}
+              kind={s.kind}
+              builtIn={s.builtIn}
+              owner={s.owner}
+              isLocked={s.isLocked}
+              holders={s.holders}
+              onOwnership={() => setModal({ type: 'owner', id: s.id })}
             />
+          ))}
+        </div>
+      </section>
 
-            {!editBankOwnerState?.isSelf && (
-              <TextField
-                fullWidth
-                label="Owner's Name"
-                placeholder="e.g., Wife, Mother, Brother"
-                value={editBankOwnerState?.ownerName || ''}
-                onChange={(e) =>
-                  setEditBankOwnerState((prev) =>
-                    prev ? { ...prev, ownerName: e.target.value } : null
-                  )
-                }
-                autoFocus
-                helperText="Funds in accounts owned by others will not be counted in your 'I Own' balance"
+      {/* 2. Bank Accounts */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Bank Accounts
+          </span>
+        </div>
+
+        {bankSources.length === 0 ? (
+          <div className={`${cardStyle} p-6 text-center`}>
+            <p className={`text-sm ${textSub}`}>No bank accounts added yet.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setNewSourceType('bank');
+                setAddModalOpen(true);
+              }}
+              className={`${btnGhost} mt-3 text-xs`}
+            >
+              + Add Bank Account
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:gap-4 sm:grid-cols-2">
+            {bankSources.map((s) => (
+              <SourceCard
+                key={s.id}
+                name={s.name}
+                kind={s.kind}
+                builtIn={s.builtIn}
+                owner={s.owner}
+                isLocked={s.isLocked}
+                holders={s.holders}
+                onOwnership={() => setModal({ type: 'owner', id: s.id })}
+                onDelete={() => setDeletingId({ type: 'bank', name: s.name })}
               />
-            )}
-          </Stack>
-        </DialogContent>
+            ))}
+          </div>
+        )}
+      </section>
 
-        <DialogActions sx={{ p: 3, pt: 1, gap: 1 }}>
-          <Button onClick={() => setEditBankOwnerState(null)} disabled={savingBankOwner}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSaveBankOwner} 
-            variant="contained" 
-            disabled={
-              savingBankOwner ||
-              (!editBankOwnerState?.isSelf && !editBankOwnerState?.ownerName.trim())
-            }
-            sx={{ borderRadius: 2.5, fontWeight: 800, px: 4 }}
-            startIcon={savingBankOwner ? <CircularProgress size={18} color="inherit" /> : null}
-          >
-            {savingBankOwner ? 'Saving...' : 'Save Ownership'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* 3. Custom Payment Heads */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Custom Payment Heads
+          </span>
+        </div>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={!!deletingId}
-        onClose={() => !processing && setDeletingId(null)}
-        PaperProps={{
-          sx: { 
-            borderRadius: 4, 
-            p: 1, 
-            maxWidth: 420, 
-            width: '100%',
-            bgcolor: isDark ? '#0f172a' : '#ffffff',
-            color: isDark ? '#f8fafc' : 'inherit',
-            backgroundImage: 'none',
-            border: isDark ? '1px solid rgba(255,255,255,0.1)' : 'none'
-          }
-        }}
-      >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <WarningIcon color="error" />
-          <Typography variant="h6" fontWeight="800">Confirm Deletion</Typography>
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ color: isDark ? '#94a3b8' : 'text.secondary' }}>
-            Are you sure you want to delete <strong>{deletingId?.name}</strong>? This will permanently remove this source head.
-          </DialogContentText>
-          
-          {deletingId && (
-            (deletingId.type === 'bank' ? snapshot.sources.bank[deletingId.name] : snapshot.sources.custom[deletingId.name]) > 0
-          ) && (
-            <Alert severity="warning" sx={{ mt: 2, borderRadius: 2 }}>
-              This source has an active balance. Deleting it will deduct this amount from your <strong>Total Cash Snapshot</strong>.
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ p: 2.5, pt: 1, gap: 1 }}>
-          <Button 
-            onClick={() => setDeletingId(null)} 
-            disabled={processing}
-            sx={{ fontWeight: 700 }}
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleDeleteSource} 
-            color="error" 
-            variant="contained"
-            disabled={processing}
-            sx={{ borderRadius: 2.5, fontWeight: 800, px: 3 }}
-            startIcon={processing ? <CircularProgress size={18} color="inherit" /> : <DeleteIcon />}
-          >
-            {processing ? 'Deleting...' : 'Confirm Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        {customSources.length === 0 ? (
+          <div className={`${cardStyle} p-6 text-center`}>
+            <p className={`text-sm ${textSub}`}>No custom payment heads added yet.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setNewSourceType('custom');
+                setAddModalOpen(true);
+              }}
+              className={`${btnGhost} mt-3 text-xs`}
+            >
+              + Add Custom Source
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:gap-4 sm:grid-cols-2">
+            {customSources.map((s) => (
+              <SourceCard
+                key={s.id}
+                name={s.name}
+                kind={s.kind}
+                builtIn={s.builtIn}
+                owner={s.owner}
+                isLocked={s.isLocked}
+                holders={s.holders}
+                onTransfer={() => setModal({ type: 'transfer', id: s.id })}
+                onOwnership={() => setModal({ type: 'owner', id: s.id })}
+                onAddHolder={() => setAddHolderState({ type: 'custom', name: s.name })}
+                onDelete={() => setDeletingId({ type: 'custom', name: s.name })}
+                onDeleteHolder={(hName) => handleDeleteHolder(s.id, hName)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
-      {/* Add New Source Dialog */}
-      <Dialog
-        open={addModalOpen}
-        onClose={() => !addingSource && setAddModalOpen(false)}
-        PaperProps={{
-          sx: { 
-            borderRadius: 4, 
-            p: 1, 
-            maxWidth: 450, 
-            width: '100%',
-            bgcolor: isDark ? '#0f172a' : '#ffffff',
-            color: isDark ? '#f8fafc' : 'inherit',
-            backgroundImage: 'none',
-            border: isDark ? '1px solid rgba(255,255,255,0.1)' : 'none'
-          }
-        }}
-      >
-        <Box sx={{ p: 2, pb: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Avatar sx={{ bgcolor: 'primary.main', color: 'white', borderRadius: 2.5 }}>
-            <AddIcon />
-          </Avatar>
-          <Box>
-            <Typography variant="h6" fontWeight="900">New Financial Source</Typography>
-            <Typography variant="caption" color="text.secondary">Create a new location to track funds</Typography>
-          </Box>
-        </Box>
+      {/* Modals */}
+      {activeSource && modal?.type === 'transfer' && (
+        <TransferDialog
+          key={activeSource.id}
+          name={activeSource.name}
+          holders={activeSource.holders}
+          people={people}
+          onClose={() => setModal(null)}
+          onConfirm={handleTransfer}
+        />
+      )}
 
-        <DialogContent sx={{ mt: 2 }}>
-          <Stack spacing={3}>
-            <FormControl fullWidth>
-              <InputLabel>Source Type</InputLabel>
-              <Select
-                value={newSourceType}
-                label="Source Type"
-                onChange={(e) => setNewSourceType(e.target.value as 'bank' | 'custom')}
+      {activeSource && modal?.type === 'owner' && (
+        <OwnershipDialog
+          key={activeSource.id}
+          name={activeSource.name}
+          owner={activeSource.owner}
+          isLocked={activeSource.isLocked}
+          people={people}
+          onClose={() => setModal(null)}
+          onSave={handleOwnershipSave}
+        />
+      )}
+
+      {/* Dialog: Add Source */}
+      {addModalOpen && (
+        <Modal
+          title="New Financial Source"
+          subtitle="Create a new location to track funds"
+          onClose={() => !addingSource && setAddModalOpen(false)}
+          footer={
+            <>
+              <button
+                type="button"
+                className={btnGhost}
+                onClick={() => setAddModalOpen(false)}
+                disabled={addingSource}
               >
-                <MenuItem value="bank">Bank Account</MenuItem>
-                <MenuItem value="custom">Custom Payment Head</MenuItem>
-              </Select>
-            </FormControl>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={handleAddSource}
+                disabled={addingSource || !newSourceName.trim()}
+              >
+                {addingSource ? 'Creating...' : 'Create Source'}
+              </button>
+            </>
+          }
+        >
+          <div>
+            <p className={`mb-1.5 text-xs font-medium uppercase tracking-wide ${textSub}`}>
+              Source Type
+            </p>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-white/10">
+              {[
+                ['bank', 'Bank Account'],
+                ['custom', 'Custom Payment Head'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setNewSourceType(key as 'bank' | 'custom')}
+                  className={`rounded-lg py-2 text-sm font-medium transition-colors ${
+                    newSourceType === key
+                      ? 'bg-white text-slate-900 shadow-sm dark:bg-[#0a1628] dark:text-slate-100'
+                      : `${textSub} hover:text-slate-700`
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-            <TextField
-              fullWidth
-              label={newSourceType === 'bank' ? "Bank Name" : "Source Name"}
-              placeholder={newSourceType === 'bank' ? "e.g., HBL, Meezan, SCB" : "e.g., Personal Wallet, Office Drawer"}
+          <div>
+            <p className={`mb-1.5 text-xs font-medium uppercase tracking-wide ${textSub}`}>
+              {newSourceType === 'bank' ? 'Bank Name' : 'Source Name'}
+            </p>
+            <input
+              className={inputStyle}
+              placeholder={
+                newSourceType === 'bank'
+                  ? 'e.g., HBL, Meezan, SCB'
+                  : 'e.g., Personal Wallet, Office Drawer'
+              }
               value={newSourceName}
               onChange={(e) => setNewSourceName(e.target.value)}
               autoFocus
             />
-          </Stack>
-        </DialogContent>
+          </div>
+        </Modal>
+      )}
 
-        <DialogActions sx={{ p: 3, pt: 1, gap: 1 }}>
-          <Button onClick={() => setAddModalOpen(false)} disabled={addingSource}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleAddSource} 
-            variant="contained" 
-            disabled={addingSource || !newSourceName.trim()}
-            sx={{ borderRadius: 2.5, fontWeight: 800, px: 4 }}
-            startIcon={addingSource ? <CircularProgress size={18} color="inherit" /> : null}
-          >
-            {addingSource ? 'Creating...' : 'Create Source'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Add New Holder Dialog */}
-      <Dialog
-        open={!!addHolderState}
-        onClose={() => !addingHolder && setAddHolderState(null)}
-        PaperProps={{
-          sx: { 
-            borderRadius: 4, 
-            p: 1, 
-            maxWidth: 450, 
-            width: '100%',
-            bgcolor: isDark ? '#0f172a' : '#ffffff',
-            color: isDark ? '#f8fafc' : 'inherit',
-            backgroundImage: 'none',
-            border: isDark ? '1px solid rgba(255,255,255,0.1)' : 'none'
+      {/* Dialog: Add Holder */}
+      {addHolderState && (
+        <Modal
+          title="Add New Holder"
+          subtitle={`Assign a holder to ${addHolderState.name}`}
+          onClose={() => !addingHolder && setAddHolderState(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className={btnGhost}
+                onClick={() => setAddHolderState(null)}
+                disabled={addingHolder}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={handleAddHolder}
+                disabled={addingHolder || !newHolderName.trim()}
+              >
+                {addingHolder ? 'Adding...' : 'Add Holder'}
+              </button>
+            </>
           }
-        }}
-      >
-        <Box sx={{ p: 2, pb: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Avatar sx={{ bgcolor: 'primary.main', color: 'white', borderRadius: 2.5 }}>
-            <PersonIcon />
-          </Avatar>
-          <Box>
-            <Typography variant="h6" fontWeight="900">Add New Holder</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Assign a holder to {addHolderState?.name}
-            </Typography>
-          </Box>
-        </Box>
-
-        <DialogContent sx={{ mt: 2 }}>
-          <Stack spacing={3}>
-            <TextField
-              fullWidth
-              label="Holder Name"
+        >
+          <div>
+            <p className={`mb-1.5 text-xs font-medium uppercase tracking-wide ${textSub}`}>
+              Holder Name
+            </p>
+            <input
+              className={inputStyle}
               placeholder="e.g., Ali, Mother, Wife"
               value={newHolderName}
               onChange={(e) => setNewHolderName(e.target.value)}
               autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newHolderName.trim() && !addingHolder) {
-                  handleAddHolder();
-                }
-              }}
             />
-          </Stack>
-        </DialogContent>
+          </div>
+        </Modal>
+      )}
 
-        <DialogActions sx={{ p: 3, pt: 1, gap: 1 }}>
-          <Button onClick={() => setAddHolderState(null)} disabled={addingHolder}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleAddHolder} 
-            variant="contained" 
-            disabled={addingHolder || !newHolderName.trim()}
-            sx={{ borderRadius: 2.5, fontWeight: 800, px: 4 }}
-            startIcon={addingHolder ? <CircularProgress size={18} color="inherit" /> : null}
-          >
-            {addingHolder ? 'Adding...' : 'Add Holder'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Container>
+      {/* Dialog: Delete Confirmation */}
+      {deletingId && (
+        <Modal
+          title="Confirm Deletion"
+          subtitle={`Delete ${deletingId.name}`}
+          onClose={() => !processing && setDeletingId(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className={btnGhost}
+                onClick={() => setDeletingId(null)}
+                disabled={processing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={btnDanger}
+                onClick={handleDeleteSource}
+                disabled={processing}
+              >
+                {processing ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </>
+          }
+        >
+          <p className={`text-sm ${textMain}`}>
+            Are you sure you want to delete <strong>{deletingId.name}</strong>? This will permanently
+            remove this source head.
+          </p>
+        </Modal>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg dark:bg-emerald-500 dark:text-[#040d1a]"
+        >
+          {toast}
+        </div>
+      )}
+    </div>
   );
 }

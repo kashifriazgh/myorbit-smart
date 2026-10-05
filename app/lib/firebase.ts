@@ -1,6 +1,12 @@
 // lib/firebase.ts
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database'; // ← ADD THIS
 // import { getStorage } from 'firebase/storage' // optional
@@ -30,7 +36,25 @@ if (missingFirestoreEnv.length > 0) {
 const app = getApps().length ? getApp() : initializeApp(firestoreConfig);
 export { app };
 
-export const db = getFirestore(app);
+// ── Offline-capable Firestore ────────────────────────────────────────────────
+// In the browser, persist Firestore data in IndexedDB so the app can render
+// previously-loaded content when opened without internet (PWA offline mode).
+// On the server (API routes) we keep the default in-memory cache.
+function createFirestore(firebaseApp: FirebaseApp): Firestore {
+  if (typeof window === 'undefined') return getFirestore(firebaseApp);
+  try {
+    return initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch {
+    // Already initialized (e.g. Fast Refresh / HMR) — reuse existing instance
+    return getFirestore(firebaseApp);
+  }
+}
+
+export const db = createFirestore(app);
 export const auth = getAuth(app);
 
 // Additional Centralized User Database
@@ -40,7 +64,7 @@ const userApp =
   getApps().find((app) => app.name === 'user-app') ||
   initializeApp(userFirebaseConfig, 'user-app');
 
-export const userDb = getFirestore(userApp);
+export const userDb = createFirestore(userApp);
 export const userAuth = getAuth(userApp);
 
 export const database = getDatabase(userApp);
