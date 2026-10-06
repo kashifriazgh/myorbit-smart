@@ -105,3 +105,19 @@ export function getGuestUserFromCookies(): GuestUser | null {
 
   return null;
 }
+
+/**
+ * Check if the current domain/URL allows guest users to create content.
+ * Returns true if domain is "https://myorbitdemo.netlify.app/" or matching demo domain.
+ */
+export function isGuestCreationAllowed(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  const href = window.location.href;
+  return (
+    host === 'myorbitdemo.netlify.app' ||
+    host.includes('myorbitdemo') ||
+    href.includes('myorbitdemo.netlify.app')
+  );
+}
+

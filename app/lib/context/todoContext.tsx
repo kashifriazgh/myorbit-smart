@@ -276,6 +276,10 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return docRef.id;
     } catch (e) {
+      if (user?.isGuest) {
+        console.warn('[TodoCache] Guest user write to Firestore failed/skipped, keeping in local cache:', e);
+        return tempId;
+      }
       // Rollback optimistic update
       applyAndCache((prev) => prev.filter((t) => t.id !== tempId));
       throw e;
@@ -316,7 +320,9 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e) {
       console.error('[TodoCache] updateTodo failed:', e);
-      invalidateTodosCache();
+      if (!user?.isGuest) {
+        invalidateTodosCache();
+      }
     }
   };
 
@@ -334,7 +340,9 @@ export const TodoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await deleteDoc(doc(db, 'todos', id));
     } catch (e) {
       console.error('[TodoCache] deleteTodo failed:', e);
-      invalidateTodosCache();
+      if (!user?.isGuest) {
+        invalidateTodosCache();
+      }
     }
   };
 

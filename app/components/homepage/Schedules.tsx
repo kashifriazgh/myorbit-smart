@@ -34,6 +34,7 @@ import {
   ArrowForward as ArrowIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../lib/context/userContext';
+import { isGuestCreationAllowed } from '../../lib/guestUser';
 import { useCustomTheme } from '../../lib/context/themeContext';
 import { SchedulesProps } from '../../lib/interface';
 import SchedulesModal from './SchedulesModal';
@@ -822,7 +823,7 @@ const Schedules: React.FC = () => {
   };
 
   const handleAddSchedule = () => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       setSnackbar({ open: true, message: 'Guest users are not allowed to create schedules. Please sign up first.', severity: 'warning' });
       return;
     }
@@ -831,7 +832,7 @@ const Schedules: React.FC = () => {
   };
 
   const handleEditSchedule = (scheduleId: string) => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       setSnackbar({ open: true, message: 'Guest users are not allowed to edit schedules. Please sign up first.', severity: 'warning' });
       return;
     }
@@ -840,7 +841,7 @@ const Schedules: React.FC = () => {
   };
 
   const handleSaveSchedule = async (scheduleData: SchedulesProps) => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       setSnackbar({ open: true, message: 'Guest users are not allowed to save schedules. Please sign up first.', severity: 'warning' });
       return;
     }
@@ -865,7 +866,7 @@ const Schedules: React.FC = () => {
   const [linkedDeleteSchedule, setLinkedDeleteSchedule] = useState<SchedulesProps | null>(null);
 
   const handleDeleteSchedule = async (scheduleId: string, forceConfirm?: boolean) => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       setSnackbar({ open: true, message: 'Guest users are not allowed to delete schedules. Please sign up first.', severity: 'warning' });
       return;
     }
@@ -908,7 +909,7 @@ const Schedules: React.FC = () => {
 
 
   const handleQuickAdd = (title: string, startTime: string) => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       setSnackbar({ open: true, message: 'Guest users are not allowed to create schedules. Please sign up first.', severity: 'warning' });
       return;
     }
@@ -1027,7 +1028,7 @@ const Schedules: React.FC = () => {
   };
 
   const handleToggleStatus = async (schedule: SchedulesProps) => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       setSnackbar({ open: true, message: 'Guest users are not allowed to modify schedules. Please sign up first.', severity: 'warning' });
       return;
     }

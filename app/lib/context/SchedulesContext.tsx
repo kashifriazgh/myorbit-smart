@@ -215,6 +215,10 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
       return realId;
     } catch (error) {
       console.error('[ScheduleCache] addSchedule failed:', error);
+      if (user?.isGuest) {
+        console.warn('[ScheduleCache] Guest schedule write to Firestore failed/skipped, keeping client cache:', error);
+        return tempId;
+      }
       invalidateSchedulesCache();
       throw error;
     }
@@ -237,8 +241,10 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
     } catch (error) {
       console.error('[ScheduleCache] editSchedule failed:', error);
-      invalidateSchedulesCache();
-      throw error;
+      if (!user?.isGuest) {
+        invalidateSchedulesCache();
+        throw error;
+      }
     }
   };
 
@@ -255,8 +261,10 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
       await deleteSchedule(scheduleId);
     } catch (error) {
       console.error('[ScheduleCache] removeSchedule failed:', error);
-      invalidateSchedulesCache();
-      throw error;
+      if (!user?.isGuest) {
+        invalidateSchedulesCache();
+        throw error;
+      }
     }
   };
 

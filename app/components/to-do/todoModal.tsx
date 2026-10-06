@@ -30,6 +30,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
+import { isGuestCreationAllowed } from '@/app/lib/guestUser';
 import { PRIORITY_OPTIONS } from '@/app/lib/constant';
 
 type Props = {
@@ -164,7 +165,7 @@ export default function ToDoModal({ open, onClose }: Props) {
   };
 
   const handleSave = async () => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       alert('Guest users are not allowed to create tasks. Please sign up first.');
       return;
     }

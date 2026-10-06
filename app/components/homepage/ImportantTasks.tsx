@@ -36,6 +36,7 @@ import { useTodoContext } from '@/app/lib/context/todoContext';
 import TodoCacheDebugOverlay from '@/app/components/dev/TodoCacheDebugOverlay';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
+import { isGuestCreationAllowed } from '@/app/lib/guestUser';
 import { Todo } from '@/app/lib/interface';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -657,7 +658,7 @@ const ImportantTasks = () => {
   const [linkedDeleteTodo, setLinkedDeleteTodo] = useState<Todo | null>(null);
 
   const handleDeleteTodo = async (todoId: string, forceConfirm?: boolean) => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       alert('Guest users are not allowed to delete tasks. Please sign up first.');
       return;
     }
@@ -710,7 +711,7 @@ const ImportantTasks = () => {
   }, [todos, selectedDate]);
 
   const handleQuickAddTask = (title: string, dueDate: Date) => {
-    if (isGuest) {
+    if (isGuest && !isGuestCreationAllowed()) {
       alert('Guest users are not allowed to create tasks. Please sign up first.');
       return;
     }
@@ -1159,7 +1160,7 @@ const ImportantTasks = () => {
                 size="large"
                 startIcon={<Add />}
                 onClick={() => {
-                  if (isGuest) {
+                  if (isGuest && !isGuestCreationAllowed()) {
                     alert('Guest users are not allowed to create tasks. Please sign up first.');
                     return;
                   }
