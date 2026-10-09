@@ -107,7 +107,7 @@ export function getGuestUserFromCookies(): GuestUser | null {
 }
 
 /**
- * Check if the current domain/URL allows guest users to create content.
+ * Check if the current domain/URL allows guest users to create content and auto-approves users.
  * Returns true if domain is "https://myorbitdemo.netlify.app/" or matching demo domain.
  */
 export function isGuestCreationAllowed(): boolean {
@@ -120,4 +120,37 @@ export function isGuestCreationAllowed(): boolean {
     href.includes('myorbitdemo.netlify.app')
   );
 }
+
+export function isDemoDomain(): boolean {
+  return isGuestCreationAllowed();
+}
+
+/**
+ * Safely parse validity timestamp/date/string into a JavaScript Date object
+ */
+export function getValidityDate(validity: any): Date | null {
+  if (!validity) return null;
+  if (validity instanceof Date) return validity;
+  if (typeof validity === 'object' && typeof validity.toDate === 'function') {
+    return validity.toDate();
+  }
+  if (typeof validity === 'object' && typeof validity.seconds === 'number') {
+    return new Date(validity.seconds * 1000);
+  }
+  if (typeof validity === 'string' || typeof validity === 'number') {
+    const d = new Date(validity);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+/**
+ * Check if a given validity date has passed
+ */
+export function isValidityExpired(validity: any): boolean {
+  const validityDate = getValidityDate(validity);
+  if (!validityDate) return false;
+  return validityDate.getTime() < Date.now();
+}
+
 

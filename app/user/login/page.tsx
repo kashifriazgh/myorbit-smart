@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { userAuth as auth, userDb as db } from '@/app/lib/firebase';
 import Cookies from 'js-cookie';
+import { isDemoDomain, isValidityExpired } from '@/app/lib/guestUser';
 import {
   Box,
   Button,
@@ -74,13 +75,39 @@ export default function LoginPage() {
       }
 
       const userData = userDoc.data();
-      if (userData.role !== 'master' && userData.status === 'pending') {
-        await signOut(auth);
-        throw new Error('Your account is pending approval by the master user.');
-      }
-      if (userData.role !== 'master' && userData.status === 'rejected') {
-        await signOut(auth);
-        throw new Error('Your account registration request has been rejected.');
+      const isDemo = isDemoDomain();
+
+      if (userData.role !== 'master') {
+        // 1. Pending check (Bypassed if visiting on demo domain https://myorbitdemo.netlify.app/)
+        if (userData.status === 'pending') {
+          if (isDemo) {
+            // Auto-approve user status on demo domain
+            await updateDoc(doc(db, 'users', user.uid), { status: 'active', accountStatus: 'active' });
+            userData.status = 'active';
+          } else {
+            await signOut(auth);
+            throw new Error('Your account is pending approval by the master user.');
+          }
+        }
+
+        if (userData.status === 'rejected') {
+          await signOut(auth);
+          throw new Error('Your account registration request has been rejected.');
+        }
+
+        // 2. Validity check
+        if (userData.validity && isValidityExpired(userData.validity)) {
+          // Disable account if validity is expired
+          await updateDoc(doc(db, 'users', user.uid), { accountStatus: 'disabled' });
+          await signOut(auth);
+          throw new Error('Your 7-day trial validity has expired. Your account has been disabled. Please contact the master user to extend validity.');
+        }
+
+        // 3. Account status check
+        if (userData.accountStatus === 'disabled') {
+          await signOut(auth);
+          throw new Error('Your account has been disabled by the administrator. Please contact the master user.');
+        }
       }
 
       Cookies.set('uid', user.uid, { expires: 7, path: '/' });

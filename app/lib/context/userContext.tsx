@@ -5,12 +5,13 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   onSnapshot,
 } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { userAuth as auth, userDb as db } from '../firebase';
 import { FirestoreUser, OnboardingData } from '../interface';
-import { getOrCreateGuestUser } from '../guestUser';
+import { getOrCreateGuestUser, isDemoDomain, isValidityExpired } from '../guestUser';
 import Cookies from 'js-cookie';
 
 interface UserContextType {
@@ -122,17 +123,51 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         unsubscribeUserDoc = onSnapshot(ref, async (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            if (data.role !== 'master' && (data.status === 'pending' || data.status === 'rejected')) {
-              console.warn('⚠️ User account is pending or rejected. Signing out.');
-              await signOut(auth);
-              Cookies.remove('uid', { path: '/' });
-              Cookies.remove('role', { path: '/' });
-              localStorage.removeItem('myorbit_cached_user');
-              localStorage.removeItem('myorbit_cached_onboarding');
-              localStorage.removeItem('myorbit_cached_context_paragraph');
-              setUser(getOrCreateGuestUser());
-              setIsGuest(true);
-              return;
+            const isDemo = isDemoDomain();
+
+            if (data.role !== 'master') {
+              // Check approval status (bypassed on demo domain https://myorbitdemo.netlify.app/)
+              if (!isDemo && (data.status === 'pending' || data.status === 'rejected')) {
+                console.warn('⚠️ User account is pending or rejected. Signing out.');
+                await signOut(auth);
+                Cookies.remove('uid', { path: '/' });
+                Cookies.remove('role', { path: '/' });
+                localStorage.removeItem('myorbit_cached_user');
+                localStorage.removeItem('myorbit_cached_onboarding');
+                localStorage.removeItem('myorbit_cached_context_paragraph');
+                setUser(getOrCreateGuestUser());
+                setIsGuest(true);
+                return;
+              }
+
+              // Check validity expiration (e.g. 7 days trial on demo domain)
+              if (data.validity && isValidityExpired(data.validity)) {
+                console.warn('⚠️ User validity expired. Disabling account and signing out.');
+                await updateDoc(ref, { accountStatus: 'disabled' });
+                await signOut(auth);
+                Cookies.remove('uid', { path: '/' });
+                Cookies.remove('role', { path: '/' });
+                localStorage.removeItem('myorbit_cached_user');
+                localStorage.removeItem('myorbit_cached_onboarding');
+                localStorage.removeItem('myorbit_cached_context_paragraph');
+                setUser(getOrCreateGuestUser());
+                setIsGuest(true);
+                return;
+              }
+
+              // Check accountStatus
+              if (data.accountStatus === 'disabled') {
+                console.warn('⚠️ User account is disabled. Signing out.');
+                await signOut(auth);
+                Cookies.remove('uid', { path: '/' });
+                Cookies.remove('role', { path: '/' });
+                localStorage.removeItem('myorbit_cached_user');
+                localStorage.removeItem('myorbit_cached_onboarding');
+                localStorage.removeItem('myorbit_cached_context_paragraph');
+                setUser(getOrCreateGuestUser());
+                setIsGuest(true);
+                return;
+              }
             }
 
             // Generate shareId and username if they don't exist yet
@@ -165,6 +200,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               firstName: data.firstName || '',
               lastName: data.lastName || '',
               role: data.role || 'viewer',
+              status: data.status || 'active',
+              accountStatus: data.accountStatus || 'active',
+              validity: data.validity || null,
               createdAt: data.createdAt,
               isGuest: false,
               guideVisited: data.guideVisited || false,

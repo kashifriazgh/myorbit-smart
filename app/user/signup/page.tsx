@@ -41,6 +41,7 @@ import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { useAuth } from '@/app/lib/context/userContext';
 import Cookies from 'js-cookie';
 import { migrateGuestDataToUser } from '@/app/lib/guestDataMigration';
+import { isDemoDomain } from '@/app/lib/guestUser';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -117,10 +118,18 @@ export default function SignupPage() {
       let role: 'master' | 'editor' | 'viewer' = 'master';
       let status: 'active' | 'pending' = 'active';
 
+      const isDemo = isDemoDomain();
+
       if (strictMasterExists) {
         role = 'editor';
-        status = 'pending';
+        // If visiting on demo domain (https://myorbitdemo.netlify.app/), allow user to signIn/signup without approval from master user
+        status = isDemo ? 'active' : 'pending';
       }
+
+      // Default 7 days validity for users created on demo domain
+      const validity = isDemo
+        ? Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
+        : null;
 
       const shareId = `U-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       const derivedUsername = email.split('@')[0].toLowerCase();
@@ -134,6 +143,8 @@ export default function SignupPage() {
         lastName,
         role,
         status,
+        accountStatus: 'active',
+        validity,
         createdAt: Timestamp.now(),
       };
 

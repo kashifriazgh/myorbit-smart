@@ -249,6 +249,9 @@ export interface FirestoreUser {
   firstName: string;
   lastName: string;
   role: 'master' | 'editor' | 'viewer' | 'guest';
+  status?: 'active' | 'pending' | 'rejected';
+  accountStatus?: 'active' | 'disabled';
+  validity?: Timestamp | Date | string | null;
   createdAt: Timestamp; // or use `Timestamp` from Firestore
   isGuest?: boolean; // Optional flag to identify guest users
   guideVisited?: boolean; // Track if the user has visited the interactive guide
