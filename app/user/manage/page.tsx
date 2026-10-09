@@ -32,8 +32,6 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  FormControlLabel,
-  Switch,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -45,7 +43,6 @@ import {
   Shield as ShieldIcon,
   EditCalendar as EditCalendarIcon,
   Block as BlockIcon,
-  Event as EventIcon,
 } from '@mui/icons-material';
 import { userAuth as auth, userDb as db } from '@/app/lib/firebase';
 import {
@@ -70,7 +67,7 @@ interface UserRecord {
   role: 'master' | 'editor' | 'viewer';
   status?: 'active' | 'pending' | 'rejected';
   accountStatus?: 'active' | 'disabled';
-  validity?: any;
+  validity?: unknown;
   createdAt?: { toDate: () => Date };
 }
 
@@ -240,7 +237,7 @@ export default function ManageUsersPage() {
     }
   };
 
-  const formatValidityInfo = (validity: any, accountStatus?: string) => {
+  const formatValidityInfo = (validity: unknown, accountStatus?: string) => {
     if (accountStatus === 'disabled') {
       return { text: 'Disabled', isExpired: true, color: 'error' as const };
     }

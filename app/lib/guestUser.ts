@@ -128,14 +128,17 @@ export function isDemoDomain(): boolean {
 /**
  * Safely parse validity timestamp/date/string into a JavaScript Date object
  */
-export function getValidityDate(validity: any): Date | null {
+export function getValidityDate(validity: unknown): Date | null {
   if (!validity) return null;
   if (validity instanceof Date) return validity;
-  if (typeof validity === 'object' && typeof validity.toDate === 'function') {
-    return validity.toDate();
-  }
-  if (typeof validity === 'object' && typeof validity.seconds === 'number') {
-    return new Date(validity.seconds * 1000);
+  if (typeof validity === 'object' && validity !== null) {
+    const valObj = validity as { toDate?: () => Date; seconds?: number };
+    if (typeof valObj.toDate === 'function') {
+      return valObj.toDate();
+    }
+    if (typeof valObj.seconds === 'number') {
+      return new Date(valObj.seconds * 1000);
+    }
   }
   if (typeof validity === 'string' || typeof validity === 'number') {
     const d = new Date(validity);
@@ -147,7 +150,7 @@ export function getValidityDate(validity: any): Date | null {
 /**
  * Check if a given validity date has passed
  */
-export function isValidityExpired(validity: any): boolean {
+export function isValidityExpired(validity: unknown): boolean {
   const validityDate = getValidityDate(validity);
   if (!validityDate) return false;
   return validityDate.getTime() < Date.now();
