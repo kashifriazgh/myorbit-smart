@@ -1623,7 +1623,7 @@ const GoalDetailInner: React.FC = () => {
             {(goal.subcategory === 'Courses' || goal.subcategory === 'Course' || goal.subcategory === 'Skills' || goal.subcategory === 'Skill') && (
               <CoursesTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
             )}
-            {(goal.subcategory === 'Reading' || goal.subcategory === 'Book' || goal.subcategory === 'Books') && (
+            {(goal.subcategory === 'Reading' || goal.subcategory === 'Book' || goal.subcategory === 'Books' || goal.subcategory === 'Quran' || goal.subcategory === 'Quran Reading') && (
               <ReadingTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
             )}
           </Box>

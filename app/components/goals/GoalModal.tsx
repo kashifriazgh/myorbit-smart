@@ -236,8 +236,68 @@ export default function GoalModal({
     }
   };
 
+  // ── Special Handler: Instant Quran Goal Creation ──────────────────────────
+  const handleCreateQuranGoal = async () => {
+    if (!user?.uid) return;
+    setSaving(true);
+    try {
+      const nowTs = new Date();
+      const quranAnswers: Record<string, unknown> = {
+        material_type: 'Quran',
+        material_name: 'The Holy Quran',
+        track_by: 'ayat',
+        total_ayat: 6236,
+        total_surahs: 114,
+      };
+
+      const quranGoalData: Goal = {
+        title: 'Quran Reading',
+        type: 'learning',
+        subcategory: 'Reading',
+        measurementType: 'qty',
+        priority: 'High',
+        unit: 'Ayat',
+        overallTargetValue: 6236,
+        overallTargetUnit: 'Ayat',
+        progressMode: 'cumulative',
+        goalFurnished: true,
+        progress: 0,
+        currentValue: 0,
+        status: 'In Progress',
+        userId: user.uid,
+        createdAt: Timestamp.fromDate(nowTs),
+        updatedAt: Timestamp.fromDate(nowTs),
+        authorName: user.email || 'Anonymous',
+        steps: [],
+        questionnaireAnswers: quranAnswers,
+        quranProgress: {
+          currentSurah: 1,
+          positions: {},
+          lastCompletedSurah: null,
+          pendingCompletion: null,
+          completedAt: null,
+        },
+      };
+
+      const savedGoalId = await addGoal(quranGoalData);
+      onClose();
+      if (savedGoalId) {
+        router.push(`/goals/${savedGoalId}`);
+      }
+    } catch (err) {
+      console.error('Failed to create Quran goal:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // ── Update Single Question Answer & Calculate Metrics ─────────────────────
   const handleAnswerChange = (questionId: string, val: unknown) => {
+    if (questionId === 'material_type' && val === 'Quran') {
+      handleCreateQuranGoal();
+      return;
+    }
+
     const updatedAnswers = { ...answers, [questionId]: val };
     setAnswers(updatedAnswers);
     deriveFinalDetails(updatedAnswers, selectedSubcat?.name || selectedSubcatId, selectedCategory);

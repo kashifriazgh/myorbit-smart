@@ -1,6 +1,7 @@
 'use client';
 
-import { Button } from '@mui/material';
+import { useState } from 'react';
+import { Backdrop, Box, Button, CircularProgress, Typography } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
@@ -12,8 +13,11 @@ import Cookies from 'js-cookie';
 export default function LogoutButton() {
   const router = useRouter();
   const { user, isGuest } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
     try {
       if (isGuest) {
         // Clear guest user data
@@ -40,20 +44,36 @@ export default function LogoutButton() {
         localStorage.removeItem('myorbit_cached_onboarding');
         localStorage.removeItem('myorbit_cached_context_paragraph');
         router.push('/');
+        // Keep the loader visible while navigation completes
       }
     } catch (err) {
       console.error('Logout failed:', err);
+      setLoggingOut(false);
     }
   };
 
   return (
-    <Button
-      onClick={handleLogout}
-      color="error"
-      variant="outlined"
-      startIcon={<LogoutIcon />}
-    >
-      {isGuest ? 'Clear Guest Data' : 'Logout'}
-    </Button>
+    <>
+      <Button
+        onClick={handleLogout}
+        color="error"
+        variant="outlined"
+        disabled={loggingOut}
+        startIcon={loggingOut ? <CircularProgress size={18} color="inherit" /> : <LogoutIcon />}
+      >
+        {loggingOut
+          ? isGuest ? 'Clearing…' : 'Logging out…'
+          : isGuest ? 'Clear Guest Data' : 'Logout'}
+      </Button>
+
+      <Backdrop open={loggingOut} sx={{ zIndex: (t) => t.zIndex.modal + 10, color: '#fff', backdropFilter: 'blur(4px)' }}>
+        <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+          <CircularProgress color="inherit" />
+          <Typography variant="body1" fontWeight={600}>
+            {isGuest ? 'Clearing guest data…' : 'Logging you out…'}
+          </Typography>
+        </Box>
+      </Backdrop>
+    </>
   );
 }

@@ -53,6 +53,11 @@ interface GoalsContextType {
     linkedType: 'schedule' | 'todo' | 'finance_source',
     isCompleted: boolean,
   ) => Promise<void>;
+  updateLinkedItemDateInGoal: (
+    linkedGoalId: string,
+    linkedItemId: string,
+    newDate: string,
+  ) => Promise<void>;
   unlinkOrRemoveItemFromGoal: (
     linkedGoalId: string,
     linkedItemId: string,
@@ -841,6 +846,61 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         }
       }
 
+      // 4. Sync in goal.medicalAppointments
+      if (Array.isArray(goal.medicalAppointments) && goal.medicalAppointments.length > 0) {
+        let apptModified = false;
+        const updatedAppointments = (goal.medicalAppointments as Array<Record<string, unknown>>).map((appt) => {
+          if (appt.scheduleId === linkedItemId || appt.id === linkedItemId) {
+            apptModified = true;
+            hasChanges = true;
+            const history = Array.isArray(appt.history) ? [...appt.history] : [];
+            if (isCompleted) {
+              if (appt.nextDate) {
+                history.unshift({
+                  id: String(Date.now()),
+                  date: String(appt.nextDate),
+                  note: `Consultation marked completed via schedule`,
+                  completedAt: new Date().toISOString(),
+                });
+              }
+              return { ...appt, nextDate: '', history };
+            } else {
+              const lastLog = history[0];
+              if (!appt.nextDate && lastLog && typeof (lastLog as Record<string, unknown>).date === 'string') {
+                return { ...appt, nextDate: (lastLog as Record<string, unknown>).date, history: history.slice(1) };
+              }
+              return { ...appt };
+            }
+          }
+          return appt;
+        });
+
+        if (apptModified) {
+          updates.medicalAppointments = updatedAppointments as unknown as Goal['medicalAppointments'];
+        }
+      }
+
+      // 5. Sync in goal.medicalTests
+      if (Array.isArray(goal.medicalTests) && goal.medicalTests.length > 0) {
+        let testModified = false;
+        const updatedTests = (goal.medicalTests as Array<Record<string, unknown>>).map((test) => {
+          if (test.scheduleId === linkedItemId || test.id === linkedItemId) {
+            testModified = true;
+            hasChanges = true;
+            if (isCompleted) {
+              return { ...test, result: test.result && test.result !== 'Pending' ? test.result : 'Normal' };
+            } else {
+              return { ...test, result: 'Pending' };
+            }
+          }
+          return test;
+        });
+
+        if (testModified) {
+          updates.medicalTests = updatedTests as unknown as Goal['medicalTests'];
+        }
+      }
+
       if (hasChanges) {
         if (typeof updates.progress === 'number') {
           updates.status = deriveStatusFromProgress(updates.progress);
@@ -852,6 +912,62 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
       }
     } catch (err) {
       console.warn('Failed to sync linked item status to goal:', err);
+    }
+  };
+
+  const updateLinkedItemDateInGoal = async (
+    linkedGoalId: string,
+    linkedItemId: string,
+    newDate: string,
+  ): Promise<void> => {
+    try {
+      const goal = goals.find((g) => g.id === linkedGoalId);
+      if (!goal) return;
+
+      const updates: Partial<Goal> = {};
+      let hasChanges = false;
+
+      // 1. Sync medical appointments nextDate
+      if (Array.isArray(goal.medicalAppointments) && goal.medicalAppointments.length > 0) {
+        let modified = false;
+        const updated = (goal.medicalAppointments as Array<Record<string, unknown>>).map((a) => {
+          if (a.scheduleId === linkedItemId || a.id === linkedItemId) {
+            if (a.nextDate !== newDate) {
+              modified = true;
+              hasChanges = true;
+              return { ...a, nextDate: newDate };
+            }
+          }
+          return a;
+        });
+        if (modified) {
+          updates.medicalAppointments = updated as unknown as Goal['medicalAppointments'];
+        }
+      }
+
+      // 2. Sync medical tests nextDate
+      if (Array.isArray(goal.medicalTests) && goal.medicalTests.length > 0) {
+        let modified = false;
+        const updated = (goal.medicalTests as Array<Record<string, unknown>>).map((t) => {
+          if (t.scheduleId === linkedItemId || t.id === linkedItemId) {
+            if (t.nextDate !== newDate) {
+              modified = true;
+              hasChanges = true;
+              return { ...t, nextDate: newDate };
+            }
+          }
+          return t;
+        });
+        if (modified) {
+          updates.medicalTests = updated as unknown as Goal['medicalTests'];
+        }
+      }
+
+      if (hasChanges) {
+        await updateGoal(linkedGoalId, updates);
+      }
+    } catch (err) {
+      console.warn('Failed to update linked item date in goal:', err);
     }
   };
 
@@ -930,6 +1046,44 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
 
         if (hasChanges) {
           updates.actions = updatedActions as unknown as Goal['actions'];
+        }
+      }
+
+      // 4. Remove/Unlink from goal.medicalAppointments
+      if (Array.isArray(goal.medicalAppointments) && goal.medicalAppointments.length > 0) {
+        let apptModified = false;
+        const updatedAppointments = (goal.medicalAppointments as Array<Record<string, unknown>>).map((appt) => {
+          if (appt.scheduleId === linkedItemId) {
+            apptModified = true;
+            hasChanges = true;
+            const copy = { ...appt };
+            delete copy.scheduleId;
+            copy.nextDate = '';
+            return copy;
+          }
+          return appt;
+        });
+        if (apptModified) {
+          updates.medicalAppointments = updatedAppointments as unknown as Goal['medicalAppointments'];
+        }
+      }
+
+      // 5. Remove/Unlink from goal.medicalTests
+      if (Array.isArray(goal.medicalTests) && goal.medicalTests.length > 0) {
+        let testModified = false;
+        const updatedTests = (goal.medicalTests as Array<Record<string, unknown>>).map((test) => {
+          if (test.scheduleId === linkedItemId) {
+            testModified = true;
+            hasChanges = true;
+            const copy = { ...test };
+            delete copy.scheduleId;
+            copy.nextDate = '';
+            return copy;
+          }
+          return test;
+        });
+        if (testModified) {
+          updates.medicalTests = updatedTests as unknown as Goal['medicalTests'];
         }
       }
 
@@ -1058,6 +1212,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     updateGoalProgress,
     updateStepStatus,
     updateLinkedItemStatusInGoal,
+    updateLinkedItemDateInGoal,
     unlinkOrRemoveItemFromGoal,
     updateGoalStep,
     deleteGoalStep,

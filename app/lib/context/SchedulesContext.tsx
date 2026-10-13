@@ -45,7 +45,7 @@ const SchedulesContext = createContext<SchedulesContextType | undefined>(undefin
 
 export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { updateLinkedItemStatusInGoal, unlinkOrRemoveItemFromGoal } = useGoals();
+  const { updateLinkedItemStatusInGoal, updateLinkedItemDateInGoal, unlinkOrRemoveItemFromGoal } = useGoals();
   const [allSchedules, setAllSchedules] = useState<SchedulesProps[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState<SchedulesDataSource>('loading');
@@ -235,9 +235,14 @@ export const SchedulesProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       await updateSchedule(scheduleId, updates);
 
-      if (updates.status && existingSched?.linkedGoalId) {
-        const isDone = updates.status === 'completed';
-        await updateLinkedItemStatusInGoal(existingSched.linkedGoalId, scheduleId, 'schedule', isDone);
+      if (existingSched?.linkedGoalId) {
+        if (updates.status) {
+          const isDone = updates.status === 'completed';
+          await updateLinkedItemStatusInGoal(existingSched.linkedGoalId, scheduleId, 'schedule', isDone);
+        }
+        if (updates.date && updateLinkedItemDateInGoal) {
+          await updateLinkedItemDateInGoal(existingSched.linkedGoalId, scheduleId, updates.date);
+        }
       }
     } catch (error) {
       console.error('[ScheduleCache] editSchedule failed:', error);

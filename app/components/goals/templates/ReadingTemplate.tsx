@@ -40,6 +40,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import StreakCard from '@/app/components/goals/StreakCard';
 import StrategyTasksSection, { StrategyActionItem } from '@/app/components/goals/StrategyTasksSection';
+import QuranReadingTracker from './QuranReadingTracker';
 
 export interface ReadingLog {
   id: string;
@@ -161,7 +162,7 @@ const TYPE_EMOJIS: Record<string, string> = {
   'Research Paper': '📄',
 };
 
-export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateProps) {
+function StandardReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateProps) {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
   const { todos } = useTodoContext();
@@ -322,6 +323,12 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
   // Check if today's reading progress has already been logged
   const todayLog = useMemo(() => readingLogs.find((l) => l.date === todayStr), [readingLogs, todayStr]);
   const hasLoggedToday = Boolean(todayLog);
+
+  // Check if full progress for current day has been logged at least once
+  const isFullDailyProgressLogged = useMemo(() => {
+    const target = dailyTargetNum > 0 ? dailyTargetNum : 10;
+    return Boolean(todayLog && todayLog.pagesRead >= target);
+  }, [todayLog, dailyTargetNum]);
 
   // Progress % Calculation Rule
   const progressPercent = useMemo(() => {
@@ -697,7 +704,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
 
   return (
     <Box sx={{ width: '100%', maxWidth: 720, mx: 'auto' }}>
-      {/* ── 1. BOOK / READING HERO CARD ── */}
+      {/* ── 1. BOOK / READING HERO CARD (READING TRACKER) ── */}
       <Box
         sx={{
           borderRadius: '24px',
@@ -705,7 +712,7 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           bgcolor: surfaceBg,
           p: 3,
           boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 20px rgba(15,23,42,0.06)',
-          mb: 3,
+          mb: 1.5,
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
@@ -740,6 +747,21 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           </Box>
 
           <Stack direction="row" alignItems="center" spacing={1}>
+            {isFullDailyProgressLogged && (
+              <Chip
+                icon={<CheckCircle sx={{ fontSize: '14px !important', color: '#10b981 !important' }} />}
+                label="Target Met"
+                size="small"
+                sx={{
+                  bgcolor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ecfdf5',
+                  color: '#10b981',
+                  fontWeight: 800,
+                  fontSize: 11,
+                  border: '1px solid',
+                  borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#a7f3d0',
+                }}
+              />
+            )}
             <Chip
               label={`${progressPercent}% Read`}
               size="small"
@@ -790,42 +812,35 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
               }}
             />
           </Box>
-        </Box>
 
-        {/* Preferred Routine & Preferences Button */}
-        <Box sx={{ mt: 3, p: 1.5, borderRadius: '16px', bgcolor: isDark ? '#0c4a6e' : '#f0f9ff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <ClockIcon sx={{ color: '#0284c7', fontSize: 22 }} />
-            <Box>
-              <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase' }}>
-                Preferred Reading Routine
-              </Typography>
-              <Typography sx={{ fontSize: 13, fontWeight: 700, color: textPrimary }}>
-                {dailyReadingTime} · {dailyTargetNum} {trackByUnit}/session
-              </Typography>
-            </Box>
-          </Box>
-
-          <Button
-            size="small"
-            onClick={() => setPrefModalOpen(true)}
-            startIcon={<ScheduleIcon sx={{ fontSize: 16 }} />}
+          {/* Predefined 1-Tap Quick Slots in One Line */}
+          <Box
             sx={{
-              borderRadius: '10px',
-              textTransform: 'none',
-              fontWeight: 800,
-              fontSize: 11.5,
-              bgcolor: isDark ? 'rgba(56, 189, 248, 0.15)' : '#e0f2fe',
-              color: '#0284c7',
-              '&:hover': { bgcolor: isDark ? 'rgba(56, 189, 248, 0.25)' : '#bae6fd' },
+              mt: 2,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 1,
             }}
           >
-            Preferences
-          </Button>
+            {predefinedSlots.map((slot, idx) => (
+              <button
+                key={idx}
+                type="button"
+                disabled={savingLog}
+                onClick={() => handleSaveLog(slot.value)}
+                className="flex items-center justify-center py-2 px-1 rounded-xl border border-blue-200 dark:border-blue-800/60 bg-blue-50/60 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 active:scale-[0.98] transition-all shadow-xs cursor-pointer disabled:opacity-50 text-center"
+                title={`Tap to log ${slot.label}`}
+              >
+                <span className="text-[11px] sm:text-xs font-bold truncate">
+                  {slot.label}
+                </span>
+              </button>
+            ))}
+          </Box>
         </Box>
       </Box>
 
-      {/* ── 2. DAILY READING PROGRESS UPDATE CARD WITH PREDEFINED SLOTS ── */}
+      {/* ── 2. DAILY READING PROGRESS UPDATE CARD (VERTICALLY JOINT) ── */}
       <Box
         sx={{
           borderRadius: '24px',
@@ -833,54 +848,57 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
           bgcolor: surfaceBg,
           p: 3,
           boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 20px rgba(15,23,42,0.06)',
-          mb: 3,
+          mb: 1.5,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', mb: 2, gap: 1.5, flexWrap: 'wrap' }}>
           <Box>
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
               Daily Progress Logging
             </Typography>
             <Typography sx={{ fontSize: 16, fontWeight: 800, color: textPrimary, mt: 0.2 }}>
-              Log Today&apos;s Reading Progress
+              How much You read today
             </Typography>
           </Box>
-          <Chip
-            label={`Daily Target: ${dailyTargetNum} ${trackByUnit}`}
-            size="small"
-            sx={{
-              bgcolor: isDark ? 'rgba(45, 212, 191, 0.15)' : '#ccfbf1',
-              color: isDark ? '#2dd4bf' : '#0d9488',
-              fontWeight: 700,
-              fontSize: 11,
-            }}
-          />
-        </Box>
 
-        {/* Quick Predefined Slot Chips */}
-        <Typography sx={{ fontSize: 12, fontWeight: 700, color: textMuted, mb: 1.5 }}>
-          Quick 1-Tap Progress Slots:
-        </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            {isFullDailyProgressLogged && (
+              <Box
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.6,
+                  px: 1.5,
+                  py: 0.5,
+                  borderRadius: '999px',
+                  background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                  color: '#ffffff',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: '.02em',
+                  boxShadow: '0 2px 10px rgba(16, 185, 129, 0.35)',
+                }}
+              >
+                <CheckCircle sx={{ fontSize: 14, color: '#ffffff' }} />
+                Full Progress Logged
+              </Box>
+            )}
 
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' }, gap: 1.5, mb: 2.5 }}>
-          {predefinedSlots.map((slot, idx) => (
-            <button
-              key={idx}
-              type="button"
-              disabled={savingLog}
-              onClick={() => handleSaveLog(slot.value)}
-              className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-teal-200 dark:border-teal-800/60 bg-teal-50/50 dark:bg-teal-950/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 text-teal-800 dark:text-teal-200 active:scale-[0.98] transition-all shadow-sm group cursor-pointer disabled:opacity-50"
-            >
-              <span className="text-xs font-bold group-hover:scale-105 transition-transform">{slot.label}</span>
-              <span className="text-[10px] text-teal-600 dark:text-teal-400 font-semibold mt-0.5">
-                Tap to add
-              </span>
-            </button>
-          ))}
+            <Chip
+              label={`Daily Target: ${dailyTargetNum} ${trackByUnit}`}
+              size="small"
+              sx={{
+                bgcolor: isDark ? 'rgba(45, 212, 191, 0.15)' : '#ccfbf1',
+                color: isDark ? '#2dd4bf' : '#0d9488',
+                fontWeight: 700,
+                fontSize: 11,
+              }}
+            />
+          </Box>
         </Box>
 
         {/* Primary Action Buttons & Status */}
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center', pt: 1, borderTop: `1px dashed ${cardBorder}` }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center', pt: 0.5 }}>
           <Button
             variant="contained"
             size="small"
@@ -924,9 +942,44 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
 
         {/* Today's Logged Summary Banner */}
         {hasLoggedToday ? (
-          <Box sx={{ mt: 2, p: 1.5, borderRadius: '12px', bgcolor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ecfdf5', border: '1px solid', borderColor: isDark ? 'rgba(16, 185, 129, 0.25)' : '#a7f3d0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <span>✅ Today&apos;s logged total:</span>
+          <Box
+            sx={{
+              mt: 2,
+              p: 1.5,
+              borderRadius: '12px',
+              bgcolor: isFullDailyProgressLogged
+                ? isDark
+                  ? 'rgba(16, 185, 129, 0.12)'
+                  : '#ecfdf5'
+                : isDark
+                ? 'rgba(56, 189, 248, 0.1)'
+                : '#f0f9ff',
+              border: '1px solid',
+              borderColor: isFullDailyProgressLogged
+                ? isDark
+                  ? 'rgba(16, 185, 129, 0.25)'
+                  : '#a7f3d0'
+                : isDark
+                ? 'rgba(56, 189, 248, 0.25)'
+                : '#bae6fd',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: isFullDailyProgressLogged ? '#10b981' : '#0284c7',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+              }}
+            >
+              <span>{isFullDailyProgressLogged ? '🎉 Full daily goal completed:' : '✅ Today&apos;s logged total:'}</span>
               <strong style={{ fontSize: 13 }}>{todayLog?.pagesRead} {trackByUnit}</strong>
             </Typography>
             <Typography sx={{ fontSize: 11, color: textMuted }}>
@@ -940,7 +993,66 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
         )}
       </Box>
 
-      {/* ── 3. STREAK STATUS CARD (REAL-TIME SYNCED) ── */}
+      {/* ── 3. PREFERRED READING ROUTINE CARD (BELOW LOGGING, ABOVE STREAKS) ── */}
+      <Box
+        sx={{
+          borderRadius: '24px',
+          border: `1px solid ${cardBorder}`,
+          bgcolor: surfaceBg,
+          p: { xs: 2, sm: 2.5 },
+          boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 4px 20px rgba(15,23,42,0.06)',
+          mb: 3,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 42,
+                height: 42,
+                borderRadius: '12px',
+                bgcolor: isDark ? 'rgba(2, 132, 199, 0.2)' : '#e0f2fe',
+                color: '#0284c7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <ClockIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                Preferred Reading Routine
+              </Typography>
+              <Typography sx={{ fontSize: 14, fontWeight: 800, color: textPrimary, mt: 0.2 }}>
+                {dailyReadingTime} · {dailyTargetNum} {trackByUnit}/session
+              </Typography>
+            </Box>
+          </Box>
+
+          <Button
+            size="small"
+            onClick={() => setPrefModalOpen(true)}
+            startIcon={<ScheduleIcon sx={{ fontSize: 16 }} />}
+            sx={{
+              borderRadius: '10px',
+              textTransform: 'none',
+              fontWeight: 800,
+              fontSize: 12,
+              bgcolor: isDark ? 'rgba(56, 189, 248, 0.15)' : '#e0f2fe',
+              color: '#0284c7',
+              '&:hover': { bgcolor: isDark ? 'rgba(56, 189, 248, 0.25)' : '#bae6fd' },
+              px: 2,
+              py: 0.75,
+            }}
+          >
+            Preferences
+          </Button>
+        </Box>
+      </Box>
+
+      {/* ── 4. STREAK STATUS CARD (REAL-TIME SYNCED) ── */}
       <StreakCard
         goal={syncedGoal}
         onUpdateGoal={onUpdateGoal}
@@ -1240,4 +1352,18 @@ export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateP
 
     </Box>
   );
+}
+
+export default function ReadingTemplate({ goal, onUpdateGoal }: ReadingTemplateProps) {
+  const answers = goal.questionnaireAnswers || {};
+  const isQuranGoal =
+    String(answers.material_type || '').toLowerCase() === 'quran' ||
+    (goal.title || '').toLowerCase().includes('quran') ||
+    Boolean(goal.quranProgress);
+
+  if (isQuranGoal) {
+    return <QuranReadingTracker goal={goal} onUpdateGoal={onUpdateGoal} />;
+  }
+
+  return <StandardReadingTemplate goal={goal} onUpdateGoal={onUpdateGoal} />;
 }

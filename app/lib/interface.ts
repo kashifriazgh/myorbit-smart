@@ -1042,6 +1042,7 @@ export interface Goal {
   practiceSchedules?: Array<{ id?: string; activity: string; time?: string; frequencyPerWeek?: number }>;
   readingLogs?: Array<{ id?: string; date: string; pagesRead: number; chapterNote?: string }>;
   readingPreferences?: Record<string, unknown> | unknown;
+  quranProgress?: import('./config/quranData').QuranProgress;
   courseLessons?: Array<{ id?: string; title: string; durationMins?: number; completed: boolean; completedAt?: string }>;
   habitCheckIns?: Array<{ id?: string; date: string; completed: boolean; note?: string }>;
   habitCue?: string;

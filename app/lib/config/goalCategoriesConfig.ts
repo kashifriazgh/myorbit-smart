@@ -514,6 +514,7 @@ export const GOAL_CATEGORIES_CONFIG: Record<string, CategoryConfig> = {
             question: 'What do you want to read?',
             type: 'single_choice',
             options: [
+              { label: 'Quran', value: 'Quran', icon: '🕌' },
               { label: 'Book', value: 'Book', icon: '📖' },
               { label: 'Article', value: 'Article', icon: '📰' },
               { label: 'Novel', value: 'Novel', icon: '📚' },

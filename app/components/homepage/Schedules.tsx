@@ -538,6 +538,53 @@ const HourlySchedulesGroupedList: React.FC<HourlySchedulesGroupedListProps> = ({
   );
 };
 
+// ─── SampleSchedulePreview (shown only when user has no schedules) ─────────
+const SampleSchedulePreview = ({ isDark }: { isDark: boolean }) => {
+  const style = CARD_STYLES[1];
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        position: 'relative',
+        borderRadius: '16px',
+        border: `1.5px dashed ${isDark ? '#334155' : '#cbd5e1'}`,
+        bgcolor: isDark ? 'rgba(30, 41, 59, 0.2)' : '#ffffff',
+        p: 1.5,
+        mt: 1,
+        userSelect: 'none',
+        pointerEvents: 'none',
+      }}
+    >
+      <Chip
+        label="EXAMPLE"
+        size="small"
+        sx={{ position: 'absolute', top: -10, right: 12, height: 20, fontSize: '9px', fontWeight: 800, bgcolor: '#f59e0b', color: '#1a0a00' }}
+      />
+      <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 2, pl: 0.5 }}>
+        <Typography variant="caption" sx={{ fontSize: '12px', fontWeight: 700, color: isDark ? '#94a3b8' : '#64748b' }}>
+          09:00 AM
+        </Typography>
+        <Box sx={{ height: '1px', flex: 1, bgcolor: isDark ? '#334155' : '#e2e8f0' }} />
+      </Box>
+      <Box className={`flex items-center gap-3 rounded-xl border ${style.border} ${style.bg} px-3 py-2`} sx={{ opacity: 0.8 }}>
+        <Box className={`h-6 w-6 shrink-0 rounded-full border-2 ${isDark ? 'bg-slate-800' : 'bg-white'} ${style.checkBorder}`} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography variant="body2" sx={{ fontSize: '14px', fontWeight: 600, color: isDark ? '#e2e8f0' : '#1e293b' }}>
+            Morning team stand-up
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, color: isDark ? '#94a3b8' : '#64748b' }}>
+            <ClockIcon />
+            <Typography variant="caption" sx={{ fontSize: '11px', fontWeight: 600 }}>9:00 AM - 9:30 AM</Typography>
+          </Box>
+        </Box>
+      </Box>
+      <Typography variant="caption" sx={{ display: 'block', mt: 1.25, textAlign: 'center', color: isDark ? '#64748b' : '#94a3b8' }}>
+        This is how your schedules will appear. Add your first one above!
+      </Typography>
+    </Box>
+  );
+};
+
 // ─── QuickAddScheduleRow ────────────────────────────────────────────────────
 interface QuickAddScheduleRowProps {
   selectedDate: string;
@@ -1249,6 +1296,8 @@ const Schedules: React.FC = () => {
                   <Skeleton key={i} variant="rectangular" height={44} sx={{ borderRadius: 2, mb: 1 }} />
                 ))}
               </Box>
+            ) : allSchedules.length === 0 ? (
+              <SampleSchedulePreview isDark={isDark} />
             ) : schedules.length === 0 ? (
               <Box display="flex" flexDirection="column" alignItems="center" py={3} textAlign="center">
                 <TimeIcon sx={{ fontSize: 36, color: 'grey.400', mb: 1 }} />
@@ -1319,6 +1368,13 @@ const Schedules: React.FC = () => {
                     </Box>
                   ))}
                 </Box>
+              ) : allSchedules.length === 0 ? (
+                <>
+                  <SampleSchedulePreview isDark={isDark} />
+                  <Box display="flex" justifyContent="center" mt={1.5}>
+                    <Button size="small" onClick={handleAddSchedule}>Add your first schedule</Button>
+                  </Box>
+                </>
               ) : schedules.length === 0 ? (
                 <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={4} textAlign="center">
                   <TimeIcon sx={{ fontSize: 48, color: 'grey.400', mb: 1 }} />

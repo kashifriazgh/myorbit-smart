@@ -456,6 +456,43 @@ const TodoQuickRow = ({
   );
 };
 
+// Non-interactive example task shown only when the user has no tasks at all
+const SampleTaskPreview = ({ isDark }: { isDark: boolean }) => (
+  <Box
+    aria-hidden
+    sx={{
+      position: 'relative',
+      borderRadius: '16px',
+      border: `1.5px dashed ${isDark ? '#334155' : '#cbd5e1'}`,
+      bgcolor: isDark ? 'rgba(30, 41, 59, 0.2)' : '#ffffff',
+      p: 1.5,
+      userSelect: 'none',
+      pointerEvents: 'none',
+    }}
+  >
+    <Chip
+      label="EXAMPLE"
+      size="small"
+      sx={{ position: 'absolute', top: -10, right: 12, height: 20, fontSize: '9px', fontWeight: 800, bgcolor: '#6366f1', color: 'white' }}
+    />
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, opacity: 0.75 }}>
+      <Box className={`h-6 w-6 shrink-0 rounded-full border-2 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'}`} />
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Typography variant="body2" sx={{ fontSize: '14px', fontWeight: 600, color: isDark ? '#e2e8f0' : '#1e293b' }}>
+          Prepare weekly project report
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 0.75, mt: 0.5 }}>
+          <Chip label={`Due: ${moment().format('MMM D')}`} size="small" sx={{ height: 18, fontSize: '9px', fontWeight: 700, bgcolor: isDark ? '#374151' : '#f3f4f6', color: isDark ? '#d1d5db' : '#374151' }} />
+          <Chip label="URGENT" size="small" sx={{ height: 18, fontSize: '9px', fontWeight: 800, bgcolor: '#f59e0b', color: 'white' }} />
+        </Box>
+      </Box>
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#f59e0b' }} />
+    </Box>
+    <Typography variant="caption" sx={{ display: 'block', mt: 1.25, textAlign: 'center', color: isDark ? '#64748b' : '#94a3b8' }}>
+      This is how your tasks will appear. Add your first task above!
+    </Typography>
+  </Box>
+);
 
 interface QuickAddTaskRowProps {
   selectedDate: string;
@@ -1142,7 +1179,28 @@ const ImportantTasks = () => {
           />
         )}
 
-        {filteredTasks.length === 0 ? (
+        {todos.length === 0 && !loading ? (
+          <Box sx={{ mt: 1.5 }}>
+            <SampleTaskPreview isDark={isDark} />
+            {viewMode === 'detail' && (
+              <Box display="flex" justifyContent="center" mt={2}>
+                <Button
+                  variant="contained"
+                  startIcon={<Add />}
+                  onClick={() => {
+                    if (isGuest && !isGuestCreationAllowed()) {
+                      alert('Guest users are not allowed to create tasks. Please sign up first.');
+                      return;
+                    }
+                    setTodoModalOpen(true);
+                  }}
+                >
+                  Create New Task
+                </Button>
+              </Box>
+            )}
+          </Box>
+        ) : filteredTasks.length === 0 ? (
           <Box className="p-4 flex flex-col items-center justify-center min-h-64">
             <Typography variant="h6" fontWeight="bold" className="mb-4 text-center">
               📋 No Tasks Yet

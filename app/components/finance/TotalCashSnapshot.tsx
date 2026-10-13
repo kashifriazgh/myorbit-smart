@@ -140,15 +140,42 @@ export default function TotalCashSnapshotComponent({
 
   const [isCached, setIsCached] = useState(false);
   const [needsFetch, setNeedsFetch] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
+  /**
+   * Manual refresh from the sync button.
+   * Previously this set `loading=true` and `needsFetch=true`, but if the listeners
+   * were already active the effect never re-ran, so `loading` stayed true until the
+   * next server-side change arrived (could be very long / forever).
+   * Now we bump `refreshKey` to force a fresh re-subscription and keep current data
+   * visible while showing a small inline spinner.
+   */
   const triggerRefresh = () => {
     try {
       localStorage.removeItem(`finance_cache_${userId}`);
     } catch {}
     setIsCached(false);
-    setLoading(true);
+    setRefreshing(true);
+    setNeedsFetch(true);
+    setRefreshKey((k) => k + 1);
+  };
+
+  /** Ensure live listeners are active (used before mutations) without blocking the UI. */
+  const ensureLive = () => {
+    try {
+      localStorage.removeItem(`finance_cache_${userId}`);
+    } catch {}
+    setIsCached(false);
     setNeedsFetch(true);
   };
+
+  // Safety net: never leave the refresh spinner running forever
+  useEffect(() => {
+    if (!refreshing) return;
+    const t = setTimeout(() => setRefreshing(false), 8000);
+    return () => clearTimeout(t);
+  }, [refreshing]);
 
   // Bootstrap from cache on mount
   useEffect(() => {
@@ -249,9 +276,11 @@ export default function TotalCashSnapshotComponent({
         setSnapshot(initial);
       }
       setLoading(false);
+      setRefreshing(false);
     }, (error) => {
       console.error("Error listening to totalCashSnapshots:", error);
       setLoading(false);
+      setRefreshing(false);
     });
 
     return () => {
@@ -259,7 +288,7 @@ export default function TotalCashSnapshotComponent({
       unsubLiabilities();
       unsubSnap();
     };
-  }, [userId, needsFetch]);
+  }, [userId, needsFetch, refreshKey]);
 
   // Atomically save to cache when snapshot changes
   useEffect(() => {
@@ -360,7 +389,7 @@ export default function TotalCashSnapshotComponent({
     note?: string,
     holderName?: string
   ) => {
-    triggerRefresh();
+    ensureLive();
     setSaving(true);
 
     const txn: Omit<CashTransaction, 'id'> = {
@@ -448,7 +477,7 @@ export default function TotalCashSnapshotComponent({
     note?: string,
     holderName?: string
   ) => {
-    triggerRefresh();
+    ensureLive();
     setSaving(true);
 
     const docRef = doc(db, 'totalCashSnapshots', userId);
@@ -584,7 +613,7 @@ export default function TotalCashSnapshotComponent({
     toHolder?: string,
     note?: string
   ) => {
-    triggerRefresh();
+    ensureLive();
     setSaving(true);
     try {
       const docRef = doc(db, 'totalCashSnapshots', userId);
@@ -779,11 +808,13 @@ export default function TotalCashSnapshotComponent({
           <Typography variant="h6" fontWeight="bold">
             Your Money
           </Typography>
-          {isCached && (
-            <Tooltip title="Data loaded from local cache. Click to sync with server.">
-              <IconButton size="small" onClick={triggerRefresh} sx={{ color: 'primary.main', p: 0.5 }}>
-                <SyncIcon fontSize="small" />
-              </IconButton>
+          {(isCached || refreshing) && (
+            <Tooltip title={refreshing ? 'Syncing with server…' : 'Data loaded from local cache. Click to sync with server.'}>
+              <span>
+                <IconButton size="small" onClick={triggerRefresh} disabled={refreshing} sx={{ color: 'primary.main', p: 0.5 }}>
+                  {refreshing ? <CircularProgress size={16} /> : <SyncIcon fontSize="small" />}
+                </IconButton>
+              </span>
             </Tooltip>
           )}
         </Box>
