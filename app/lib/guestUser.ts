@@ -112,10 +112,11 @@ export function getGuestUserFromCookies(): GuestUser | null {
  */
 export function isGuestCreationAllowed(): boolean {
   if (typeof window === 'undefined') return false;
-  const host = window.location.hostname;
-  const href = window.location.href;
+  const host = window.location.hostname.toLowerCase();
+  const href = window.location.href.toLowerCase();
   return (
     host === 'myorbitdemo.netlify.app' ||
+    host === 'www.myorbitdemo.netlify.app' ||
     host.includes('myorbitdemo') ||
     href.includes('myorbitdemo.netlify.app')
   );
@@ -123,6 +124,22 @@ export function isGuestCreationAllowed(): boolean {
 
 export function isDemoDomain(): boolean {
   return isGuestCreationAllowed();
+}
+
+/**
+ * Check if a user record is classified as a demo user
+ */
+export function isDemoUser(user: {
+  isDemoUser?: boolean;
+  accountType?: string;
+  signupDomain?: string;
+} | null | undefined): boolean {
+  if (!user) return false;
+  return Boolean(
+    user.isDemoUser === true ||
+    user.accountType === 'demo' ||
+    (user.signupDomain && user.signupDomain.toLowerCase().includes('myorbitdemo'))
+  );
 }
 
 /**

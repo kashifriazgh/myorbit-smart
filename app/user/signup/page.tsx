@@ -120,10 +120,14 @@ export default function SignupPage() {
 
       const isDemo = isDemoDomain();
 
-      if (strictMasterExists) {
+      if (isDemo) {
+        // If visiting on demo domain (https://www.myorbitdemo.netlify.app or https://myorbitdemo.netlify.app),
+        // allow user to signIn/signup without approval from master user
+        role = strictMasterExists ? 'editor' : 'master';
+        status = 'active';
+      } else if (strictMasterExists) {
         role = 'editor';
-        // If visiting on demo domain (https://myorbitdemo.netlify.app/), allow user to signIn/signup without approval from master user
-        status = isDemo ? 'active' : 'pending';
+        status = 'pending';
       }
 
       // Default 7 days validity for users created on demo domain
@@ -145,6 +149,10 @@ export default function SignupPage() {
         status,
         accountStatus: 'active',
         validity,
+        isDemoUser: isDemo,
+        accountType: isDemo ? 'demo' : 'permanent',
+        isPermanent: !isDemo,
+        signupDomain: typeof window !== 'undefined' ? window.location.hostname : '',
         createdAt: Timestamp.now(),
       };
 
@@ -189,7 +197,10 @@ export default function SignupPage() {
           router.push('/user/login');
         }, 6000);
       } else {
-        console.log('🚀 [SIGNUP] 8. Account is master. Redirecting to home...');
+        console.log('🚀 [SIGNUP] 8. Account is active (master or demo). Setting cookies and redirecting to home...');
+        Cookies.set('uid', user.uid, { expires: 7, path: '/' });
+        Cookies.set('role', role, { expires: 7, path: '/' });
+        Cookies.remove('guest_uid', { path: '/' });
         router.push('/');
       }
     } catch (err) {

@@ -254,6 +254,10 @@ export interface FirestoreUser {
   validity?: Timestamp | Date | string | null;
   createdAt: Timestamp; // or use `Timestamp` from Firestore
   isGuest?: boolean; // Optional flag to identify guest users
+  isDemoUser?: boolean; // Flag to identify demo users created via demo domain
+  accountType?: 'demo' | 'permanent'; // Account type classification
+  isPermanent?: boolean; // Flag indicating if user is a permanent account
+  signupDomain?: string; // Domain origin through which the user signed up
   guideVisited?: boolean; // Track if the user has visited the interactive guide
   shareId?: string;
   username?: string;

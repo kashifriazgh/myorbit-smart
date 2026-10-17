@@ -32,6 +32,7 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  InputAdornment,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -43,6 +44,11 @@ import {
   Shield as ShieldIcon,
   EditCalendar as EditCalendarIcon,
   Block as BlockIcon,
+  Science as ScienceIcon,
+  DeleteSweep as DeleteSweepIcon,
+  VerifiedUser as VerifiedUserIcon,
+  Search as SearchIcon,
+  WarningAmber as WarningAmberIcon,
 } from '@mui/icons-material';
 import { userAuth as auth, userDb as db } from '@/app/lib/firebase';
 import {
@@ -57,9 +63,9 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { getValidityDate } from '@/app/lib/guestUser';
+import { getValidityDate, isValidityExpired, isDemoUser } from '@/app/lib/guestUser';
 
-interface UserRecord {
+export interface UserRecord {
   uid: string;
   email: string;
   firstName: string;
@@ -69,6 +75,10 @@ interface UserRecord {
   accountStatus?: 'active' | 'disabled';
   validity?: unknown;
   createdAt?: { toDate: () => Date };
+  isDemoUser?: boolean;
+  accountType?: 'demo' | 'permanent';
+  isPermanent?: boolean;
+  signupDomain?: string;
 }
 
 export default function ManageUsersPage() {
@@ -83,6 +93,27 @@ export default function ManageUsersPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
+
+  // Demo user management state
+  const [demoSearchQuery, setDemoSearchQuery] = useState('');
+  const [demoStatusFilter, setDemoStatusFilter] = useState<'all' | 'active' | 'expired' | 'disabled'>('all');
+  const [userToDelete, setUserToDelete] = useState<UserRecord | null>(null);
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState<{
+    open: boolean;
+    type: 'expired' | 'all';
+    count: number;
+    uids: string[];
+  } | null>(null);
+
+  // Auto-switch to demo tab if URL has ?tab=demo
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'demo') {
+        setActiveTab(3);
+      }
+    }
+  }, []);
 
   const [snack, setSnack] = useState<{
     open: boolean;
@@ -259,13 +290,60 @@ export default function ManageUsersPage() {
     setActionLoading(uid);
     try {
       await deleteDoc(doc(db, 'users', uid));
-      setSnack({ open: true, msg: 'User registration canceled & removed.', type: 'success' });
+      setSnack({ open: true, msg: 'User record deleted successfully.', type: 'success' });
       fetchUsers();
     } catch (err) {
       console.error(err);
-      setSnack({ open: true, msg: 'Failed to cancel registration.', type: 'error' });
+      setSnack({ open: true, msg: 'Failed to delete user record.', type: 'error' });
     } finally {
       setActionLoading(null);
+      setUserToDelete(null);
+    }
+  };
+
+  const handleConvertToPermanent = async (uid: string) => {
+    setActionLoading(`${uid}-convert`);
+    try {
+      await updateDoc(doc(db, 'users', uid), {
+        isDemoUser: false,
+        accountType: 'permanent',
+        isPermanent: true,
+        validity: null,
+        accountStatus: 'active',
+      });
+      setSnack({
+        open: true,
+        msg: 'User converted to permanent user successfully (trial expiration removed)!',
+        type: 'success',
+      });
+      fetchUsers();
+    } catch (err) {
+      console.error(err);
+      setSnack({ open: true, msg: 'Failed to convert user.', type: 'error' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleBatchDeleteDemoUsers = async () => {
+    if (!batchDeleteConfirm || batchDeleteConfirm.uids.length === 0) return;
+    setActionLoading('batch-delete');
+    try {
+      await Promise.all(
+        batchDeleteConfirm.uids.map((id) => deleteDoc(doc(db, 'users', id)))
+      );
+      setSnack({
+        open: true,
+        msg: `Successfully deleted ${batchDeleteConfirm.count} demo user record(s)!`,
+        type: 'success',
+      });
+      fetchUsers();
+    } catch (err) {
+      console.error(err);
+      setSnack({ open: true, msg: 'Failed to delete selected demo users.', type: 'error' });
+    } finally {
+      setActionLoading(null);
+      setBatchDeleteConfirm(null);
     }
   };
 
@@ -273,13 +351,42 @@ export default function ManageUsersPage() {
   const pendingUsers = users.filter((u) => u.status === 'pending');
   const activeUsers = users.filter((u) => u.status === 'active');
   const rejectedUsers = users.filter((u) => u.status === 'rejected');
+  const demoUsers = users.filter((u) => isDemoUser(u));
+
+  const demoActiveUsers = demoUsers.filter(
+    (u) => u.accountStatus !== 'disabled' && !isValidityExpired(u.validity)
+  );
+  const demoExpiredUsers = demoUsers.filter((u) => isValidityExpired(u.validity));
+  const demoDisabledUsers = demoUsers.filter((u) => u.accountStatus === 'disabled');
+
+  const filteredDemoUsers = demoUsers.filter((u) => {
+    if (demoStatusFilter === 'active') {
+      if (u.accountStatus === 'disabled' || isValidityExpired(u.validity)) return false;
+    } else if (demoStatusFilter === 'expired') {
+      if (!isValidityExpired(u.validity)) return false;
+    } else if (demoStatusFilter === 'disabled') {
+      if (u.accountStatus !== 'disabled') return false;
+    }
+
+    if (demoSearchQuery.trim()) {
+      const q = demoSearchQuery.toLowerCase();
+      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
+      const email = (u.email || '').toLowerCase();
+      const domain = (u.signupDomain || '').toLowerCase();
+      return fullName.includes(q) || email.includes(q) || domain.includes(q);
+    }
+
+    return true;
+  });
 
   const filteredUsers =
     activeTab === 0
       ? pendingUsers
       : activeTab === 1
       ? activeUsers
-      : rejectedUsers;
+      : activeTab === 2
+      ? rejectedUsers
+      : filteredDemoUsers;
 
   return (
     <Box
@@ -402,8 +509,160 @@ export default function ManageUsersPage() {
               }
               sx={{ textTransform: 'none', fontWeight: 800 }}
             />
+            <Tab
+              label={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <ScienceIcon sx={{ fontSize: '1.1rem' }} />
+                  <span>Demo Users</span>
+                  <Chip
+                    label={demoUsers.length}
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      bgcolor: demoUsers.length > 0 ? '#9333ea' : (isDark ? '#334155' : '#e2e8f0'),
+                      color: demoUsers.length > 0 ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                    }}
+                  />
+                </Stack>
+              }
+              sx={{ textTransform: 'none', fontWeight: 800 }}
+            />
           </Tabs>
         </Box>
+
+        {/* Demo Users Overview & Controls Bar (Visible on Tab 3) */}
+        {activeTab === 3 && (
+          <Box mb={3}>
+            {/* Demo Metric Stats */}
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={2.5}>
+              <Card sx={{ flex: 1, borderRadius: 3, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`, boxShadow: 'none' }}>
+                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                  <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                    TOTAL DEMO USERS
+                  </Typography>
+                  <Typography variant="h5" fontWeight={800} color="#9333ea" mt={0.5}>
+                    {demoUsers.length}
+                  </Typography>
+                </CardContent>
+              </Card>
+              <Card sx={{ flex: 1, borderRadius: 3, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`, boxShadow: 'none' }}>
+                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                  <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                    ACTIVE IN TRIAL
+                  </Typography>
+                  <Typography variant="h5" fontWeight={800} color="success.main" mt={0.5}>
+                    {demoActiveUsers.length}
+                  </Typography>
+                </CardContent>
+              </Card>
+              <Card sx={{ flex: 1, borderRadius: 3, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`, boxShadow: 'none' }}>
+                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                  <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                    TRIAL EXPIRED
+                  </Typography>
+                  <Typography variant="h5" fontWeight={800} color="error.main" mt={0.5}>
+                    {demoExpiredUsers.length}
+                  </Typography>
+                </CardContent>
+              </Card>
+              <Card sx={{ flex: 1, borderRadius: 3, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`, boxShadow: 'none' }}>
+                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                  <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                    DISABLED
+                  </Typography>
+                  <Typography variant="h5" fontWeight={800} color="text.secondary" mt={0.5}>
+                    {demoDisabledUsers.length}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Stack>
+
+            {/* Filter and Bulk Actions Bar */}
+            <Card sx={{ p: 2, borderRadius: 3, bgcolor: isDark ? '#1e293b' : '#ffffff', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`, boxShadow: 'none' }}>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }}>
+                <Stack direction="row" spacing={1} flex={1} alignItems="center" flexWrap="wrap">
+                  <TextField
+                    size="small"
+                    placeholder="Search demo users..."
+                    value={demoSearchQuery}
+                    onChange={(e) => setDemoSearchQuery(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{ maxWidth: { xs: '100%', md: 260 }, flex: { xs: 1, md: 'none' } }}
+                  />
+                  <Stack direction="row" spacing={0.5} sx={{ overflowX: 'auto', py: 0.5 }}>
+                    {(['all', 'active', 'expired', 'disabled'] as const).map((filterKey) => (
+                      <Chip
+                        key={filterKey}
+                        label={
+                          filterKey === 'all'
+                            ? `All (${demoUsers.length})`
+                            : filterKey === 'active'
+                            ? `Active (${demoActiveUsers.length})`
+                            : filterKey === 'expired'
+                            ? `Expired (${demoExpiredUsers.length})`
+                            : `Disabled (${demoDisabledUsers.length})`
+                        }
+                        size="small"
+                        clickable
+                        color={demoStatusFilter === filterKey ? 'primary' : 'default'}
+                        variant={demoStatusFilter === filterKey ? 'filled' : 'outlined'}
+                        onClick={() => setDemoStatusFilter(filterKey)}
+                        sx={{ fontWeight: 700 }}
+                      />
+                    ))}
+                  </Stack>
+                </Stack>
+
+                <Stack direction="row" spacing={1} justifyContent="flex-end">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteSweepIcon />}
+                    disabled={demoExpiredUsers.length === 0 || actionLoading !== null}
+                    onClick={() =>
+                      setBatchDeleteConfirm({
+                        open: true,
+                        type: 'expired',
+                        count: demoExpiredUsers.length,
+                        uids: demoExpiredUsers.map((u) => u.uid),
+                      })
+                    }
+                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700 }}
+                  >
+                    Delete Expired ({demoExpiredUsers.length})
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    disabled={demoUsers.length === 0 || actionLoading !== null}
+                    onClick={() =>
+                      setBatchDeleteConfirm({
+                        open: true,
+                        type: 'all',
+                        count: demoUsers.length,
+                        uids: demoUsers.map((u) => u.uid),
+                      })
+                    }
+                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700 }}
+                  >
+                    Delete All Demo ({demoUsers.length})
+                  </Button>
+                </Stack>
+              </Stack>
+            </Card>
+          </Box>
+        )}
 
         {loading ? (
           <Box display="flex" justifyContent="center" py={10}>
@@ -444,21 +703,43 @@ export default function ManageUsersPage() {
                         ? u.createdAt.toDate().toLocaleDateString()
                         : 'Unknown';
                       const valInfo = formatValidityInfo(u.validity, u.accountStatus);
+                      const isDemo = isDemoUser(u);
 
                       return (
                         <TableRow key={u.uid} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
                           <TableCell>
                             <Stack direction="row" alignItems="center" spacing={2}>
-                              <Avatar sx={{ bgcolor: isDark ? '#334155' : '#f1f5f9', color: isDark ? '#fff' : '#000' }}>
-                                <PersonIcon />
+                              <Avatar sx={{ bgcolor: isDemo ? '#9333ea' : (isDark ? '#334155' : '#f1f5f9'), color: isDark || isDemo ? '#fff' : '#000' }}>
+                                {isDemo ? <ScienceIcon fontSize="small" /> : <PersonIcon />}
                               </Avatar>
                               <Box>
-                                <Typography variant="body2" fontWeight="700">
-                                  {u.firstName} {u.lastName}
-                                </Typography>
+                                <Stack direction="row" alignItems="center" spacing={1}>
+                                  <Typography variant="body2" fontWeight="700">
+                                    {u.firstName} {u.lastName}
+                                  </Typography>
+                                  {isDemo && (
+                                    <Chip
+                                      label="DEMO"
+                                      size="small"
+                                      sx={{
+                                        height: 18,
+                                        fontSize: '0.65rem',
+                                        fontWeight: 800,
+                                        bgcolor: 'rgba(147, 51, 234, 0.15)',
+                                        color: '#a855f7',
+                                        border: '1px solid rgba(147, 51, 234, 0.3)',
+                                      }}
+                                    />
+                                  )}
+                                </Stack>
                                 <Typography variant="caption" color="text.secondary">
                                   {u.email}
                                 </Typography>
+                                {u.signupDomain && (
+                                  <Typography variant="caption" sx={{ display: 'block', fontSize: '0.7rem', color: isDark ? '#94a3b8' : '#64748b' }}>
+                                    Domain: {u.signupDomain}
+                                  </Typography>
+                                )}
                               </Box>
                             </Stack>
                           </TableCell>
@@ -509,10 +790,23 @@ export default function ManageUsersPage() {
                             </Typography>
                           </TableCell>
                           <TableCell align="right" sx={{ pr: 3 }}>
-                            {actionLoading === u.uid || actionLoading === `${u.uid}-role` || actionLoading === `${u.uid}-validity` || actionLoading === `${u.uid}-accountStatus` ? (
+                            {actionLoading === u.uid || actionLoading === `${u.uid}-role` || actionLoading === `${u.uid}-validity` || actionLoading === `${u.uid}-accountStatus` || actionLoading === `${u.uid}-convert` ? (
                               <CircularProgress size={24} />
                             ) : (
                               <Stack direction="row" spacing={1} justifyContent="flex-end">
+                                {/* Convert Demo User to Permanent User */}
+                                {isDemo && (
+                                  <Tooltip title="Convert to Permanent User (Removes demo trial limitations)">
+                                    <IconButton
+                                      color="secondary"
+                                      onClick={() => handleConvertToPermanent(u.uid)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <VerifiedUserIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+
                                 {/* Validity & Status Management Button */}
                                 <Tooltip title="Manage Validity & Account Status">
                                   <IconButton
@@ -585,26 +879,28 @@ export default function ManageUsersPage() {
 
                                 {/* Rejected/Cancelled Status Controls */}
                                 {u.status === 'rejected' && (
-                                  <>
-                                    <Tooltip title="Re-Approve User">
-                                      <IconButton
-                                        color="success"
-                                        onClick={() => handleApprove(u.uid)}
-                                        disabled={actionLoading !== null}
-                                      >
-                                        <CheckCircleIcon />
-                                      </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Permanently Delete Record">
-                                      <IconButton
-                                        color="error"
-                                        onClick={() => handleDelete(u.uid)}
-                                        disabled={actionLoading !== null}
-                                      >
-                                        <DeleteIcon />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </>
+                                  <Tooltip title="Re-Approve User">
+                                    <IconButton
+                                      color="success"
+                                      onClick={() => handleApprove(u.uid)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <CheckCircleIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+
+                                {/* Permanently Delete Record (Demo users, Tab 3, or Rejected users) */}
+                                {(activeTab === 3 || isDemo || u.status === 'rejected') && (
+                                  <Tooltip title="Permanently Delete User Record">
+                                    <IconButton
+                                      color="error"
+                                      onClick={() => setUserToDelete(u)}
+                                      disabled={actionLoading !== null}
+                                    >
+                                      <DeleteIcon />
+                                    </IconButton>
+                                  </Tooltip>
                                 )}
                               </Stack>
                             )}
@@ -649,16 +945,37 @@ export default function ManageUsersPage() {
                         <Stack spacing={2}>
                           {/* User Details */}
                           <Stack direction="row" alignItems="center" spacing={2}>
-                            <Avatar sx={{ bgcolor: isDark ? '#334155' : '#f1f5f9', color: isDark ? '#fff' : '#000' }}>
-                              <PersonIcon />
+                            <Avatar sx={{ bgcolor: isDemoUser(u) ? '#9333ea' : (isDark ? '#334155' : '#f1f5f9'), color: isDark || isDemoUser(u) ? '#fff' : '#000' }}>
+                              {isDemoUser(u) ? <ScienceIcon fontSize="small" /> : <PersonIcon />}
                             </Avatar>
                             <Box sx={{ minWidth: 0, flex: 1 }}>
-                              <Typography variant="body2" fontWeight="855" noWrap>
-                                {u.firstName} {u.lastName}
-                              </Typography>
+                              <Stack direction="row" alignItems="center" spacing={1}>
+                                <Typography variant="body2" fontWeight="855" noWrap>
+                                  {u.firstName} {u.lastName}
+                                </Typography>
+                                {isDemoUser(u) && (
+                                  <Chip
+                                    label="DEMO"
+                                    size="small"
+                                    sx={{
+                                      height: 18,
+                                      fontSize: '0.65rem',
+                                      fontWeight: 800,
+                                      bgcolor: 'rgba(147, 51, 234, 0.15)',
+                                      color: '#a855f7',
+                                      border: '1px solid rgba(147, 51, 234, 0.3)',
+                                    }}
+                                  />
+                                )}
+                              </Stack>
                               <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
                                 {u.email}
                               </Typography>
+                              {u.signupDomain && (
+                                <Typography variant="caption" sx={{ display: 'block', fontSize: '0.7rem', color: isDark ? '#94a3b8' : '#64748b' }}>
+                                  Domain: {u.signupDomain}
+                                </Typography>
+                              )}
                             </Box>
                           </Stack>
 
@@ -704,10 +1021,25 @@ export default function ManageUsersPage() {
 
                           {/* Action Buttons */}
                           <Box sx={{ borderTop: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`, pt: 1.5, display: 'flex', justifyContent: 'flex-end' }}>
-                            {actionLoading === u.uid || actionLoading === `${u.uid}-role` ? (
+                            {actionLoading === u.uid || actionLoading === `${u.uid}-role` || actionLoading === `${u.uid}-convert` ? (
                               <CircularProgress size={20} />
                             ) : (
                               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap justifyContent="flex-end">
+                                {/* Convert Demo User to Permanent */}
+                                {isDemoUser(u) && (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="secondary"
+                                    startIcon={<VerifiedUserIcon />}
+                                    onClick={() => handleConvertToPermanent(u.uid)}
+                                    disabled={actionLoading !== null}
+                                    sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
+                                  >
+                                    Make Permanent
+                                  </Button>
+                                )}
+
                                 <Button
                                   size="small"
                                   variant="outlined"
@@ -778,30 +1110,32 @@ export default function ManageUsersPage() {
 
                                 {/* Rejected/Cancelled Status Controls */}
                                 {u.status === 'rejected' && (
-                                  <>
-                                    <Button
-                                      size="small"
-                                      variant="contained"
-                                      color="success"
-                                      startIcon={<CheckCircleIcon />}
-                                      onClick={() => handleApprove(u.uid)}
-                                      disabled={actionLoading !== null}
-                                      sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
-                                    >
-                                      Approve
-                                    </Button>
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      color="error"
-                                      startIcon={<DeleteIcon />}
-                                      onClick={() => handleDelete(u.uid)}
-                                      disabled={actionLoading !== null}
-                                      sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
-                                    >
-                                      Delete
-                                    </Button>
-                                  </>
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    startIcon={<CheckCircleIcon />}
+                                    onClick={() => handleApprove(u.uid)}
+                                    disabled={actionLoading !== null}
+                                    sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
+                                  >
+                                    Approve
+                                  </Button>
+                                )}
+
+                                {/* Delete User Record (Available for Demo users, Tab 3, or Rejected users) */}
+                                {(activeTab === 3 || isDemoUser(u) || u.status === 'rejected') && (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    startIcon={<DeleteIcon />}
+                                    onClick={() => setUserToDelete(u)}
+                                    disabled={actionLoading !== null}
+                                    sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}
+                                  >
+                                    Delete
+                                  </Button>
                                 )}
                               </Stack>
                             )}
@@ -996,12 +1330,146 @@ export default function ManageUsersPage() {
                   {validityDialogUser.accountStatus === 'disabled' ? 'Enable Account' : 'Disable Account'}
                 </Button>
               </Box>
+
+              {/* Conversion Option for Demo Users inside Dialog */}
+              {isDemoUser(validityDialogUser) && (
+                <Box borderTop={`1px solid ${isDark ? '#334155' : '#e2e8f0'}`} pt={2} display="flex" justifyContent="space-between" alignItems="center">
+                  <Box>
+                    <Typography variant="body2" fontWeight="700">
+                      Convert to Permanent:
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Removes demo restriction & expiration
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    size="small"
+                    startIcon={<VerifiedUserIcon />}
+                    onClick={() => {
+                      handleConvertToPermanent(validityDialogUser.uid);
+                      setValidityDialogUser(null);
+                    }}
+                  >
+                    Make Permanent
+                  </Button>
+                </Box>
+              )}
             </Stack>
           )}
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setValidityDialogUser(null)} color="inherit" sx={{ fontWeight: 700 }}>
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete User Confirmation Dialog */}
+      <Dialog
+        open={Boolean(userToDelete)}
+        onClose={() => setUserToDelete(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            bgcolor: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f1f5f9' : '#000000',
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningAmberIcon color="error" />
+          <span>Delete User Record</span>
+        </DialogTitle>
+        <DialogContent dividers sx={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+          {userToDelete && (
+            <Stack spacing={2}>
+              <Typography variant="body2">
+                Are you sure you want to permanently delete this user record? This action cannot be undone.
+              </Typography>
+              <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? '#0f172a' : '#f8fafc', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                <Typography variant="subtitle2" fontWeight="700">
+                  {userToDelete.firstName} {userToDelete.lastName}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {userToDelete.email}
+                </Typography>
+                {isDemoUser(userToDelete) && (
+                  <Box mt={1}>
+                    <Chip label="DEMO USER" size="small" sx={{ fontWeight: 800, fontSize: '0.65rem', bgcolor: '#9333ea', color: '#fff' }} />
+                  </Box>
+                )}
+              </Box>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setUserToDelete(null)} color="inherit" sx={{ fontWeight: 700 }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => userToDelete && handleDelete(userToDelete.uid)}
+            color="error"
+            variant="contained"
+            disabled={actionLoading !== null}
+            startIcon={actionLoading === userToDelete?.uid ? <CircularProgress size={16} /> : <DeleteIcon />}
+            sx={{ fontWeight: 700, borderRadius: 2 }}
+          >
+            Delete Permanently
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Batch Delete Demo Users Confirmation Dialog */}
+      <Dialog
+        open={Boolean(batchDeleteConfirm?.open)}
+        onClose={() => setBatchDeleteConfirm(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            bgcolor: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f1f5f9' : '#000000',
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <DeleteSweepIcon color="error" />
+          <span>
+            {batchDeleteConfirm?.type === 'expired'
+              ? 'Delete Expired Demo Users'
+              : 'Delete All Demo Users'}
+          </span>
+        </DialogTitle>
+        <DialogContent dividers sx={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+          <Stack spacing={2}>
+            <Typography variant="body2">
+              {batchDeleteConfirm?.type === 'expired'
+                ? `Are you sure you want to permanently delete all ${batchDeleteConfirm?.count} expired demo user record(s)?`
+                : `Are you sure you want to permanently delete all ${batchDeleteConfirm?.count} demo user record(s) from the system?`}
+            </Typography>
+            <Alert severity="warning" sx={{ borderRadius: 2 }}>
+              This will remove the selected demo user documents from the Firestore users database.
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setBatchDeleteConfirm(null)} color="inherit" sx={{ fontWeight: 700 }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleBatchDeleteDemoUsers}
+            color="error"
+            variant="contained"
+            disabled={actionLoading === 'batch-delete'}
+            startIcon={actionLoading === 'batch-delete' ? <CircularProgress size={16} /> : <DeleteSweepIcon />}
+            sx={{ fontWeight: 700, borderRadius: 2 }}
+          >
+            Delete {batchDeleteConfirm?.count} Users
           </Button>
         </DialogActions>
       </Dialog>

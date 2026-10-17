@@ -81,9 +81,19 @@ export default function LoginPage() {
         // 1. Pending check (Bypassed if visiting on demo domain https://myorbitdemo.netlify.app/)
         if (userData.status === 'pending') {
           if (isDemo) {
-            // Auto-approve user status on demo domain
-            await updateDoc(doc(db, 'users', user.uid), { status: 'active', accountStatus: 'active' });
+            // Auto-approve user status on demo domain and set demo flags
+            const demoUpdates: Record<string, unknown> = {
+              status: 'active',
+              accountStatus: 'active',
+              isDemoUser: true,
+              accountType: 'demo',
+              isPermanent: false,
+            };
+            await updateDoc(doc(db, 'users', user.uid), demoUpdates);
             userData.status = 'active';
+            userData.isDemoUser = true;
+            userData.accountType = 'demo';
+            userData.isPermanent = false;
           } else {
             await signOut(auth);
             throw new Error('Your account is pending approval by the master user.');
