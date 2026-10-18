@@ -1,9 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Backdrop, Box, Button, CircularProgress, Typography } from '@mui/material';
+import { useState, useEffect } from 'react';
+import { Backdrop, Box, Button, CircularProgress, Portal, Typography } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
-import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { userAuth as auth } from '@/app/lib/firebase';
 import { clearGuestUser } from '@/app/lib/guestUser';
@@ -11,9 +10,20 @@ import { useAuth } from '@/app/lib/context/userContext';
 import Cookies from 'js-cookie';
 
 export default function LogoutButton() {
-  const router = useRouter();
   const { user, isGuest } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // Automatically reset loggingOut state whenever user session changes
+  useEffect(() => {
+    setLoggingOut(false);
+  }, [user?.uid, isGuest]);
+
+  // Clean up state on unmount
+  useEffect(() => {
+    return () => {
+      setLoggingOut(false);
+    };
+  }, []);
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -43,8 +53,9 @@ export default function LogoutButton() {
         localStorage.removeItem('myorbit_cached_user');
         localStorage.removeItem('myorbit_cached_onboarding');
         localStorage.removeItem('myorbit_cached_context_paragraph');
-        router.push('/');
-        // Keep the loader visible while navigation completes
+
+        // Full page redirect to cleanly reset all app states and in-memory caches
+        window.location.href = '/';
       }
     } catch (err) {
       console.error('Logout failed:', err);
@@ -62,18 +73,20 @@ export default function LogoutButton() {
         startIcon={loggingOut ? <CircularProgress size={18} color="inherit" /> : <LogoutIcon />}
       >
         {loggingOut
-          ? isGuest ? 'Clearing…' : 'Logging out…'
+          ? isGuest ? 'Clearing…' : 'Logging you out…'
           : isGuest ? 'Clear Guest Data' : 'Logout'}
       </Button>
 
-      <Backdrop open={loggingOut} sx={{ zIndex: (t) => t.zIndex.modal + 10, color: '#fff', backdropFilter: 'blur(4px)' }}>
-        <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
-          <CircularProgress color="inherit" />
-          <Typography variant="body1" fontWeight={600}>
-            {isGuest ? 'Clearing guest data…' : 'Logging you out…'}
-          </Typography>
-        </Box>
-      </Backdrop>
+      <Portal>
+        <Backdrop open={loggingOut} sx={{ zIndex: (t) => t.zIndex.modal + 10, color: '#fff', backdropFilter: 'blur(4px)' }}>
+          <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+            <CircularProgress color="inherit" />
+            <Typography variant="body1" fontWeight={600}>
+              {isGuest ? 'Clearing guest data…' : 'Logging you out…'}
+            </Typography>
+          </Box>
+        </Backdrop>
+      </Portal>
     </>
   );
 }

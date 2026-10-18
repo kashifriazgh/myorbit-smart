@@ -174,7 +174,6 @@ export default function AppBarTop() {
       anchorEl={anchorEl}
       anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       id={menuId}
-      keepMounted
       transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       open={isMenuOpen}
       onClose={handleMenuClose}
@@ -218,7 +217,7 @@ export default function AppBarTop() {
             ]
             : []),
           <MenuItem key="logout" onClick={handleMenuClose}>
-            <LogoutButton />
+            <LogoutButton key={user?.uid || 'guest'} />
           </MenuItem>,
         ]
         : [

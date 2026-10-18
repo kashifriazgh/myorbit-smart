@@ -69,7 +69,7 @@ const SOURCE_LABELS: Record<string, string> = {
   bank: 'Bank Account',
   easypaisa: 'EasyPaisa',
   jazzcash: 'JazzCash',
-  other: 'Other',
+  other: 'Personal Spending',
   custom: 'Custom Wallet',
 };
 

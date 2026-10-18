@@ -56,6 +56,9 @@ interface Props {
   saving: boolean;
   externalOpen?: boolean;
   onExternalClose?: () => void;
+  initialFromSource?: TransactionSource;
+  initialFromBankName?: string;
+  initialFromCustomName?: string;
 }
 
 const SOURCE_ICONS: Record<string, string> = {
@@ -63,7 +66,7 @@ const SOURCE_ICONS: Record<string, string> = {
   bank: '🏦',
   easypaisa: '📱',
   jazzcash: '📱',
-  other: '💼',
+  other: '💳',
   custom: '🗂️',
 };
 
@@ -72,37 +75,38 @@ const SOURCE_LABELS: Record<string, string> = {
   bank: 'Bank Account',
   easypaisa: 'EasyPaisa',
   jazzcash: 'JazzCash',
-  other: 'Other',
+  other: 'Personal Spending',
   custom: 'Custom Wallet',
 };
 
-const SOURCE_OPTIONS: TransactionSource[] = ['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other', 'custom'];
+const SOURCE_OPTIONS: TransactionSource[] = ['other', 'easypaisa', 'jazzcash', 'in_hand', 'bank', 'custom'];
 
 // Steps: 0 = From, 1 = To, 2 = Amount + confirm
 type Step = 0 | 1 | 2;
 
 const STEP_TITLES = ['Where from?', 'Where to?', 'How much?'];
 const STEP_SUBTITLES = [
-  'Select the source account to transfer from',
-  'Select the destination account',
+  'Select the source wallet to transfer from',
+  'Select the destination wallet',
   'Enter the amount to transfer',
 ];
 
-export default function TransferFunds({ snapshot, onTransfer, saving, externalOpen, onExternalClose }: Props) {
+export default function TransferFunds({
+  snapshot,
+  onTransfer,
+  saving,
+  externalOpen,
+  onExternalClose,
+  initialFromSource,
+  initialFromBankName,
+  initialFromCustomName,
+}: Props) {
   const { user } = useAuth();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>(0);
-
-  // Sync with external open state from FAB
-  useEffect(() => {
-    if (externalOpen !== undefined) {
-      setOpen(externalOpen);
-      if (externalOpen) setStep(0); // always start at step 0
-    }
-  }, [externalOpen]);
 
   // From state
   const [fromSource, setFromSource] = useState<TransactionSource>('in_hand');
@@ -124,6 +128,21 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
   const [banks, setBanks] = useState<Bank[]>([]);
   const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
 
+  // Sync with external open state from FAB / wallet card
+  useEffect(() => {
+    if (externalOpen !== undefined) {
+      setOpen(externalOpen);
+      if (externalOpen) {
+        if (initialFromSource) {
+          setFromSource(initialFromSource);
+          setStep(1); // Jump straight to "Where to?" step
+        } else {
+          setStep(0);
+        }
+      }
+    }
+  }, [externalOpen, initialFromSource]);
+
   useEffect(() => {
     if (!user) return;
     const fetchBanks = async () => {
@@ -139,6 +158,20 @@ export default function TransferFunds({ snapshot, onTransfer, saving, externalOp
     fetchBanks();
     fetchCustom();
   }, [user]);
+
+  useEffect(() => {
+    if (initialFromBankName && banks.length > 0) {
+      const b = banks.find((item) => item.name === initialFromBankName);
+      if (b?.id) setFromBankId(b.id);
+    }
+  }, [initialFromBankName, banks]);
+
+  useEffect(() => {
+    if (initialFromCustomName && customPaymentHeads.length > 0) {
+      const c = customPaymentHeads.find((item) => item.name === initialFromCustomName);
+      if (c?.id) setFromCustomId(c.id);
+    }
+  }, [initialFromCustomName, customPaymentHeads]);
 
   useEffect(() => {
     if (fromSource === 'bank' && banks.length === 1 && !fromBankId) {
