@@ -125,12 +125,12 @@ export default function Finance() {
   return (
     <div
       style={{
-        backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+        backgroundColor: isDark ? '#181c24' : '#f8fafc',
         color: isDark ? '#f1f5f9' : '#0f172a',
         minHeight: '100vh',
       }}
     >
-      <Container maxWidth="md" sx={{ py: 4 }}>
+      <Container maxWidth="lg" sx={{ py: 4 }}>
         <TotalCashSnapshotComponent userId={user.uid} />
 
 

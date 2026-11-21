@@ -4,14 +4,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   UserCircle2,
-  ArrowDownLeft,
-  ArrowUpRight,
-  Wallet,
   PlusCircle,
   MinusCircle,
   ChevronRight,
-  Eye,
-  EyeOff,
   RefreshCw,
   History,
   ArrowRightLeft,
@@ -42,6 +37,7 @@ import {
   PlannedExpense,
   Expenditure,
 } from '@/app/lib/interface';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 // Child components & Modals
 import AddMoney from './TotalCashSnapshot/AddMoney';
@@ -51,8 +47,9 @@ import LiabilityDialog from './TotalCashSnapshot/LiabilityDialog';
 import TransactionHistory from './TotalCashSnapshot/TransactionHistory';
 import CreateWalletModal from './TotalCashSnapshot/CreateWalletModal';
 import WalletDetailsModal from './TotalCashSnapshot/WalletDetailsModal';
-import PlannedExpensesSection from './TotalCashSnapshot/PlannedExpensesSection';
-import FinanceTasksSection from './TotalCashSnapshot/FinanceTasksSection';
+import FinancialOverview, { type FinancialOverviewData } from './TotalCashSnapshot/FinancialOverview';
+import MonthlyMoneyOverview from './TotalCashSnapshot/MonthlyMoneyOverview';
+import UpcomingExpenses from './TotalCashSnapshot/UpcomingExpenses';
 
 export const getSourceKey = (
   source: TransactionSource,
@@ -149,6 +146,149 @@ export function computeAvailableToSpend(snapshot: TotalCashSnapshot): number {
   return available;
 }
 
+/** Partition non-virtual funds into Spendable, Reserved, Savings allocation, and Amanat */
+function computeOverviewBreakdown(snapshot: TotalCashSnapshot): FinancialOverviewData {
+  let spendable = 0;
+  let reserved = 0;
+  let savings = 0;
+  let amanat = 0;
+
+  const { sources, sourceOwnership } = snapshot;
+  const savingsRegex = /saving|emergency|goal|fund|invest/i;
+
+  const classifyWallet = (key: string, label: string, grossAmount: number, isCustom = false) => {
+    if (!grossAmount || grossAmount <= 0) return;
+    const o = sourceOwnership?.[key];
+    const isSavingsWallet = savingsRegex.test(`${o?.purpose || ''} ${label}`);
+
+    if (o?.allocations && o.allocations.length > 0) {
+      let allocatedTotal = 0;
+      o.allocations.forEach((a) => {
+        const aAmt = Number(a.amount) || 0;
+        if (aAmt <= 0) return;
+        allocatedTotal += aAmt;
+        const isSelf = a.owner.toLowerCase() === 'you' || a.owner.toLowerCase() === 'self';
+        const isSavingsAlloc = isSavingsWallet || savingsRegex.test(a.purpose || '');
+
+        if (!isSelf) {
+          amanat += aAmt;
+        } else if (o.isLocked || a.isLocked) {
+          if (isSavingsAlloc) savings += aAmt;
+          else reserved += aAmt;
+        } else {
+          const res = Math.min(aAmt, Number(a.reservedAmount) || 0);
+          const usable = Math.max(0, aAmt - res);
+          if (res > 0) {
+            if (isSavingsAlloc) savings += res;
+            else reserved += res;
+          }
+          spendable += usable;
+        }
+      });
+
+      const remainder = Math.max(0, grossAmount - allocatedTotal);
+      if (remainder > 0) {
+        if (o.isLocked) {
+          if (isSavingsWallet) savings += remainder;
+          else reserved += remainder;
+        } else {
+          spendable += remainder;
+        }
+      }
+      return;
+    }
+
+    const isOwn = o ? (typeof o.hasOwnThisMoney === 'boolean' ? o.hasOwnThisMoney : !isCustom) : !isCustom;
+    if (!isOwn) {
+      amanat += grossAmount;
+      return;
+    }
+
+    if (o?.isLocked) {
+      if (isSavingsWallet) savings += grossAmount;
+      else reserved += grossAmount;
+      return;
+    }
+
+    const res = Math.min(grossAmount, Number(o?.reservedAmount) || 0);
+    const usable = Math.max(0, grossAmount - res);
+    if (res > 0) {
+      if (isSavingsWallet) savings += res;
+      else reserved += res;
+    }
+    spendable += usable;
+  };
+
+  if (sources) {
+    for (const [key, val] of Object.entries(sources)) {
+      if (key === 'bank' && typeof val === 'object' && val !== null) {
+        for (const [bankName, bankAmt] of Object.entries(val as Record<string, number>)) {
+          const fullKey = `bank:${bankName}`;
+          const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
+          if (!isVirtual && typeof bankAmt === 'number') classifyWallet(fullKey, bankName, bankAmt, false);
+        }
+      } else if (key === 'custom' && typeof val === 'object' && val !== null) {
+        for (const [customName, customAmt] of Object.entries(val as Record<string, number>)) {
+          const fullKey = `custom:${customName}`;
+          const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
+          if (!isVirtual && typeof customAmt === 'number') classifyWallet(fullKey, customName, customAmt, true);
+        }
+      } else if (typeof val === 'number') {
+        const isVirtual = sourceOwnership?.[key]?.parentWalletKey || sourceOwnership?.[key]?.isVirtual;
+        if (!isVirtual) classifyWallet(key, key, val, false);
+      }
+    }
+  }
+
+  const total = spendable + reserved + savings + amanat;
+
+  return {
+    total,
+    items: [
+      {
+        key: 'spendable',
+        label: 'Spendable',
+        amount: spendable,
+        bar: 'bg-green-500',
+        dot: 'bg-green-500',
+        text: 'text-green-400',
+        tint: 'bg-green-500/10',
+        ring: 'ring-green-500/40',
+      },
+      {
+        key: 'reserved',
+        label: 'Reserved',
+        amount: reserved,
+        bar: 'bg-blue-600',
+        dot: 'bg-blue-500',
+        text: 'text-blue-400',
+        tint: 'bg-blue-500/10',
+        ring: 'ring-blue-500/40',
+      },
+      {
+        key: 'savings',
+        label: 'Savings allocation',
+        amount: savings,
+        bar: 'bg-amber-500',
+        dot: 'bg-amber-500',
+        text: 'text-amber-400',
+        tint: 'bg-amber-500/10',
+        ring: 'ring-amber-500/40',
+      },
+      {
+        key: 'amanat',
+        label: 'Amanat',
+        amount: amanat,
+        bar: 'bg-slate-400',
+        dot: 'bg-slate-400',
+        text: 'text-slate-300',
+        tint: 'bg-slate-400/10',
+        ring: 'ring-slate-400/40',
+      },
+    ],
+  };
+}
+
 export interface WalletItem {
   id: string;
   sourceType: TransactionSource;
@@ -171,8 +311,6 @@ export interface WalletItem {
   subtitle: string;
 }
 
-const money = (amount: number) => `Rs. ${Number(amount || 0).toLocaleString('en-PK')}`;
-
 export default function TotalCashSnapshotComponent({
   userId,
   onProfile = () => {},
@@ -180,11 +318,12 @@ export default function TotalCashSnapshotComponent({
   userId: string;
   onProfile?: () => void;
 }) {
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
   const [snapshot, setSnapshot] = useState<TotalCashSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [balancesVisible, setBalancesVisible] = useState(true);
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'tasks'>('upcoming');
 
   // Dialog open states
   const [openAdd, setOpenAdd] = useState(false);
@@ -211,12 +350,11 @@ export default function TotalCashSnapshotComponent({
 
   // Income & Expenses data
   const [monthlyIncomeTotal, setMonthlyIncomeTotal] = useState(0);
-  const [currentMonthExpensesTotal, setCurrentMonthExpensesTotal] = useState(0);
+  const [currentMonthExpensesPaid, setCurrentMonthExpensesPaid] = useState(0);
+  const [currentMonthExpensesPending, setCurrentMonthExpensesPending] = useState(0);
 
   // Sync state
   const [refreshing, setRefreshing] = useState(false);
-
-  const amountDisplay = (val: number) => (balancesVisible ? money(val) : 'Rs. •••••');
 
   const triggerRefresh = () => {
     try {
@@ -365,7 +503,8 @@ export default function TotalCashSnapshotComponent({
 
     // ── Fetch all expenses (recurring & one-time for current month) ──
     const fetchExpensesMonthly = async () => {
-      let expSum = 0;
+      let paidSum = 0;
+      let pendingSum = 0;
       const now = new Date();
       const curYear = now.getFullYear();
       const curMonth = now.getMonth();
@@ -375,22 +514,30 @@ export default function TotalCashSnapshotComponent({
         const snapPlanned = await getDocs(query(collection(db, 'plannedExpenses'), where('userId', '==', userId)));
         snapPlanned.forEach((d) => {
           const p = d.data() as PlannedExpense;
-          const amt = p.expectedAmount || 0;
+          const baseAmt = p.expectedAmount || 0;
+          let monthAmt = 0;
           if (p.recurrence === 'monthly') {
-            expSum += amt;
+            monthAmt = baseAmt;
           } else if (p.recurrence === 'weekly') {
-            expSum += amt * 4.33;
+            monthAmt = baseAmt * 4.33;
           } else if (p.recurrence === 'yearly') {
-            expSum += amt / 12;
-          } else {
-            if (p.dueDate) {
-              const dDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
-              if (!isNaN(dDate.getTime()) && dDate.getFullYear() === curYear && dDate.getMonth() === curMonth) {
-                expSum += amt;
-              }
-            } else {
-              expSum += amt;
+            monthAmt = baseAmt / 12;
+          } else if (p.dueDate) {
+            const dDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+            if (!isNaN(dDate.getTime()) && dDate.getFullYear() === curYear && dDate.getMonth() === curMonth) {
+              monthAmt = baseAmt;
             }
+          } else {
+            monthAmt = baseAmt;
+          }
+
+          if (monthAmt > 0) {
+            const paid =
+              p.paymentStatus === 'paid'
+                ? monthAmt
+                : Math.min(monthAmt, Number(p.actualPaidAmount) || 0);
+            paidSum += paid;
+            pendingSum += Math.max(0, monthAmt - paid);
           }
         });
       } catch (e) {
@@ -402,25 +549,30 @@ export default function TotalCashSnapshotComponent({
         const snapExp = await getDocs(query(collection(db, 'expenditures'), where('userId', '==', userId)));
         snapExp.forEach((d) => {
           const e = d.data() as Expenditure;
-          const amt = e.amount || 0;
+          const baseAmt = e.amount || 0;
+          let monthAmt = 0;
           if (e.type === 'recurring') {
-            if (e.frequency === 'monthly') expSum += amt;
-            else if (e.frequency === 'weekly') expSum += amt * 4.33;
-            else if (e.frequency === 'daily') expSum += amt * 30;
-          } else {
-            if (e.dueDate) {
-              const dObj = e.dueDate instanceof Timestamp ? e.dueDate.toDate() : new Date(e.dueDate);
-              if (dObj.getFullYear() === curYear && dObj.getMonth() === curMonth) {
-                expSum += amt;
-              }
+            if (e.frequency === 'monthly') monthAmt = baseAmt;
+            else if (e.frequency === 'weekly') monthAmt = baseAmt * 4.33;
+            else if (e.frequency === 'daily') monthAmt = baseAmt * 30;
+          } else if (e.dueDate) {
+            const dObj = e.dueDate instanceof Timestamp ? e.dueDate.toDate() : new Date(e.dueDate);
+            if (dObj.getFullYear() === curYear && dObj.getMonth() === curMonth) {
+              monthAmt = baseAmt;
             }
+          }
+
+          if (monthAmt > 0) {
+            if (e.isPaid) paidSum += monthAmt;
+            else pendingSum += monthAmt;
           }
         });
       } catch (e) {
         console.warn('Error fetching expenditures for summary:', e);
       }
 
-      setCurrentMonthExpensesTotal(Math.round(expSum));
+      setCurrentMonthExpensesPaid(Math.round(paidSum));
+      setCurrentMonthExpensesPending(Math.round(pendingSum));
     };
 
     fetchExpensesMonthly();
@@ -619,9 +771,10 @@ export default function TotalCashSnapshotComponent({
   }, [snapshot, banksList, customHeadsList]);
 
   // Totals calculations
-  const totalMoney = snapshot ? computeTotalAmount(snapshot) : 0;
-  const availableSpendable = snapshot ? computeAvailableToSpend(snapshot) : 0;
-  const reservedOrOther = Math.max(0, totalMoney - availableSpendable);
+  const overviewData = useMemo(
+    () => (snapshot ? computeOverviewBreakdown(snapshot) : undefined),
+    [snapshot]
+  );
 
   // Quick summary loans/debts data
   const loanMetrics = useMemo(() => {
@@ -1001,46 +1154,13 @@ export default function TotalCashSnapshotComponent({
     }
   };
 
-  // ── Handler: Pay Planned Expense from a wallet ──────────────
-  const handlePayPlannedExpense = async (
-    expense: PlannedExpense,
-    walletId: string,
-    paidAmount: number
-  ) => {
-    let src: TransactionSource = 'in_hand';
-    let bName: string | undefined = undefined;
-    let cName: string | undefined = undefined;
-
-    if (walletId.startsWith('bank:')) {
-      src = 'bank';
-      bName = walletId.replace('bank:', '');
-    } else if (walletId.startsWith('custom:')) {
-      src = 'custom';
-      cName = walletId.replace('custom:', '');
-    } else {
-      src = walletId as TransactionSource;
-    }
-
-    await handleDeductMoney(
-      paidAmount,
-      src,
-      undefined,
-      bName,
-      false,
-      undefined,
-      cName,
-      `Paid bill: ${expense.title}`,
-      undefined,
-      {
-        eventType: 'expense',
-        expenseCategory: expense.category,
-      }
-    );
-  };
-
   if (loading || !snapshot) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+      <div
+        className={`flex flex-col items-center justify-center py-20 ${
+          isDark ? 'text-slate-400' : 'text-slate-500'
+        }`}
+      >
         <RefreshCw size={24} className="animate-spin text-blue-500 mb-2" />
         <span className="text-xs">Loading financial overview…</span>
       </div>
@@ -1048,21 +1168,35 @@ export default function TotalCashSnapshotComponent({
   }
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-white antialiased font-sans pb-16">
-      <div className="mx-auto flex min-h-screen w-full max-w-[440px] flex-col border-x border-white/10 px-4 pt-6 sm:px-5">
+    <div
+      className={`antialiased font-sans pb-16 transition-colors ${
+        isDark ? 'bg-transparent text-white' : 'bg-transparent text-slate-900'
+      }`}
+    >
+      <div className="mx-auto flex w-full max-w-6xl flex-col px-1 pt-2 sm:px-2">
         {/* ── Top Header ────────────────────────────────────────── */}
         <header className="mb-5 flex items-start justify-between">
           <div>
-            <h1 className="text-[23px] font-bold tracking-[-0.6px] text-white">MyOrbit</h1>
-            <p className="mt-0.5 text-[14px] text-slate-400">Your financial overview</p>
+            <h1
+              className={`text-2xl font-bold tracking-tight ${
+                isDark ? 'text-white' : 'text-slate-900'
+              }`}
+            >
+              MyOrbit
+            </h1>
+            <p className={`mt-0.5 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Your financial overview
+            </p>
           </div>
           <div className="flex items-center gap-1.5">
             <button
               onClick={triggerRefresh}
               aria-label="Refresh financial data"
-              className={`rounded-full p-2 text-slate-400 hover:text-white transition-all cursor-pointer ${
-                refreshing ? 'animate-spin text-blue-400' : ''
-              }`}
+              className={`rounded-full p-2 transition-all cursor-pointer ${
+                isDark
+                  ? 'text-slate-400 hover:text-white'
+                  : 'text-slate-500 hover:text-slate-900'
+              } ${refreshing ? 'animate-spin text-blue-500' : ''}`}
               title="Sync latest live data"
             >
               <RefreshCw size={18} strokeWidth={2} />
@@ -1070,221 +1204,218 @@ export default function TotalCashSnapshotComponent({
             <button
               aria-label="Open profile"
               onClick={onProfile}
-              className="rounded-full p-2 text-slate-400 hover:text-white transition-all cursor-pointer"
+              className={`rounded-full p-2 transition-all cursor-pointer ${
+                isDark
+                  ? 'text-slate-400 hover:text-white'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
             >
               <UserCircle2 size={24} strokeWidth={1.9} />
             </button>
           </div>
         </header>
 
-        <main className="flex-1 flex flex-col gap-4">
-          {/* ── Top Summary Hero Card ───────────────────────────── */}
-          <section className="rounded-[20px] bg-[#141b29] border border-white/10 px-[19px] py-[20px] shadow-lg relative overflow-hidden">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[13px] font-medium text-slate-400">Your total recorded money</p>
-              <button
-                onClick={() => setBalancesVisible((v) => !v)}
-                aria-label={balancesVisible ? 'Hide balances' : 'Show balances'}
-                className="text-slate-400 hover:text-white transition-colors cursor-pointer p-1"
-              >
-                {balancesVisible ? <Eye size={18} /> : <EyeOff size={18} />}
-              </button>
-            </div>
+        <main className="flex-1 flex flex-col gap-5">
+          {/* ── Row 1: Financial Overview (Left 50%) + Monthly Money Overview (Right 50%) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+            <FinancialOverview
+              data={overviewData}
+              illustrative={false}
+              balancesVisible={balancesVisible}
+              onToggleBalancesVisible={() => setBalancesVisible((v) => !v)}
+              isDark={isDark}
+            />
 
-            <p className="mt-2 text-[37px] font-bold leading-tight tracking-[-1.1px] tabular-nums sm:text-[40px] text-white">
-              {amountDisplay(totalMoney)}
-            </p>
-
-            <div className="mt-6 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
-              <div>
-                <p className="text-[13px] text-slate-400">Available to spend</p>
-                <p className="mt-1 text-[23px] font-bold tracking-[-0.6px] text-[#14b85a] tabular-nums">
-                  {amountDisplay(availableSpendable)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-[13px] text-slate-400">Reserved / planned</p>
-                <p className="mt-1 text-[23px] font-bold tracking-[-0.6px] tabular-nums text-slate-200">
-                  {amountDisplay(reservedOrOther)}
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* ── Income & Expenses Cards (Exact Monthly Calculations & Navigation) ── */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Income Card: links to /finance/income-sources */}
-            <Link
-              href="/finance/income-sources"
-              className="rounded-[18px] border border-white/10 bg-[#101726] p-3.5 hover:border-emerald-500/40 hover:bg-[#131c2e] transition-all flex flex-col justify-between group"
-            >
-              <div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    <ArrowDownLeft size={16} className="text-[#15b75c]" strokeWidth={2.4} />
-                    <span className="text-[13px] font-medium text-slate-300">Monthly Income</span>
-                  </div>
-                  <ChevronRight size={14} className="text-slate-500 group-hover:text-emerald-400 transition-colors" />
-                </div>
-                <p className="mt-2 text-[21px] font-bold tracking-[-0.5px] tabular-nums text-white">
-                  {amountDisplay(monthlyIncomeTotal)}
-                </p>
-              </div>
-              <span className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 group-hover:text-emerald-300">
-                <span>Manage Sources</span>
-                <ChevronRight size={11} />
-              </span>
-            </Link>
-
-            {/* Expenses Card: links to /finance/expenses */}
-            <Link
-              href="/finance/expenses"
-              className="rounded-[18px] border border-white/10 bg-[#101726] p-3.5 hover:border-rose-500/40 hover:bg-[#131c2e] transition-all flex flex-col justify-between group"
-            >
-              <div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    <ArrowUpRight size={16} className="text-[#ef4444]" strokeWidth={2.4} />
-                    <span className="text-[13px] font-medium text-slate-300">This Month Exp.</span>
-                  </div>
-                  <ChevronRight size={14} className="text-slate-500 group-hover:text-rose-400 transition-colors" />
-                </div>
-                <p className="mt-2 text-[21px] font-bold tracking-[-0.5px] tabular-nums text-white">
-                  {amountDisplay(currentMonthExpensesTotal)}
-                </p>
-              </div>
-              <span className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 group-hover:text-rose-300">
-                <span>View Expenses</span>
-                <ChevronRight size={11} />
-              </span>
-            </Link>
+            <MonthlyMoneyOverview
+              data={{
+                income: monthlyIncomeTotal,
+                expenses: {
+                  paid: currentMonthExpensesPaid,
+                  pending: currentMonthExpensesPending,
+                },
+                liabilities: loanMetrics.toPay,
+                receivables: loanMetrics.toReceive,
+              }}
+              balancesVisible={balancesVisible}
+              onPayBackClick={() => setOpenLoan(true)}
+              onGetBackClick={() => setOpenLiability(true)}
+              isDark={isDark}
+            />
           </div>
 
-          {/* ── Transaction History Dedicated Button (Item 3) ──── */}
-          <button
-            type="button"
-            onClick={() => setShowTransactionHistory(true)}
-            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#101726] border border-white/10 hover:border-blue-500/40 hover:bg-[#141d30] text-slate-300 hover:text-white transition-all cursor-pointer group shadow-sm"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
-                <History size={16} />
-              </div>
-              <div className="text-left">
-                <span className="text-xs font-bold text-white block">See Transaction History</span>
-                <span className="text-[11px] text-slate-400">Search, filter & view historical balance snapshots</span>
-              </div>
-            </div>
-            <ChevronRight size={16} className="text-slate-500 group-hover:text-blue-400 transition-colors" />
-          </button>
+          {/* ── Row 2: Upcoming Expenses + Quick Navigation Cards ─── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+            <UpcomingExpenses max={4} balancesVisible={balancesVisible} isDark={isDark} />
 
-          {/* ── Wallets & Accounts Link Card (Item 1: Separated page) ── */}
-          <div className="p-4 rounded-2xl bg-[#101726] border border-white/10 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-                  <Wallet size={16} />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-white tracking-tight">Wallets & Accounts</h3>
-                  <span className="text-[11px] text-slate-400">
-                    {walletsList.length} active wallets (Cash, Bank, Mobile, Virtual)
-                  </span>
-                </div>
-              </div>
-
+            <div className="flex flex-col gap-4">
+              {/* ── View Your Wallets Creative Card ───────────────── */}
               <Link
                 href="/finance/wallets"
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                className={`group relative flex items-center justify-between overflow-hidden rounded-3xl border px-5 py-4 transition-all duration-300 hover:scale-[1.01] cursor-pointer ${
+                  isDark
+                    ? 'border-white/10 bg-[#1f2430] text-white shadow-xl hover:border-emerald-400/40'
+                    : 'border-slate-200 bg-white text-slate-900 shadow-sm hover:border-emerald-300 hover:shadow-md'
+                }`}
               >
-                <span>View All Wallets</span>
-                <ChevronRight size={13} />
+                {/* Decorative corner bubble background */}
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full transition-transform duration-500 group-hover:scale-110 ${
+                    isDark ? 'bg-emerald-500/15' : 'bg-emerald-100/90'
+                  }`}
+                />
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute -bottom-10 right-6 h-24 w-24 rounded-full transition-transform duration-500 group-hover:scale-110 ${
+                    isDark ? 'bg-blue-500/15' : 'bg-blue-100/80'
+                  }`}
+                />
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute right-20 top-3 h-3 w-3 rounded-full ${
+                    isDark ? 'bg-amber-400/30' : 'bg-amber-300/70'
+                  }`}
+                />
+
+                <div className="relative z-10 flex items-center gap-4">
+                  {/* Custom colored SVG Wallet icon */}
+                  <div
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1 ring-inset transition-transform duration-300 group-hover:scale-105 ${
+                      isDark
+                        ? 'bg-emerald-500/10 ring-emerald-400/25'
+                        : 'bg-emerald-50 ring-emerald-200'
+                    }`}
+                  >
+                    <svg
+                      width="30"
+                      height="30"
+                      viewBox="0 0 36 36"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <defs>
+                        <linearGradient id="walletBodyGrad" x1="4" y1="10" x2="31" y2="30" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#10B981" />
+                          <stop offset="1" stopColor="#0D9488" />
+                        </linearGradient>
+                        <linearGradient id="walletCardGrad" x1="8" y1="5" x2="26" y2="14" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#FBBF24" />
+                          <stop offset="1" stopColor="#F59E0B" />
+                        </linearGradient>
+                        <linearGradient id="walletClaspGrad" x1="21" y1="17" x2="33" y2="25" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#38BDF8" />
+                          <stop offset="1" stopColor="#2563EB" />
+                        </linearGradient>
+                      </defs>
+                      <rect
+                        x="7"
+                        y="6"
+                        width="19"
+                        height="10"
+                        rx="3"
+                        transform="rotate(-6 7 6)"
+                        fill="url(#walletCardGrad)"
+                      />
+                      <rect
+                        x="4"
+                        y="11"
+                        width="26"
+                        height="19"
+                        rx="5"
+                        fill="url(#walletBodyGrad)"
+                      />
+                      <path
+                        d="M9 14H24"
+                        stroke="white"
+                        strokeOpacity="0.35"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                      />
+                      <rect
+                        x="21"
+                        y="16.5"
+                        width="11"
+                        height="8"
+                        rx="4"
+                        fill="url(#walletClaspGrad)"
+                      />
+                      <circle cx="25.5" cy="20.5" r="2" fill="#FEF08A" />
+                    </svg>
+                  </div>
+
+                  <span
+                    className={`text-base font-bold tracking-tight ${
+                      isDark ? 'text-white' : 'text-slate-900'
+                    }`}
+                  >
+                    View Your Wallets
+                  </span>
+                </div>
+
+                <div
+                  className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all duration-300 group-hover:translate-x-0.5 ${
+                    isDark
+                      ? 'border-white/15 bg-white/10 text-emerald-300 group-hover:bg-emerald-500/20'
+                      : 'border-emerald-200 bg-white/90 text-emerald-700 shadow-xs group-hover:bg-emerald-50'
+                  }`}
+                >
+                  <ChevronRight size={18} />
+                </div>
               </Link>
+
+              {/* ── Transaction History Dedicated Button ────────── */}
+              <button
+                type="button"
+                onClick={() => setShowTransactionHistory(true)}
+                className={`w-full flex items-center justify-between p-4 rounded-3xl border transition-all cursor-pointer group shadow-sm ${
+                  isDark
+                    ? 'bg-[#1f2430] border-white/10 hover:border-blue-500/40 hover:bg-[#262c3b] text-slate-300 hover:text-white'
+                    : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
+                      isDark
+                        ? 'bg-blue-600/20 text-blue-400 border-blue-500/30'
+                        : 'bg-blue-50 text-blue-600 border-blue-200'
+                    }`}
+                  >
+                    <History size={18} />
+                  </div>
+                  <div className="text-left">
+                    <span
+                      className={`text-sm font-bold block ${isDark ? 'text-white' : 'text-slate-900'}`}
+                    >
+                      See Transaction History
+                    </span>
+                    <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Search, filter &amp; view historical balance snapshots
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight
+                  size={18}
+                  className={`transition-colors ${
+                    isDark
+                      ? 'text-slate-500 group-hover:text-blue-400'
+                      : 'text-slate-400 group-hover:text-blue-600'
+                  }`}
+                />
+              </button>
             </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-white/5">
-              <div className="p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
-                <span className="text-[10px] text-slate-400 block">Total In Wallets</span>
-                <span className="font-bold text-white tabular-nums text-sm">
-                  {amountDisplay(totalMoney)}
-                </span>
-              </div>
-              <div className="p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
-                <span className="text-[10px] text-slate-400 block">Spendable Balance</span>
-                <span className="font-bold text-emerald-400 tabular-nums text-sm">
-                  {amountDisplay(availableSpendable)}
-                </span>
-              </div>
-            </div>
           </div>
-
-          {/* ── Loans & Debts Quick Ribbon ────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setOpenLoan(true)}
-              className="p-3 bg-[#101726] border border-white/10 hover:border-amber-500/30 rounded-2xl flex flex-col gap-0.5 text-left transition-all cursor-pointer"
-            >
-              <span className="text-[11px] text-slate-400 font-medium">To Pay (Loans & Debts)</span>
-              <span className="text-base font-bold text-amber-400 tabular-nums">
-                {amountDisplay(loanMetrics.toPay)}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setOpenLiability(true)}
-              className="p-3 bg-[#101726] border border-white/10 hover:border-blue-500/30 rounded-2xl flex flex-col gap-0.5 text-left transition-all cursor-pointer"
-            >
-              <span className="text-[11px] text-slate-400 font-medium">To Receive (Credits)</span>
-              <span className="text-base font-bold text-emerald-400 tabular-nums">
-                {amountDisplay(loanMetrics.toReceive)}
-              </span>
-            </button>
-          </div>
-
-          {/* ── Segmented Navigation Tabs: Upcoming Bills vs Tasks ── */}
-          <div className="grid grid-cols-2 gap-1 rounded-2xl bg-[#101726] p-1 border border-white/10">
-            <button
-              type="button"
-              onClick={() => setActiveTab('upcoming')}
-              className={`py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'upcoming'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Upcoming Bills & Commitments
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('tasks')}
-              className={`py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'tasks'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Financial Tasks To-Dos
-            </button>
-          </div>
-
-          {/* ── Tab Content: Upcoming Bills ───────────────────────── */}
-          {activeTab === 'upcoming' && (
-            <PlannedExpensesSection
-              userId={userId}
-              wallets={walletsList.map((w) => ({ id: w.id, name: w.name, amount: w.amount }))}
-              onPayExpense={handlePayPlannedExpense}
-              balancesVisible={balancesVisible}
-            />
-          )}
-
-          {/* ── Tab Content: Financial Tasks ──────────────────────── */}
-          {activeTab === 'tasks' && <FinanceTasksSection userId={userId} />}
         </main>
 
         {/* ── Floating Bottom Action Bar ────────────────────────── */}
-        <div className="sticky bottom-4 mt-6 z-30 flex items-center justify-between gap-2 p-2 bg-[#121824]/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl">
+        <div
+          className={`sticky bottom-4 mt-6 mx-auto w-full max-w-lg z-30 flex items-center justify-between gap-2 p-2 backdrop-blur-md border rounded-2xl ${
+            isDark
+              ? 'bg-[#1f2430]/95 border-white/10 shadow-2xl'
+              : 'bg-white/95 border-slate-200 shadow-lg'
+          }`}
+        >
           <button
             type="button"
             onClick={() => {
@@ -1327,7 +1458,11 @@ export default function TotalCashSnapshotComponent({
           <button
             type="button"
             onClick={() => setShowTransactionHistory(true)}
-            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold flex items-center justify-center transition-all cursor-pointer"
+            className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-center transition-all cursor-pointer ${
+              isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900'
+            }`}
             title="Transaction History & Audit"
           >
             <History size={17} />

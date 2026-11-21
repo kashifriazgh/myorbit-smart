@@ -412,6 +412,10 @@ export interface PlannedExpense {
   walletId?: string;
   walletName?: string;
   recurrence: 'one_time' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+  expenseType?: 'recurring' | 'one_time' | 'event_based' | 'wish_list';
+  priority?: 'essential' | 'important' | 'wish_list' | 'lifestyle';
+  frequency?: 'monthly' | 'yearly' | 'weekly' | 'daily';
+  isGlobal?: boolean;
   notes?: string;
   createdAt?: Date | Timestamp;
 }

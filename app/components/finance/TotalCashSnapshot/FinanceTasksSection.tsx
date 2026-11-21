@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { FinanceTask } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import {
   collection,
   query,
@@ -34,6 +35,8 @@ const DEFAULT_TASKS = [
 ];
 
 export default function FinanceTasksSection({ userId }: FinanceTasksSectionProps) {
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
   const [tasks, setTasks] = useState<FinanceTask[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [loading, setLoading] = useState(true);
@@ -152,20 +155,42 @@ export default function FinanceTasksSection({ userId }: FinanceTasksSectionProps
   return (
     <div className="flex flex-col gap-3">
       {/* Top Banner */}
-      <div className="bg-[#121824] border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+      <div
+        className={`border rounded-2xl p-4 flex items-center justify-between ${
+          isDark ? 'bg-[#121824] border-white/10' : 'bg-white border-slate-200 shadow-sm'
+        }`}
+      >
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
+          <div
+            className={`w-8 h-8 rounded-xl flex items-center justify-center border ${
+              isDark
+                ? 'bg-blue-600/20 text-blue-400 border-blue-500/30'
+                : 'bg-blue-50 text-blue-600 border-blue-200'
+            }`}
+          >
             <ListTodo size={17} />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white tracking-tight">Financial To-Dos</h3>
-            <span className="text-xs text-slate-400">
+            <h3
+              className={`text-sm font-bold tracking-tight ${
+                isDark ? 'text-white' : 'text-slate-900'
+              }`}
+            >
+              Financial To-Dos
+            </h3>
+            <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               {remaining === 0 ? 'All tasks completed! 🎉' : `${remaining} task${remaining > 1 ? 's' : ''} remaining`}
             </span>
           </div>
         </div>
 
-        <span className="text-xs font-semibold px-2.5 py-1 bg-slate-800 rounded-full border border-white/10 text-slate-300">
+        <span
+          className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+            isDark
+              ? 'bg-slate-800 border-white/10 text-slate-300'
+              : 'bg-slate-100 border-slate-200 text-slate-700'
+          }`}
+        >
           {tasks.filter((t) => t.completed).length} / {tasks.length} Done
         </span>
       </div>
@@ -177,7 +202,11 @@ export default function FinanceTasksSection({ userId }: FinanceTasksSectionProps
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
           placeholder="Add a financial task (e.g., Pay Wi-Fi bill, Check statement)…"
-          className="flex-1 px-3.5 py-2.5 bg-[#121824] border border-white/10 rounded-xl text-white placeholder-slate-500 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+          className={`flex-1 px-3.5 py-2.5 border rounded-xl text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all ${
+            isDark
+              ? 'bg-[#121824] border-white/10 text-white placeholder-slate-500'
+              : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
+          }`}
         />
         <button
           type="submit"
@@ -194,7 +223,11 @@ export default function FinanceTasksSection({ userId }: FinanceTasksSectionProps
         {loading ? (
           <div className="py-6 text-center text-xs text-slate-400">Loading to-dos…</div>
         ) : tasks.length === 0 ? (
-          <div className="py-6 text-center text-xs text-slate-500 bg-slate-900/30 rounded-2xl border border-white/5">
+          <div
+            className={`py-6 text-center text-xs text-slate-500 rounded-2xl border ${
+              isDark ? 'bg-slate-900/30 border-white/5' : 'bg-white border-slate-200'
+            }`}
+          >
             No financial to-dos yet. Add one above!
           </div>
         ) : (
@@ -202,10 +235,14 @@ export default function FinanceTasksSection({ userId }: FinanceTasksSectionProps
             return (
               <div
                 key={task.id}
-                className={`bg-[#121824] border rounded-2xl p-3 flex items-center justify-between gap-3 transition-all ${
+                className={`border rounded-2xl p-3 flex items-center justify-between gap-3 transition-all ${
                   task.completed
-                    ? 'border-white/5 bg-slate-900/40 opacity-70'
-                    : 'border-white/10 hover:border-white/20'
+                    ? isDark
+                      ? 'border-white/5 bg-slate-900/40 opacity-70'
+                      : 'border-slate-200/70 bg-slate-50 opacity-75'
+                    : isDark
+                    ? 'bg-[#121824] border-white/10 hover:border-white/20'
+                    : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
                 }`}
               >
                 <button
@@ -213,16 +250,20 @@ export default function FinanceTasksSection({ userId }: FinanceTasksSectionProps
                   onClick={() => handleToggleTask(task)}
                   className="flex items-center gap-3 text-left flex-1 min-w-0 cursor-pointer"
                 >
-                  <div className="shrink-0 text-slate-400 hover:text-white transition-colors">
+                  <div className="shrink-0 text-slate-400 hover:text-blue-500 transition-colors">
                     {task.completed ? (
-                      <CheckCircle2 size={19} className="text-emerald-400" />
+                      <CheckCircle2 size={19} className={isDark ? 'text-emerald-400' : 'text-emerald-600'} />
                     ) : (
-                      <Circle size={19} className="text-slate-500 hover:text-slate-300" />
+                      <Circle size={19} className={isDark ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} />
                     )}
                   </div>
                   <span
                     className={`text-xs font-medium truncate ${
-                      task.completed ? 'line-through text-slate-500' : 'text-slate-200'
+                      task.completed
+                        ? 'line-through text-slate-500'
+                        : isDark
+                        ? 'text-slate-200'
+                        : 'text-slate-800'
                     }`}
                   >
                     {task.title}
@@ -232,7 +273,7 @@ export default function FinanceTasksSection({ userId }: FinanceTasksSectionProps
                 <button
                   type="button"
                   onClick={() => handleDeleteTask(task.id)}
-                  className="text-slate-500 hover:text-rose-400 p-1 rounded-lg transition-colors cursor-pointer shrink-0"
+                  className="text-slate-400 hover:text-rose-500 p-1 rounded-lg transition-colors cursor-pointer shrink-0"
                   title="Delete task"
                 >
                   <Trash2 size={14} />

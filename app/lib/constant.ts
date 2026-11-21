@@ -174,17 +174,17 @@ export const COUNTRIES = [
 ];
 
 export const PAKISTANI_EXPENSE_CATEGORIES = [
-  'Groceries',
-  'Bills & Utilities',
-  'Mobile & Internet',
-  'Transport',
-  'Education',
-  'Family',
-  'Healthcare',
-  'Shopping',
-  'Housing',
-  'Charity',
+  'House rent',
+  'Groceries and food',
+  'Electricity, gas and water',
+  "Children's education",
+  'Healthcare and medicines',
+  'Transport and fuel',
+  'Mobile and internet',
+  'Clothing and shopping',
   'Entertainment',
+  'Loans and installments',
+  'Charity',
   'Personal',
-  'Other',
+  'Other expenses',
 ] as const;

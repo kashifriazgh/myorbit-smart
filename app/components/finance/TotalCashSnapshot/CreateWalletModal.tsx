@@ -19,8 +19,10 @@ import {
   Trash2,
   Lock,
   Info,
+  Sparkles,
 } from 'lucide-react';
 import { WalletType, WalletAllocation } from '@/app/lib/interface';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 
 interface CreateWalletModalProps {
   open: boolean;
@@ -85,6 +87,111 @@ const PRESET_COLORS = [
   '#6366f1', // indigo
 ];
 
+type PredefinedTemplateKey = 'qurbani' | 'wedding' | 'emergency' | 'amanat';
+
+function TemplateIcon({ template }: { template: PredefinedTemplateKey }) {
+  if (template === 'qurbani') {
+    return (
+      <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true">
+        <path d="M9 7C7 5.2 6.4 3.2 8 2" fill="none" stroke="#d6b36a" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M15 7c2-1.8 2.6-3.8 1-5" fill="none" stroke="#d6b36a" strokeWidth="1.7" strokeLinecap="round" />
+        <ellipse cx="5" cy="10.5" rx="3" ry="1.5" transform="rotate(-25 5 10.5)" fill="#e7e5e4" />
+        <ellipse cx="19" cy="10.5" rx="3" ry="1.5" transform="rotate(25 19 10.5)" fill="#e7e5e4" />
+        <ellipse cx="5.2" cy="10.5" rx="1.6" ry="0.7" transform="rotate(-25 5.2 10.5)" fill="#f9a8d4" />
+        <ellipse cx="18.8" cy="10.5" rx="1.6" ry="0.7" transform="rotate(25 18.8 10.5)" fill="#f9a8d4" />
+        <path d="M10.6 19.5L12 23l1.4-3.5z" fill="#d6d3d1" />
+        <path d="M12 21c-4 0-5-4-5-9 0-3.5 2-5 5-5s5 1.5 5 5c0 5-1 9-5 9z" fill="#fafaf9" />
+        <circle cx="9.7" cy="11.5" r="0.95" fill="#1c1917" />
+        <circle cx="14.3" cy="11.5" r="0.95" fill="#1c1917" />
+        <ellipse cx="12" cy="17" rx="2.6" ry="2" fill="#d6d3d1" />
+        <circle cx="11" cy="17" r="0.4" fill="#44403c" />
+        <circle cx="13" cy="17" r="0.4" fill="#44403c" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5 text-white"
+      aria-hidden="true"
+    >
+      {template === 'emergency' && (
+        <>
+          <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" />
+          <path d="M9 12l2 2 4-4" />
+        </>
+      )}
+      {template === 'wedding' && (
+        <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />
+      )}
+      {template === 'amanat' && (
+        <>
+          <rect x="5" y="11" width="14" height="9" rx="2" />
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+          <path d="M12 15v2" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+const PREDEFINED_WALLETS: {
+  key: PredefinedTemplateKey;
+  label: string;
+  defaultName: string;
+  subtitle: string;
+  iconBg: string;
+  color: string;
+  owner: string;
+  locked: boolean;
+}[] = [
+  {
+    key: 'qurbani',
+    label: 'Qurbani',
+    defaultName: 'Qurbani Fund',
+    subtitle: 'Event savings',
+    iconBg: 'bg-emerald-700',
+    color: '#10b981',
+    owner: 'You',
+    locked: false,
+  },
+  {
+    key: 'wedding',
+    label: 'Wedding',
+    defaultName: 'Wedding Savings',
+    subtitle: 'Savings goal',
+    iconBg: 'bg-rose-700',
+    color: '#ec4899',
+    owner: 'You',
+    locked: false,
+  },
+  {
+    key: 'emergency',
+    label: 'Emergency',
+    defaultName: 'Emergency Fund',
+    subtitle: 'Protected savings',
+    iconBg: 'bg-indigo-700',
+    color: '#6366f1',
+    owner: 'You',
+    locked: false,
+  },
+  {
+    key: 'amanat',
+    label: 'Amanat',
+    defaultName: 'Amanat',
+    subtitle: 'Money held for others',
+    iconBg: 'bg-slate-600',
+    color: '#64748b',
+    owner: 'Amanat',
+    locked: true,
+  },
+];
+
 export default function CreateWalletModal({
   open,
   onClose,
@@ -92,6 +199,10 @@ export default function CreateWalletModal({
   saving,
   existingWallets,
 }: CreateWalletModalProps) {
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
+
+  const [selectedTemplate, setSelectedTemplate] = useState<PredefinedTemplateKey | null>(null);
   const [name, setName] = useState('');
   const [walletType, setWalletType] = useState<WalletType>('cash');
   const [openingBalance, setOpeningBalance] = useState('');
@@ -101,6 +212,20 @@ export default function CreateWalletModal({
   const [color, setColor] = useState(PRESET_COLORS[0]);
   const [notes, setNotes] = useState('');
   const [isLocked, setIsLocked] = useState(false);
+
+  const handleSelectTemplate = (tpl: (typeof PREDEFINED_WALLETS)[number]) => {
+    if (selectedTemplate === tpl.key) {
+      setSelectedTemplate(null);
+      return;
+    }
+    setSelectedTemplate(tpl.key);
+    setName(tpl.defaultName);
+    setPurpose(tpl.subtitle);
+    setColor(tpl.color);
+    setInitialOwner(tpl.owner);
+    setIsLocked(tpl.locked);
+    setWalletType('cash');
+  };
 
   // Multi-owner allocations toggle
   const [enableMultiOwner, setEnableMultiOwner] = useState(false);
@@ -176,6 +301,7 @@ export default function CreateWalletModal({
     });
 
     // Reset form
+    setSelectedTemplate(null);
     setName('');
     setOpeningBalance('');
     setInitialOwner('You');
@@ -187,6 +313,8 @@ export default function CreateWalletModal({
     setAllocations([{ id: '1', owner: 'You', amount: '', purpose: 'General Spending', reserved: '0', isLocked: false }]);
   };
 
+  const activeTemplateObj = PREDEFINED_WALLETS.find((t) => t.key === selectedTemplate);
+
   return (
     <Dialog
       open={open}
@@ -195,33 +323,110 @@ export default function CreateWalletModal({
       maxWidth="sm"
       PaperProps={{
         sx: {
-          backgroundColor: '#121824',
-          color: '#f8fafc',
+          backgroundColor: isDark ? '#0f172a' : '#ffffff',
+          color: isDark ? '#f8fafc' : '#0f172a',
           borderRadius: 4,
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          border: isDark ? '1px solid rgba(148, 163, 184, 0.2)' : '1px solid #e2e8f0',
         },
       }}
     >
       <form onSubmit={handleSubmit}>
-        <DialogTitle className="flex items-center justify-between pb-2 border-b border-white/10">
+        <DialogTitle
+          className={`flex items-center justify-between pb-2 border-b ${
+            isDark ? 'border-slate-800' : 'border-slate-200'
+          }`}
+        >
           <div className="flex items-center gap-2.5">
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-white"
-              style={{ backgroundColor: color }}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${
+                activeTemplateObj ? activeTemplateObj.iconBg : ''
+              }`}
+              style={activeTemplateObj ? undefined : { backgroundColor: color }}
             >
-              <WalletIcon size={18} />
+              {activeTemplateObj ? (
+                <TemplateIcon template={activeTemplateObj.key} />
+              ) : (
+                <WalletIcon size={18} />
+              )}
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white tracking-tight">Create New Wallet</h2>
-              <p className="text-xs text-slate-400">Configure balance, ownership, and allocation</p>
+              <h2
+                className={`text-lg font-bold tracking-tight ${
+                  isDark ? 'text-white' : 'text-slate-900'
+                }`}
+              >
+                Create New Wallet
+              </h2>
+              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Choose a quick template or configure a custom wallet
+              </p>
             </div>
           </div>
-          <IconButton size="small" onClick={onClose} sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+          <IconButton
+            size="small"
+            onClick={onClose}
+            sx={{ color: isDark ? 'rgba(255, 255, 255, 0.6)' : '#64748b' }}
+          >
             <X size={18} />
           </IconButton>
         </DialogTitle>
 
         <DialogContent className="pt-4 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
+          {/* Quick Predefined Wallet Templates (Qurbani, Wedding, Emergency, Amanat) */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Sparkles size={13} className={isDark ? 'text-blue-400' : 'text-blue-600'} />
+              <label
+                className={`text-xs font-semibold ${
+                  isDark ? 'text-slate-300' : 'text-slate-700'
+                }`}
+              >
+                Quick Templates (Optional)
+              </label>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {PREDEFINED_WALLETS.map((tpl) => {
+                const isSelected = selectedTemplate === tpl.key;
+                return (
+                  <button
+                    key={tpl.key}
+                    type="button"
+                    onClick={() => handleSelectTemplate(tpl)}
+                    className={`flex flex-col items-start rounded-2xl border p-3 text-left transition cursor-pointer active:scale-[0.98] ${
+                      isSelected
+                        ? isDark
+                          ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500/40'
+                          : 'bg-blue-50 border-blue-500 ring-1 ring-blue-300'
+                        : isDark
+                        ? 'bg-slate-800/80 border-slate-700/70 hover:border-slate-500'
+                        : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-xs ${tpl.iconBg}`}
+                    >
+                      <TemplateIcon template={tpl.key} />
+                    </div>
+                    <span
+                      className={`mt-2.5 text-xs font-bold leading-tight ${
+                        isDark ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      {tpl.label}
+                    </span>
+                    <span
+                      className={`mt-0.5 text-[10px] leading-snug line-clamp-1 ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
+                      }`}
+                    >
+                      {tpl.subtitle}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Wallet Name */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">

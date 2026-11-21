@@ -22,6 +22,7 @@ import {
 } from '@/app/lib/interface';
 import { PAKISTANI_EXPENSE_CATEGORIES } from '@/app/lib/constant';
 import { db } from '@/app/lib/firebase';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import {
   collection,
   query,
@@ -46,6 +47,8 @@ export default function PlannedExpensesSection({
   onPayExpense,
   balancesVisible,
 }: PlannedExpensesSectionProps) {
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
   const [expenses, setExpenses] = useState<PlannedExpense[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -223,11 +226,19 @@ export default function PlannedExpensesSection({
   return (
     <div className="flex flex-col gap-4">
       {/* Top Banner / Budget Utilization */}
-      <div className="bg-[#121824] border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
+      <div
+        className={`border rounded-2xl p-4 flex flex-col gap-3 ${
+          isDark ? 'bg-[#121824] border-white/10' : 'bg-white border-slate-200 shadow-sm'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CalendarDays size={18} className="text-blue-400" />
-            <h3 className="text-sm font-bold text-white tracking-tight">
+            <CalendarDays size={18} className={isDark ? 'text-blue-400' : 'text-blue-600'} />
+            <h3
+              className={`text-sm font-bold tracking-tight ${
+                isDark ? 'text-white' : 'text-slate-900'
+              }`}
+            >
               Upcoming Expenses & Commitments
             </h3>
           </div>
@@ -243,15 +254,43 @@ export default function PlannedExpensesSection({
 
         {/* Overview Stats */}
         <div className="grid grid-cols-2 gap-2.5">
-          <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5">
-            <span className="text-[11px] text-slate-400 block font-medium">Expected Total</span>
-            <span className="text-base font-bold text-white tabular-nums">
+          <div
+            className={`p-3 rounded-xl border ${
+              isDark ? 'bg-slate-900/60 border-white/5' : 'bg-slate-50 border-slate-200/80'
+            }`}
+          >
+            <span
+              className={`text-[11px] block font-medium ${
+                isDark ? 'text-slate-400' : 'text-slate-500'
+              }`}
+            >
+              Expected Total
+            </span>
+            <span
+              className={`text-base font-bold tabular-nums ${
+                isDark ? 'text-white' : 'text-slate-900'
+              }`}
+            >
               {balancesVisible ? fmt(totalPlanned) : 'Rs. •••••'}
             </span>
           </div>
-          <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5">
-            <span className="text-[11px] text-slate-400 block font-medium">Already Paid</span>
-            <span className="text-base font-bold text-emerald-400 tabular-nums">
+          <div
+            className={`p-3 rounded-xl border ${
+              isDark ? 'bg-slate-900/60 border-white/5' : 'bg-slate-50 border-slate-200/80'
+            }`}
+          >
+            <span
+              className={`text-[11px] block font-medium ${
+                isDark ? 'text-slate-400' : 'text-slate-500'
+              }`}
+            >
+              Already Paid
+            </span>
+            <span
+              className={`text-base font-bold tabular-nums ${
+                isDark ? 'text-emerald-400' : 'text-emerald-600'
+              }`}
+            >
               {balancesVisible ? fmt(totalPaid) : 'Rs. •••••'}
             </span>
           </div>
@@ -260,13 +299,21 @@ export default function PlannedExpensesSection({
         {/* Utilization Bar */}
         {totalPlanned > 0 && (
           <div>
-            <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+            <div
+              className={`flex justify-between text-[11px] mb-1 ${
+                isDark ? 'text-slate-400' : 'text-slate-500'
+              }`}
+            >
               <span>Budget Utilization</span>
-              <span className="font-semibold text-slate-300">
+              <span className={`font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                 {Math.round((totalPaid / totalPlanned) * 100)}%
               </span>
             </div>
-            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+            <div
+              className={`w-full h-2 rounded-full overflow-hidden ${
+                isDark ? 'bg-slate-800' : 'bg-slate-200'
+              }`}
+            >
               <div
                 className="bg-emerald-500 h-full rounded-full transition-all duration-300"
                 style={{ width: `${Math.min(100, Math.round((totalPaid / totalPlanned) * 100))}%` }}
@@ -278,14 +325,18 @@ export default function PlannedExpensesSection({
 
       {/* Commitments List */}
       <div className="flex flex-col gap-2">
-        <span className="text-xs font-semibold text-slate-400">
+        <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
           Due Commitments ({pendingCommitments.length} pending)
         </span>
 
         {loading ? (
           <div className="py-6 text-center text-xs text-slate-400">Loading planned expenses…</div>
         ) : expenses.length === 0 ? (
-          <div className="py-6 text-center text-xs text-slate-500 bg-slate-900/30 rounded-2xl border border-white/5">
+          <div
+            className={`py-6 text-center text-xs text-slate-500 rounded-2xl border ${
+              isDark ? 'bg-slate-900/30 border-white/5' : 'bg-white border-slate-200'
+            }`}
+          >
             No planned expenses added yet. Tap &quot;Add Planned&quot; above to track upcoming bills.
           </div>
         ) : (
@@ -294,34 +345,60 @@ export default function PlannedExpensesSection({
             return (
               <div
                 key={item.id}
-                className="bg-[#121824] border border-white/10 hover:border-white/20 rounded-2xl p-3.5 flex items-center justify-between gap-3 transition-all"
+                className={`border rounded-2xl p-3.5 flex items-center justify-between gap-3 transition-all ${
+                  isDark
+                    ? 'bg-[#121824] border-white/10 hover:border-white/20'
+                    : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                       isPaid
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        ? isDark
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                        : isDark
+                        ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        : 'bg-rose-50 text-rose-600 border border-rose-200'
                     }`}
                   >
                     {isPaid ? <CheckCircle2 size={18} /> : <Receipt size={18} />}
                   </div>
 
                   <div className="min-w-0">
-                    <span className="text-sm font-semibold text-white truncate block">
+                    <span
+                      className={`text-sm font-semibold truncate block ${
+                        isDark ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
                       {item.title}
                     </span>
-                    <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                      <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full border border-white/5">
+                    <div
+                      className={`flex items-center gap-2 text-xs mt-0.5 ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
+                      }`}
+                    >
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                          isDark
+                            ? 'bg-slate-800 text-slate-300 border-white/5'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
                         {item.category}
                       </span>
                       <span>•</span>
-                      <span className="flex items-center gap-1 text-slate-400">
+                      <span className="flex items-center gap-1">
                         <Clock size={11} />
                         {item.dueDate ? `Due ${item.dueDate}` : 'Recurring'}
                       </span>
                       {item.recurrence !== 'one_time' && (
-                        <span className="text-[10px] text-blue-400 capitalize">
+                        <span
+                          className={`text-[10px] capitalize ${
+                            isDark ? 'text-blue-400' : 'text-blue-600'
+                          }`}
+                        >
                           ({item.recurrence})
                         </span>
                       )}
@@ -331,17 +408,29 @@ export default function PlannedExpensesSection({
 
                 <div className="flex items-center gap-3 shrink-0">
                   <div className="text-right">
-                    <span className="text-sm font-bold text-white tabular-nums block">
+                    <span
+                      className={`text-sm font-bold tabular-nums block ${
+                        isDark ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
                       {balancesVisible ? fmt(item.expectedAmount) : 'Rs. •••••'}
                     </span>
                     {isPaid ? (
-                      <span className="text-[10px] text-emerald-400 font-semibold">Fully Paid</span>
+                      <span
+                        className={`text-[10px] font-semibold ${
+                          isDark ? 'text-emerald-400' : 'text-emerald-600'
+                        }`}
+                      >
+                        Fully Paid
+                      </span>
                     ) : item.actualPaidAmount && item.actualPaidAmount > 0 ? (
-                      <span className="text-[10px] text-amber-400">
+                      <span className={`text-[10px] ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
                         Paid: {fmt(item.actualPaidAmount)}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-rose-400">Unpaid</span>
+                      <span className={`text-[10px] ${isDark ? 'text-rose-400' : 'text-rose-600'}`}>
+                        Unpaid
+                      </span>
                     )}
                   </div>
 
@@ -353,7 +442,11 @@ export default function PlannedExpensesSection({
                         setPayAmount(String(item.expectedAmount - (item.actualPaidAmount || 0)));
                         setPayWalletId(wallets[0]?.id || '');
                       }}
-                      className="px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-semibold rounded-xl cursor-pointer transition-all"
+                      className={`px-2.5 py-1.5 border text-xs font-semibold rounded-xl cursor-pointer transition-all ${
+                        isDark
+                          ? 'bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/30 text-emerald-300'
+                          : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
+                      }`}
                     >
                       Pay
                     </button>

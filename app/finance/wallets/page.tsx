@@ -5,15 +5,12 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   Plus,
-  Lock,
-  PlusCircle,
-  MinusCircle,
-  ArrowRightLeft,
   Eye,
   EyeOff,
   Search,
 } from 'lucide-react';
 import { useAuth } from '@/app/lib/context/userContext';
+import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { db } from '@/app/lib/firebase';
 import {
   collection,
@@ -36,7 +33,8 @@ import type {
 } from '@/app/lib/interface';
 import { computeTotalAmount, computeAvailableToSpend, type WalletItem } from '@/app/components/finance/TotalCashSnapshot';
 import CreateWalletModal from '@/app/components/finance/TotalCashSnapshot/CreateWalletModal';
-import WalletDetailsModal from '@/app/components/finance/TotalCashSnapshot/WalletDetailsModal';
+import WalletsGrid from '@/app/components/finance/TotalCashSnapshot/WalletsGrid';
+import SmartWalletDetailDialog from '@/app/components/finance/TotalCashSnapshot/SmartWalletDetailDialog';
 import AddMoney from '@/app/components/finance/TotalCashSnapshot/AddMoney';
 import TransferFunds from '@/app/components/finance/TotalCashSnapshot/TransferFunds';
 
@@ -44,6 +42,8 @@ const money = (amount: number) => `Rs. ${Number(amount || 0).toLocaleString('en-
 
 export default function WalletsPage() {
   const { user } = useAuth();
+  const { theme } = useCustomTheme();
+  const isDark = theme?.mode === 'dark';
 
   const [snapshot, setSnapshot] = useState<TotalCashSnapshot | null>(null);
   const [banksList, setBanksList] = useState<Bank[]>([]);
@@ -58,7 +58,7 @@ export default function WalletsPage() {
 
   // Modals
   const [openCreateModal, setOpenCreateModal] = useState(false);
-  const [activeWalletModal, setActiveWalletModal] = useState<WalletItem | null>(null);
+  const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
 
   // Pre-selected wallet for Add / Spend / Transfer
   const [openAddMoney, setOpenAddMoney] = useState(false);
@@ -602,10 +602,6 @@ export default function WalletsPage() {
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
       await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
       setSnapshot(updatedSnapshot);
-
-      if (activeWalletModal && activeWalletModal.id === walletId) {
-        setActiveWalletModal({ ...activeWalletModal, isLocked: !currentLock });
-      }
     } catch (e) {
       console.error('Lock toggle failed:', e);
     }
@@ -641,7 +637,6 @@ export default function WalletsPage() {
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
       await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
       setSnapshot(updatedSnapshot);
-      setActiveWalletModal(null);
     } catch (e) {
       console.error('Update allocations failed:', e);
     }
@@ -670,34 +665,50 @@ export default function WalletsPage() {
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
       await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
       setSnapshot(updatedSnapshot);
-      setActiveWalletModal(null);
+      setActiveWalletId(null);
     } catch (e) {
       console.error('Delete wallet failed:', e);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-white antialiased font-sans pb-16">
-      <div className="mx-auto flex min-h-screen w-full max-w-[480px] flex-col border-x border-white/10 px-4 pt-6 sm:px-5">
+    <div
+      className={`min-h-screen antialiased font-sans pb-16 transition-colors ${
+        isDark ? 'bg-slate-950 text-white' : 'bg-[#f8fafc] text-slate-900'
+      }`}
+    >
+      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 pt-6 sm:px-6 lg:px-8">
         {/* Header with Back button */}
-        <header className="mb-5 flex items-center justify-between">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link
               href="/finance"
-              className="p-2 rounded-xl bg-[#121824] border border-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
+              className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                isDark
+                  ? 'bg-slate-900 border-slate-700/70 text-slate-400 hover:text-white hover:border-slate-600'
+                  : 'bg-white border-slate-200 text-slate-500 hover:text-slate-900 shadow-xs'
+              }`}
             >
               <ArrowLeft size={18} />
             </Link>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-white">Wallets & Accounts</h1>
-              <p className="text-xs text-slate-400">Manage all store of funds & allocations</p>
+              <h1
+                className={`text-2xl font-bold tracking-tight ${
+                  isDark ? 'text-white' : 'text-slate-900'
+                }`}
+              >
+                Wallets &amp; Accounts
+              </h1>
+              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Manage all stores of funds, ownership &amp; envelopes
+              </p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={() => setOpenCreateModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
           >
             <Plus size={15} />
             <span>New Wallet</span>
@@ -705,30 +716,78 @@ export default function WalletsPage() {
         </header>
 
         {/* Balance Overview Card */}
-        <section className="rounded-[20px] bg-[#141b29] border border-white/10 p-4 mb-4 shadow-md">
+        <section
+          className={`rounded-3xl border p-5 sm:p-6 mb-5 transition-colors ${
+            isDark
+              ? 'bg-slate-900 border-slate-700/70 shadow-xl'
+              : 'bg-white border-slate-200 shadow-sm'
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-medium">Total Balance Across Wallets</span>
-            <button
-              onClick={() => setBalancesVisible((v) => !v)}
-              className="text-slate-400 hover:text-white p-1"
+            <span
+              className={`text-sm font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}
             >
-              {balancesVisible ? <Eye size={16} /> : <EyeOff size={16} />}
+              Total Balance Across Wallets
+            </span>
+            <button
+              type="button"
+              onClick={() => setBalancesVisible((v) => !v)}
+              aria-label={balancesVisible ? 'Hide balances' : 'Show balances'}
+              className={`p-1.5 rounded-full transition cursor-pointer ${
+                isDark
+                  ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                  : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              {balancesVisible ? <Eye size={17} /> : <EyeOff size={17} />}
             </button>
           </div>
-          <p className="mt-1 text-3xl font-extrabold text-white tabular-nums">
+          <p
+            className={`mt-1 text-3xl sm:text-4xl font-extrabold tabular-nums tracking-tight ${
+              isDark ? 'text-white' : 'text-slate-900'
+            }`}
+          >
             {amountDisplay(totalMoney)}
           </p>
 
-          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-3 text-xs">
-            <div>
-              <span className="text-slate-400 block text-[11px]">Spendable</span>
-              <span className="text-emerald-400 font-bold text-base tabular-nums">
+          <div
+            className={`mt-4 grid grid-cols-2 gap-3 border-t pt-4 text-xs ${
+              isDark ? 'border-slate-800' : 'border-slate-200'
+            }`}
+          >
+            <div
+              className={`rounded-2xl p-3 ${
+                isDark
+                  ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30'
+                  : 'bg-emerald-50 ring-1 ring-emerald-200'
+              }`}
+            >
+              <span className={`block text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Spendable
+              </span>
+              <span
+                className={`mt-0.5 block font-bold text-lg tabular-nums ${
+                  isDark ? 'text-emerald-400' : 'text-emerald-700'
+                }`}
+              >
                 {amountDisplay(availableSpendable)}
               </span>
             </div>
-            <div className="text-right">
-              <span className="text-slate-400 block text-[11px]">Reserved / Other</span>
-              <span className="text-slate-200 font-bold text-base tabular-nums">
+            <div
+              className={`rounded-2xl p-3 ${
+                isDark
+                  ? 'bg-slate-800/80 border border-slate-700/60'
+                  : 'bg-slate-50 border border-slate-200/80'
+              }`}
+            >
+              <span className={`block text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Reserved / Other
+              </span>
+              <span
+                className={`mt-0.5 block font-bold text-lg tabular-nums ${
+                  isDark ? 'text-slate-200' : 'text-slate-800'
+                }`}
+              >
                 {amountDisplay(reservedOrOther)}
               </span>
             </div>
@@ -736,27 +795,39 @@ export default function WalletsPage() {
         </section>
 
         {/* Search & Type Filters */}
-        <div className="flex flex-col gap-2 mb-3">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
+          <div className="relative flex-1">
+            <Search
+              size={15}
+              className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${
+                isDark ? 'text-slate-400' : 'text-slate-400'
+              }`}
+            />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search wallet name or owner…"
-              className="w-full pl-8 pr-3 py-2 bg-[#121824] border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+              placeholder="Search wallet name, owner, or purpose…"
+              className={`w-full pl-9 pr-3.5 py-2.5 rounded-xl text-xs border focus:outline-none focus:border-blue-500 ${
+                isDark
+                  ? 'bg-slate-900 border-slate-700/70 text-white placeholder-slate-400'
+                  : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
+              }`}
             />
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 text-xs">
             {['all', 'cash', 'bank', 'mobile_wallet', 'virtual'].map((t) => (
               <button
                 key={t}
+                type="button"
                 onClick={() => setSelectedType(t)}
-                className={`px-3 py-1.5 rounded-xl capitalize font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-2 rounded-xl capitalize font-semibold transition-all whitespace-nowrap cursor-pointer ${
                   selectedType === t
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-[#121824] text-slate-400 hover:text-white border border-white/5'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : isDark
+                    ? 'bg-slate-900 text-slate-300 hover:text-white border border-slate-700/70'
+                    : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
                 }`}
               >
                 {t === 'all' ? 'All Wallets' : t.replace('_', ' ')}
@@ -765,107 +836,69 @@ export default function WalletsPage() {
           </div>
         </div>
 
-        {/* Wallets List with Direct Quick Actions */}
-        <div className="flex-1 flex flex-col gap-2.5">
+        {/* Wallets Grid */}
+        <div className="flex-1">
           {loading ? (
-            <div className="py-12 text-center text-xs text-slate-400">Loading wallets…</div>
+            <div
+              className={`rounded-[28px] border p-5 ${
+                isDark
+                  ? 'border-slate-700/70 bg-slate-900'
+                  : 'border-slate-200 bg-white shadow-sm'
+              }`}
+            >
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3">
+                {[0, 1, 2, 3, 4, 5].map((idx) => (
+                  <div
+                    key={idx}
+                    className={`rounded-3xl p-4 space-y-4 ${
+                      isDark ? 'bg-slate-800/80' : 'bg-slate-50'
+                    }`}
+                  >
+                    <div
+                      className={`h-12 w-12 rounded-2xl animate-pulse ${
+                        isDark ? 'bg-slate-700' : 'bg-slate-200'
+                      }`}
+                    />
+                    <div className="space-y-2">
+                      <div
+                        className={`h-4 w-32 rounded animate-pulse ${
+                          isDark ? 'bg-slate-700' : 'bg-slate-200'
+                        }`}
+                      />
+                      <div
+                        className={`h-3 w-24 rounded animate-pulse ${
+                          isDark ? 'bg-slate-700' : 'bg-slate-200'
+                        }`}
+                      />
+                    </div>
+                    <div
+                      className={`h-7 w-28 rounded animate-pulse ${
+                        isDark ? 'bg-slate-700' : 'bg-slate-200'
+                      }`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : filteredWallets.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-500 bg-[#121824] rounded-2xl border border-white/5">
+            <div
+              className={`py-14 text-center text-xs rounded-3xl border ${
+                isDark
+                  ? 'bg-slate-900 border-slate-700/70 text-slate-400'
+                  : 'bg-white border-slate-200 text-slate-500'
+              }`}
+            >
               No wallets found. Tap &quot;New Wallet&quot; to add one.
             </div>
           ) : (
-            filteredWallets.map((wallet) => (
-              <div
-                key={wallet.id}
-                className="bg-[#121824] hover:bg-[#161f30] rounded-2xl border border-white/10 hover:border-blue-500/30 p-3.5 transition-all flex flex-col gap-3"
-              >
-                {/* Header Row: Avatar, Name, Amount */}
-                <div
-                  onClick={() => setActiveWalletModal(wallet)}
-                  className="flex items-center justify-between cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      style={{ backgroundColor: wallet.color }}
-                      className="w-10 h-10 rounded-[12px] flex items-center justify-center text-base shrink-0 shadow-sm"
-                    >
-                      {wallet.initial}
-                    </span>
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-semibold text-white truncate">
-                          {wallet.name}
-                        </span>
-                        {wallet.isLocked && <Lock size={12} className="text-rose-400" />}
-                        {wallet.isVirtual && (
-                          <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.2 rounded-md">
-                            Virtual
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-400 truncate">
-                        <span>{wallet.subtitle}</span>
-                        {wallet.owner !== 'You' && (
-                          <span className="text-blue-400 ml-1">• {wallet.owner}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <span className="text-sm font-bold text-white tabular-nums block">
-                      {amountDisplay(wallet.amount)}
-                    </span>
-                    {wallet.reservedAmount ? (
-                      <span className="text-[10px] text-amber-400 block">
-                        Res: {money(wallet.reservedAmount)}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Pre-selected Quick Action Buttons: Add, Spend, Transfer */}
-                <div className="grid grid-cols-3 gap-1.5 border-t border-white/5 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => triggerAddMoneyForWallet(wallet)}
-                    className="py-1.5 px-2 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer"
-                  >
-                    <PlusCircle size={13} />
-                    <span>Add</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={wallet.isLocked || wallet.amount <= 0}
-                    onClick={() => triggerSpendMoneyForWallet(wallet)}
-                    className={`py-1.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition-all border ${
-                      wallet.isLocked || wallet.amount <= 0
-                        ? 'bg-slate-800/40 text-slate-600 border-white/5 cursor-not-allowed'
-                        : 'bg-rose-600/15 hover:bg-rose-600/25 border-rose-500/30 text-rose-300 cursor-pointer'
-                    }`}
-                  >
-                    <MinusCircle size={13} />
-                    <span>Spend</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={wallet.isLocked || wallet.amount <= 0}
-                    onClick={() => triggerTransferForWallet(wallet)}
-                    className={`py-1.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition-all border ${
-                      wallet.isLocked || wallet.amount <= 0
-                        ? 'bg-slate-800/40 text-slate-600 border-white/5 cursor-not-allowed'
-                        : 'bg-blue-600/15 hover:bg-blue-600/25 border-blue-500/30 text-blue-300 cursor-pointer'
-                    }`}
-                  >
-                    <ArrowRightLeft size={13} />
-                    <span>Transfer</span>
-                  </button>
-                </div>
-              </div>
-            ))
+            <WalletsGrid
+              wallets={filteredWallets}
+              totalBalance={totalMoney}
+              balancesVisible={balancesVisible}
+              isDark={isDark}
+              onWalletClick={(w) => setActiveWalletId(w.id)}
+              onMenuClick={(w) => setActiveWalletId(w.id)}
+            />
           )}
         </div>
       </div>
@@ -958,26 +991,19 @@ export default function WalletsPage() {
         existingWallets={walletsList.map((w) => ({ id: w.id, name: w.name, type: w.walletType }))}
       />
 
-      <WalletDetailsModal
-        open={Boolean(activeWalletModal)}
-        onClose={() => setActiveWalletModal(null)}
-        wallet={activeWalletModal}
-        onAddMoney={(wId) => {
-          const w = walletsList.find((item) => item.id === wId);
-          if (w) triggerAddMoneyForWallet(w);
-        }}
-        onSpendMoney={(wId) => {
-          const w = walletsList.find((item) => item.id === wId);
-          if (w) triggerSpendMoneyForWallet(w);
-        }}
-        onTransfer={(wId) => {
-          const w = walletsList.find((item) => item.id === wId);
-          if (w) triggerTransferForWallet(w);
-        }}
+      <SmartWalletDetailDialog
+        open={Boolean(activeWalletId)}
+        onClose={() => setActiveWalletId(null)}
+        wallets={walletsList}
+        activeWalletId={activeWalletId}
+        onSelectWallet={(wId) => setActiveWalletId(wId)}
+        isDark={isDark}
+        onAddMoney={(w) => triggerAddMoneyForWallet(w)}
+        onSpendMoney={(w) => triggerSpendMoneyForWallet(w)}
+        onTransfer={(w) => triggerTransferForWallet(w)}
         onToggleLock={handleToggleLockWallet}
         onUpdateAllocations={handleUpdateWalletSettings}
         onDeleteWallet={handleDeleteWallet}
-        userId={user?.uid || ''}
       />
 
       {/* Add / Spend with preselected wallet */}
