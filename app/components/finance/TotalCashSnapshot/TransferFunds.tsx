@@ -40,7 +40,7 @@ import { getSourceKey } from '../TotalCashSnapshot';
 import { formatCurrency } from '@/app/lib/utilts';
 
 interface Props {
-  snapshot: TotalCashSnapshot;
+  snapshot?: TotalCashSnapshot | null;
   onTransfer: (
     amount: number,
     fromSource: TransactionSource,
@@ -174,18 +174,18 @@ export default function TransferFunds({
   }, [initialFromCustomName, customPaymentHeads]);
 
   useEffect(() => {
-    if (fromSource === 'bank' && banks.length === 1 && !fromBankId) {
-      setFromBankId(banks[0].id!);
-    } else if (fromSource === 'custom' && customPaymentHeads.length === 1 && !fromCustomId) {
-      setFromCustomId(customPaymentHeads[0].id!);
+    if (fromSource === 'bank' && banks.length === 1 && !fromBankId && banks[0]?.id) {
+      setFromBankId(banks[0].id);
+    } else if (fromSource === 'custom' && customPaymentHeads.length === 1 && !fromCustomId && customPaymentHeads[0]?.id) {
+      setFromCustomId(customPaymentHeads[0].id);
     }
   }, [fromSource, banks, customPaymentHeads, fromBankId, fromCustomId]);
 
   useEffect(() => {
-    if (toSource === 'bank' && banks.length === 1 && !toBankId) {
-      setToBankId(banks[0].id!);
-    } else if (toSource === 'custom' && customPaymentHeads.length === 1 && !toCustomId) {
-      setToCustomId(customPaymentHeads[0].id!);
+    if (toSource === 'bank' && banks.length === 1 && !toBankId && banks[0]?.id) {
+      setToBankId(banks[0].id);
+    } else if (toSource === 'custom' && customPaymentHeads.length === 1 && !toCustomId && customPaymentHeads[0]?.id) {
+      setToCustomId(customPaymentHeads[0].id);
     }
   }, [toSource, banks, customPaymentHeads, toBankId, toCustomId]);
 
@@ -199,13 +199,13 @@ export default function TransferFunds({
   const fromKey = getSourceKey(fromSource, fromBankName, fromCustomName);
   let fromSourceBalance = 0;
   if (fromSource === 'bank' && fromBankName) {
-    fromSourceBalance = snapshot.sources.bank?.[fromBankName] || 0;
+    fromSourceBalance = snapshot?.sources?.bank?.[fromBankName] || 0;
   } else if (fromSource === 'custom' && fromCustomName) {
-    fromSourceBalance = snapshot.sources.custom?.[fromCustomName] || 0;
+    fromSourceBalance = snapshot?.sources?.custom?.[fromCustomName] || 0;
   } else {
-    fromSourceBalance = (snapshot.sources[fromSource] as number) || 0;
+    fromSourceBalance = (snapshot?.sources?.[fromSource] as number) || 0;
   }
-  const fromHolders = snapshot.heldBy?.[fromKey] || [];
+  const fromHolders = snapshot?.heldBy?.[fromKey] || [];
   const fromHoldersSum = fromHolders.reduce((s, h) => s + h.amount, 0);
   const fromUnassignedBalance = fromSourceBalance - fromHoldersSum;
   let activeFromBalance = fromSourceBalance;
@@ -215,7 +215,7 @@ export default function TransferFunds({
 
   // To holders
   const toKey = getSourceKey(toSource, toBankName, toCustomName);
-  const toHolders = snapshot.heldBy?.[toKey] || [];
+  const toHolders = snapshot?.heldBy?.[toKey] || [];
 
   const isInsufficient = amount !== '' && Number(amount) > activeFromBalance;
 
@@ -251,7 +251,7 @@ export default function TransferFunds({
     setTimeout(() => setStep(0), 300);
   };
 
-  const isFromLocked = snapshot.sourceOwnership?.[fromKey]?.isLocked;
+  const isFromLocked = snapshot?.sourceOwnership?.[fromKey]?.isLocked;
 
   const canProceedStep0 = !(fromSource === 'bank' && !fromBankId) && !(fromSource === 'custom' && !fromCustomId) && !isFromLocked;
   const canProceedStep1 = !(toSource === 'bank' && !toBankId) && !(toSource === 'custom' && !toCustomId);

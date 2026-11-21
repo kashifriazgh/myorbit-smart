@@ -172,3 +172,19 @@ export const COUNTRIES = [
   { code: 'YE', name: 'Yemen', flag: '🇾🇪' },
   // You can add more from a full list
 ];
+
+export const PAKISTANI_EXPENSE_CATEGORIES = [
+  'Groceries',
+  'Bills & Utilities',
+  'Mobile & Internet',
+  'Transport',
+  'Education',
+  'Family',
+  'Healthcare',
+  'Shopping',
+  'Housing',
+  'Charity',
+  'Entertainment',
+  'Personal',
+  'Other',
+] as const;

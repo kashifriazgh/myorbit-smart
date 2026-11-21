@@ -1,47 +1,28 @@
 'use client';
 
+import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import {
-  Box,
-  Typography,
-  CircularProgress,
-  IconButton,
-  Tooltip,
-  Fab,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Stack,
-  TextField,
-  FormControlLabel,
-  Checkbox,
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import CloseIcon from '@mui/icons-material/Close';
-import Visibility from '@mui/icons-material/Visibility';
-import VisibilityOff from '@mui/icons-material/VisibilityOff';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
-import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
-import HistoryIcon from '@mui/icons-material/History';
-import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
-import SyncIcon from '@mui/icons-material/Sync';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import LockIcon from '@mui/icons-material/Lock';
-import LockOpenIcon from '@mui/icons-material/LockOpen';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import { useEffect, useRef, useState, useMemo } from 'react';
+  UserCircle2,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Wallet,
+  PlusCircle,
+  MinusCircle,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  History,
+  ArrowRightLeft,
+} from 'lucide-react';
 import { db } from '@/app/lib/firebase';
 import {
   addDoc,
   collection,
   doc,
-  getDoc,
   getDocs,
   setDoc,
-  deleteDoc,
   serverTimestamp,
   Timestamp,
   query,
@@ -53,18 +34,25 @@ import {
   TransactionSource,
   Bank,
   CustomPaymentHead,
-  CashTransaction,
   LoanRecord,
   Liability,
+  WalletAllocation,
+  WalletType,
+  FinancialEventType,
+  PlannedExpense,
+  Expenditure,
 } from '@/app/lib/interface';
-import { useCustomTheme } from '@/app/lib/context/themeContext';
-import { formatCurrency } from '@/app/lib/utilts';
+
+// Child components & Modals
 import AddMoney from './TotalCashSnapshot/AddMoney';
-import DeductMoney from './TotalCashSnapshot/DeductMoney';
-import LoanDialog from './TotalCashSnapshot/LoanRecord';
-import TransactionHistory from './TotalCashSnapshot/TransactionHistory';
 import TransferFunds from './TotalCashSnapshot/TransferFunds';
+import LoanDialog from './TotalCashSnapshot/LoanRecord';
 import LiabilityDialog from './TotalCashSnapshot/LiabilityDialog';
+import TransactionHistory from './TotalCashSnapshot/TransactionHistory';
+import CreateWalletModal from './TotalCashSnapshot/CreateWalletModal';
+import WalletDetailsModal from './TotalCashSnapshot/WalletDetailsModal';
+import PlannedExpensesSection from './TotalCashSnapshot/PlannedExpensesSection';
+import FinanceTasksSection from './TotalCashSnapshot/FinanceTasksSection';
 
 export const getSourceKey = (
   source: TransactionSource,
@@ -76,52 +64,85 @@ export const getSourceKey = (
   return source;
 };
 
-/** Compute the overall total amount across all wallets */
+/** Compute the overall total recorded money across all non-virtual wallets */
 export function computeTotalAmount(snapshot: TotalCashSnapshot): number {
   let total = 0;
-  const { sources } = snapshot;
+  const { sources, sourceOwnership } = snapshot;
   if (!sources) return 0;
 
-  for (const val of Object.values(sources)) {
-    if (typeof val === 'number') {
-      total += val;
-    } else if (val && typeof val === 'object' && val !== null) {
-      for (const subVal of Object.values(val as Record<string, number>)) {
-        if (typeof subVal === 'number') {
-          total += subVal;
-        }
+  for (const [key, val] of Object.entries(sources)) {
+    if (key === 'bank' && typeof val === 'object' && val !== null) {
+      for (const [bName, bAmt] of Object.entries(val as Record<string, number>)) {
+        const fullKey = `bank:${bName}`;
+        const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
+        if (!isVirtual && typeof bAmt === 'number') total += bAmt;
       }
+    } else if (key === 'custom' && typeof val === 'object' && val !== null) {
+      for (const [cName, cAmt] of Object.entries(val as Record<string, number>)) {
+        const fullKey = `custom:${cName}`;
+        const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
+        if (!isVirtual && typeof cAmt === 'number') total += cAmt;
+      }
+    } else if (typeof val === 'number') {
+      const isVirtual = sourceOwnership?.[key]?.parentWalletKey || sourceOwnership?.[key]?.isVirtual;
+      if (!isVirtual) total += val;
     }
   }
   return total;
 }
 
-/** Compute the amount available to spend (excludes locked wallets and wallets owned by others) */
+/** Compute the amount available to spend */
 export function computeAvailableToSpend(snapshot: TotalCashSnapshot): number {
   let available = 0;
   const { sources, sourceOwnership } = snapshot;
   if (!sources) return 0;
 
-  const isSpendable = (key: string, isCustom = false) => {
+  const calculateWalletSpendable = (key: string, grossAmount: number, isCustom = false) => {
     const o = sourceOwnership?.[key];
-    if (o?.isLocked) return false;
-    if (o && typeof o.hasOwnThisMoney === 'boolean') {
-      return o.hasOwnThisMoney;
+    if (!o) return isCustom ? 0 : grossAmount;
+
+    // Security lock: completely restricts operations
+    if (o.isLocked) return 0;
+
+    // Check multi-allocations if defined
+    const allocations = o.allocations;
+    if (allocations && allocations.length > 0) {
+      let allocSpendable = 0;
+      allocations.forEach((a) => {
+        const isSelf = a.owner.toLowerCase() === 'you' || a.owner.toLowerCase() === 'self';
+        if (isSelf && !a.isLocked) {
+          const usable = Math.max(0, a.amount - (a.reservedAmount || 0));
+          allocSpendable += usable;
+        }
+      });
+      return allocSpendable;
     }
-    return !isCustom;
+
+    // Single ownership check
+    const isOwn = typeof o.hasOwnThisMoney === 'boolean' ? o.hasOwnThisMoney : !isCustom;
+    if (!isOwn) return 0;
+
+    // Deduct reserved amount
+    const reserved = Number(o.reservedAmount) || 0;
+    return Math.max(0, grossAmount - reserved);
   };
 
   for (const [key, val] of Object.entries(sources)) {
     if (key === 'bank' && typeof val === 'object' && val !== null) {
       for (const [bankName, bankAmt] of Object.entries(val as Record<string, number>)) {
-        if (isSpendable(`bank:${bankName}`, false)) available += bankAmt;
+        const fullKey = `bank:${bankName}`;
+        const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
+        if (!isVirtual) available += calculateWalletSpendable(fullKey, bankAmt, false);
       }
     } else if (key === 'custom' && typeof val === 'object' && val !== null) {
       for (const [customName, customAmt] of Object.entries(val as Record<string, number>)) {
-        if (isSpendable(`custom:${customName}`, true)) available += customAmt;
+        const fullKey = `custom:${customName}`;
+        const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
+        if (!isVirtual) available += calculateWalletSpendable(fullKey, customAmt, true);
       }
     } else if (typeof val === 'number') {
-      if (isSpendable(key, false)) available += val;
+      const isVirtual = sourceOwnership?.[key]?.parentWalletKey || sourceOwnership?.[key]?.isVirtual;
+      if (!isVirtual) available += calculateWalletSpendable(key, val, false);
     }
   }
 
@@ -129,206 +150,148 @@ export function computeAvailableToSpend(snapshot: TotalCashSnapshot): number {
 }
 
 export interface WalletItem {
-  id: string; // 'other' | 'easypaisa' | 'jazzcash' | 'in_hand' | 'bank:Name' | 'custom:Name'
+  id: string;
   sourceType: TransactionSource;
   name: string;
+  walletType: WalletType;
   bankName?: string;
   customName?: string;
   category: 'built-in' | 'bank' | 'custom';
   owner: string;
   hasOwnThisMoney: boolean;
   isLocked: boolean;
+  isVirtual?: boolean;
+  parentWalletKey?: string;
+  reservedAmount?: number;
+  purpose?: string;
+  allocations?: WalletAllocation[];
   amount: number;
   initial: string;
   color: string;
   subtitle: string;
 }
 
-const PALETTE = ['#5B3FA8', '#9A4410', '#0F766E', '#0369A1', '#C2410C', '#4338CA', '#BE185D', '#047857'];
-function getWalletColor(name: string, category: 'built-in' | 'bank' | 'custom'): string {
-  if (name.toLowerCase().includes('easypaisa')) return '#167A42';
-  if (name.toLowerCase().includes('jazzcash')) return '#B3202A';
-  if (name.toLowerCase().includes('in hand')) return '#7A5200';
-  if (name.toLowerCase().includes('personal spending')) return '#0F3D33';
-  if (category === 'bank') return '#1E4FA3';
-  if (name.toLowerCase().includes('saving') || name.toLowerCase().includes('save')) return '#5B3FA8';
-  if (name.toLowerCase().includes('abu') || name.toLowerCase().includes('abbu') || name.toLowerCase().includes('ammi')) return '#9A4410';
-  let h = 0;
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return PALETTE[h % PALETTE.length];
-}
+const money = (amount: number) => `Rs. ${Number(amount || 0).toLocaleString('en-PK')}`;
 
 export default function TotalCashSnapshotComponent({
   userId,
+  onProfile = () => {},
 }: {
   userId: string;
-  banks?: Bank[];
+  onProfile?: () => void;
 }) {
-  const { theme } = useCustomTheme();
-  const isDark = theme?.mode === 'dark';
-
   const [snapshot, setSnapshot] = useState<TotalCashSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showTotal, setShowTotal] = useState(true);
-  const [showTransactionHistory, setShowTransactionHistory] = useState(false);
-  const [showLoanInfoModal, setShowLoanInfoModal] = useState(false);
-  const [fabOpen, setFabOpen] = useState(false);
+  const [balancesVisible, setBalancesVisible] = useState(true);
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'tasks'>('upcoming');
 
   // Dialog open states
   const [openAdd, setOpenAdd] = useState(false);
   const [moneyDialogMode, setMoneyDialogMode] = useState<'add' | 'deduct'>('add');
-  const [openDeduct, setOpenDeduct] = useState(false);
+  const [preselectedWalletId, setPreselectedWalletId] = useState<string>('');
+
   const [openTransfer, setOpenTransfer] = useState(false);
+  const [transferFromSource, setTransferFromSource] = useState<TransactionSource | undefined>(undefined);
+  const [transferFromBankName, setTransferFromBankName] = useState<string | undefined>(undefined);
+
   const [openLoan, setOpenLoan] = useState(false);
   const [openLiability, setOpenLiability] = useState(false);
+  const [showTransactionHistory, setShowTransactionHistory] = useState(false);
 
-  // Pre-selected transfer wallet
-  const [transferInitialFrom, setTransferInitialFrom] = useState<{
-    source: TransactionSource;
-    bankName?: string;
-    customName?: string;
-  } | undefined>(undefined);
-
-  // Wallet details / actions modal
+  // Wallet creation & details modals
+  const [openCreateWalletModal, setOpenCreateWalletModal] = useState(false);
   const [activeWalletModal, setActiveWalletModal] = useState<WalletItem | null>(null);
 
-  // Add new wallet modal
-  const [openAddWalletModal, setOpenAddWalletModal] = useState(false);
-  const [newWalletName, setNewWalletName] = useState('');
-  const [newWalletType, setNewWalletType] = useState<'custom' | 'bank'>('custom');
-  const [newWalletBalance, setNewWalletBalance] = useState('');
-  const [newWalletIsLocked, setNewWalletIsLocked] = useState(false);
-  const [newWalletIsOwn, setNewWalletIsOwn] = useState(true);
-  const [newWalletOwnerName, setNewWalletOwnerName] = useState('');
-
-  // Ownership edit modal within wallet detail
-  const [editingOwnership, setEditingOwnership] = useState(false);
-  const [editOwnerIsSelf, setEditOwnerIsSelf] = useState(true);
-  const [editOwnerName, setEditOwnerName] = useState('');
-
+  // Collections data
   const [loans, setLoans] = useState<LoanRecord[]>([]);
   const [liabilities, setLiabilities] = useState<Liability[]>([]);
   const [banksList, setBanksList] = useState<Bank[]>([]);
   const [customHeadsList, setCustomHeadsList] = useState<CustomPaymentHead[]>([]);
 
-  const fabRef = useRef<HTMLDivElement>(null);
+  // Income & Expenses data
+  const [monthlyIncomeTotal, setMonthlyIncomeTotal] = useState(0);
+  const [currentMonthExpensesTotal, setCurrentMonthExpensesTotal] = useState(0);
 
-  const [isCached, setIsCached] = useState(false);
-  const [needsFetch, setNeedsFetch] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  // Sync state
   const [refreshing, setRefreshing] = useState(false);
+
+  const amountDisplay = (val: number) => (balancesVisible ? money(val) : 'Rs. •••••');
 
   const triggerRefresh = () => {
     try {
       localStorage.removeItem(`finance_cache_${userId}`);
     } catch {}
-    setIsCached(false);
     setRefreshing(true);
-    setNeedsFetch(true);
-    setRefreshKey((k) => k + 1);
+    setTimeout(() => setRefreshing(false), 2000);
   };
 
-  const ensureLive = () => {
-    try {
-      localStorage.removeItem(`finance_cache_${userId}`);
-    } catch {}
-    setIsCached(false);
-    setNeedsFetch(true);
-  };
-
-  useEffect(() => {
-    if (!refreshing) return;
-    const t = setTimeout(() => setRefreshing(false), 8000);
-    return () => clearTimeout(t);
-  }, [refreshing]);
-
-  // Bootstrap from cache on mount
+  // Bootstrap from cache & Firestore subscriptions
   useEffect(() => {
     if (!userId) return;
+
     try {
       const cachedRaw = localStorage.getItem(`finance_cache_${userId}`);
       if (cachedRaw) {
         const cache = JSON.parse(cachedRaw);
-        const age = Date.now() - new Date(cache.timestamp).getTime();
-        if (age < 10 * 60 * 1000 && cache.snapshot) {
+        if (cache.snapshot) {
           setSnapshot(cache.snapshot);
           setLoans(cache.loans || []);
           setLiabilities(cache.liabilities || []);
-          setIsCached(true);
-          setNeedsFetch(false);
           setLoading(false);
-          return;
         }
       }
     } catch (e) {
-      console.warn('Failed to load finance cache:', e);
+      console.warn('Cache load failed:', e);
     }
-    setNeedsFetch(true);
-  }, [userId]);
 
-  // Set up Firebase subscriptions
-  useEffect(() => {
-    if (!userId || !needsFetch) return;
+    const unsubLoans = onSnapshot(
+      query(collection(db, 'loans'), where('userId', '==', userId)),
+      (snap) => {
+        setLoans(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LoanRecord, 'id'>) })));
+      }
+    );
 
-    const qLoans = query(collection(db, 'loans'), where('userId', '==', userId));
-    const unsubLoans = onSnapshot(qLoans, (snap) => {
-      const list: LoanRecord[] = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<LoanRecord, 'id'>),
-      }));
-      setLoans(list);
-    });
+    const unsubLiabilities = onSnapshot(
+      query(collection(db, 'liabilities'), where('userId', '==', userId)),
+      (snap) => {
+        setLiabilities(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Liability, 'id'>) })));
+      }
+    );
 
-    const qLiabilities = query(collection(db, 'liabilities'), where('userId', '==', userId));
-    const unsubLiabilities = onSnapshot(qLiabilities, (snap) => {
-      const list: Liability[] = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<Liability, 'id'>),
-      }));
-      setLiabilities(list);
-    });
+    const unsubBanks = onSnapshot(
+      query(collection(db, 'banks'), where('userId', '==', userId)),
+      (snap) => {
+        setBanksList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Bank, 'id'>) })));
+      }
+    );
 
-    const qBanks = query(collection(db, 'banks'), where('userId', '==', userId));
-    const unsubBanks = onSnapshot(qBanks, (snap) => {
-      setBanksList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Bank, 'id'>) })));
-    });
-
-    const qHeads = query(collection(db, 'customPaymentHeads'), where('userId', '==', userId));
-    const unsubHeads = onSnapshot(qHeads, (snap) => {
-      setCustomHeadsList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomPaymentHead, 'id'>) })));
-    });
+    const unsubHeads = onSnapshot(
+      query(collection(db, 'customPaymentHeads'), where('userId', '==', userId)),
+      (snap) => {
+        setCustomHeadsList(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomPaymentHead, 'id'>) }))
+        );
+      }
+    );
 
     const docRef = doc(db, 'totalCashSnapshots', userId);
     const unsubSnap = onSnapshot(docRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as TotalCashSnapshot;
-
-        let normalizedBank: Record<string, number> = {};
-        if (typeof data.sources.bank === 'number') {
-          normalizedBank = { Default: data.sources.bank };
-        } else {
-          normalizedBank = data.sources.bank || {};
-        }
-
-        let normalizedCustom: Record<string, number> = {};
-        if (typeof data.sources.custom === 'number') {
-          normalizedCustom = { Default: data.sources.custom };
-        } else {
-          normalizedCustom = data.sources.custom || {};
-        }
-
-        const normSnapshot: TotalCashSnapshot = {
+        setSnapshot({
           ...data,
           sources: {
-            ...data.sources,
-            bank: normalizedBank,
-            custom: normalizedCustom,
+            in_hand: data.sources?.in_hand ?? 0,
+            easypaisa: data.sources?.easypaisa ?? 0,
+            jazzcash: data.sources?.jazzcash ?? 0,
+            other: data.sources?.other ?? 0,
+            bank: data.sources?.bank || {},
+            custom: data.sources?.custom || {},
           },
           heldBy: data.heldBy || {},
           sourceOwnership: data.sourceOwnership || {},
-        };
-        setSnapshot(normSnapshot);
+        });
       } else {
         const initial: TotalCashSnapshot = {
           userId,
@@ -352,11 +315,115 @@ export default function TotalCashSnapshotComponent({
       }
       setLoading(false);
       setRefreshing(false);
-    }, (error) => {
-      console.error("Error listening to totalCashSnapshots:", error);
-      setLoading(false);
-      setRefreshing(false);
     });
+
+    // ── Fetch all incomes & convert to monthly ─────────────────
+    const unsubIncome = onSnapshot(
+      query(collection(db, 'incomeSources'), where('userId', '==', userId)),
+      (snap) => {
+        let monthlySum = 0;
+        const now = new Date();
+        const curYear = now.getFullYear();
+        const curMonth = now.getMonth();
+
+        snap.forEach((d) => {
+          const inc = d.data();
+          const amt = Number(inc.currentAmount || inc.amount || inc.initialAmount || 0);
+          const freq = inc.frequency || 'monthly';
+          const type = inc.type;
+
+          if (freq === 'monthly') {
+            monthlySum += amt;
+          } else if (freq === 'weekly') {
+            monthlySum += amt * 4.33;
+          } else if (freq === 'daily') {
+            monthlySum += amt * 30;
+          } else if (freq === 'yearly') {
+            monthlySum += amt / 12;
+          } else if (freq === 'one_time' || type === 'one-time') {
+            // Check if expected in current month
+            if (inc.expectedDate) {
+              const dObj =
+                inc.expectedDate instanceof Timestamp
+                  ? inc.expectedDate.toDate()
+                  : new Date(inc.expectedDate as string | number | Date);
+              if (dObj.getFullYear() === curYear && dObj.getMonth() === curMonth) {
+                monthlySum += amt;
+              }
+            } else {
+              monthlySum += amt;
+            }
+          } else {
+            // default fallback to monthly
+            monthlySum += amt;
+          }
+        });
+
+        setMonthlyIncomeTotal(Math.round(monthlySum));
+      }
+    );
+
+    // ── Fetch all expenses (recurring & one-time for current month) ──
+    const fetchExpensesMonthly = async () => {
+      let expSum = 0;
+      const now = new Date();
+      const curYear = now.getFullYear();
+      const curMonth = now.getMonth();
+
+      // 1. From plannedExpenses
+      try {
+        const snapPlanned = await getDocs(query(collection(db, 'plannedExpenses'), where('userId', '==', userId)));
+        snapPlanned.forEach((d) => {
+          const p = d.data() as PlannedExpense;
+          const amt = p.expectedAmount || 0;
+          if (p.recurrence === 'monthly') {
+            expSum += amt;
+          } else if (p.recurrence === 'weekly') {
+            expSum += amt * 4.33;
+          } else if (p.recurrence === 'yearly') {
+            expSum += amt / 12;
+          } else {
+            if (p.dueDate) {
+              const dDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+              if (!isNaN(dDate.getTime()) && dDate.getFullYear() === curYear && dDate.getMonth() === curMonth) {
+                expSum += amt;
+              }
+            } else {
+              expSum += amt;
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('Error fetching plannedExpenses for summary:', e);
+      }
+
+      // 2. From expenditures
+      try {
+        const snapExp = await getDocs(query(collection(db, 'expenditures'), where('userId', '==', userId)));
+        snapExp.forEach((d) => {
+          const e = d.data() as Expenditure;
+          const amt = e.amount || 0;
+          if (e.type === 'recurring') {
+            if (e.frequency === 'monthly') expSum += amt;
+            else if (e.frequency === 'weekly') expSum += amt * 4.33;
+            else if (e.frequency === 'daily') expSum += amt * 30;
+          } else {
+            if (e.dueDate) {
+              const dObj = e.dueDate instanceof Timestamp ? e.dueDate.toDate() : new Date(e.dueDate);
+              if (dObj.getFullYear() === curYear && dObj.getMonth() === curMonth) {
+                expSum += amt;
+              }
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('Error fetching expenditures for summary:', e);
+      }
+
+      setCurrentMonthExpensesTotal(Math.round(expSum));
+    };
+
+    fetchExpensesMonthly();
 
     return () => {
       unsubLoans();
@@ -364,86 +431,11 @@ export default function TotalCashSnapshotComponent({
       unsubBanks();
       unsubHeads();
       unsubSnap();
+      unsubIncome();
     };
-  }, [userId, needsFetch, refreshKey]);
+  }, [userId]);
 
-  // Atomically save to cache when snapshot changes
-  useEffect(() => {
-    if (!userId || loading || !snapshot) return;
-    const timer = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          `finance_cache_${userId}`,
-          JSON.stringify({
-            timestamp: new Date().toISOString(),
-            snapshot,
-            loans,
-            liabilities,
-          })
-        );
-        setIsCached(true);
-      } catch (e) {
-        console.warn('Failed to save finance cache:', e);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [userId, loading, snapshot, loans, liabilities]);
-
-  useEffect(() => {
-    if (openAdd || openDeduct || openTransfer || openLoan || openLiability || showTransactionHistory || openAddWalletModal) {
-      setNeedsFetch(true);
-    }
-  }, [openAdd, openDeduct, openTransfer, openLoan, openLiability, showTransactionHistory, openAddWalletModal]);
-
-  const totalsData = useMemo(() => {
-    let borrowLoansSum = 0;
-    let borrowLoansCount = 0;
-    let lendLoansSum = 0;
-    let lendLoansCount = 0;
-
-    loans.forEach((l) => {
-      if (!l.isSettled) {
-        const remaining = (l.amount ?? 0) - (l.paidAmount ?? 0);
-        if (l.type === 'borrow') {
-          borrowLoansSum += remaining;
-          borrowLoansCount++;
-        } else if (l.type === 'lend') {
-          lendLoansSum += remaining;
-          lendLoansCount++;
-        }
-      }
-    });
-
-    let borrowLiabilitiesSum = 0;
-    let borrowLiabilitiesCount = 0;
-    let lendLiabilitiesSum = 0;
-    let lendLiabilitiesCount = 0;
-
-    liabilities.forEach((l) => {
-      if (l.status !== 'settled') {
-        if (l.type === 'borrowed') {
-          borrowLiabilitiesSum += l.amount;
-          borrowLiabilitiesCount++;
-        } else if (l.type === 'lend') {
-          lendLiabilitiesSum += l.amount;
-          lendLiabilitiesCount++;
-        }
-      }
-    });
-
-    return {
-      toPay: borrowLoansSum + borrowLiabilitiesSum,
-      toPayLoansCount: borrowLoansCount,
-      toPayLiabilitiesCount: borrowLiabilitiesCount,
-      toReceive: lendLoansSum + lendLiabilitiesSum,
-      toReceiveLoansCount: lendLoansCount,
-      toReceiveLiabilitiesCount: lendLiabilitiesCount,
-    };
-  }, [loans, liabilities]);
-
-  const currency = 'PKR';
-
-  // Construct Wallets list with strict priority order
+  // Construct Wallets list
   const walletsList: WalletItem[] = useMemo(() => {
     if (!snapshot || !snapshot.sources) return [];
     const list: WalletItem[] = [];
@@ -452,76 +444,104 @@ export default function TotalCashSnapshotComponent({
       const o = snapshot.sourceOwnership?.[key];
       const isLocked = o?.isLocked ?? false;
       const hasOwn = o && typeof o.hasOwnThisMoney === 'boolean' ? o.hasOwnThisMoney : !isCustom;
-      const ownerName = hasOwn ? 'You' : (o?.ownerName || o?.ownserName || 'Someone else');
-      return { owner: ownerName, hasOwnThisMoney: hasOwn, isLocked };
+      const ownerName = hasOwn ? 'You' : o?.ownerName || 'Someone else';
+      const reservedAmount = Number(o?.reservedAmount) || 0;
+      const purpose = o?.purpose;
+      const allocations = o?.allocations;
+      const isVirtual = Boolean(o?.isVirtual || o?.parentWalletKey);
+      const parentWalletKey = o?.parentWalletKey;
+      const color = o?.color;
+      return {
+        owner: ownerName,
+        hasOwnThisMoney: hasOwn,
+        isLocked,
+        reservedAmount,
+        purpose,
+        allocations,
+        isVirtual,
+        parentWalletKey,
+        color,
+      };
     };
 
-    // 1. Priority Built-in Wallets:
-    // i. Personal Spending ('other')
-    const psInfo = getOwnerInfo('other', false);
+    // Built-in
+    const ihInfo = getOwnerInfo('in_hand', false);
     list.push({
-      id: 'other',
-      sourceType: 'other',
-      name: 'Personal Spending',
+      id: 'in_hand',
+      sourceType: 'in_hand',
+      name: 'Cash in Hand',
+      walletType: 'cash',
       category: 'built-in',
-      owner: psInfo.owner,
-      hasOwnThisMoney: psInfo.hasOwnThisMoney,
-      isLocked: psInfo.isLocked,
-      amount: snapshot.sources.other ?? 0,
-      initial: 'P',
-      color: '#0F3D33',
-      subtitle: psInfo.isLocked ? 'Built-in · Locked 🔒' : 'Built-in',
+      owner: ihInfo.owner,
+      hasOwnThisMoney: ihInfo.hasOwnThisMoney,
+      isLocked: ihInfo.isLocked,
+      reservedAmount: ihInfo.reservedAmount,
+      purpose: ihInfo.purpose || 'Daily cash expenses',
+      allocations: ihInfo.allocations,
+      amount: snapshot.sources.in_hand ?? 0,
+      initial: '💵',
+      color: ihInfo.color || '#15803d',
+      subtitle: ihInfo.isLocked ? 'Cash · Locked 🔒' : 'Cash Wallet',
     });
 
-    // ii. EasyPaisa
     const epInfo = getOwnerInfo('easypaisa', false);
     list.push({
       id: 'easypaisa',
       sourceType: 'easypaisa',
       name: 'Easypaisa',
+      walletType: 'mobile_wallet',
       category: 'built-in',
       owner: epInfo.owner,
       hasOwnThisMoney: epInfo.hasOwnThisMoney,
       isLocked: epInfo.isLocked,
+      reservedAmount: epInfo.reservedAmount,
+      purpose: epInfo.purpose,
+      allocations: epInfo.allocations,
       amount: snapshot.sources.easypaisa ?? 0,
-      initial: 'E',
-      color: '#167A42',
-      subtitle: epInfo.isLocked ? 'Built-in · Locked 🔒' : 'Built-in',
+      initial: '📱',
+      color: epInfo.color || '#16a34a',
+      subtitle: epInfo.isLocked ? 'Mobile Wallet · Locked 🔒' : 'Mobile Wallet',
     });
 
-    // iii. Jazz Cash
     const jcInfo = getOwnerInfo('jazzcash', false);
     list.push({
       id: 'jazzcash',
       sourceType: 'jazzcash',
       name: 'JazzCash',
+      walletType: 'mobile_wallet',
       category: 'built-in',
       owner: jcInfo.owner,
       hasOwnThisMoney: jcInfo.hasOwnThisMoney,
       isLocked: jcInfo.isLocked,
+      reservedAmount: jcInfo.reservedAmount,
+      purpose: jcInfo.purpose,
+      allocations: jcInfo.allocations,
       amount: snapshot.sources.jazzcash ?? 0,
-      initial: 'J',
-      color: '#B3202A',
-      subtitle: jcInfo.isLocked ? 'Built-in · Locked 🔒' : 'Built-in',
+      initial: '📱',
+      color: jcInfo.color || '#dc2626',
+      subtitle: jcInfo.isLocked ? 'Mobile Wallet · Locked 🔒' : 'Mobile Wallet',
     });
 
-    // iv. In Hand
-    const ihInfo = getOwnerInfo('in_hand', false);
+    const psInfo = getOwnerInfo('other', false);
     list.push({
-      id: 'in_hand',
-      sourceType: 'in_hand',
-      name: 'In Hand',
+      id: 'other',
+      sourceType: 'other',
+      name: 'Personal Spending',
+      walletType: 'cash',
       category: 'built-in',
-      owner: ihInfo.owner,
-      hasOwnThisMoney: ihInfo.hasOwnThisMoney,
-      isLocked: ihInfo.isLocked,
-      amount: snapshot.sources.in_hand ?? 0,
-      initial: 'H',
-      color: '#7A5200',
-      subtitle: ihInfo.isLocked ? 'Built-in · Locked 🔒' : 'Built-in',
+      owner: psInfo.owner,
+      hasOwnThisMoney: psInfo.hasOwnThisMoney,
+      isLocked: psInfo.isLocked,
+      reservedAmount: psInfo.reservedAmount,
+      purpose: psInfo.purpose,
+      allocations: psInfo.allocations,
+      amount: snapshot.sources.other ?? 0,
+      initial: '💼',
+      color: psInfo.color || '#0d9488',
+      subtitle: psInfo.isLocked ? 'Personal · Locked 🔒' : 'Spending Wallet',
     });
 
-    // 2. Bank Wallets (Merged from snapshot & banks collection)
+    // Bank Wallets
     const bankNames = new Set<string>();
     if (snapshot.sources.bank && typeof snapshot.sources.bank === 'object') {
       Object.keys(snapshot.sources.bank).forEach((b) => bankNames.add(b));
@@ -536,19 +556,25 @@ export default function TotalCashSnapshotComponent({
         id: key,
         sourceType: 'bank',
         name: bName,
+        walletType: 'bank',
         bankName: bName,
         category: 'bank',
         owner: bInfo.owner,
         hasOwnThisMoney: bInfo.hasOwnThisMoney,
         isLocked: bInfo.isLocked,
+        isVirtual: bInfo.isVirtual,
+        parentWalletKey: bInfo.parentWalletKey,
+        reservedAmount: bInfo.reservedAmount,
+        purpose: bInfo.purpose,
+        allocations: bInfo.allocations,
         amount: amt,
-        initial: bName.trim().charAt(0).toUpperCase() || 'B',
-        color: '#1E4FA3',
-        subtitle: bInfo.isLocked ? 'Custom · Bank · Locked 🔒' : 'Custom · Bank',
+        initial: '🏦',
+        color: bInfo.color || '#2563eb',
+        subtitle: bInfo.isLocked ? 'Bank · Locked 🔒' : 'Bank Account',
       });
     });
 
-    // 3. Custom Wallets (Merged from snapshot & customPaymentHeads collection)
+    // Custom / Virtual Wallets
     const customNames = new Set<string>();
     if (snapshot.sources.custom && typeof snapshot.sources.custom === 'object') {
       Object.keys(snapshot.sources.custom).forEach((c) => customNames.add(c));
@@ -559,28 +585,33 @@ export default function TotalCashSnapshotComponent({
       const key = `custom:${cName}`;
       const cInfo = getOwnerInfo(key, true);
       const amt = snapshot.sources.custom?.[cName] ?? 0;
-      let sub = 'Custom';
-      if (cInfo.isLocked) {
-        sub = 'Custom · Locked 🔒';
-      } else if (!cInfo.hasOwnThisMoney && cInfo.owner && cInfo.owner !== 'You') {
-        sub = `Custom · ${cInfo.owner}`;
-      } else {
-        sub = 'Custom · Wallet';
-      }
+      const wType: WalletType = cInfo.isVirtual ? 'virtual' : 'cash';
 
       list.push({
         id: key,
         sourceType: 'custom',
         name: cName,
+        walletType: wType,
         customName: cName,
         category: 'custom',
         owner: cInfo.owner,
         hasOwnThisMoney: cInfo.hasOwnThisMoney,
         isLocked: cInfo.isLocked,
+        isVirtual: cInfo.isVirtual,
+        parentWalletKey: cInfo.parentWalletKey,
+        reservedAmount: cInfo.reservedAmount,
+        purpose: cInfo.purpose,
+        allocations: cInfo.allocations,
         amount: amt,
-        initial: cName.trim().charAt(0).toUpperCase() || 'W',
-        color: getWalletColor(cName, 'custom'),
-        subtitle: sub,
+        initial: cInfo.isVirtual ? '🎯' : '🗂️',
+        color: cInfo.color || (cInfo.isVirtual ? '#8b5cf6' : '#d97706'),
+        subtitle: cInfo.isLocked
+          ? 'Locked 🔒'
+          : cInfo.isVirtual
+          ? 'Virtual Bucket'
+          : cInfo.owner !== 'You'
+          ? `Owner: ${cInfo.owner}`
+          : 'Custom Wallet',
       });
     });
 
@@ -588,229 +619,53 @@ export default function TotalCashSnapshotComponent({
   }, [snapshot, banksList, customHeadsList]);
 
   // Totals calculations
-  const totalAllWallets = snapshot ? computeTotalAmount(snapshot) : 0;
-  const availableToSpend = snapshot ? computeAvailableToSpend(snapshot) : 0;
+  const totalMoney = snapshot ? computeTotalAmount(snapshot) : 0;
+  const availableSpendable = snapshot ? computeAvailableToSpend(snapshot) : 0;
+  const reservedOrOther = Math.max(0, totalMoney - availableSpendable);
 
-  // Close FAB on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (fabRef.current && !fabRef.current.contains(e.target as Node)) {
-        setFabOpen(false);
+  // Quick summary loans/debts data
+  const loanMetrics = useMemo(() => {
+    let toPay = 0;
+    let toReceive = 0;
+    loans.forEach((l) => {
+      if (!l.isSettled) {
+        const rem = (l.amount || 0) - (l.paidAmount || 0);
+        if (l.type === 'borrow') toPay += rem;
+        else if (l.type === 'lend') toReceive += rem;
       }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  // Creation of a New Wallet
-  const handleCreateWallet = async () => {
-    if (!newWalletName.trim() || !userId || !snapshot) return;
-    setSaving(true);
-    try {
-      const cleanName = newWalletName.trim();
-      const initAmt = Number(newWalletBalance) || 0;
-      const collectionName = newWalletType === 'bank' ? 'banks' : 'customPaymentHeads';
-
-      await addDoc(collection(db, collectionName), {
-        userId,
-        name: cleanName,
-        createdAt: serverTimestamp(),
-      });
-
-      const updatedSources = { ...snapshot.sources };
-      if (newWalletType === 'bank') {
-        updatedSources.bank = { ...(updatedSources.bank || {}), [cleanName]: initAmt };
-      } else {
-        updatedSources.custom = { ...(updatedSources.custom || {}), [cleanName]: initAmt };
+    });
+    liabilities.forEach((l) => {
+      if (l.status !== 'settled') {
+        if (l.type === 'borrowed') toPay += l.amount;
+        else if (l.type === 'lend') toReceive += l.amount;
       }
+    });
+    return { toPay, toReceive };
+  }, [loans, liabilities]);
 
-      const key = newWalletType === 'bank' ? `bank:${cleanName}` : `custom:${cleanName}`;
-      const updatedOwnership = {
-        ...(snapshot.sourceOwnership || {}),
-        [key]: {
-          hasOwnThisMoney: newWalletIsOwn,
-          ownerName: newWalletIsOwn ? '' : (newWalletOwnerName.trim() || 'Someone else'),
-          ownserName: newWalletIsOwn ? '' : (newWalletOwnerName.trim() || 'Someone else'),
-          isLocked: newWalletIsLocked,
-        },
-      };
-
-      let newTotal = snapshot.totalAmount || 0;
-      if (initAmt > 0) {
-        newTotal += initAmt;
-        await addDoc(collection(db, 'cashTransactions'), {
-          userId,
-          amount: initAmt,
-          type: 'add',
-          source: newWalletType === 'bank' ? 'bank' : 'custom',
-          category: 'manual',
-          note: `Initial deposit for ${cleanName} wallet`,
-          BankName: newWalletType === 'bank' ? cleanName : null,
-          customPaymentHeadName: newWalletType === 'custom' ? cleanName : null,
-          createdAt: serverTimestamp(),
-        });
-      }
-
-      const updatedSnapshot: TotalCashSnapshot = {
-        ...snapshot,
-        sources: updatedSources,
-        sourceOwnership: updatedOwnership,
-        totalAmount: newTotal,
-        updatedAt: new Date(),
-      };
-
-      const docRef = doc(db, 'totalCashSnapshots', userId);
-      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
-      setSnapshot(updatedSnapshot);
-
-      // Reset form
-      setNewWalletName('');
-      setNewWalletBalance('');
-      setNewWalletIsLocked(false);
-      setNewWalletIsOwn(true);
-      setNewWalletOwnerName('');
-      setOpenAddWalletModal(false);
-    } catch (err) {
-      console.error('Error creating wallet:', err);
-    } finally {
-      setSaving(false);
-    }
+  // ── Pre-selected action triggers ───────────────────────────
+  const openAddMoneyForWallet = (wId: string) => {
+    setPreselectedWalletId(wId);
+    setMoneyDialogMode('add');
+    setOpenAdd(true);
   };
 
-  // Toggle Lock status on a wallet
-  const handleToggleLockWallet = async (wallet: WalletItem) => {
-    if (!userId || !snapshot) return;
-    setSaving(true);
-    try {
-      const newLocked = !wallet.isLocked;
-      const key = wallet.id;
-      const currentO = snapshot.sourceOwnership?.[key] || {
-        hasOwnThisMoney: wallet.hasOwnThisMoney,
-        ownerName: wallet.owner === 'You' ? '' : wallet.owner,
-      };
-
-      const updatedOwnership = {
-        ...(snapshot.sourceOwnership || {}),
-        [key]: {
-          ...currentO,
-          isLocked: newLocked,
-        },
-      };
-
-      const updatedSnapshot: TotalCashSnapshot = {
-        ...snapshot,
-        sourceOwnership: updatedOwnership,
-        updatedAt: new Date(),
-      };
-
-      const docRef = doc(db, 'totalCashSnapshots', userId);
-      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
-      setSnapshot(updatedSnapshot);
-
-      if (activeWalletModal && activeWalletModal.id === wallet.id) {
-        setActiveWalletModal({
-          ...activeWalletModal,
-          isLocked: newLocked,
-          subtitle: newLocked
-            ? (wallet.category === 'built-in' ? 'Built-in · Locked 🔒' : wallet.category === 'bank' ? 'Custom · Bank · Locked 🔒' : 'Custom · Locked 🔒')
-            : (wallet.category === 'built-in' ? 'Built-in' : wallet.category === 'bank' ? 'Custom · Bank' : 'Custom · Wallet'),
-        });
-      }
-    } catch (err) {
-      console.error('Failed to toggle wallet lock:', err);
-    } finally {
-      setSaving(false);
-    }
+  const openSpendMoneyForWallet = (wId: string) => {
+    setPreselectedWalletId(wId);
+    setMoneyDialogMode('deduct');
+    setOpenAdd(true);
   };
 
-  // Save ownership edits
-  const handleSaveOwnership = async () => {
-    if (!activeWalletModal || !userId || !snapshot) return;
-    setSaving(true);
-    try {
-      const key = activeWalletModal.id;
-      const currentO = snapshot.sourceOwnership?.[key] || {};
-      const ownerVal = editOwnerIsSelf ? '' : (editOwnerName.trim() || 'Someone else');
-
-      const updatedOwnership = {
-        ...(snapshot.sourceOwnership || {}),
-        [key]: {
-          ...currentO,
-          hasOwnThisMoney: editOwnerIsSelf,
-          ownerName: ownerVal,
-          ownserName: ownerVal,
-        },
-      };
-
-      const updatedSnapshot: TotalCashSnapshot = {
-        ...snapshot,
-        sourceOwnership: updatedOwnership,
-        updatedAt: new Date(),
-      };
-
-      const docRef = doc(db, 'totalCashSnapshots', userId);
-      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
-      setSnapshot(updatedSnapshot);
-
-      setActiveWalletModal({
-        ...activeWalletModal,
-        owner: editOwnerIsSelf ? 'You' : ownerVal,
-        hasOwnThisMoney: editOwnerIsSelf,
-      });
-      setEditingOwnership(false);
-    } catch (err) {
-      console.error('Failed to update wallet ownership:', err);
-    } finally {
-      setSaving(false);
+  const openTransferForWallet = (wId: string) => {
+    const w = walletsList.find((item) => item.id === wId);
+    if (w) {
+      setTransferFromSource(w.sourceType);
+      setTransferFromBankName(w.bankName);
     }
+    setOpenTransfer(true);
   };
 
-  // Delete custom or bank wallet
-  const handleDeleteWallet = async (wallet: WalletItem) => {
-    if (!userId || !snapshot || wallet.category === 'built-in') return;
-    if (!confirm(`Are you sure you want to delete the "${wallet.name}" wallet?`)) return;
-    setSaving(true);
-    try {
-      const updatedSources = { ...snapshot.sources };
-      let deducted = 0;
-
-      if (wallet.category === 'bank' && wallet.bankName) {
-        deducted = updatedSources.bank?.[wallet.bankName] || 0;
-        delete updatedSources.bank[wallet.bankName];
-        const q = query(collection(db, 'banks'), where('userId', '==', userId), where('name', '==', wallet.bankName));
-        const snap = await getDocs(q);
-        snap.docs.forEach((d) => deleteDoc(d.ref));
-      } else if (wallet.category === 'custom' && wallet.customName) {
-        deducted = updatedSources.custom?.[wallet.customName] || 0;
-        delete updatedSources.custom[wallet.customName];
-        const q = query(collection(db, 'customPaymentHeads'), where('userId', '==', userId), where('name', '==', wallet.customName));
-        const snap = await getDocs(q);
-        snap.docs.forEach((d) => deleteDoc(d.ref));
-      }
-
-      const updatedOwnership = { ...(snapshot.sourceOwnership || {}) };
-      delete updatedOwnership[wallet.id];
-
-      const updatedSnapshot: TotalCashSnapshot = {
-        ...snapshot,
-        sources: updatedSources,
-        sourceOwnership: updatedOwnership,
-        totalAmount: Math.max(0, (snapshot.totalAmount || 0) - deducted),
-        updatedAt: new Date(),
-      };
-
-      const docRef = doc(db, 'totalCashSnapshots', userId);
-      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
-      setSnapshot(updatedSnapshot);
-      setActiveWalletModal(null);
-    } catch (err) {
-      console.error('Failed to delete wallet:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Add Money handler
+  // ── Handler: Add Money ──────────────────────────────────────
   const handleAddMoney = async (
     amount: number,
     source: TransactionSource,
@@ -820,194 +675,156 @@ export default function TotalCashSnapshotComponent({
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
     note?: string,
-    holderName?: string
-  ) => {
-    ensureLive();
-    setSaving(true);
-
-    const txn: Omit<CashTransaction, 'id'> = {
-      userId,
-      amount,
-      type: isFreezed ? 'freeze_transfer' : 'add',
-      source: isFreezed ? 'other' : source,
-      category: 'manual',
-      note: note || (isFreezed ? 'Freezed addition' : 'Manual addition'),
-      createdAt: serverTimestamp() as Timestamp,
-      holderName: holderName || null,
-    };
-
-    if (bankId && !isFreezed) txn.bankId = bankId;
-    if (bankName && !isFreezed) txn.BankName = bankName;
-    if (customPaymentHeadId && !isFreezed) txn.customPaymentHeadId = customPaymentHeadId;
-    if (customPaymentHeadName && !isFreezed) txn.customPaymentHeadName = customPaymentHeadName;
-
-    await addDoc(collection(db, 'cashTransactions'), txn);
-
-    const docRef = doc(db, 'totalCashSnapshots', userId);
-
-    const updatedSources: TotalCashSnapshot['sources'] = {
-      in_hand: snapshot?.sources.in_hand ?? 0,
-      bank: snapshot?.sources.bank ?? {},
-      easypaisa: snapshot?.sources.easypaisa ?? 0,
-      jazzcash: snapshot?.sources.jazzcash ?? 0,
-      other: snapshot?.sources.other ?? 0,
-      custom: snapshot?.sources.custom ?? {},
-    };
-
-    const updatedHeldBy = snapshot?.heldBy ? { ...snapshot.heldBy } : {};
-
-    if (!isFreezed) {
-      if (source === 'bank' && bankName) {
-        updatedSources.bank[bankName] =
-          (updatedSources.bank[bankName] ?? 0) + amount;
-      } else if (source === 'custom' && customPaymentHeadName) {
-        updatedSources.custom[customPaymentHeadName] =
-          (updatedSources.custom[customPaymentHeadName] ?? 0) + amount;
-      } else if (source !== 'bank' && source !== 'custom') {
-        updatedSources[source] = (updatedSources[source] ?? 0) + amount;
-      }
-
-      if (holderName && holderName !== 'Unassigned' && holderName !== 'Self') {
-        const key = getSourceKey(source, bankName, customPaymentHeadName);
-        const holders = [...(updatedHeldBy[key] || [])];
-        const idx = holders.findIndex((h) => h.holderName === holderName);
-        if (idx > -1) {
-          holders[idx] = { ...holders[idx], amount: holders[idx].amount + amount };
-        } else {
-          holders.push({ holderName, amount });
-        }
-        updatedHeldBy[key] = holders;
-      }
+    holderName?: string,
+    meta?: {
+      eventType?: FinancialEventType;
+      sourceIncomeType?: string;
+      expenseCategory?: string;
+      subCategory?: string;
     }
+  ) => {
+    if (!snapshot || !userId) return;
+    setSaving(true);
+    try {
+      const updatedSources: TotalCashSnapshot['sources'] = {
+        in_hand: snapshot.sources.in_hand ?? 0,
+        bank: { ...(snapshot.sources.bank || {}) },
+        easypaisa: snapshot.sources.easypaisa ?? 0,
+        jazzcash: snapshot.sources.jazzcash ?? 0,
+        other: snapshot.sources.other ?? 0,
+        custom: { ...(snapshot.sources.custom || {}) },
+      };
 
-    const updatedSnapshot: TotalCashSnapshot = {
-      ...snapshot!,
-      sources: updatedSources,
-      heldBy: updatedHeldBy,
-      freezeAmount: isFreezed
-        ? (snapshot?.freezeAmount || 0) + amount
-        : snapshot?.freezeAmount || 0,
-      totalAmount: (snapshot?.totalAmount || 0) + amount,
-      updatedAt: new Date(),
-    };
+      let newWalletBalance = 0;
+      if (source === 'bank' && bankName) {
+        newWalletBalance = (updatedSources.bank[bankName] ?? 0) + amount;
+        updatedSources.bank[bankName] = newWalletBalance;
+      } else if (source === 'custom' && customPaymentHeadName) {
+        newWalletBalance = (updatedSources.custom[customPaymentHeadName] ?? 0) + amount;
+        updatedSources.custom[customPaymentHeadName] = newWalletBalance;
+      } else if (source !== 'bank' && source !== 'custom') {
+        newWalletBalance = (updatedSources[source] as number) + amount;
+        (updatedSources[source] as number) = newWalletBalance;
+      }
 
-    await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
-    setSnapshot(updatedSnapshot);
-    setSaving(false);
+      const newTotal = (snapshot.totalAmount || 0) + amount;
+
+      await addDoc(collection(db, 'cashTransactions'), {
+        userId,
+        amount,
+        type: 'add',
+        source,
+        category: 'income',
+        eventType: meta?.eventType || 'income',
+        sourceIncomeType: meta?.sourceIncomeType,
+        walletName: bankName || customPaymentHeadName || source,
+        balanceAfter: newWalletBalance,
+        balanceSnapshot: newTotal,
+        note: note || meta?.sourceIncomeType || 'Money added',
+        BankName: bankName || null,
+        customPaymentHeadName: customPaymentHeadName || null,
+        holderName: holderName || null,
+        createdAt: serverTimestamp(),
+      });
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        sources: updatedSources,
+        totalAmount: newTotal,
+        updatedAt: new Date(),
+      };
+
+      const docRef = doc(db, 'totalCashSnapshots', userId);
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+      setSnapshot(updatedSnapshot);
+    } catch (err) {
+      console.error('Add money failed:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // Deduct Money handler
+  // ── Handler: Deduct / Spend Money ───────────────────────────
   const handleDeductMoney = async (
     amount: number,
     source: TransactionSource,
     bankId?: string,
     bankName?: string,
-    fromFreeze: boolean = false,
+    _fromFreeze: boolean = false,
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
     note?: string,
-    holderName?: string
+    holderName?: string,
+    meta?: {
+      eventType?: FinancialEventType;
+      expenseCategory?: string;
+      subCategory?: string;
+    }
   ) => {
-    ensureLive();
+    if (!snapshot || !userId) return;
     setSaving(true);
+    try {
+      const updatedSources: TotalCashSnapshot['sources'] = {
+        in_hand: snapshot.sources.in_hand ?? 0,
+        bank: { ...(snapshot.sources.bank || {}) },
+        easypaisa: snapshot.sources.easypaisa ?? 0,
+        jazzcash: snapshot.sources.jazzcash ?? 0,
+        other: snapshot.sources.other ?? 0,
+        custom: { ...(snapshot.sources.custom || {}) },
+      };
 
-    const docRef = doc(db, 'totalCashSnapshots', userId);
-    const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) {
-      setSaving(false);
-      return;
-    }
-
-    const data = docSnap.data() as TotalCashSnapshot;
-
-    const updatedSources: TotalCashSnapshot['sources'] = {
-      in_hand: data.sources.in_hand ?? 0,
-      bank: data.sources.bank ? { ...data.sources.bank } : {},
-      easypaisa: data.sources.easypaisa ?? 0,
-      jazzcash: data.sources.jazzcash ?? 0,
-      other: data.sources.other ?? 0,
-      custom: data.sources.custom ? { ...data.sources.custom } : {},
-    };
-
-    const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
-
-    let newFreeze = data.freezeAmount ?? 0;
-    let newTotal = data.totalAmount ?? 0;
-
-    if (fromFreeze) {
-      if (amount > newFreeze) {
-        alert('Not enough balance in Freezed funds');
-        setSaving(false);
-        return;
+      let newWalletBalance = 0;
+      if (source === 'bank' && bankName) {
+        newWalletBalance = Math.max(0, (updatedSources.bank[bankName] ?? 0) - amount);
+        updatedSources.bank[bankName] = newWalletBalance;
+      } else if (source === 'custom' && customPaymentHeadName) {
+        newWalletBalance = Math.max(0, (updatedSources.custom[customPaymentHeadName] ?? 0) - amount);
+        updatedSources.custom[customPaymentHeadName] = newWalletBalance;
+      } else if (source !== 'bank' && source !== 'custom') {
+        newWalletBalance = Math.max(0, (updatedSources[source] as number) - amount);
+        (updatedSources[source] as number) = newWalletBalance;
       }
-      newFreeze -= amount;
-    }
 
-    const key = getSourceKey(source, bankName, customPaymentHeadName);
-    const isLocked = data.sourceOwnership?.[key]?.isLocked;
-    if (isLocked) {
-      alert('This wallet is locked. Please unlock it from the wallet options before deducting funds.');
+      const newTotal = Math.max(0, (snapshot.totalAmount || 0) - amount);
+
+      await addDoc(collection(db, 'cashTransactions'), {
+        userId,
+        amount,
+        type: 'deduct',
+        source,
+        category: 'expenditure',
+        eventType: 'expense',
+        expenseCategory: meta?.expenseCategory || 'General Expense',
+        subCategory: meta?.subCategory,
+        walletName: bankName || customPaymentHeadName || source,
+        balanceAfter: newWalletBalance,
+        balanceSnapshot: newTotal,
+        note: note || meta?.expenseCategory || 'Expense deduction',
+        BankName: bankName || null,
+        customPaymentHeadName: customPaymentHeadName || null,
+        holderName: holderName || null,
+        createdAt: serverTimestamp(),
+      });
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        sources: updatedSources,
+        totalAmount: newTotal,
+        updatedAt: new Date(),
+      };
+
+      const docRef = doc(db, 'totalCashSnapshots', userId);
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+      setSnapshot(updatedSnapshot);
+    } catch (err) {
+      console.error('Deduct money failed:', err);
+    } finally {
       setSaving(false);
-      return;
     }
-
-    let current = 0;
-    if (source === 'bank' && bankName) {
-      current = updatedSources.bank[bankName] ?? 0;
-    } else if (source === 'custom' && customPaymentHeadName) {
-      current = updatedSources.custom[customPaymentHeadName] ?? 0;
-    } else if (source !== 'bank' && source !== 'custom') {
-      current = (updatedSources[source] as number) ?? 0;
-    }
-
-    if (amount > current) {
-      alert(`Not enough balance in ${bankName || customPaymentHeadName || source}`);
-      setSaving(false);
-      return;
-    }
-
-    if (source === 'bank' && bankName) {
-      updatedSources.bank[bankName] = current - amount;
-    } else if (source === 'custom' && customPaymentHeadName) {
-      updatedSources.custom[customPaymentHeadName] = current - amount;
-    } else if (source !== 'bank' && source !== 'custom') {
-      updatedSources[source] = current - amount;
-    }
-    newTotal -= amount;
-
-    const updatedSnapshot: TotalCashSnapshot = {
-      ...data,
-      sources: updatedSources,
-      heldBy: updatedHeldBy,
-      freezeAmount: newFreeze,
-      totalAmount: newTotal,
-      updatedAt: new Date(),
-    };
-
-    await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
-
-    await addDoc(collection(db, 'cashTransactions'), {
-      userId,
-      amount,
-      type: 'deduct',
-      source,
-      fromFreeze,
-      category: fromFreeze ? 'freeze' : 'manual',
-      note: note || (fromFreeze ? 'Deducted from Freezed' : 'Manual deduction'),
-      bankId: bankId || null,
-      BankName: bankName || null,
-      customPaymentHeadId: customPaymentHeadId || null,
-      customPaymentHeadName: customPaymentHeadName || null,
-      holderName: holderName || null,
-      createdAt: serverTimestamp(),
-    });
-
-    setSnapshot(updatedSnapshot);
-    setSaving(false);
   };
 
-  // Transfer funds handler
-  const handleTransferHolders = async (
+  // ── Handler: Transfer Funds ─────────────────────────────────
+  const handleTransferFunds = async (
     amount: number,
     fromSource: TransactionSource,
     fromBankName?: string,
@@ -1019,103 +836,37 @@ export default function TotalCashSnapshotComponent({
     toHolder?: string,
     note?: string
   ) => {
-    ensureLive();
+    if (!snapshot || !userId) return;
     setSaving(true);
     try {
-      const docRef = doc(db, 'totalCashSnapshots', userId);
-      const docSnap = await getDoc(docRef);
-      if (!docSnap.exists()) {
-        setSaving(false);
-        return;
-      }
-      const data = docSnap.data() as TotalCashSnapshot;
-
-      const updatedSources: TotalCashSnapshot['sources'] = {
-        in_hand: data.sources.in_hand ?? 0,
-        bank: data.sources.bank ?? {},
-        easypaisa: data.sources.easypaisa ?? 0,
-        jazzcash: data.sources.jazzcash ?? 0,
-        other: data.sources.other ?? 0,
-        custom: data.sources.custom ?? {},
-      };
-      const updatedHeldBy = data.heldBy ? { ...data.heldBy } : {};
-
-      const fromKey = getSourceKey(fromSource, fromBankName, fromCustomName);
-      const isFromLocked = data.sourceOwnership?.[fromKey]?.isLocked;
-      if (isFromLocked) {
-        alert('Source wallet is locked. Please unlock it before transferring funds out.');
-        setSaving(false);
-        return;
-      }
-
+      const updatedSources = { ...snapshot.sources };
       const targetSource = toSource || fromSource;
       const targetBankName = toBankName || fromBankName;
       const targetCustomName = toCustomName || fromCustomName;
-      const toKey = getSourceKey(targetSource, targetBankName, targetCustomName);
 
-      let fromSourceBalance = 0;
+      let fromRemaining = 0;
       if (fromSource === 'bank' && fromBankName) {
-        fromSourceBalance = updatedSources.bank[fromBankName] ?? 0;
+        fromRemaining = (updatedSources.bank[fromBankName] ?? 0) - amount;
+        updatedSources.bank[fromBankName] = fromRemaining;
       } else if (fromSource === 'custom' && fromCustomName) {
-        fromSourceBalance = updatedSources.custom[fromCustomName] ?? 0;
+        fromRemaining = (updatedSources.custom[fromCustomName] ?? 0) - amount;
+        updatedSources.custom[fromCustomName] = fromRemaining;
       } else {
-        fromSourceBalance = (updatedSources[fromSource] as number) ?? 0;
+        fromRemaining = ((updatedSources[fromSource] as number) ?? 0) - amount;
+        (updatedSources[fromSource] as number) = fromRemaining;
       }
 
-      if (amount > fromSourceBalance) {
-        alert('Not enough balance in source wallet');
-        setSaving(false);
-        return;
-      }
-
-      if (fromSource === 'bank' && fromBankName) {
-        updatedSources.bank[fromBankName] -= amount;
-      } else if (fromSource === 'custom' && fromCustomName) {
-        updatedSources.custom[fromCustomName] -= amount;
-      } else {
-        (updatedSources[fromSource] as number) -= amount;
-      }
-
+      let toNewBal = 0;
       if (targetSource === 'bank' && targetBankName) {
-        updatedSources.bank[targetBankName] = (updatedSources.bank[targetBankName] ?? 0) + amount;
+        toNewBal = (updatedSources.bank[targetBankName] ?? 0) + amount;
+        updatedSources.bank[targetBankName] = toNewBal;
       } else if (targetSource === 'custom' && targetCustomName) {
-        updatedSources.custom[targetCustomName] = (updatedSources.custom[targetCustomName] ?? 0) + amount;
+        toNewBal = (updatedSources.custom[targetCustomName] ?? 0) + amount;
+        updatedSources.custom[targetCustomName] = toNewBal;
       } else {
-        (updatedSources[targetSource] as number) = ((updatedSources[targetSource] as number) ?? 0) + amount;
+        toNewBal = ((updatedSources[targetSource] as number) ?? 0) + amount;
+        (updatedSources[targetSource] as number) = toNewBal;
       }
-
-      if (toHolder && toHolder !== 'Unassigned' && toHolder !== 'Self') {
-        const toHolders = [...(updatedHeldBy[toKey] || [])];
-        const idx = toHolders.findIndex((h) => h.holderName === toHolder);
-        if (idx > -1) {
-          toHolders[idx] = { ...toHolders[idx], amount: toHolders[idx].amount + amount };
-        } else {
-          toHolders.push({ holderName: toHolder, amount });
-        }
-        updatedHeldBy[toKey] = toHolders;
-      }
-
-      let newTotalAmount = 0;
-      Object.entries(updatedSources).forEach(([name, val]) => {
-        if (name === 'bank' || name === 'custom') {
-          Object.values(val as Record<string, number>).forEach((v) => {
-            newTotalAmount += v;
-          });
-        } else {
-          newTotalAmount += val as number;
-        }
-      });
-
-      const updatedSnapshot: TotalCashSnapshot = {
-        ...data,
-        sources: updatedSources,
-        heldBy: updatedHeldBy,
-        totalAmount: newTotalAmount,
-        updatedAt: new Date(),
-      };
-
-      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
-      setSnapshot(updatedSnapshot);
 
       await addDoc(collection(db, 'cashTransactions'), {
         userId,
@@ -1123,802 +874,624 @@ export default function TotalCashSnapshotComponent({
         type: 'transfer',
         source: fromSource,
         category: 'transfer',
-        note: note || `Transferred ${amount} from ${fromBankName || fromCustomName || fromSource} to ${targetBankName || targetCustomName || targetSource}`,
+        eventType: 'transfer',
+        balanceAfter: fromRemaining,
+        note:
+          note ||
+          `Transfer: ${fromBankName || fromCustomName || fromSource} ➔ ${
+            targetBankName || targetCustomName || targetSource
+          }`,
+        BankName: fromBankName || null,
+        customPaymentHeadName: fromCustomName || null,
         fromHolderName: fromHolder || null,
         toHolderName: toHolder || null,
         createdAt: serverTimestamp(),
       });
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        sources: updatedSources,
+        updatedAt: new Date(),
+      };
+
+      const docRef = doc(db, 'totalCashSnapshots', userId);
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+      setSnapshot(updatedSnapshot);
     } catch (err) {
-      console.error(err);
+      console.error('Transfer failed:', err);
     } finally {
       setSaving(false);
     }
   };
 
-  const currentMonthYear = useMemo(() => {
-    return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  }, []);
+  // ── Handler: Toggle Wallet Security Lock ────────────────────
+  const handleToggleLockWallet = async (walletId: string, currentLock: boolean) => {
+    if (!snapshot || !userId) return;
+    try {
+      const existing = snapshot.sourceOwnership?.[walletId];
+      const updatedOwnership = {
+        ...(snapshot.sourceOwnership || {}),
+        [walletId]: {
+          hasOwnThisMoney: existing?.hasOwnThisMoney ?? true,
+          ...(existing || {}),
+          isLocked: !currentLock,
+        },
+      };
 
-  if (loading || !theme || !snapshot) {
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        sourceOwnership: updatedOwnership,
+        updatedAt: new Date(),
+      };
+
+      const docRef = doc(db, 'totalCashSnapshots', userId);
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+      setSnapshot(updatedSnapshot);
+
+      if (activeWalletModal && activeWalletModal.id === walletId) {
+        setActiveWalletModal({ ...activeWalletModal, isLocked: !currentLock });
+      }
+    } catch (e) {
+      console.error('Lock toggle failed:', e);
+    }
+  };
+
+  // ── Handler: Update Allocations & Reservations in Wallet ─────
+  const handleUpdateWalletSettings = async (
+    walletId: string,
+    allocations: WalletAllocation[],
+    reservedAmount: number,
+    ownerName: string,
+    hasOwnThisMoney: boolean
+  ) => {
+    if (!snapshot || !userId) return;
+    try {
+      const updatedOwnership = {
+        ...(snapshot.sourceOwnership || {}),
+        [walletId]: {
+          ...(snapshot.sourceOwnership?.[walletId] || {}),
+          hasOwnThisMoney,
+          ownerName: hasOwnThisMoney ? '' : ownerName,
+          reservedAmount,
+          allocations,
+        },
+      };
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        sourceOwnership: updatedOwnership,
+        updatedAt: new Date(),
+      };
+
+      const docRef = doc(db, 'totalCashSnapshots', userId);
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+      setSnapshot(updatedSnapshot);
+      setActiveWalletModal(null);
+    } catch (e) {
+      console.error('Update allocations failed:', e);
+    }
+  };
+
+  // ── Handler: Delete Custom Wallet ───────────────────────────
+  const handleDeleteWallet = async (walletId: string) => {
+    if (!snapshot || !userId) return;
+    try {
+      const updatedSources = { ...snapshot.sources };
+      if (walletId.startsWith('bank:')) {
+        const bName = walletId.replace('bank:', '');
+        delete updatedSources.bank[bName];
+      } else if (walletId.startsWith('custom:')) {
+        const cName = walletId.replace('custom:', '');
+        delete updatedSources.custom[cName];
+      }
+
+      const updatedSnapshot: TotalCashSnapshot = {
+        ...snapshot,
+        sources: updatedSources,
+        totalAmount: computeTotalAmount({ ...snapshot, sources: updatedSources }),
+        updatedAt: new Date(),
+      };
+
+      const docRef = doc(db, 'totalCashSnapshots', userId);
+      await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+      setSnapshot(updatedSnapshot);
+      setActiveWalletModal(null);
+    } catch (e) {
+      console.error('Delete wallet failed:', e);
+    }
+  };
+
+  // ── Handler: Pay Planned Expense from a wallet ──────────────
+  const handlePayPlannedExpense = async (
+    expense: PlannedExpense,
+    walletId: string,
+    paidAmount: number
+  ) => {
+    let src: TransactionSource = 'in_hand';
+    let bName: string | undefined = undefined;
+    let cName: string | undefined = undefined;
+
+    if (walletId.startsWith('bank:')) {
+      src = 'bank';
+      bName = walletId.replace('bank:', '');
+    } else if (walletId.startsWith('custom:')) {
+      src = 'custom';
+      cName = walletId.replace('custom:', '');
+    } else {
+      src = walletId as TransactionSource;
+    }
+
+    await handleDeductMoney(
+      paidAmount,
+      src,
+      undefined,
+      bName,
+      false,
+      undefined,
+      cName,
+      `Paid bill: ${expense.title}`,
+      undefined,
+      {
+        eventType: 'expense',
+        expenseCategory: expense.category,
+      }
+    );
+  };
+
+  if (loading || !snapshot) {
     return (
-      <Box textAlign="center" mt={4}>
-        <CircularProgress />
-      </Box>
+      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+        <RefreshCw size={24} className="animate-spin text-blue-500 mb-2" />
+        <span className="text-xs">Loading financial overview…</span>
+      </div>
     );
   }
 
-  const fabActions = [
-    {
-      icon: <AddCircleOutlineIcon />,
-      label: 'Add Money',
-      color: '#22c55e',
-      onClick: () => {
-        setFabOpen(false);
-        setMoneyDialogMode('add');
-        setOpenAdd(true);
-      },
-    },
-    {
-      icon: <RemoveCircleOutlineIcon />,
-      label: 'Deduct',
-      color: '#ef4444',
-      onClick: () => {
-        setFabOpen(false);
-        setMoneyDialogMode('deduct');
-        setOpenAdd(true);
-      },
-    },
-    {
-      icon: <SwapHorizIcon />,
-      label: 'Transfer',
-      color: '#3b82f6',
-      onClick: () => {
-        setFabOpen(false);
-        setTransferInitialFrom(undefined);
-        setOpenTransfer(true);
-      },
-    },
-    {
-      icon: <ReceiptLongIcon />,
-      label: 'Loan Record',
-      color: '#a855f7',
-      onClick: () => {
-        setFabOpen(false);
-        setOpenLoan(true);
-      },
-    },
-    {
-      icon: <AssignmentOutlinedIcon />,
-      label: 'Add Liability',
-      color: '#ec4899',
-      onClick: () => {
-        setFabOpen(false);
-        setOpenLiability(true);
-      },
-    },
-    {
-      icon: <HistoryIcon />,
-      label: 'History',
-      color: '#f59e0b',
-      onClick: () => {
-        setFabOpen(false);
-        setShowTransactionHistory(true);
-      },
-    },
-  ];
-
   return (
-    <div className="w-full max-w-[480px] sm:max-w-[560px] mx-auto py-2 px-1 sm:px-2 flex flex-col gap-4 font-sans select-none">
-      {/* ── Top Header Row ────────────────────────────────────── */}
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <h1 className="m-0 text-2xl font-extrabold text-[#14211E] dark:text-slate-100 tracking-tight">
-            Finance
-          </h1>
-          {(isCached || refreshing) && (
-            <Tooltip title={refreshing ? 'Syncing with server…' : 'Data loaded from local cache. Click to sync.'}>
-              <span>
-                <IconButton size="small" onClick={triggerRefresh} disabled={refreshing} sx={{ color: 'primary.main', p: 0.5 }}>
-                  {refreshing ? <CircularProgress size={16} /> : <SyncIcon fontSize="small" />}
-                </IconButton>
-              </span>
-            </Tooltip>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] font-medium text-[#5A6B66] dark:text-slate-400">
-            {currentMonthYear}
-          </span>
-
-          {/* Action Trigger FAB */}
-          <div ref={fabRef} className="relative flex items-center">
-            {/* Fan out actions */}
-            <div
-              className={`absolute right-0 top-[110%] pt-1 z-[1200] flex flex-col items-end gap-2 ${
-                fabOpen ? 'pointer-events-auto' : 'pointer-events-none'
+    <div className="min-h-screen bg-[#070b14] text-white antialiased font-sans pb-16">
+      <div className="mx-auto flex min-h-screen w-full max-w-[440px] flex-col border-x border-white/10 px-4 pt-6 sm:px-5">
+        {/* ── Top Header ────────────────────────────────────────── */}
+        <header className="mb-5 flex items-start justify-between">
+          <div>
+            <h1 className="text-[23px] font-bold tracking-[-0.6px] text-white">MyOrbit</h1>
+            <p className="mt-0.5 text-[14px] text-slate-400">Your financial overview</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={triggerRefresh}
+              aria-label="Refresh financial data"
+              className={`rounded-full p-2 text-slate-400 hover:text-white transition-all cursor-pointer ${
+                refreshing ? 'animate-spin text-blue-400' : ''
               }`}
+              title="Sync latest live data"
             >
-              {fabActions.map((action, i) => (
-                <div
-                  key={action.label}
-                  className={`flex items-center gap-2 transition-all duration-200 ${
-                    fabOpen ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-4 scale-90'
-                  }`}
-                  style={{ transitionDelay: fabOpen ? `${i * 40}ms` : '0ms' }}
-                >
-                  <span
-                    onClick={action.onClick}
-                    style={{ backgroundColor: action.color }}
-                    className="px-2.5 py-1 rounded-full text-white text-[11px] font-bold shadow-md cursor-pointer whitespace-nowrap"
-                  >
-                    {action.label}
-                  </span>
-                  <Fab
-                    size="small"
-                    onClick={action.onClick}
-                    sx={{
-                      bgcolor: action.color,
-                      color: '#fff',
-                      width: 36,
-                      height: 36,
-                      minHeight: 'unset',
-                      '&:hover': { bgcolor: action.color, filter: 'brightness(1.1)' },
-                    }}
-                  >
-                    {action.icon}
-                  </Fab>
-                </div>
-              ))}
+              <RefreshCw size={18} strokeWidth={2} />
+            </button>
+            <button
+              aria-label="Open profile"
+              onClick={onProfile}
+              className="rounded-full p-2 text-slate-400 hover:text-white transition-all cursor-pointer"
+            >
+              <UserCircle2 size={24} strokeWidth={1.9} />
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 flex flex-col gap-4">
+          {/* ── Top Summary Hero Card ───────────────────────────── */}
+          <section className="rounded-[20px] bg-[#141b29] border border-white/10 px-[19px] py-[20px] shadow-lg relative overflow-hidden">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[13px] font-medium text-slate-400">Your total recorded money</p>
+              <button
+                onClick={() => setBalancesVisible((v) => !v)}
+                aria-label={balancesVisible ? 'Hide balances' : 'Show balances'}
+                className="text-slate-400 hover:text-white transition-colors cursor-pointer p-1"
+              >
+                {balancesVisible ? <Eye size={18} /> : <EyeOff size={18} />}
+              </button>
             </div>
 
-            <Tooltip title={fabOpen ? 'Close actions' : 'Quick Actions'}>
-              <Fab
-                size="small"
-                color="primary"
-                onClick={() => setFabOpen((p) => !p)}
-                sx={{
-                  width: 36,
-                  height: 36,
-                  minHeight: 'unset',
-                  boxShadow: '0 4px 12px rgba(15, 61, 51, 0.25)',
-                  transition: 'transform 0.2s',
-                  transform: fabOpen ? 'rotate(45deg)' : 'rotate(0deg)',
-                  bgcolor: '#0F3D33',
-                  '&:hover': { bgcolor: '#0B2D26' },
-                }}
-              >
-                {fabOpen ? <CloseIcon fontSize="small" /> : <AddIcon fontSize="small" />}
-              </Fab>
-            </Tooltip>
+            <p className="mt-2 text-[37px] font-bold leading-tight tracking-[-1.1px] tabular-nums sm:text-[40px] text-white">
+              {amountDisplay(totalMoney)}
+            </p>
+
+            <div className="mt-6 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
+              <div>
+                <p className="text-[13px] text-slate-400">Available to spend</p>
+                <p className="mt-1 text-[23px] font-bold tracking-[-0.6px] text-[#14b85a] tabular-nums">
+                  {amountDisplay(availableSpendable)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[13px] text-slate-400">Reserved / planned</p>
+                <p className="mt-1 text-[23px] font-bold tracking-[-0.6px] tabular-nums text-slate-200">
+                  {amountDisplay(reservedOrOther)}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* ── Income & Expenses Cards (Exact Monthly Calculations & Navigation) ── */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Income Card: links to /finance/income-sources */}
+            <Link
+              href="/finance/income-sources"
+              className="rounded-[18px] border border-white/10 bg-[#101726] p-3.5 hover:border-emerald-500/40 hover:bg-[#131c2e] transition-all flex flex-col justify-between group"
+            >
+              <div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <div className="flex items-center gap-1.5">
+                    <ArrowDownLeft size={16} className="text-[#15b75c]" strokeWidth={2.4} />
+                    <span className="text-[13px] font-medium text-slate-300">Monthly Income</span>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-500 group-hover:text-emerald-400 transition-colors" />
+                </div>
+                <p className="mt-2 text-[21px] font-bold tracking-[-0.5px] tabular-nums text-white">
+                  {amountDisplay(monthlyIncomeTotal)}
+                </p>
+              </div>
+              <span className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 group-hover:text-emerald-300">
+                <span>Manage Sources</span>
+                <ChevronRight size={11} />
+              </span>
+            </Link>
+
+            {/* Expenses Card: links to /finance/expenses */}
+            <Link
+              href="/finance/expenses"
+              className="rounded-[18px] border border-white/10 bg-[#101726] p-3.5 hover:border-rose-500/40 hover:bg-[#131c2e] transition-all flex flex-col justify-between group"
+            >
+              <div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <div className="flex items-center gap-1.5">
+                    <ArrowUpRight size={16} className="text-[#ef4444]" strokeWidth={2.4} />
+                    <span className="text-[13px] font-medium text-slate-300">This Month Exp.</span>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-500 group-hover:text-rose-400 transition-colors" />
+                </div>
+                <p className="mt-2 text-[21px] font-bold tracking-[-0.5px] tabular-nums text-white">
+                  {amountDisplay(currentMonthExpensesTotal)}
+                </p>
+              </div>
+              <span className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 group-hover:text-rose-300">
+                <span>View Expenses</span>
+                <ChevronRight size={11} />
+              </span>
+            </Link>
           </div>
-        </div>
-      </div>
 
-      {/* ── Top Hero Card (Available to spend & Total across wallets) ── */}
-      <div className="bg-[#0F3D33] dark:bg-[#072922] dark:border dark:border-emerald-800/40 rounded-[24px] p-[22px] flex flex-col gap-1.5 text-white shadow-md relative overflow-hidden">
-        <div className="flex justify-between items-center">
-          <span className="text-[13px] text-white/80 font-medium">Available to spend</span>
-          <IconButton
-            size="small"
-            onClick={() => setShowTotal((p) => !p)}
-            sx={{ color: 'rgba(255, 255, 255, 0.75)', p: 0.2 }}
-            title={showTotal ? 'Hide balances' : 'Show balances'}
-          >
-            {showTotal ? <VisibilityOff sx={{ fontSize: 16 }} /> : <Visibility sx={{ fontSize: 16 }} />}
-          </IconButton>
-        </div>
-
-        <span className="text-[34px] font-extrabold tracking-tight text-white leading-tight">
-          {showTotal ? formatCurrency(availableToSpend, currency) : '•••••••'}
-        </span>
-
-        <span className="text-[13px] text-white/80 font-medium">
-          Total across all wallets: {showTotal ? formatCurrency(totalAllWallets, currency) : '•••••••'}
-        </span>
-      </div>
-
-      {/* ── Loans (Borrowed and Lent) Cards ───────────────────── */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* To pay back */}
-        <div
-          onClick={() => setShowLoanInfoModal(true)}
-          className="bg-white dark:bg-white/5 border border-[#E1E8E5] dark:border-white/10 rounded-[16px] p-3.5 flex flex-col gap-1 cursor-pointer hover:border-rose-400/50 hover:shadow-sm transition-all"
-        >
-          <span className="text-xs text-[#5A6B66] dark:text-slate-400 font-medium">To pay back</span>
-          <span className="text-lg font-bold text-[#9A3412] dark:text-rose-400 tabular-nums">
-            {formatCurrency(totalsData.toPay, currency)}
-          </span>
-          <span className="text-[10px] text-[#5A6B66] dark:text-slate-500 font-medium">
-            {`(${totalsData.toPayLoansCount} loan${totalsData.toPayLoansCount !== 1 ? 's' : ''} + ${totalsData.toPayLiabilitiesCount} debt${totalsData.toPayLiabilitiesCount !== 1 ? 's' : ''})`}
-          </span>
-        </div>
-
-        {/* To get back */}
-        <div
-          onClick={() => setShowLoanInfoModal(true)}
-          className="bg-white dark:bg-white/5 border border-[#E1E8E5] dark:border-white/10 rounded-[16px] p-3.5 flex flex-col gap-1 cursor-pointer hover:border-emerald-500/50 hover:shadow-sm transition-all"
-        >
-          <span className="text-xs text-[#5A6B66] dark:text-slate-400 font-medium">To get back</span>
-          <span className="text-lg font-bold text-[#0B5A44] dark:text-emerald-400 tabular-nums">
-            {formatCurrency(totalsData.toReceive, currency)}
-          </span>
-          <span className="text-[10px] text-[#5A6B66] dark:text-slate-500 font-medium">
-            {`(${totalsData.toReceiveLoansCount} loan${totalsData.toReceiveLoansCount !== 1 ? 's' : ''} + ${totalsData.toReceiveLiabilitiesCount} credit${totalsData.toReceiveLiabilitiesCount !== 1 ? 's' : ''})`}
-          </span>
-        </div>
-      </div>
-
-      {/* ── Wallets Section ───────────────────────────────────── */}
-      <div className="flex justify-between items-center mt-1">
-        <h2 className="m-0 text-[17px] font-bold text-[#14211E] dark:text-slate-100">Wallets</h2>
-        <span className="text-[13px] text-[#5A6B66] dark:text-slate-400 font-medium">
-          {walletsList.length} wallet{walletsList.length !== 1 ? 's' : ''}
-        </span>
-      </div>
-
-      {/* Wallets List Container */}
-      <div className="flex flex-col gap-2.5">
-        {walletsList.map((wallet) => (
+          {/* ── Transaction History Dedicated Button (Item 3) ──── */}
           <button
-            key={wallet.id}
+            type="button"
+            onClick={() => setShowTransactionHistory(true)}
+            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#101726] border border-white/10 hover:border-blue-500/40 hover:bg-[#141d30] text-slate-300 hover:text-white transition-all cursor-pointer group shadow-sm"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
+                <History size={16} />
+              </div>
+              <div className="text-left">
+                <span className="text-xs font-bold text-white block">See Transaction History</span>
+                <span className="text-[11px] text-slate-400">Search, filter & view historical balance snapshots</span>
+              </div>
+            </div>
+            <ChevronRight size={16} className="text-slate-500 group-hover:text-blue-400 transition-colors" />
+          </button>
+
+          {/* ── Wallets & Accounts Link Card (Item 1: Separated page) ── */}
+          <div className="p-4 rounded-2xl bg-[#101726] border border-white/10 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                  <Wallet size={16} />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white tracking-tight">Wallets & Accounts</h3>
+                  <span className="text-[11px] text-slate-400">
+                    {walletsList.length} active wallets (Cash, Bank, Mobile, Virtual)
+                  </span>
+                </div>
+              </div>
+
+              <Link
+                href="/finance/wallets"
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <span>View All Wallets</span>
+                <ChevronRight size={13} />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-white/5">
+              <div className="p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
+                <span className="text-[10px] text-slate-400 block">Total In Wallets</span>
+                <span className="font-bold text-white tabular-nums text-sm">
+                  {amountDisplay(totalMoney)}
+                </span>
+              </div>
+              <div className="p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
+                <span className="text-[10px] text-slate-400 block">Spendable Balance</span>
+                <span className="font-bold text-emerald-400 tabular-nums text-sm">
+                  {amountDisplay(availableSpendable)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Loans & Debts Quick Ribbon ────────────────────────── */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setOpenLoan(true)}
+              className="p-3 bg-[#101726] border border-white/10 hover:border-amber-500/30 rounded-2xl flex flex-col gap-0.5 text-left transition-all cursor-pointer"
+            >
+              <span className="text-[11px] text-slate-400 font-medium">To Pay (Loans & Debts)</span>
+              <span className="text-base font-bold text-amber-400 tabular-nums">
+                {amountDisplay(loanMetrics.toPay)}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setOpenLiability(true)}
+              className="p-3 bg-[#101726] border border-white/10 hover:border-blue-500/30 rounded-2xl flex flex-col gap-0.5 text-left transition-all cursor-pointer"
+            >
+              <span className="text-[11px] text-slate-400 font-medium">To Receive (Credits)</span>
+              <span className="text-base font-bold text-emerald-400 tabular-nums">
+                {amountDisplay(loanMetrics.toReceive)}
+              </span>
+            </button>
+          </div>
+
+          {/* ── Segmented Navigation Tabs: Upcoming Bills vs Tasks ── */}
+          <div className="grid grid-cols-2 gap-1 rounded-2xl bg-[#101726] p-1 border border-white/10">
+            <button
+              type="button"
+              onClick={() => setActiveTab('upcoming')}
+              className={`py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'upcoming'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Upcoming Bills & Commitments
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('tasks')}
+              className={`py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'tasks'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Financial Tasks To-Dos
+            </button>
+          </div>
+
+          {/* ── Tab Content: Upcoming Bills ───────────────────────── */}
+          {activeTab === 'upcoming' && (
+            <PlannedExpensesSection
+              userId={userId}
+              wallets={walletsList.map((w) => ({ id: w.id, name: w.name, amount: w.amount }))}
+              onPayExpense={handlePayPlannedExpense}
+              balancesVisible={balancesVisible}
+            />
+          )}
+
+          {/* ── Tab Content: Financial Tasks ──────────────────────── */}
+          {activeTab === 'tasks' && <FinanceTasksSection userId={userId} />}
+        </main>
+
+        {/* ── Floating Bottom Action Bar ────────────────────────── */}
+        <div className="sticky bottom-4 mt-6 z-30 flex items-center justify-between gap-2 p-2 bg-[#121824]/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl">
+          <button
             type="button"
             onClick={() => {
-              setActiveWalletModal(wallet);
-              setEditingOwnership(false);
+              setPreselectedWalletId('');
+              setMoneyDialogMode('add');
+              setOpenAdd(true);
             }}
-            className="w-full box-border flex items-center gap-3.5 px-3.5 py-3 min-h-[64px] bg-white dark:bg-white/5 rounded-2xl border border-[#E1E8E5] dark:border-white/10 hover:border-emerald-500/40 hover:shadow-sm transition-all cursor-pointer text-left focus:outline-none"
+            className="flex-1 py-2.5 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
           >
-            {/* Wallet Avatar */}
-            <span
-              style={{ backgroundColor: wallet.color }}
-              className="w-11 h-11 rounded-[14px] flex items-center justify-center font-bold text-lg text-white shrink-0 shadow-xs"
-            >
-              {wallet.initial}
-            </span>
-
-            {/* Wallet Info */}
-            <span className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <span className="text-[15px] font-semibold text-[#14211E] dark:text-slate-100 truncate flex items-center gap-1.5">
-                {wallet.name}
-                {wallet.isLocked && <LockIcon sx={{ fontSize: 13, color: '#f43f5e' }} />}
-              </span>
-              <span className="text-xs text-[#5A6B66] dark:text-slate-400 truncate">
-                {wallet.subtitle}
-              </span>
-            </span>
-
-            {/* Amount */}
-            <span className="text-[15px] font-bold text-[#14211E] dark:text-slate-100 tabular-nums shrink-0">
-              {showTotal ? formatCurrency(wallet.amount, currency) : '••••••'}
-            </span>
+            <PlusCircle size={16} />
+            <span>Add Money</span>
           </button>
-        ))}
-      </div>
 
-      {/* ── Add Wallet Dashed Button ─────────────────────────── */}
-      <button
-        type="button"
-        onClick={() => {
-          setNewWalletName('');
-          setNewWalletBalance('');
-          setNewWalletType('custom');
-          setNewWalletIsLocked(false);
-          setNewWalletIsOwn(true);
-          setNewWalletOwnerName('');
-          setOpenAddWalletModal(true);
-        }}
-        className="w-full box-border flex items-center justify-center gap-2 min-h-[48px] rounded-2xl border-[1.5px] border-dashed border-[#0F3D33] dark:border-emerald-400 text-[#0F3D33] dark:text-emerald-400 font-bold text-[15px] hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-all cursor-pointer mt-1"
-      >
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-        <span>Add wallet</span>
-      </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPreselectedWalletId('');
+              setMoneyDialogMode('deduct');
+              setOpenAdd(true);
+            }}
+            className="flex-1 py-2.5 px-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+          >
+            <MinusCircle size={16} />
+            <span>Spend</span>
+          </button>
 
-      {/* ── See Transaction History Link ─────────────────────── */}
-      <div className="mt-3 mb-1 flex justify-center">
-        <button
-          type="button"
-          onClick={() => setShowTransactionHistory(true)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 text-slate-600 dark:text-slate-300 font-semibold text-xs transition-all shadow-xs cursor-pointer"
-        >
-          <HistoryIcon sx={{ fontSize: 16 }} />
-          <span>See Transaction History</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTransferFromSource(undefined);
+              setTransferFromBankName(undefined);
+              setOpenTransfer(true);
+            }}
+            className="flex-1 py-2.5 px-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+          >
+            <ArrowRightLeft size={16} />
+            <span>Transfer</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowTransactionHistory(true)}
+            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold flex items-center justify-center transition-all cursor-pointer"
+            title="Transaction History & Audit"
+          >
+            <History size={17} />
+          </button>
+        </div>
       </div>
 
       {/* ════════════════════ MODALS ════════════════════ */}
 
-      {/* ── Wallet Detail / Quick Action Modal ────────────────── */}
-      {activeWalletModal && (
-        <Dialog
-          open={Boolean(activeWalletModal)}
-          onClose={() => setActiveWalletModal(null)}
-          fullWidth
-          maxWidth="xs"
-          PaperProps={{
-            sx: {
-              borderRadius: 4,
-              p: 1.5,
-              backgroundColor: isDark ? '#0f172a' : '#ffffff',
-            },
-          }}
-        >
-          <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="flex items-center gap-3">
-              <span
-                style={{ backgroundColor: activeWalletModal.color }}
-                className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base text-white shrink-0"
-              >
-                {activeWalletModal.initial}
-              </span>
-              <div>
-                <Typography variant="subtitle1" fontWeight="800" sx={{ lineHeight: 1.2 }}>
-                  {activeWalletModal.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {activeWalletModal.subtitle}
-                </Typography>
-              </div>
-            </div>
-            <IconButton size="small" onClick={() => setActiveWalletModal(null)}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </DialogTitle>
-
-          <DialogContent sx={{ py: 2 }}>
-            <div className="flex flex-col gap-4">
-              {/* Balance card */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 flex justify-between items-center">
-                <div>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 block font-medium">Balance</span>
-                  <span className="text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                    {formatCurrency(activeWalletModal.amount, currency)}
-                  </span>
-                </div>
-                <div>
-                  {activeWalletModal.isLocked ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">
-                      <LockIcon sx={{ fontSize: 13 }} /> Locked
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-                      <LockOpenIcon sx={{ fontSize: 13 }} /> Unlocked
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Ownership details */}
-              <div className="text-xs text-slate-600 dark:text-slate-300 px-1 flex justify-between items-center">
-                <span>
-                  Owner: <b>{activeWalletModal.owner}</b>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditOwnerIsSelf(activeWalletModal.hasOwnThisMoney);
-                    setEditOwnerName(activeWalletModal.hasOwnThisMoney ? '' : activeWalletModal.owner);
-                    setEditingOwnership((p) => !p);
-                  }}
-                  className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"
-                >
-                  {editingOwnership ? 'Cancel' : 'Change owner'}
-                </button>
-              </div>
-
-              {/* Ownership edit form */}
-              {editingOwnership && (
-                <div className="p-3 rounded-xl bg-slate-100 dark:bg-white/10 flex flex-col gap-2">
-                  <div className="grid grid-cols-2 gap-1 rounded-lg bg-white dark:bg-slate-900 p-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditOwnerIsSelf(true)}
-                      className={`py-1 text-xs font-semibold rounded ${
-                        editOwnerIsSelf ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
-                      }`}
-                    >
-                      Mine
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditOwnerIsSelf(false)}
-                      className={`py-1 text-xs font-semibold rounded ${
-                        !editOwnerIsSelf ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
-                      }`}
-                    >
-                      Someone else
-                    </button>
-                  </div>
-                  {!editOwnerIsSelf && (
-                    <TextField
-                      size="small"
-                      placeholder="e.g. Ammi, Abu, Friend"
-                      value={editOwnerName}
-                      onChange={(e) => setEditOwnerName(e.target.value)}
-                    />
-                  )}
-                  <Button
-                    size="small"
-                    variant="contained"
-                    disabled={saving}
-                    onClick={handleSaveOwnership}
-                    sx={{ textTransform: 'none', fontWeight: 700 }}
-                  >
-                    Save Owner
-                  </Button>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-2 mt-1">
-                {/* Transfer button */}
-                <Button
-                  variant="outlined"
-                  onClick={() => {
-                    const sel = activeWalletModal;
-                    setActiveWalletModal(null);
-                    setTransferInitialFrom({
-                      source: sel.sourceType,
-                      bankName: sel.bankName,
-                      customName: sel.customName,
-                    });
-                    setOpenTransfer(true);
-                  }}
-                  startIcon={<SwapHorizIcon />}
-                  sx={{
-                    textTransform: 'none',
-                    fontWeight: 700,
-                    borderRadius: 2.5,
-                    py: 1,
-                  }}
-                >
-                  Transfer Funds
-                </Button>
-
-                {/* Lock / Unlock Toggle button */}
-                <Button
-                  variant="outlined"
-                  color={activeWalletModal.isLocked ? 'success' : 'warning'}
-                  onClick={() => handleToggleLockWallet(activeWalletModal)}
-                  disabled={saving}
-                  startIcon={activeWalletModal.isLocked ? <LockOpenIcon /> : <LockIcon />}
-                  sx={{
-                    textTransform: 'none',
-                    fontWeight: 700,
-                    borderRadius: 2.5,
-                    py: 1,
-                  }}
-                >
-                  {activeWalletModal.isLocked ? 'Unlock Wallet' : 'Lock Wallet'}
-                </Button>
-              </div>
-
-              {/* Quick Add / Deduct Row */}
-              <div className="flex gap-2">
-                <Button
-                  fullWidth
-                  variant="contained"
-                  color="success"
-                  onClick={() => {
-                    setActiveWalletModal(null);
-                    setMoneyDialogMode('add');
-                    setOpenAdd(true);
-                  }}
-                  sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2 }}
-                >
-                  + Add Money
-                </Button>
-                <Button
-                  fullWidth
-                  variant="contained"
-                  color="error"
-                  disabled={activeWalletModal.isLocked}
-                  onClick={() => {
-                    setActiveWalletModal(null);
-                    setMoneyDialogMode('deduct');
-                    setOpenAdd(true);
-                  }}
-                  sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2 }}
-                >
-                  - Deduct Money
-                </Button>
-              </div>
-
-              {/* Delete custom/bank wallet */}
-              {activeWalletModal.category !== 'built-in' && (
-                <div className="pt-1 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteWallet(activeWalletModal)}
-                    className="text-xs text-rose-500 hover:text-rose-700 font-medium flex items-center gap-1 cursor-pointer"
-                  >
-                    <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                    <span>Delete this wallet</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* ── Add New Wallet Modal ─────────────────────────────── */}
-      <Dialog
-        open={openAddWalletModal}
-        onClose={() => !saving && setOpenAddWalletModal(false)}
-        fullWidth
-        maxWidth="xs"
-        PaperProps={{
-          sx: {
-            borderRadius: 4,
-            p: 1.5,
-            backgroundColor: isDark ? '#0f172a' : '#ffffff',
-          },
-        }}
-      >
-        <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="h6" fontWeight="900">
-            Create New Wallet
-          </Typography>
-          <IconButton size="small" onClick={() => !saving && setOpenAddWalletModal(false)}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </DialogTitle>
-
-        <DialogContent sx={{ py: 2 }}>
-          <Stack spacing={2.5}>
-            {/* Wallet Type Tabs */}
-            <div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block mb-1">
-                WALLET TYPE
-              </span>
-              <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 dark:bg-white/10 p-1">
-                <button
-                  type="button"
-                  onClick={() => setNewWalletType('custom')}
-                  className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                    newWalletType === 'custom'
-                      ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-900 dark:text-slate-100'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  Custom / Saving
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewWalletType('bank')}
-                  className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                    newWalletType === 'bank'
-                      ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-900 dark:text-slate-100'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  Bank Account
-                </button>
-              </div>
-            </div>
-
-            {/* Wallet Name */}
-            <div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block mb-1">
-                WALLET NAME
-              </span>
-              <TextField
-                fullWidth
-                size="small"
-                autoFocus
-                placeholder={newWalletType === 'bank' ? 'e.g. Meezan Bank, HBL' : 'e.g. Ammi ke paisay, Personal saving'}
-                value={newWalletName}
-                onChange={(e) => setNewWalletName(e.target.value)}
-              />
-            </div>
-
-            {/* Initial Balance */}
-            <div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block mb-1">
-                INITIAL BALANCE (RS)
-              </span>
-              <TextField
-                fullWidth
-                size="small"
-                type="number"
-                placeholder="0"
-                value={newWalletBalance}
-                onChange={(e) => setNewWalletBalance(e.target.value)}
-              />
-            </div>
-
-            {/* Ownership */}
-            <div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block mb-1">
-                WHO OWNS THIS MONEY?
-              </span>
-              <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 dark:bg-white/10 p-1 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setNewWalletIsOwn(true)}
-                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    newWalletIsOwn
-                      ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-900 dark:text-slate-100'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  Mine
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewWalletIsOwn(false)}
-                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    !newWalletIsOwn
-                      ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-900 dark:text-slate-100'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  Someone else
-                </button>
-              </div>
-
-              {!newWalletIsOwn && (
-                <TextField
-                  fullWidth
-                  size="small"
-                  placeholder="e.g. Ammi, Abu, Friend"
-                  value={newWalletOwnerName}
-                  onChange={(e) => setNewWalletOwnerName(e.target.value)}
-                />
-              )}
-            </div>
-
-            {/* Lock toggle */}
-            <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={newWalletIsLocked}
-                    onChange={(e) => setNewWalletIsLocked(e.target.checked)}
-                    color="primary"
-                  />
-                }
-                label={
-                  <div>
-                    <span className="text-sm font-bold flex items-center gap-1 text-slate-900 dark:text-slate-100">
-                      🔒 Lock this wallet
-                    </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 block">
-                      Protects money from being spent and excludes it from &quot;Available to spend&quot;.
-                    </span>
-                  </div>
-                }
-              />
-            </div>
-          </Stack>
-        </DialogContent>
-
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setOpenAddWalletModal(false)} disabled={saving} sx={{ fontWeight: 700 }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={!newWalletName.trim() || saving}
-            onClick={handleCreateWallet}
-            sx={{
-              fontWeight: 800,
-              bgcolor: '#0F3D33',
-              '&:hover': { bgcolor: '#0B2D26' },
-            }}
-          >
-            {saving ? <CircularProgress size={18} color="inherit" /> : 'Create Wallet'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* ── All Other Dialogs ─────────────────────────────────── */}
+      {/* Add / Deduct Money Modal with preselected wallet */}
       <AddMoney
+        externalOpen={openAdd}
+        onExternalClose={() => {
+          setOpenAdd(false);
+          setPreselectedWalletId('');
+        }}
+        defaultMode={moneyDialogMode}
+        preselectedWalletId={preselectedWalletId}
         onSave={handleAddMoney}
         onDeduct={handleDeductMoney}
         saving={saving}
         snapshot={snapshot}
-        externalOpen={openAdd}
-        onExternalClose={() => setOpenAdd(false)}
-        defaultMode={moneyDialogMode}
       />
 
-      <DeductMoney
-        snapshot={snapshot}
-        onDeduct={handleDeductMoney}
-        saving={saving}
-        externalOpen={openDeduct}
-        onExternalClose={() => setOpenDeduct(false)}
-      />
-
+      {/* Transfer Funds Modal with preselected from wallet */}
       <TransferFunds
-        onTransfer={handleTransferHolders}
+        externalOpen={openTransfer}
+        onExternalClose={() => {
+          setOpenTransfer(false);
+          setTransferFromSource(undefined);
+          setTransferFromBankName(undefined);
+        }}
+        initialFromSource={transferFromSource}
+        initialFromBankName={transferFromBankName}
+        onTransfer={handleTransferFunds}
         saving={saving}
         snapshot={snapshot}
-        externalOpen={openTransfer}
-        onExternalClose={() => setOpenTransfer(false)}
-        initialFromSource={transferInitialFrom?.source}
-        initialFromBankName={transferInitialFrom?.bankName}
-        initialFromCustomName={transferInitialFrom?.customName}
       />
 
+      {/* Loan Record Modal */}
       <LoanDialog
-        onAddMoney={handleAddMoney}
         snapshot={snapshot}
         externalOpen={openLoan}
         onExternalClose={() => setOpenLoan(false)}
+        onAddMoney={handleAddMoney}
       />
 
+      {/* Liability Modal */}
       <LiabilityDialog
         open={openLiability}
         onClose={() => setOpenLiability(false)}
+        snapshot={snapshot}
       />
 
-      {/* Modal for Loan & Liability Info */}
-      <Dialog
-        open={showLoanInfoModal}
-        onClose={() => setShowLoanInfoModal(false)}
-        fullWidth
-        maxWidth="xs"
-        PaperProps={{
-          sx: {
-            borderRadius: 4,
-            p: 1,
-            backgroundColor: isDark ? '#0f172a' : '#ffffff',
-          },
-        }}
-      >
-        <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box display="flex" alignItems="center" gap={1}>
-            <InfoOutlinedIcon color="error" />
-            <Typography variant="h6" fontWeight="900">
-              Loan & Liability Info
-            </Typography>
-          </Box>
-          <IconButton size="small" onClick={() => setShowLoanInfoModal(false)}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent sx={{ mt: 1 }}>
-          <Stack spacing={2}>
-            <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? 'rgba(16,185,129,0.08)' : '#ecfdf5', border: '1px solid rgba(16,185,129,0.2)' }}>
-              <Typography variant="caption" fontWeight="800" color="#059669" display="block">
-                AMOUNT YOU WILL RECEIVE (TO GET BACK)
-              </Typography>
-              <Typography variant="h6" fontWeight="900" color="#059669">
-                + {formatCurrency(totalsData.toReceive, currency)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
-                {`${totalsData.toReceiveLoansCount} lent loan${totalsData.toReceiveLoansCount !== 1 ? 's' : ''} + ${totalsData.toReceiveLiabilitiesCount} credit liability.`}
-              </Typography>
-            </Box>
-
-            <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? 'rgba(239,68,68,0.08)' : '#fef2f2', border: '1px solid rgba(239,68,68,0.2)' }}>
-              <Typography variant="caption" fontWeight="800" color="#e11d48" display="block">
-                AMOUNT YOU WILL PAY BACK (TO PAY BACK)
-              </Typography>
-              <Typography variant="h6" fontWeight="900" color="#e11d48">
-                - {formatCurrency(totalsData.toPay, currency)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
-                {`${totalsData.toPayLoansCount} borrowed loan${totalsData.toPayLoansCount !== 1 ? 's' : ''} + ${totalsData.toPayLiabilitiesCount} debt liability.`}
-              </Typography>
-            </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setShowLoanInfoModal(false)} variant="contained" sx={{ borderRadius: 2, fontWeight: 800 }}>
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
-
+      {/* Transaction History Modal */}
       <TransactionHistory
         open={showTransactionHistory}
         onClose={() => setShowTransactionHistory(false)}
+        userId={userId}
+      />
+
+      {/* Create Wallet Modal */}
+      <CreateWalletModal
+        open={openCreateWalletModal}
+        onClose={() => setOpenCreateWalletModal(false)}
+        onSave={async (wData) => {
+          if (!snapshot || !userId) return;
+          setSaving(true);
+          try {
+            const isBank = wData.walletType === 'bank';
+            const cleanName = wData.name.trim();
+            const initAmt = wData.openingBalance || 0;
+
+            const collectionName = isBank ? 'banks' : 'customPaymentHeads';
+            await addDoc(collection(db, collectionName), {
+              userId,
+              name: cleanName,
+              createdAt: serverTimestamp(),
+            });
+
+            const updatedSources = { ...snapshot.sources };
+            if (isBank) {
+              updatedSources.bank = { ...(updatedSources.bank || {}), [cleanName]: initAmt };
+            } else {
+              updatedSources.custom = { ...(updatedSources.custom || {}), [cleanName]: initAmt };
+            }
+
+            const key = isBank ? `bank:${cleanName}` : `custom:${cleanName}`;
+            const hasOwnThisMoney = wData.initialOwner.toLowerCase() === 'you';
+
+            const updatedOwnership = {
+              ...(snapshot.sourceOwnership || {}),
+              [key]: {
+                hasOwnThisMoney,
+                ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
+                isLocked: wData.isLocked,
+                isVirtual: wData.isVirtual,
+                parentWalletKey: wData.parentWalletKey || undefined,
+                reservedAmount: wData.allocations?.reduce((acc, a) => acc + (a.reservedAmount || 0), 0) || 0,
+                purpose: wData.purpose,
+                color: wData.color,
+                notes: wData.notes,
+                allocations: wData.allocations,
+              },
+            };
+
+            let newTotal = snapshot.totalAmount || 0;
+            if (initAmt > 0 && !wData.isVirtual) newTotal += initAmt;
+
+            if (initAmt > 0) {
+              await addDoc(collection(db, 'cashTransactions'), {
+                userId,
+                amount: initAmt,
+                type: 'add',
+                source: isBank ? 'bank' : 'custom',
+                category: 'manual',
+                eventType: 'opening_balance',
+                walletName: cleanName,
+                walletType: wData.walletType,
+                balanceAfter: initAmt,
+                note: `Opening balance for ${cleanName}`,
+                BankName: isBank ? cleanName : null,
+                customPaymentHeadName: !isBank ? cleanName : null,
+                createdAt: serverTimestamp(),
+              });
+            }
+
+            const updatedSnapshot: TotalCashSnapshot = {
+              ...snapshot,
+              sources: updatedSources,
+              sourceOwnership: updatedOwnership,
+              totalAmount: newTotal,
+              updatedAt: new Date(),
+            };
+
+            const docRef = doc(db, 'totalCashSnapshots', userId);
+            await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
+            setSnapshot(updatedSnapshot);
+            setOpenCreateWalletModal(false);
+          } catch (e) {
+            console.error('Create wallet error:', e);
+          } finally {
+            setSaving(false);
+          }
+        }}
+        saving={saving}
+        existingWallets={walletsList.map((w) => ({
+          id: w.id,
+          name: w.name,
+          type: w.walletType,
+        }))}
+      />
+
+      {/* Redesigned Wallet Details Modal */}
+      <WalletDetailsModal
+        open={Boolean(activeWalletModal)}
+        onClose={() => setActiveWalletModal(null)}
+        wallet={activeWalletModal}
+        onAddMoney={(wId) => openAddMoneyForWallet(wId)}
+        onSpendMoney={(wId) => openSpendMoneyForWallet(wId)}
+        onTransfer={(wId) => openTransferForWallet(wId)}
+        onToggleLock={handleToggleLockWallet}
+        onUpdateAllocations={handleUpdateWalletSettings}
+        onDeleteWallet={handleDeleteWallet}
         userId={userId}
       />
     </div>

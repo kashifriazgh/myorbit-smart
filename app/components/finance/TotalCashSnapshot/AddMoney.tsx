@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { TransactionSource, Bank, CustomPaymentHead, TotalCashSnapshot } from '@/app/lib/interface';
+import type {
+  TransactionSource,
+  Bank,
+  CustomPaymentHead,
+  TotalCashSnapshot,
+  FinancialEventType,
+} from '@/app/lib/interface';
+import { PAKISTANI_EXPENSE_CATEGORIES } from '@/app/lib/constant';
 import { db } from '@/app/lib/firebase';
 import {
   collection,
@@ -27,7 +34,13 @@ interface Props {
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
     note?: string,
-    holderName?: string
+    holderName?: string,
+    meta?: {
+      eventType?: FinancialEventType;
+      sourceIncomeType?: string;
+      expenseCategory?: string;
+      subCategory?: string;
+    }
   ) => Promise<void>;
   onDeduct?: (
     amount: number,
@@ -38,31 +51,37 @@ interface Props {
     customPaymentHeadId?: string,
     customPaymentHeadName?: string,
     note?: string,
-    holderName?: string
+    holderName?: string,
+    meta?: {
+      eventType?: FinancialEventType;
+      expenseCategory?: string;
+      subCategory?: string;
+    }
   ) => Promise<void>;
   saving: boolean;
   snapshot?: TotalCashSnapshot | null;
   externalOpen?: boolean;
   onExternalClose?: () => void;
   defaultMode?: 'add' | 'deduct';
+  preselectedWalletId?: string;
 }
 
 const MODES = {
   add: {
-    label: "Add",
-    cta: "Add money",
+    label: "Add Money",
+    cta: "Add to wallet",
     tab: "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30",
-    btn: "bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/25",
-    text: "text-emerald-600 dark:text-emerald-400",
+    btn: "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/25",
+    text: "text-emerald-500 dark:text-emerald-400",
     ring: "focus-within:ring-emerald-500/40",
     sign: "+",
   },
   deduct: {
-    label: "Deduct",
-    cta: "Deduct money",
+    label: "Spend / Deduct",
+    cta: "Record expense",
     tab: "bg-rose-500 text-white shadow-lg shadow-rose-500/30",
-    btn: "bg-rose-500 hover:bg-rose-400 shadow-rose-500/25",
-    text: "text-rose-600 dark:text-rose-400",
+    btn: "bg-rose-600 hover:bg-rose-500 shadow-rose-500/25",
+    text: "text-rose-500 dark:text-rose-400",
     ring: "focus-within:ring-rose-500/40",
     sign: "−",
   },
@@ -88,9 +107,28 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const SOURCE_OPTIONS: TransactionSource[] = ['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other', 'custom'];
 
+const INFLOW_SOURCES = [
+  { id: 'salary', label: 'Salary Income', eventType: 'income' },
+  { id: 'business', label: 'Business / Profit', eventType: 'income' },
+  { id: 'freelance', label: 'Freelancing / Project', eventType: 'income' },
+  { id: 'borrowed', label: 'Borrowed Money (Loan)', eventType: 'loan_received' },
+  { id: 'opening_balance', label: 'Opening Balance', eventType: 'opening_balance' },
+  { id: 'adjustment', label: 'Correction / Adjustment', eventType: 'balance_adjustment' },
+  { id: 'gift', label: 'Gift / Allowance', eventType: 'income' },
+];
+
 const fmt = (n: number | string) => Number(n || 0).toLocaleString("en-PK");
 
-export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalOpen, onExternalClose, defaultMode = 'add' }: Props) {
+export default function AddMoney({
+  onSave,
+  onDeduct,
+  saving,
+  snapshot,
+  externalOpen,
+  onExternalClose,
+  defaultMode = 'add',
+  preselectedWalletId,
+}: Props) {
   const { user } = useAuth();
   const { goals, updateLinkedItemStatusInGoal } = useGoals();
   const { theme } = useCustomTheme();
@@ -108,8 +146,16 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
 
   const [amount, setAmount] = useState<string>('');
   const [source, setSource] = useState<TransactionSource>('in_hand');
-  const [toSource, setToSource] = useState<TransactionSource>('in_hand');
   const [note, setNote] = useState('');
+
+  // Source Classifier (distinguish income from loans, adjustments, opening balance)
+  const [inflowSource, setInflowSource] = useState('salary');
+
+  // Expense Categories for Deduct Mode
+  const [expenseCategory, setExpenseCategory] = useState<string>(
+    PAKISTANI_EXPENSE_CATEGORIES?.[0] || 'Groceries'
+  );
+  const [subCategory, setSubCategory] = useState('');
 
   // Holder state
   const [selectedHolder, setSelectedHolder] = useState('Unassigned');
@@ -118,14 +164,12 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
   // Bank-specific state
   const [banks, setBanks] = useState<Bank[]>([]);
   const [selectedBank, setSelectedBank] = useState<string>('');
-  const [selectedToBank, setSelectedToBank] = useState<string>('');
   const [newBankName, setNewBankName] = useState('');
   const [showAddBank, setShowAddBank] = useState(false);
 
   // Custom payment head state
   const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
   const [selectedCustomHead, setSelectedCustomHead] = useState<string>('');
-  const [selectedToCustomHead, setSelectedToCustomHead] = useState<string>('');
   const [newCustomHeadName, setNewCustomHeadName] = useState('');
   const [showAddCustom, setShowAddCustom] = useState(false);
 
@@ -189,58 +233,55 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
     return list;
   }, [customPaymentHeads, goals, user?.uid]);
 
-  // Requirement 2: Auto-select bank or custom source if only 1 source exists
+  // Auto-select bank or custom source if only 1 exists
   useEffect(() => {
     if (source === 'bank') {
-      if (banks.length === 1 && !selectedBank) {
-        setSelectedBank(banks[0].id!);
+      if (banks.length === 1 && !selectedBank && banks[0]?.id) {
+        setSelectedBank(banks[0].id);
       }
     } else if (source === 'custom') {
-      if (allCustomHeads.length === 1 && !selectedCustomHead) {
-        setSelectedCustomHead(allCustomHeads[0].id!);
+      if (allCustomHeads.length === 1 && !selectedCustomHead && allCustomHeads[0]?.id) {
+        setSelectedCustomHead(allCustomHeads[0].id);
       }
     }
   }, [source, banks, allCustomHeads, selectedBank, selectedCustomHead]);
 
+  // Auto-select wallet when preselectedWalletId is passed
   useEffect(() => {
-    if (toSource === 'bank') {
-      if (banks.length === 1 && !selectedToBank) {
-        setSelectedToBank(banks[0].id!);
-      }
-    } else if (toSource === 'custom') {
-      if (allCustomHeads.length === 1 && !selectedToCustomHead) {
-        setSelectedToCustomHead(allCustomHeads[0].id!);
-      }
+    if (!preselectedWalletId) return;
+    if (preselectedWalletId.startsWith('bank:')) {
+      setSource('bank');
+      const bName = preselectedWalletId.replace('bank:', '').trim().toLowerCase();
+      const foundBank = banks.find((b) => b.name.trim().toLowerCase() === bName);
+      if (foundBank?.id) setSelectedBank(foundBank.id);
+    } else if (preselectedWalletId.startsWith('custom:')) {
+      setSource('custom');
+      const cName = preselectedWalletId.replace('custom:', '').trim().toLowerCase();
+      const foundHead = allCustomHeads.find((c) => c.name.trim().toLowerCase() === cName);
+      if (foundHead?.id) setSelectedCustomHead(foundHead.id);
+    } else if (SOURCE_OPTIONS.includes(preselectedWalletId as TransactionSource)) {
+      setSource(preselectedWalletId as TransactionSource);
     }
-  }, [toSource, banks, allCustomHeads, selectedToBank, selectedToCustomHead]);
+  }, [preselectedWalletId, banks, allCustomHeads]);
 
   const handleSourceChange = (newSrc: TransactionSource) => {
     setSource(newSrc);
     setSelectedHolder('Unassigned');
     if (newSrc === 'bank') {
-      if (banks.length === 1) setSelectedBank(banks[0].id!);
+      if (banks.length === 1 && banks[0]?.id) setSelectedBank(banks[0].id);
       else setSelectedBank('');
     } else if (newSrc === 'custom') {
-      if (allCustomHeads.length === 1) setSelectedCustomHead(allCustomHeads[0].id!);
+      if (allCustomHeads.length === 1 && allCustomHeads[0]?.id) setSelectedCustomHead(allCustomHeads[0].id);
       else setSelectedCustomHead('');
-    }
-  };
-
-  const _handleToSourceChange = (newSrc: TransactionSource) => {
-    setToSource(newSrc);
-    if (newSrc === 'bank') {
-      if (banks.length === 1) setSelectedToBank(banks[0].id!);
-      else setSelectedToBank('');
-    } else if (newSrc === 'custom') {
-      if (allCustomHeads.length === 1) setSelectedToCustomHead(allCustomHeads[0].id!);
-      else setSelectedToCustomHead('');
     }
   };
 
   const handleAddBank = async () => {
     if (!user || !newBankName.trim()) return;
     const docRef = await addDoc(collection(db, 'banks'), {
-      userId: user.uid, name: newBankName.trim(), createdAt: Timestamp.now(),
+      userId: user.uid,
+      name: newBankName.trim(),
+      createdAt: Timestamp.now(),
     });
     const newBank: Bank = { id: docRef.id, userId: user.uid, name: newBankName.trim(), createdAt: Timestamp.now() };
     setBanks((prev) => [...prev, newBank]);
@@ -252,50 +293,63 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
   const handleAddCustomPaymentHead = async () => {
     if (!user || !newCustomHeadName.trim()) return;
     const docRef = await addDoc(collection(db, 'customPaymentHeads'), {
-      userId: user.uid, name: newCustomHeadName.trim(), createdAt: Timestamp.now(),
+      userId: user.uid,
+      name: newCustomHeadName.trim(),
+      createdAt: Timestamp.now(),
     });
-    const newHead: CustomPaymentHead = { id: docRef.id, userId: user.uid, name: newCustomHeadName.trim(), createdAt: Timestamp.now() };
+    const newHead: CustomPaymentHead = {
+      id: docRef.id,
+      userId: user.uid,
+      name: newCustomHeadName.trim(),
+      createdAt: Timestamp.now(),
+    };
     setCustomPaymentHeads((prev) => [...prev, newHead]);
     setSelectedCustomHead(newHead.id!);
     setNewCustomHeadName('');
     setShowAddCustom(false);
   };
 
-  const getSourceBalance = (srcType: TransactionSource, bankIdVal?: string, customIdVal?: string) => {
-    if (!snapshot) return 0;
-    if (srcType === 'bank') {
-      const bName = banks.find((b) => b.id === bankIdVal)?.name;
-      return bName ? (snapshot.sources.bank?.[bName] ?? 0) : 0;
+  const fromBankName = useMemo(() => {
+    return banks.find((b) => b.id === selectedBank)?.name;
+  }, [banks, selectedBank]);
+
+  const fromCustomName = useMemo(() => {
+    return allCustomHeads.find((c) => c.id === selectedCustomHead)?.name;
+  }, [allCustomHeads, selectedCustomHead]);
+
+  const getSourceBalance = (src: TransactionSource, bankId?: string, customId?: string): number => {
+    if (!snapshot || !snapshot.sources) return 0;
+    if (src === 'bank') {
+      const bName = banks.find((b) => b.id === bankId)?.name;
+      if (!bName) return 0;
+      return snapshot.sources.bank?.[bName] ?? 0;
     }
-    if (srcType === 'custom') {
-      const cName = allCustomHeads.find((c) => c.id === customIdVal || c.name === customIdVal)?.name;
-      return cName ? (snapshot.sources.custom?.[cName] ?? 0) : 0;
+    if (src === 'custom') {
+      const cName = allCustomHeads.find((c) => c.id === customId)?.name;
+      if (!cName) return 0;
+      return snapshot.sources.custom?.[cName] ?? 0;
     }
-    return (snapshot.sources[srcType] as number) ?? 0;
+    return (snapshot.sources[src] as number) ?? 0;
   };
 
   const fromBalance = getSourceBalance(source, selectedBank, selectedCustomHead);
-  const fromBankName = banks.find((b) => b.id === selectedBank)?.name;
-  const fromCustomName = allCustomHeads.find((c) => c.id === selectedCustomHead)?.name;
-  const sourceKey = getSourceKey(source, fromBankName, fromCustomName);
-  const existingHolders = snapshot?.heldBy?.[sourceKey] || [];
 
-  const toBankName = banks.find((b) => b.id === selectedToBank)?.name;
-  const toCustomName = allCustomHeads.find((c) => c.id === selectedToCustomHead)?.name;
-  const toSourceKey = getSourceKey(toSource, toBankName, toCustomName);
-  const _existingToHolders = snapshot?.heldBy?.[toSourceKey] || [];
+  const isFromLocked = useMemo(() => {
+    if (!snapshot?.sourceOwnership) return false;
+    const key = getSourceKey(source, fromBankName, fromCustomName);
+    return snapshot.sourceOwnership[key]?.isLocked ?? false;
+  }, [snapshot, source, fromBankName, fromCustomName]);
 
-  const value = parseFloat(amount) || 0;
-  const overdraw = mode !== 'add' && value > fromBalance;
-  const isFromLocked = !!snapshot?.sourceOwnership?.[sourceKey]?.isLocked;
+  const value = Number(amount) || 0;
+  const isSourceReady =
+    (source !== 'bank' && source !== 'custom') ||
+    (source === 'bank' && !!selectedBank) ||
+    (source === 'custom' && !!selectedCustomHead);
 
-  const valid = value > 0 && !overdraw && !isFromLocked &&
-    (source !== 'bank' || !!selectedBank) &&
-    (source !== 'custom' || !!selectedCustomHead) &&
-    (selectedHolder !== 'new' || !!newHolderName.trim());
+  const overdraw = mode === 'deduct' && value > fromBalance;
+  const valid = value > 0 && isSourceReady && !isFromLocked && !overdraw;
 
   const handleClose = () => {
-    if (saving) return;
     setShowModal(false);
     onExternalClose?.();
   };
@@ -303,7 +357,12 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
   const handleSaveClick = async () => {
     if (!valid || saving) return;
 
-    const holderToSave = selectedHolder === 'new' ? newHolderName.trim() : (selectedHolder === 'Unassigned' ? undefined : selectedHolder);
+    const holderToSave =
+      selectedHolder === 'new'
+        ? newHolderName.trim()
+        : selectedHolder === 'Unassigned'
+        ? undefined
+        : selectedHolder;
 
     if (mode === 'add') {
       let bankId: string | undefined;
@@ -324,9 +383,41 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
         }
       }
 
-      await onSave(value, source, false, bankId, bankName, customPaymentHeadId, customPaymentHeadName, note, holderToSave);
+      const selectedInflow = INFLOW_SOURCES.find((s) => s.id === inflowSource);
+      const resolvedEventType = (selectedInflow?.eventType || 'income') as FinancialEventType;
+
+      await onSave(
+        value,
+        source,
+        false,
+        bankId,
+        bankName,
+        customPaymentHeadId,
+        customPaymentHeadName,
+        note,
+        holderToSave,
+        {
+          eventType: resolvedEventType,
+          sourceIncomeType: selectedInflow?.label,
+        }
+      );
     } else if (mode === 'deduct' && onDeduct) {
-      await onDeduct(value, source, selectedBank, fromBankName, false, selectedCustomHead, fromCustomName, note, holderToSave);
+      await onDeduct(
+        value,
+        source,
+        selectedBank,
+        fromBankName,
+        false,
+        selectedCustomHead,
+        fromCustomName,
+        note,
+        holderToSave,
+        {
+          eventType: 'expense',
+          expenseCategory,
+          subCategory: subCategory.trim() || undefined,
+        }
+      );
     }
 
     setShowModal(false);
@@ -346,34 +437,34 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
 
   return (
     <div
-      className="fixed inset-0 z-[1300] flex items-end justify-center bg-[#040d1a]/60 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[1300] flex items-end justify-center bg-black/80 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={handleClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07142a] sm:w-full sm:max-w-full sm:rounded-3xl"
+        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-[#0d131f] shadow-2xl sm:max-w-lg sm:rounded-3xl"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pb-3 pt-5 border-b border-slate-100 dark:border-white/5">
+        <div className="flex items-center justify-between px-6 pb-3 pt-5 border-b border-white/10">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Update balance</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Add or deduct funds from your accounts</p>
+            <h2 className="text-xl font-bold text-white tracking-tight">Record Transaction</h2>
+            <p className="text-xs text-slate-400">Classified inflows and Pakistani category expenses</p>
           </div>
           <button
             onClick={handleClose}
             aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/10 hover:text-white"
           >
             ✕
           </button>
         </div>
 
         {/* Scrollable body */}
-        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
-          {/* Mode tabs (Add and Deduct) */}
-          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5 dark:bg-white/5">
+        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
+          {/* Mode switch (Add vs Deduct) */}
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-900/80 border border-white/10 p-1.5">
             {(Object.keys(MODES) as Array<keyof typeof MODES>).map((key) => {
               const v = MODES[key];
               return (
@@ -381,8 +472,10 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                   key={key}
                   type="button"
                   onClick={() => setMode(key)}
-                  className={`rounded-xl py-2.5 text-sm font-bold transition ${
-                    mode === key ? v.tab : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
+                  className={`rounded-xl py-2.5 text-xs font-bold transition cursor-pointer ${
+                    mode === key
+                      ? v.tab
+                      : "text-slate-400 hover:text-white"
                   }`}
                 >
                   {v.label}
@@ -394,7 +487,7 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
           {/* Amount Input */}
           <div>
             <label
-              className={`flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 ring-2 ring-transparent transition dark:border-white/10 dark:bg-white/5 ${m.ring}`}
+              className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/60 px-5 py-3.5 ring-2 ring-transparent transition ${m.ring}`}
             >
               <span className={`text-3xl font-extrabold ${m.text}`}>{m.sign}</span>
               <span className="text-base font-semibold text-slate-400">PKR</span>
@@ -405,7 +498,7 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                 onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
                 placeholder="0"
                 autoFocus
-                className="w-full bg-transparent text-3xl font-bold text-slate-900 placeholder-slate-300 focus:outline-none dark:text-white dark:placeholder-slate-600"
+                className="w-full bg-transparent text-3xl font-bold text-white placeholder-slate-600 focus:outline-none"
               />
             </label>
             <div className="mt-2.5 flex flex-wrap gap-2">
@@ -414,30 +507,82 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                   key={q}
                   type="button"
                   onClick={() => setAmount(String(value + q))}
-                  className="rounded-full border border-slate-200 px-3.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-teal-400 hover:text-teal-600 dark:border-white/10 dark:text-slate-300 dark:hover:text-teal-300"
+                  className="rounded-full border border-white/10 bg-slate-900/40 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
                 >
                   +{fmt(q)}
                 </button>
               ))}
             </div>
             {overdraw && (
-              <p className="mt-2 text-xs font-semibold text-rose-500">
-                ⚠️ Selected source only has {formatCurrency(fromBalance, 'PKR')}.
+              <p className="mt-2 text-xs font-semibold text-rose-400">
+                ⚠️ Selected wallet only has {formatCurrency(fromBalance, 'PKR')}.
               </p>
             )}
             {isFromLocked && (
-              <p className="mt-2 text-xs font-semibold text-rose-500">
-                🔒 This source is locked. Unlock it in Account Breakdown to make changes.
+              <p className="mt-2 text-xs font-semibold text-rose-400">
+                🔒 This wallet is security-locked. Unlock it from Wallet Settings before spending.
               </p>
             )}
           </div>
 
-          {/* Source Selection Grid */}
+          {/* Inflow Source Selector (for Add mode) */}
+          {mode === 'add' ? (
+            <div className="p-3 bg-slate-900/60 border border-white/10 rounded-2xl flex flex-col gap-2">
+              <label className="text-xs font-semibold text-slate-300">
+                Classify Inflow Source:
+              </label>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {INFLOW_SOURCES.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setInflowSource(s.id)}
+                    className={`p-2 rounded-xl border text-left font-medium transition cursor-pointer ${
+                      inflowSource === s.id
+                        ? 'bg-blue-600/20 border-blue-500 text-blue-300 font-bold'
+                        : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* Pakistani Expense Categories (for Deduct mode) */
+            <div className="p-3 bg-slate-900/60 border border-white/10 rounded-2xl flex flex-col gap-2">
+              <label className="text-xs font-semibold text-slate-300">
+                Standard Pakistani Expense Category:
+              </label>
+              <select
+                value={expenseCategory}
+                onChange={(e) => setExpenseCategory(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-rose-500"
+              >
+                {(PAKISTANI_EXPENSE_CATEGORIES || []).map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+              <div>
+                <input
+                  type="text"
+                  value={subCategory}
+                  onChange={(e) => setSubCategory(e.target.value)}
+                  placeholder="Optional subcategory (e.g. Petrol, Medicine, Dinner)"
+                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs placeholder-slate-600 focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Target / Source Wallet Selection */}
           <div>
-            <p className="mb-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
-              {mode === "add" ? "Add to account" : "Deduct from account"}
+            <p className="mb-2 text-xs font-semibold text-slate-300">
+              {mode === "add" ? "Deposit into Wallet" : "Deduct from Wallet"}
             </p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {SOURCE_OPTIONS.map((sKey) => {
                 const selected = source === sKey;
                 const bal = getSourceBalance(sKey, selectedBank, selectedCustomHead);
@@ -449,20 +594,20 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                     key={sKey}
                     type="button"
                     onClick={() => handleSourceChange(sKey)}
-                    className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition focus:outline-none ${
+                    className={`flex items-center gap-2.5 rounded-2xl border p-2.5 text-left transition focus:outline-none cursor-pointer ${
                       selected
-                        ? "border-teal-500 bg-teal-500/10 ring-2 ring-teal-500/40"
-                        : "border-slate-200 bg-slate-50 hover:border-teal-400/60 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+                        ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500"
+                        : "border-white/10 bg-slate-900/50 hover:border-white/20"
                     }`}
                   >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400/20 to-cyan-400/20 text-lg">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-sm">
                       {icon}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-bold text-slate-800 dark:text-white">
+                      <span className="block truncate text-xs font-bold text-white">
                         {label}
                       </span>
-                      <span className="block truncate text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      <span className="block truncate text-[11px] text-slate-400 font-medium">
                         {formatCurrency(bal, 'PKR')}
                       </span>
                     </span>
@@ -473,13 +618,13 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
 
             {/* Bank Sub-selector */}
             {source === 'bank' && (
-              <div className="mt-3.5 space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 dark:border-white/10 dark:bg-white/5">
+              <div className="mt-2.5 space-y-2 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Select Bank Account</label>
+                  <label className="text-[11px] font-bold uppercase text-slate-400">Select Bank Account</label>
                   <button
                     type="button"
                     onClick={() => setShowAddBank((p) => !p)}
-                    className="text-xs font-bold text-teal-600 hover:underline dark:text-teal-400"
+                    className="text-xs font-bold text-blue-400 hover:underline"
                   >
                     + New Bank
                   </button>
@@ -487,7 +632,7 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                 <select
                   value={selectedBank}
                   onChange={(e) => setSelectedBank(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-semibold text-slate-800 focus:outline-none dark:border-white/10 dark:bg-[#0b1d38] dark:text-white"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 p-2 text-xs font-semibold text-white focus:outline-none"
                 >
                   <option value="">— Select Bank —</option>
                   {banks.map((b) => (
@@ -504,13 +649,13 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                       placeholder="Bank name (e.g. Meezan, HBL)"
                       value={newBankName}
                       onChange={(e) => setNewBankName(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none dark:border-white/10 dark:bg-[#040d1a] dark:text-white"
+                      className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-1.5 text-xs text-white focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={handleAddBank}
                       disabled={!newBankName.trim()}
-                      className="rounded-xl bg-teal-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-teal-400 disabled:opacity-40"
+                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blue-500 disabled:opacity-40"
                     >
                       Add
                     </button>
@@ -521,13 +666,13 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
 
             {/* Custom Sub-selector */}
             {source === 'custom' && (
-              <div className="mt-3.5 space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 dark:border-white/10 dark:bg-white/5">
+              <div className="mt-2.5 space-y-2 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Select Custom Wallet</label>
+                  <label className="text-[11px] font-bold uppercase text-slate-400">Select Custom Wallet</label>
                   <button
                     type="button"
                     onClick={() => setShowAddCustom((p) => !p)}
-                    className="text-xs font-bold text-teal-600 hover:underline dark:text-teal-400"
+                    className="text-xs font-bold text-blue-400 hover:underline"
                   >
                     + New Wallet
                   </button>
@@ -535,7 +680,7 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                 <select
                   value={selectedCustomHead}
                   onChange={(e) => setSelectedCustomHead(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-semibold text-slate-800 focus:outline-none dark:border-white/10 dark:bg-[#0b1d38] dark:text-white"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950 p-2 text-xs font-semibold text-white focus:outline-none"
                 >
                   <option value="">— Select Wallet —</option>
                   {allCustomHeads.map((h) => (
@@ -552,13 +697,13 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                       placeholder="Wallet name (e.g. Emergency, Savings)"
                       value={newCustomHeadName}
                       onChange={(e) => setNewCustomHeadName(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none dark:border-white/10 dark:bg-[#040d1a] dark:text-white"
+                      className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-1.5 text-xs text-white focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={handleAddCustomPaymentHead}
                       disabled={!newCustomHeadName.trim()}
-                      className="rounded-xl bg-teal-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-teal-400 disabled:opacity-40"
+                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blue-500 disabled:opacity-40"
                     >
                       Add
                     </button>
@@ -566,53 +711,24 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
                 )}
               </div>
             )}
-
-            {/* Holder assignment for From source */}
-            {existingHolders.length > 0 && (
-              <div className="mt-3">
-                <label className="mb-1 block text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Person holder (optional)</label>
-                <select
-                  value={selectedHolder}
-                  onChange={(e) => setSelectedHolder(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-semibold text-slate-800 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
-                >
-                  <option value="Unassigned">Self (Default)</option>
-                  {existingHolders.map((h) => (
-                    <option key={h.holderName} value={h.holderName}>
-                      👤 {h.holderName} ({formatCurrency(h.amount, 'PKR')})
-                    </option>
-                  ))}
-                  <option value="new">+ Add new person</option>
-                </select>
-                {selectedHolder === 'new' && (
-                  <input
-                    type="text"
-                    placeholder="Person Name (e.g. Ali, Wife)"
-                    value={newHolderName}
-                    onChange={(e) => setNewHolderName(e.target.value)}
-                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
-                  />
-                )}
-              </div>
-            )}
           </div>
 
-          {/* Note */}
+          {/* Note Input */}
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Add a note (optional)"
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/30 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            placeholder="Description or reference notes (optional)…"
+            className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
           />
         </div>
 
         {/* Sticky footer */}
-        <div className="flex gap-3 border-t border-slate-200 bg-white/80 px-6 py-4 backdrop-blur dark:border-white/10 dark:bg-[#07142a]/80">
+        <div className="flex gap-3 border-t border-white/10 bg-[#0d131f] px-6 py-4">
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-2xl border border-slate-200 px-6 py-3.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10"
+            className="rounded-2xl border border-white/10 px-5 py-3 text-xs font-bold text-slate-300 transition hover:bg-white/10 cursor-pointer"
           >
             Cancel
           </button>
@@ -620,9 +736,9 @@ export default function AddMoney({ onSave, onDeduct, saving, snapshot, externalO
             type="button"
             disabled={!valid || saving}
             onClick={handleSaveClick}
-            className={`flex-1 rounded-2xl py-3.5 text-sm font-bold text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-40 ${m.btn}`}
+            className={`flex-1 rounded-2xl py-3 text-xs font-bold text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer ${m.btn}`}
           >
-            {saving ? 'Processing...' : `${m.cta}${value > 0 ? ` · ${formatCurrency(value, 'PKR')}` : ''}`}
+            {saving ? 'Processing…' : `${m.cta}${value > 0 ? ` · ${formatCurrency(value, 'PKR')}` : ''}`}
           </button>
         </div>
       </div>

@@ -18,6 +18,8 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 import TotalCashSnapshotComponent from '../components/finance/TotalCashSnapshot';
 import { useAuth } from '../lib/context/userContext';
@@ -34,6 +36,34 @@ export default function Finance() {
   if (!user) return null;
 
   const cardData = [
+    {
+      title: 'Wallets & Accounts',
+      href: '/finance/wallets',
+      description: 'Manage cash, bank, mobile & virtual wallets',
+      icon: <AccountBalanceWalletIcon sx={{ fontSize: 28 }} />,
+      lightBg: 'linear-gradient(135deg, #eff6ff 0%, #bfdbfe 100%)',
+      darkBg: 'linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)',
+      lightBubble: '#bfdbfe',
+      darkBubble: '#1e3a8a',
+      lightText: '#0f172a',
+      darkText: '#f1f5f9',
+      lightSubText: '#334155',
+      darkSubText: '#94a3b8',
+    },
+    {
+      title: 'Expenses & Bills',
+      href: '/finance/expenses',
+      description: 'Track recurring bills and monthly expenses',
+      icon: <ReceiptLongIcon sx={{ fontSize: 28 }} />,
+      lightBg: 'linear-gradient(135deg, #fef2f2 0%, #fecaca 100%)',
+      darkBg: 'linear-gradient(135deg, #881337 0%, #1e1b4b 100%)',
+      lightBubble: '#fecaca',
+      darkBubble: '#881337',
+      lightText: '#0f172a',
+      darkText: '#f1f5f9',
+      lightSubText: '#334155',
+      darkSubText: '#94a3b8',
+    },
     {
       title: 'Income Sources',
       href: '/finance/income-sources',

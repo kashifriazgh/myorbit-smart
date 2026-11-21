@@ -301,6 +301,13 @@ export interface TotalCashSnapshot {
       ownerName?: string;
       ownserName?: string;
       isLocked?: boolean;
+      parentWalletKey?: string;
+      isVirtual?: boolean;
+      reservedAmount?: number;
+      purpose?: string;
+      color?: string;
+      notes?: string;
+      allocations?: WalletAllocation[];
     };
   };
 
@@ -329,6 +336,84 @@ export interface CustomPaymentHead {
   goalId?: string;
   goalTitle?: string;
   createdAt: Date | Timestamp;
+}
+
+export type WalletType = 'cash' | 'bank' | 'mobile_wallet' | 'virtual';
+
+export interface WalletAllocation {
+  id: string;
+  owner: string;
+  amount: number;
+  purpose?: string;
+  reservedAmount?: number;
+  lockedAmount?: number;
+  isLocked?: boolean;
+  availabilityStatus?: 'available' | 'reserved' | 'locked' | 'external';
+}
+
+export interface WalletModel {
+  id: string; // key in sources, e.g. 'in_hand', 'easypaisa', 'bank:HBL', 'custom:Emergency'
+  userId: string;
+  name: string;
+  walletType: WalletType;
+  balance: number;
+  availableBalance: number;
+  reservedBalance: number;
+  lockedBalance: number;
+  isLocked: boolean;
+  isVirtual?: boolean;
+  parentWalletKey?: string; // backing wallet for virtual wallet so no duplicate money
+  initialOwner?: string;
+  allocations?: WalletAllocation[];
+  purpose?: string;
+  color?: string;
+  icon?: string;
+  notes?: string;
+  archived?: boolean;
+  createdAt?: Date | Timestamp;
+  updatedAt?: Date | Timestamp;
+}
+
+export type FinancialEventType =
+  | 'income'
+  | 'expense'
+  | 'transfer'
+  | 'opening_balance'
+  | 'balance_adjustment'
+  | 'loan_received'
+  | 'loan_given'
+  | 'loan_repayment'
+  | 'ownership_reallocation'
+  | 'fund_reservation'
+  | 'fund_release';
+
+export type PakistaniExpenseCategory = (typeof import('./constant').PAKISTANI_EXPENSE_CATEGORIES)[number];
+
+export interface FinanceTask {
+  id?: string;
+  userId: string;
+  title: string;
+  completed: boolean;
+  dueDate?: string | Date | Timestamp;
+  amount?: number;
+  createdAt?: Date | Timestamp;
+}
+
+export interface PlannedExpense {
+  id?: string;
+  userId: string;
+  title: string;
+  category: string;
+  subCategory?: string;
+  expectedAmount: number;
+  actualPaidAmount?: number;
+  dueDate: string | Date | Timestamp;
+  paymentStatus: 'pending' | 'partially_paid' | 'paid' | 'overdue';
+  walletId?: string;
+  walletName?: string;
+  recurrence: 'one_time' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+  notes?: string;
+  createdAt?: Date | Timestamp;
 }
 
 export type TransactionType =
@@ -372,6 +457,18 @@ export interface CashTransaction {
   fromHolderName?: string | null; // 👈 for transfers between holders
   toHolderName?: string | null; // 👈 for transfers between holders
   createdAt: Date | Timestamp;
+  // Enhanced fields
+  eventType?: FinancialEventType;
+  expenseCategory?: string;
+  subCategory?: string;
+  balanceAfter?: number; // snapshot of balance at that moment
+  balanceSnapshot?: number;
+  walletName?: string;
+  walletType?: WalletType;
+  ownerName?: string;
+  sourceIncomeType?: string; // salary, business, freelance, loan, gift, etc.
+  isReversed?: boolean;
+  reversalReason?: string;
 }
 export interface LoanRecord {
   id?: string;
