@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   FileText,
   PieChart,
+  Lock,
+  Sparkles,
 } from 'lucide-react';
 import {
   Dialog,
@@ -34,6 +36,7 @@ import {
   where,
   getDocs,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   doc,
@@ -47,10 +50,91 @@ import {
   TransactionSource,
 } from '@/app/lib/interface';
 import { PAKISTANI_EXPENSE_CATEGORIES, EXPENSE_CATEGORY_META } from '@/app/lib/constant';
+import {
+  applyWalletAllocationDelta,
+  computeTotalAmount,
+} from '@/app/components/finance/TotalCashSnapshot';
 
 type ExpenseTypeOption = 'recurring' | 'one_time' | 'event_based' | 'wish_list';
 type ExpensePriorityOption = 'essential' | 'important' | 'wish_list' | 'lifestyle';
-type ExpenseFrequencyOption = 'monthly' | 'yearly' | 'weekly' | 'daily';
+type ExpenseFrequencyOption = 'one_time' | 'daily' | 'weekly' | 'monthly' | 'custom';
+
+const WEEKDAY_OPTIONS: { value: number; label: string; short: string }[] = [
+  { value: 0, label: 'Sunday', short: 'Sun' },
+  { value: 1, label: 'Monday', short: 'Mon' },
+  { value: 2, label: 'Tuesday', short: 'Tue' },
+  { value: 3, label: 'Wednesday', short: 'Wed' },
+  { value: 4, label: 'Thursday', short: 'Thu' },
+  { value: 5, label: 'Friday', short: 'Fri' },
+  { value: 6, label: 'Saturday', short: 'Sat' },
+];
+
+const toLocalIsoDate = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const formatShortDate = (iso: string): string => {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+/**
+ * Calculate all dates in the target month for a given weekday (0=Sun..6=Sat),
+ * starting from the immediate next occurrence on/after `fromDate` (in that month),
+ * stepping by `intervalWeeks` weeks until month end (or `endDateIso` if earlier).
+ */
+function calculateWeeklyDatesInMonth(
+  weekday: number,
+  targetYear: number,
+  targetMonth: number,
+  fromDateIso?: string,
+  intervalWeeks = 1,
+  endDateIso?: string
+): string[] {
+  const step = Math.max(1, Math.floor(intervalWeeks || 1));
+  const now = new Date();
+  const monthStart = new Date(targetYear, targetMonth, 1);
+  const monthEnd = new Date(targetYear, targetMonth + 1, 0);
+
+  let base =
+    targetYear === now.getFullYear() && targetMonth === now.getMonth()
+      ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      : monthStart;
+
+  if (fromDateIso) {
+    const [fy, fm, fd] = fromDateIso.split('-').map(Number);
+    if (fy && fm && fd) {
+      const parsed = new Date(fy, fm - 1, fd);
+      if (parsed.getFullYear() === targetYear && parsed.getMonth() === targetMonth) {
+        base = parsed;
+      }
+    }
+  }
+
+  let effectiveEnd = monthEnd;
+  if (endDateIso) {
+    const [ey, em, ed] = endDateIso.split('-').map(Number);
+    if (ey && em && ed) {
+      const parsedEnd = new Date(ey, em - 1, ed);
+      if (parsedEnd < effectiveEnd) effectiveEnd = parsedEnd;
+    }
+  }
+
+  const diff = (weekday - base.getDay() + 7) % 7;
+  const cursor = new Date(base.getFullYear(), base.getMonth(), base.getDate() + diff);
+  const dates: string[] = [];
+
+  while (cursor <= effectiveEnd) {
+    dates.push(toLocalIsoDate(cursor));
+    cursor.setDate(cursor.getDate() + step * 7);
+  }
+  return dates;
+}
 
 const MONTH_NAMES = [
   'January',
@@ -117,10 +201,11 @@ const PRIORITY_OPTIONS: {
 ];
 
 const FREQUENCY_OPTIONS: { value: ExpenseFrequencyOption; label: string }[] = [
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'yearly', label: 'Yearly' },
-  { value: 'weekly', label: 'Weekly' },
+  { value: 'one_time', label: 'One-time' },
   { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'custom', label: 'Custom' },
 ];
 
 const CATEGORY_META = EXPENSE_CATEGORY_META;
@@ -185,6 +270,7 @@ export default function ExpensesPage() {
   const [plannedList, setPlannedList] = useState<PlannedExpense[]>([]);
   const [expendituresList, setExpendituresList] = useState<Expenditure[]>([]);
   const [snapshot, setSnapshot] = useState<TotalCashSnapshot | null>(null);
+  const [snapshotDocId, setSnapshotDocId] = useState<string | null>(null);
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -194,12 +280,18 @@ export default function ExpensesPage() {
   // Detail Dialog
   const [detailItem, setDetailItem] = useState<PlannedExpense | null>(null);
 
-  // Add / Edit Expense Dialog (Sequence: Title, Amount, Due Date, Category, Type, Priority, Frequency, Notes)
+  // Add / Edit Expense Dialog (1. Title, 2. Amount, 3. Type, 4. Frequency, 5. Date, 6. Recurrence, Notes)
   const [openAddModal, setOpenAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<PlannedExpense | null>(null);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [omitDate, setOmitDate] = useState(false);
+  const [dueDates, setDueDates] = useState<string[]>([]);
+  const [customDateDraft, setCustomDateDraft] = useState('');
+  const [weeklyDay, setWeeklyDay] = useState<number>(new Date().getDay());
+  const [recurrenceInterval, setRecurrenceInterval] = useState<number>(1);
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState<string>('');
   const [category, setCategory] = useState<string>(
     PAKISTANI_EXPENSE_CATEGORIES?.[0] || 'House rent'
   );
@@ -213,9 +305,35 @@ export default function ExpensesPage() {
 
   const isWishList = expenseType === 'wish_list' || priority === 'wish_list';
 
+  // Auto-calculate weekly dates in the active month when Weekly frequency/day/interval/endDate changes
+  const recomputeWeeklyDates = useCallback(
+    (dayOfWeek: number, startIso: string, intervalVal: number, endIso: string) => {
+      const generated = calculateWeeklyDatesInMonth(
+        dayOfWeek,
+        activeMonth.year,
+        activeMonth.month,
+        startIso || undefined,
+        intervalVal,
+        endIso || undefined
+      );
+      setDueDates(generated);
+      if (generated.length > 0) {
+        setDueDate(generated[0]);
+      }
+    },
+    [activeMonth.year, activeMonth.month]
+  );
+
   // Pay Dialog
   const [payingItem, setPayingItem] = useState<PlannedExpense | null>(null);
   const [payWalletKey, setPayWalletKey] = useState<string>('in_hand');
+  const [payEnvelopeId, setPayEnvelopeId] = useState<string>('');
+  const [autoMatchedEnvelopeInfo, setAutoMatchedEnvelopeInfo] = useState<{
+    walletKey: string;
+    walletName: string;
+    envelopeId: string;
+    envelopeName: string;
+  } | null>(null);
   const [payAmount, setPayAmount] = useState<string>('');
   const [paying, setPaying] = useState(false);
 
@@ -254,6 +372,7 @@ export default function ExpensesPage() {
 
       if (!docSnap.empty) {
         setSnapshot(docSnap.docs[0].data() as TotalCashSnapshot);
+        setSnapshotDocId(docSnap.docs[0].id);
       }
     } catch (err) {
       console.error('Failed to fetch expenses:', err);
@@ -271,26 +390,186 @@ export default function ExpensesPage() {
     fetchAllData();
   }, [fetchAllData]);
 
-  // Wallets options for payment
+  // Wallets options for payment (with current balance)
   const walletOptions = useMemo(() => {
-    const list: { key: string; name: string }[] = [
-      { key: 'in_hand', name: 'Cash in Hand' },
-      { key: 'easypaisa', name: 'Easypaisa' },
-      { key: 'jazzcash', name: 'JazzCash' },
-      { key: 'other', name: 'Personal Spending' },
+    const list: { key: string; name: string; balance: number }[] = [
+      { key: 'in_hand', name: 'Cash in Hand', balance: Number(snapshot?.sources?.in_hand ?? 0) },
+      { key: 'easypaisa', name: 'Easypaisa', balance: Number(snapshot?.sources?.easypaisa ?? 0) },
+      { key: 'jazzcash', name: 'JazzCash', balance: Number(snapshot?.sources?.jazzcash ?? 0) },
+      { key: 'other', name: 'Personal Spending', balance: Number(snapshot?.sources?.other ?? 0) },
     ];
     if (snapshot?.sources?.bank) {
-      Object.keys(snapshot.sources.bank).forEach((b) => {
-        list.push({ key: `bank:${b}`, name: `Bank: ${b}` });
+      Object.entries(snapshot.sources.bank).forEach(([b, bal]) => {
+        list.push({ key: `bank:${b}`, name: `Bank: ${b}`, balance: Number(bal ?? 0) });
       });
     }
     if (snapshot?.sources?.custom) {
-      Object.keys(snapshot.sources.custom).forEach((c) => {
-        list.push({ key: `custom:${c}`, name: c });
+      Object.entries(snapshot.sources.custom).forEach(([c, bal]) => {
+        list.push({ key: `custom:${c}`, name: c, balance: Number(bal ?? 0) });
       });
     }
     return list;
   }, [snapshot]);
+
+  const getWalletBalanceByKey = useCallback(
+    (walletKey: string): number => {
+      if (!snapshot?.sources) return 0;
+      if (walletKey.startsWith('bank:')) {
+        const bName = walletKey.replace('bank:', '');
+        return Number(snapshot.sources.bank?.[bName] ?? 0);
+      }
+      if (walletKey.startsWith('custom:')) {
+        const cName = walletKey.replace('custom:', '');
+        return Number(snapshot.sources.custom?.[cName] ?? 0);
+      }
+      const val = snapshot.sources[walletKey as keyof TotalCashSnapshot['sources']];
+      return typeof val === 'number' ? val : 0;
+    },
+    [snapshot]
+  );
+
+  // Envelopes for the currently selected wallet in the Pay modal
+  const payWalletEnvelopes = useMemo(() => {
+    if (!payWalletKey || !snapshot?.sourceOwnership) return [];
+    const ownership = snapshot.sourceOwnership[payWalletKey];
+    const allocs = ownership?.allocations;
+    if (!allocs || allocs.length === 0) return [];
+    const hasCustomEnv = allocs.length > 1 || !allocs[0].id.startsWith('default_');
+    if (!hasCustomEnv) return [];
+
+    const walletBal = getWalletBalanceByKey(payWalletKey);
+    const allocatedSum = allocs.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const unallocatedDiff = Math.max(0, walletBal - allocatedSum);
+    const targetTitle = (payingItem?.title || '').trim().toLowerCase();
+
+    return allocs.map((a, idx) => {
+      const isDefault = a.id.startsWith('default_') || idx === 0;
+      const baseAmt = Number(a.amount) || 0;
+      const effectiveAmt = isDefault ? baseAmt + unallocatedDiff : baseAmt;
+      const isReserved =
+        a.availabilityStatus === 'reserved' ||
+        (a.owner || '').toLowerCase() === 'reserved' ||
+        (a.reservedAmount !== undefined && a.reservedAmount >= baseAmt && baseAmt > 0);
+      const envName = a.purpose || (isDefault ? 'Main Envelope' : `Envelope ${idx + 1}`);
+      const isMatchedExpense =
+        Boolean(targetTitle) && !isDefault && envName.trim().toLowerCase() === targetTitle;
+      return {
+        id: a.id,
+        name: envName,
+        owner: isReserved ? 'Reserved' : a.owner || 'You',
+        isReserved,
+        isLocked: Boolean(a.isLocked),
+        amount: effectiveAmt,
+        isMatchedExpense,
+      };
+    });
+  }, [payWalletKey, snapshot, getWalletBalanceByKey, payingItem?.title]);
+
+  const selectedPayEnvelope = useMemo(
+    () => payWalletEnvelopes.find((e) => e.id === payEnvelopeId) ?? null,
+    [payWalletEnvelopes, payEnvelopeId]
+  );
+
+  const isPayWalletLocked = useMemo(() => {
+    if (!payWalletKey || !snapshot?.sourceOwnership) return false;
+    return Boolean(snapshot.sourceOwnership[payWalletKey]?.isLocked);
+  }, [payWalletKey, snapshot]);
+
+  // Helper: find a wallet + envelope matching an expense title (from imported expense envelopes)
+  const findMatchingEnvelopeForExpense = useCallback(
+    (expenseTitle: string) => {
+      const target = expenseTitle.trim().toLowerCase();
+      if (!target || !snapshot?.sourceOwnership) return null;
+
+      let bestMatch: {
+        walletKey: string;
+        walletName: string;
+        envelopeId: string;
+        envelopeName: string;
+        amount: number;
+      } | null = null;
+
+      for (const [wKey, ownership] of Object.entries(snapshot.sourceOwnership)) {
+        const allocs = ownership?.allocations;
+        if (!allocs || allocs.length === 0) continue;
+        for (const a of allocs) {
+          if (a.id.startsWith('default_')) continue;
+          const purposeClean = (a.purpose || '').trim().toLowerCase();
+          if (purposeClean && purposeClean === target) {
+            const amt = Number(a.amount) || 0;
+            const wName =
+              walletOptions.find((w) => w.key === wKey)?.name ||
+              (wKey.startsWith('bank:')
+                ? `Bank: ${wKey.replace('bank:', '')}`
+                : wKey.startsWith('custom:')
+                ? wKey.replace('custom:', '')
+                : wKey);
+            if (!bestMatch || amt > bestMatch.amount) {
+              bestMatch = {
+                walletKey: wKey,
+                walletName: wName,
+                envelopeId: a.id,
+                envelopeName: a.purpose || expenseTitle,
+                amount: amt,
+              };
+            }
+          }
+        }
+      }
+      return bestMatch;
+    },
+    [snapshot, walletOptions]
+  );
+
+  // Open Pay modal for an expense, auto-selecting matching wallet & envelope if imported
+  const openPayModalForExpense = useCallback(
+    (target: PlannedExpense) => {
+      const remaining = Math.max(1, target.expectedAmount - (target.actualPaidAmount || 0));
+      setPayingItem(target);
+      setPayAmount(String(remaining));
+
+      const matched = findMatchingEnvelopeForExpense(target.title);
+      if (matched) {
+        setPayWalletKey(matched.walletKey);
+        setPayEnvelopeId(matched.envelopeId);
+        setAutoMatchedEnvelopeInfo({
+          walletKey: matched.walletKey,
+          walletName: matched.walletName,
+          envelopeId: matched.envelopeId,
+          envelopeName: matched.envelopeName,
+        });
+      } else {
+        setAutoMatchedEnvelopeInfo(null);
+        const preferredWallet =
+          walletOptions.find((w) => w.balance >= remaining) ||
+          walletOptions.find((w) => w.balance > 0) ||
+          walletOptions[0];
+        const nextWalletKey = preferredWallet?.key || 'in_hand';
+        setPayWalletKey(nextWalletKey);
+        setPayEnvelopeId('');
+      }
+    },
+    [findMatchingEnvelopeForExpense, walletOptions]
+  );
+
+  // Keep payEnvelopeId synced whenever the selected wallet changes in the Pay modal
+  useEffect(() => {
+    if (!payingItem) return;
+    if (payWalletEnvelopes.length === 0) {
+      if (payEnvelopeId !== '') setPayEnvelopeId('');
+      return;
+    }
+    const stillValid = payWalletEnvelopes.some((e) => e.id === payEnvelopeId);
+    if (!stillValid) {
+      const matched = payWalletEnvelopes.find((e) => e.isMatchedExpense && !e.isLocked);
+      const preferred =
+        matched ||
+        payWalletEnvelopes.find((e) => !e.isLocked && !e.isReserved && e.amount > 0) ||
+        payWalletEnvelopes.find((e) => !e.isLocked && e.amount > 0) ||
+        payWalletEnvelopes[0];
+      setPayEnvelopeId(preferred?.id || '');
+    }
+  }, [payingItem, payWalletEnvelopes, payEnvelopeId]);
 
   // Helper: determine whether a plannedExpense belongs to the selected month
   const itemMatchesMonth = useCallback(
@@ -427,6 +706,12 @@ export default function ExpensesPage() {
     setTitle('');
     setAmount('');
     setDueDate('');
+    setOmitDate(false);
+    setDueDates([]);
+    setCustomDateDraft('');
+    setWeeklyDay(new Date().getDay());
+    setRecurrenceInterval(1);
+    setRecurrenceEndDate('');
     setCategory(PAKISTANI_EXPENSE_CATEGORIES?.[0] || 'House rent');
     setCustomCat('');
     setExpenseType('recurring');
@@ -470,13 +755,24 @@ export default function ExpensesPage() {
         : 'recurring');
     setExpenseType(resolvedType);
     setPriority((item.priority as ExpensePriorityOption) || 'essential');
+    const rawFreq = item.frequency || item.recurrence || 'monthly';
     const resolvedFreq: ExpenseFrequencyOption =
-      (item.frequency as ExpenseFrequencyOption) ||
-      (item.recurrence && item.recurrence !== 'one_time'
-        ? (item.recurrence as ExpenseFrequencyOption)
-        : 'monthly');
+      rawFreq === 'one_time' ||
+      rawFreq === 'daily' ||
+      rawFreq === 'weekly' ||
+      rawFreq === 'monthly' ||
+      rawFreq === 'custom'
+        ? rawFreq
+        : 'monthly';
     setFrequency(resolvedFreq);
-    setDueDate(resolvedType === 'wish_list' ? '' : formatDueDate(item.dueDate));
+    const primaryDate = resolvedType === 'wish_list' ? '' : formatDueDate(item.dueDate);
+    setDueDate(primaryDate);
+    setOmitDate(!primaryDate && resolvedType !== 'wish_list' && resolvedFreq !== 'weekly');
+    setDueDates(Array.isArray(item.dueDates) ? item.dueDates : primaryDate ? [primaryDate] : []);
+    setWeeklyDay(typeof item.weeklyDay === 'number' ? item.weeklyDay : new Date().getDay());
+    setRecurrenceInterval(item.recurrenceInterval || 1);
+    setRecurrenceEndDate(item.recurrenceEndDate || '');
+    setCustomDateDraft('');
     setNotes(item.notes || '');
     setFormError(null);
     setOpenAddModal(true);
@@ -499,10 +795,11 @@ export default function ExpensesPage() {
       setFormError('Please enter a valid amount greater than 0.');
       return;
     }
-    if (!isWishList && !dueDate) {
-      setFormError('Please select a due date for this expense.');
-      return;
-    }
+    const cleanedDates = Array.from(new Set(dueDates.filter(Boolean))).sort();
+    const shouldOmitDate = isWishList || (omitDate && frequency !== 'weekly');
+    const resolvedPrimaryDate = shouldOmitDate
+      ? ''
+      : cleanedDates[0] || dueDate;
 
     setSaving(true);
     try {
@@ -510,25 +807,47 @@ export default function ExpensesPage() {
         category === 'Other expenses' && customCat.trim() ? customCat.trim() : category;
       const mappedRecurrence: PlannedExpense['recurrence'] = isWishList
         ? 'monthly'
-        : expenseType === 'recurring'
-        ? frequency
-        : 'one_time';
+        : frequency;
+      const finalExpenseType: ExpenseTypeOption =
+        isWishList
+          ? 'wish_list'
+          : frequency === 'one_time' && expenseType === 'recurring'
+          ? 'one_time'
+          : expenseType;
       const trimmedNotes = notes.trim();
+      const finalDates =
+        shouldOmitDate
+          ? []
+          : frequency === 'weekly' || frequency === 'custom'
+          ? cleanedDates.length > 0
+            ? cleanedDates
+            : resolvedPrimaryDate
+            ? [resolvedPrimaryDate]
+            : []
+          : resolvedPrimaryDate
+          ? [resolvedPrimaryDate]
+          : [];
 
       if (editingItem?.id) {
         const updatePayload: Record<string, unknown> = {
           title: title.trim(),
           category: finalCat,
           expectedAmount: numAmt,
-          dueDate: isWishList ? '' : dueDate,
+          dueDate: resolvedPrimaryDate,
+          dueDates: finalDates,
           recurrence: mappedRecurrence,
-          expenseType,
+          expenseType: finalExpenseType,
           priority,
           isGlobal: isWishList,
           notes: trimmedNotes || '',
+          recurrenceInterval: recurrenceInterval || 1,
+          recurrenceEndDate: recurrenceEndDate || '',
         };
         if (!isWishList) {
           updatePayload.frequency = frequency;
+          if (frequency === 'weekly') {
+            updatePayload.weeklyDay = weeklyDay;
+          }
         }
 
         await updateDoc(doc(db, 'plannedExpenses', editingItem.id), updatePayload);
@@ -541,12 +860,20 @@ export default function ExpensesPage() {
                   title: title.trim(),
                   category: finalCat,
                   expectedAmount: numAmt,
-                  dueDate: isWishList ? '' : dueDate,
+                  dueDate: resolvedPrimaryDate,
+                  dueDates: finalDates,
                   recurrence: mappedRecurrence,
-                  expenseType,
+                  expenseType: finalExpenseType,
                   priority,
                   isGlobal: isWishList,
-                  ...(isWishList ? { frequency: undefined } : { frequency }),
+                  recurrenceInterval: recurrenceInterval || 1,
+                  recurrenceEndDate: recurrenceEndDate || undefined,
+                  ...(isWishList
+                    ? { frequency: undefined, weeklyDay: undefined }
+                    : {
+                        frequency,
+                        weeklyDay: frequency === 'weekly' ? weeklyDay : undefined,
+                      }),
                   notes: trimmedNotes || undefined,
                 }
               : item
@@ -559,13 +886,21 @@ export default function ExpensesPage() {
           category: finalCat,
           expectedAmount: numAmt,
           actualPaidAmount: 0,
-          dueDate: isWishList ? '' : dueDate,
+          dueDate: resolvedPrimaryDate,
+          dueDates: finalDates,
           paymentStatus: 'pending',
           recurrence: mappedRecurrence,
-          expenseType,
+          expenseType: finalExpenseType,
           priority,
           isGlobal: isWishList,
-          ...(isWishList ? {} : { frequency }),
+          recurrenceInterval: recurrenceInterval || 1,
+          ...(recurrenceEndDate ? { recurrenceEndDate } : {}),
+          ...(isWishList
+            ? {}
+            : {
+                frequency,
+                ...(frequency === 'weekly' ? { weeklyDay } : {}),
+              }),
           ...(trimmedNotes ? { notes: trimmedNotes } : {}),
           createdAt: new Date(),
         };
@@ -577,15 +912,23 @@ export default function ExpensesPage() {
           expectedAmount: newExpense.expectedAmount,
           actualPaidAmount: 0,
           dueDate: newExpense.dueDate,
+          dueDates: finalDates,
           paymentStatus: 'pending',
           recurrence: newExpense.recurrence,
           expenseType: newExpense.expenseType,
           priority: newExpense.priority,
           isGlobal: isWishList,
+          recurrenceInterval: recurrenceInterval || 1,
           createdAt: serverTimestamp(),
         };
+        if (recurrenceEndDate) {
+          firestorePayload.recurrenceEndDate = recurrenceEndDate;
+        }
         if (!isWishList) {
           firestorePayload.frequency = frequency;
+          if (frequency === 'weekly') {
+            firestorePayload.weeklyDay = weeklyDay;
+          }
         }
         if (trimmedNotes) {
           firestorePayload.notes = trimmedNotes;
@@ -612,11 +955,14 @@ export default function ExpensesPage() {
   const handleExecutePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payingItem || !payAmount || !user?.uid) return;
+    if (isPayWalletLocked || selectedPayEnvelope?.isLocked) return;
+    if (payWalletEnvelopes.length > 0 && !selectedPayEnvelope) return;
+
     setPaying(true);
     try {
       const amt = Number(payAmount) || 0;
 
-      // 1. Record cash deduction transaction with current logged-in userId
+      // 1. Parse wallet source & update totalCashSnapshots (wallet + envelope allocation)
       let src: TransactionSource = 'in_hand';
       let bName: string | undefined = undefined;
       let cName: string | undefined = undefined;
@@ -631,6 +977,61 @@ export default function ExpensesPage() {
         src = payWalletKey as TransactionSource;
       }
 
+      let newWalletBalance: number | null = null;
+      let newTotalBalance: number | null = null;
+
+      if (snapshot?.sources) {
+        const updatedSources: TotalCashSnapshot['sources'] = {
+          in_hand: snapshot.sources.in_hand ?? 0,
+          bank: { ...(snapshot.sources.bank || {}) },
+          easypaisa: snapshot.sources.easypaisa ?? 0,
+          jazzcash: snapshot.sources.jazzcash ?? 0,
+          other: snapshot.sources.other ?? 0,
+          custom: { ...(snapshot.sources.custom || {}) },
+        };
+
+        if (src === 'bank' && bName) {
+          newWalletBalance = Math.max(0, (updatedSources.bank[bName] ?? 0) - amt);
+          updatedSources.bank[bName] = newWalletBalance;
+        } else if (src === 'custom' && cName) {
+          newWalletBalance = Math.max(0, (updatedSources.custom[cName] ?? 0) - amt);
+          updatedSources.custom[cName] = newWalletBalance;
+        } else if (src !== 'bank' && src !== 'custom') {
+          newWalletBalance = Math.max(0, (Number(updatedSources[src]) || 0) - amt);
+          (updatedSources[src] as number) = newWalletBalance;
+        }
+
+        const updatedOwnership = applyWalletAllocationDelta(
+          snapshot.sourceOwnership,
+          payWalletKey,
+          -amt,
+          selectedPayEnvelope?.id,
+          selectedPayEnvelope?.name
+        );
+
+        newTotalBalance = computeTotalAmount({
+          ...snapshot,
+          sources: updatedSources,
+          sourceOwnership: updatedOwnership,
+        });
+
+        const updatedSnapshot: TotalCashSnapshot = {
+          ...snapshot,
+          sources: updatedSources,
+          sourceOwnership: updatedOwnership,
+          totalAmount: newTotalBalance,
+          updatedAt: new Date(),
+        };
+
+        await setDoc(
+          doc(db, 'totalCashSnapshots', snapshotDocId || user.uid),
+          { ...updatedSnapshot, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+        setSnapshot(updatedSnapshot);
+      }
+
+      // 2. Record cash deduction transaction with current logged-in userId & envelope metadata
       await addDoc(collection(db, 'cashTransactions'), {
         userId: user.uid,
         amount: amt,
@@ -639,13 +1040,20 @@ export default function ExpensesPage() {
         category: 'expenditure',
         eventType: 'expense',
         expenseCategory: payingItem.category,
-        note: `Paid expense: ${payingItem.title}`,
+        walletName: bName || cName || src,
+        envelopeId: selectedPayEnvelope?.id || null,
+        envelopeName: selectedPayEnvelope?.name || null,
+        balanceAfter: newWalletBalance,
+        balanceSnapshot: newTotalBalance,
+        note: selectedPayEnvelope
+          ? `Paid expense: ${payingItem.title} (${selectedPayEnvelope.name})`
+          : `Paid expense: ${payingItem.title}`,
         BankName: bName || null,
         customPaymentHeadName: cName || null,
         createdAt: serverTimestamp(),
       });
 
-      // 2. Persist updated payment status to plannedExpenses in Firestore
+      // 3. Persist updated payment status to plannedExpenses in Firestore
       if (payingItem.id) {
         const newPaid = (payingItem.actualPaidAmount || 0) + amt;
         const newStatus: PlannedExpense['paymentStatus'] =
@@ -667,6 +1075,8 @@ export default function ExpensesPage() {
 
       setPayingItem(null);
       setPayAmount('');
+      setPayEnvelopeId('');
+      setAutoMatchedEnvelopeInfo(null);
     } catch (err) {
       console.error('Failed to pay expense:', err);
       setActionError('Failed to record payment. Please try again.');
@@ -1153,7 +1563,55 @@ export default function ExpensesPage() {
                   item.expenseType === 'wish_list' || item.priority === 'wish_list' || item.isGlobal;
                 const catMeta = CATEGORY_META[item.category] ?? CATEGORY_META['Other expenses'];
                 const RowCatIcon = catMeta.icon;
-                const dueStr = isGlobalWishList ? 'Every month' : formatDueDate(item.dueDate) || activeMonth.label;
+
+                const isWeekly = item.frequency === 'weekly' || item.recurrence === 'weekly';
+                const resolvedDates: string[] = (() => {
+                  if (isGlobalWishList) return [];
+                  if (isWeekly && typeof item.weeklyDay === 'number') {
+                    // For next month view, compute that month's dates dynamically; for current month use saved dueDates if in that month
+                    const savedInMonth = (item.dueDates || []).filter((dStr) => {
+                      const [yy, mm] = dStr.split('-').map(Number);
+                      return yy === activeMonth.year && mm - 1 === activeMonth.month;
+                    });
+                    if (savedInMonth.length > 0) return savedInMonth;
+                    return calculateWeeklyDatesInMonth(
+                      item.weeklyDay,
+                      activeMonth.year,
+                      activeMonth.month,
+                      undefined,
+                      item.recurrenceInterval || 1,
+                      item.recurrenceEndDate
+                    );
+                  }
+                  if (Array.isArray(item.dueDates) && item.dueDates.length > 0) {
+                    return item.dueDates;
+                  }
+                  const single = formatDueDate(item.dueDate);
+                  return single ? [single] : [];
+                })();
+
+                const hasMultipleDates = resolvedDates.length > 1;
+                const visibleDates = resolvedDates.slice(0, 4);
+                const extraDatesCount = Math.max(0, resolvedDates.length - visibleDates.length);
+                const singleDateLabel = isGlobalWishList
+                  ? 'Every month'
+                  : resolvedDates[0]
+                  ? formatShortDate(resolvedDates[0])
+                  : activeMonth.label;
+
+                const itemEffectiveAmt = hasMultipleDates
+                  ? item.expectedAmount * resolvedDates.length
+                  : item.expectedAmount;
+                const sharePct =
+                  monthlyMetrics.totalThisMonth > 0
+                    ? Math.min(100, Math.round((itemEffectiveAmt / monthlyMetrics.totalThisMonth) * 100))
+                    : 0;
+                const barColor =
+                  sharePct >= 25
+                    ? 'bg-rose-500'
+                    : sharePct >= 12
+                    ? 'bg-amber-500'
+                    : 'bg-teal-500';
 
                 return (
                   <li
@@ -1167,77 +1625,147 @@ export default function ExpensesPage() {
                         setDetailItem(item);
                       }
                     }}
-                    className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3.5 transition cursor-pointer ${
+                    className={`flex flex-col gap-2.5 rounded-xl px-4 py-3.5 transition cursor-pointer ${
                       isDark
                         ? 'bg-slate-800/80 hover:bg-slate-800 border border-transparent hover:border-slate-700'
                         : 'bg-slate-50 hover:bg-slate-100/90 border border-transparent hover:border-slate-200'
                     }`}
                   >
-                    {/* Left: Title + Category + Date */}
-                    <div className="min-w-0 flex-1 leading-tight">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between gap-3">
+                      {/* Left: Title + Category + Single or Multiple Dates */}
+                      <div className="min-w-0 flex-1 leading-tight">
+                        <div className="flex items-center gap-2">
+                          <p
+                            className={`truncate text-sm font-semibold ${
+                              isPaid
+                                ? isDark
+                                  ? 'text-neutral-400 line-through'
+                                  : 'text-slate-400 line-through'
+                                : isDark
+                                ? 'text-white'
+                                : 'text-slate-900'
+                            }`}
+                          >
+                            {item.title}
+                          </p>
+                          {isPaid && (
+                            <CheckCircle2
+                              size={14}
+                              className={isDark ? 'text-green-400 shrink-0' : 'text-green-600 shrink-0'}
+                            />
+                          )}
+                        </div>
+
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                              isDark
+                                ? 'bg-white/10 text-neutral-300'
+                                : 'bg-slate-200/80 text-slate-700'
+                            }`}
+                          >
+                            <RowCatIcon
+                              size={11}
+                              className={isDark ? catMeta.darkColor : catMeta.lightColor}
+                            />
+                            {item.category}
+                          </span>
+
+                          {hasMultipleDates ? (
+                            <div className="inline-flex flex-wrap items-center gap-1">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                  isDark
+                                    ? 'bg-blue-500/15 text-blue-300'
+                                    : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                }`}
+                              >
+                                <CalendarDays size={10} />
+                                {resolvedDates.length} dates
+                              </span>
+                              {visibleDates.map((dIso) => (
+                                <span
+                                  key={dIso}
+                                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
+                                    isDark
+                                      ? 'bg-white/5 text-slate-300'
+                                      : 'bg-white text-slate-600 border border-slate-200'
+                                  }`}
+                                >
+                                  {formatShortDate(dIso)}
+                                </span>
+                              ))}
+                              {extraDatesCount > 0 && (
+                                <span className={`text-[10px] font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                  +{extraDatesCount}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center gap-1 text-[11px] ${
+                                isDark ? 'text-neutral-400' : 'text-slate-500'
+                              }`}
+                            >
+                              {isGlobalWishList ? <Globe size={11} /> : <CalendarDays size={11} />}
+                              {singleDateLabel}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: Amount (+ multi-occurrence total hint if multiple dates) */}
+                      <div className="shrink-0 text-right">
                         <p
-                          className={`truncate text-sm font-semibold ${
+                          className={`text-sm sm:text-base font-bold tabular-nums ${
                             isPaid
                               ? isDark
-                                ? 'text-neutral-400 line-through'
-                                : 'text-slate-400 line-through'
+                                ? 'text-neutral-400'
+                                : 'text-slate-400'
                               : isDark
                               ? 'text-white'
                               : 'text-slate-900'
                           }`}
                         >
-                          {item.title}
+                          {formatRs(item.expectedAmount)}
                         </p>
-                        {isPaid && (
-                          <CheckCircle2
-                            size={14}
-                            className={isDark ? 'text-green-400 shrink-0' : 'text-green-600 shrink-0'}
-                          />
+                        {hasMultipleDates && (
+                          <p className={`text-[10px] font-medium tabular-nums ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            ×{resolvedDates.length} = {formatRs(item.expectedAmount * resolvedDates.length)}
+                          </p>
                         )}
-                      </div>
-
-                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                            isDark
-                              ? 'bg-white/10 text-neutral-300'
-                              : 'bg-slate-200/80 text-slate-700'
-                          }`}
-                        >
-                          <RowCatIcon
-                            size={11}
-                            className={isDark ? catMeta.darkColor : catMeta.lightColor}
-                          />
-                          {item.category}
-                        </span>
-
-                        <span
-                          className={`inline-flex items-center gap-1 text-[11px] ${
-                            isDark ? 'text-neutral-400' : 'text-slate-500'
-                          }`}
-                        >
-                          {isGlobalWishList ? <Globe size={11} /> : <CalendarDays size={11} />}
-                          {dueStr}
-                        </span>
                       </div>
                     </div>
 
-                    {/* Right: Amount */}
-                    <div className="shrink-0 text-right">
-                      <p
-                        className={`text-sm sm:text-base font-bold tabular-nums ${
-                          isPaid
-                            ? isDark
-                              ? 'text-neutral-400'
-                              : 'text-slate-400'
-                            : isDark
-                            ? 'text-white'
-                            : 'text-slate-900'
+                    {/* Horizontal Share Progress Bar + Percentage */}
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`h-1.5 flex-1 overflow-hidden rounded-full ${
+                          isDark ? 'bg-white/10' : 'bg-slate-200/90'
                         }`}
                       >
-                        {formatRs(item.expectedAmount)}
-                      </p>
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                          style={{ width: `${Math.max(sharePct, sharePct > 0 ? 2 : 0)}%` }}
+                        />
+                      </div>
+                      <span
+                        className={`w-9 shrink-0 text-right text-[11px] font-bold tabular-nums ${
+                          sharePct >= 25
+                            ? isDark
+                              ? 'text-rose-400'
+                              : 'text-rose-600'
+                            : sharePct >= 12
+                            ? isDark
+                              ? 'text-amber-400'
+                              : 'text-amber-600'
+                            : isDark
+                            ? 'text-slate-400'
+                            : 'text-slate-500'
+                        }`}
+                      >
+                        {sharePct}%
+                      </span>
                     </div>
                   </li>
                 );
@@ -1426,6 +1954,44 @@ export default function ExpensesPage() {
                   <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Due Date</span>
                   <span className="font-semibold">{dueStr || 'No specific date'}</span>
                 </div>
+                {Array.isArray(detailItem.dueDates) && detailItem.dueDates.length > 1 && (
+                  <div className="px-4 py-2.5 space-y-1.5">
+                    <span className={`block ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Scheduled Dates ({detailItem.dueDates.length})
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {detailItem.dueDates.map((dIso) => (
+                        <span
+                          key={dIso}
+                          className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
+                            isDark
+                              ? 'bg-blue-500/15 text-blue-300'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}
+                        >
+                          {formatShortDate(dIso)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {typeof detailItem.weeklyDay === 'number' && (
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Weekly Day</span>
+                    <span className="font-semibold">
+                      Every {WEEKDAY_OPTIONS[detailItem.weeklyDay]?.label ?? 'Week'}
+                      {detailItem.recurrenceInterval && detailItem.recurrenceInterval > 1
+                        ? ` (every ${detailItem.recurrenceInterval} weeks)`
+                        : ''}
+                    </span>
+                  </div>
+                )}
+                {detailItem.recurrenceEndDate && (
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Repeat Until</span>
+                    <span className="font-semibold">{detailItem.recurrenceEndDate}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Type</span>
                   <span className="font-semibold">{typeLabel}</span>
@@ -1494,10 +2060,7 @@ export default function ExpensesPage() {
                     onClick={() => {
                       const target = detailItem;
                       setDetailItem(null);
-                      setPayingItem(target);
-                      setPayAmount(
-                        String(Math.max(1, target.expectedAmount - (target.actualPaidAmount || 0)))
-                      );
+                      openPayModalForExpense(target);
                     }}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3.5 py-2 text-xs font-bold text-black transition cursor-pointer"
                   >
@@ -1520,7 +2083,7 @@ export default function ExpensesPage() {
         );
       })()}
 
-      {/* ── Full-Width Add / Edit Expense Modal ────────────────── */}
+      {/* ── Responsive Add / Edit Expense Modal (Full width on mobile, centered on desktop) ── */}
       <Dialog
         open={openAddModal}
         onClose={() => {
@@ -1528,12 +2091,13 @@ export default function ExpensesPage() {
           setOpenAddModal(false);
         }}
         fullWidth
-        maxWidth={false}
+        maxWidth="sm"
         PaperProps={{
           sx: {
             width: '100%',
-            maxWidth: '100%',
-            margin: { xs: 1, sm: 2.5 },
+            maxWidth: { xs: '100%', sm: 600 },
+            mx: { xs: 1.5, sm: 3 },
+            my: { xs: 2.5, sm: 4 },
             backgroundColor: isDark ? '#1f2430' : '#ffffff',
             color: isDark ? '#f8fafc' : '#0f172a',
             borderRadius: 4,
@@ -1546,7 +2110,8 @@ export default function ExpensesPage() {
       >
         <form onSubmit={handleSaveExpense} noValidate>
           <DialogTitle
-            className={`flex items-center justify-between pb-3 border-b ${
+            sx={{ py: 2.5, px: { xs: 2.5, sm: 3 } }}
+            className={`flex items-center justify-between border-b ${
               isDark ? 'border-white/10' : 'border-slate-200'
             }`}
           >
@@ -1581,7 +2146,10 @@ export default function ExpensesPage() {
             </button>
           </DialogTitle>
 
-          <DialogContent className="pt-5 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
+          <DialogContent
+            sx={{ pt: '24px !important', pb: 3, px: { xs: 2.5, sm: 3 } }}
+            className="flex flex-col gap-4 max-h-[72vh] overflow-y-auto"
+          >
             {/* Inline Validation / Save Error Alert */}
             {formError && (
               <div
@@ -1597,10 +2165,10 @@ export default function ExpensesPage() {
               </div>
             )}
 
-            {/* 1. Title */}
+            {/* 1. Title — What is the expense? */}
             <div>
               <label className={labelClass}>
-                Title <span className="text-rose-500">*</span>
+                1. Title — What is the expense? <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
@@ -1609,168 +2177,147 @@ export default function ExpensesPage() {
                   setTitle(e.target.value);
                   if (formError) setFormError(null);
                 }}
-                placeholder="e.g., House rent, LESCO Electricity Bill, School Fees"
+                placeholder="e.g., Hometown Visit, House Rent, LESCO Electricity Bill"
                 className={inputClass}
               />
             </div>
 
-            {/* 2. Amount & 3. Due Date */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className={labelClass}>
-                  Amount (PKR) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={amount}
-                  onChange={(e) => {
-                    setAmount(e.target.value);
-                    if (formError) setFormError(null);
-                  }}
-                  placeholder="0"
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>
-                  Due Date {!isWishList && <span className="text-rose-500">*</span>}
-                </label>
-                <input
-                  type="date"
-                  disabled={isWishList}
-                  value={isWishList ? '' : dueDate}
-                  onChange={(e) => {
-                    setDueDate(e.target.value);
-                    if (formError) setFormError(null);
-                  }}
-                  className={`${inputClass} ${
-                    isWishList ? 'opacity-45 cursor-not-allowed' : ''
-                  }`}
-                />
-                {isWishList && (
-                  <p className={`mt-1 text-[11px] ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
-                    Disabled for Wish List (always shown every month)
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* 4. Category */}
+            {/* 2. Amount — How much does it cost? */}
             <div>
-              <label className={labelClass}>Category</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
+              <label className={labelClass}>
+                2. Amount (PKR) — How much does it cost? <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={amount}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  if (formError) setFormError(null);
+                }}
+                placeholder="0"
                 className={inputClass}
-              >
-                {(PAKISTANI_EXPENSE_CATEGORIES || []).map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
-            {category === 'Other expenses' && (
+            {/* 3. Type — Expense category / type & priority */}
+            <div className="space-y-3">
               <div>
-                <label className={labelClass}>Custom Category Name</label>
-                <input
-                  type="text"
-                  value={customCat}
-                  onChange={(e) => setCustomCat(e.target.value)}
-                  placeholder="Enter custom category"
+                <label className={labelClass}>3. Type — Expense Category</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
                   className={inputClass}
-                />
+                >
+                  {(PAKISTANI_EXPENSE_CATEGORIES || []).map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
 
-            {/* 5. Type (recurring, one-time, event-based, wish list) */}
-            <div>
-              <label className={labelClass}>Type</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {EXPENSE_TYPE_OPTIONS.map((opt) => {
-                  const active = expenseType === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => {
-                        setExpenseType(opt.value);
-                        if (opt.value === 'wish_list') {
-                          setPriority('wish_list');
-                          setDueDate('');
-                          if (formError) setFormError(null);
-                        } else if (priority === 'wish_list') {
-                          setPriority('essential');
-                        }
-                      }}
-                      className={`py-2.5 px-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                        active
-                          ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
-                          : isDark
-                          ? 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-500'
-                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
+              {category === 'Other expenses' && (
+                <div>
+                  <label className={labelClass}>Custom Category Name</label>
+                  <input
+                    type="text"
+                    value={customCat}
+                    onChange={(e) => setCustomCat(e.target.value)}
+                    placeholder="Enter custom category"
+                    className={inputClass}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className={labelClass}>Expense Type</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {EXPENSE_TYPE_OPTIONS.map((opt) => {
+                    const active = expenseType === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setExpenseType(opt.value);
+                          if (opt.value === 'wish_list') {
+                            setPriority('wish_list');
+                            setDueDate('');
+                            setDueDates([]);
+                            if (formError) setFormError(null);
+                          } else {
+                            if (priority === 'wish_list') setPriority('essential');
+                            if (opt.value === 'one_time') setFrequency('one_time');
+                          }
+                        }}
+                        className={`py-2.5 px-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                          active
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
+                            : isDark
+                            ? 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-500'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className={labelClass}>Priority</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {PRIORITY_OPTIONS.map((opt) => {
+                    const active = priority === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setPriority(opt.value);
+                          if (opt.value === 'wish_list') {
+                            setExpenseType('wish_list');
+                            setDueDate('');
+                            setDueDates([]);
+                            if (formError) setFormError(null);
+                          } else if (expenseType === 'wish_list') {
+                            setExpenseType('recurring');
+                          }
+                        }}
+                        className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                          active
+                            ? isDark
+                              ? 'bg-blue-600/20 border-blue-500 text-white'
+                              : 'bg-blue-50 border-blue-500 text-slate-900'
+                            : isDark
+                            ? 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-500'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${opt.dot}`} />
+                        <div className="min-w-0 leading-tight">
+                          <span className="block text-xs font-bold">{opt.label}</span>
+                          <span
+                            className={`block text-[10px] ${
+                              isDark ? 'text-slate-400' : 'text-slate-500'
+                            }`}
+                          >
+                            {opt.hint}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {/* 6. Priority */}
+            {/* 4. Frequency — One-time, Daily, Weekly, Monthly, Custom */}
             <div>
-              <label className={labelClass}>Priority</label>
-              <div className="grid grid-cols-2 gap-2">
-                {PRIORITY_OPTIONS.map((opt) => {
-                  const active = priority === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => {
-                        setPriority(opt.value);
-                        if (opt.value === 'wish_list') {
-                          setExpenseType('wish_list');
-                          setDueDate('');
-                          if (formError) setFormError(null);
-                        } else if (expenseType === 'wish_list') {
-                          setExpenseType('recurring');
-                        }
-                      }}
-                      className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                        active
-                          ? isDark
-                            ? 'bg-blue-600/20 border-blue-500 text-white'
-                            : 'bg-blue-50 border-blue-500 text-slate-900'
-                          : isDark
-                          ? 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-500'
-                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${opt.dot}`} />
-                      <div className="min-w-0 leading-tight">
-                        <span className="block text-xs font-bold">{opt.label}</span>
-                        <span
-                          className={`block text-[10px] ${
-                            isDark ? 'text-slate-400' : 'text-slate-500'
-                          }`}
-                        >
-                          {opt.hint}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 7. Frequency (monthly default, yearly, weekly, daily) */}
-            <div>
-              <label className={labelClass}>Frequency</label>
-              <div className="grid grid-cols-4 gap-2">
+              <label className={labelClass}>4. Frequency</label>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {FREQUENCY_OPTIONS.map((opt) => {
                   const active = !isWishList && frequency === opt.value;
                   return (
@@ -1778,8 +2325,24 @@ export default function ExpensesPage() {
                       key={opt.value}
                       type="button"
                       disabled={isWishList}
-                      onClick={() => setFrequency(opt.value)}
-                      className={`py-2 px-2 rounded-xl text-xs font-semibold border transition ${
+                      onClick={() => {
+                        setFrequency(opt.value);
+                        if (opt.value === 'one_time') {
+                          setExpenseType('one_time');
+                          setDueDates(dueDate ? [dueDate] : []);
+                        } else if (expenseType === 'one_time') {
+                          setExpenseType('recurring');
+                        }
+                        if (opt.value === 'weekly') {
+                          recomputeWeeklyDates(
+                            weeklyDay,
+                            dueDate,
+                            recurrenceInterval,
+                            recurrenceEndDate
+                          );
+                        }
+                      }}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-semibold border transition ${
                         isWishList
                           ? isDark
                             ? 'bg-slate-800/35 border-slate-800 text-slate-600 cursor-not-allowed'
@@ -1803,6 +2366,234 @@ export default function ExpensesPage() {
               )}
             </div>
 
+            {/* 5. Date — When does it start or become due? (Hidden for Weekly; optional with Omit Date) */}
+            {frequency !== 'weekly' && (
+              <div>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <label className={`block text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    5. Date — When does it start or become due?{' '}
+                    <span className={`font-normal ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      (optional)
+                    </span>
+                  </label>
+                  {!isWishList && (
+                    <label className="inline-flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={omitDate}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setOmitDate(checked);
+                          if (checked) {
+                            setDueDate('');
+                            setDueDates([]);
+                          }
+                        }}
+                        className="h-3.5 w-3.5 accent-blue-500 rounded cursor-pointer"
+                      />
+                      <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>
+                        Omit date
+                      </span>
+                    </label>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  disabled={isWishList || omitDate}
+                  value={isWishList || omitDate ? '' : dueDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDueDate(val);
+                    if (formError) setFormError(null);
+                    if (frequency !== 'custom') {
+                      setDueDates(val ? [val] : []);
+                    } else if (val && !dueDates.includes(val)) {
+                      setDueDates((prev) => [...prev, val].sort());
+                    }
+                  }}
+                  className={`${inputClass} ${
+                    isWishList || omitDate ? 'opacity-45 cursor-not-allowed' : ''
+                  }`}
+                />
+                {isWishList && (
+                  <p className={`mt-1 text-[11px] ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                    Disabled for Wish List (always shown every month)
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* 6. Recurrence — Repeat settings */}
+            {!isWishList && frequency !== 'one_time' && (
+              <div
+                className={`rounded-2xl border p-4 space-y-3.5 ${
+                  isDark
+                    ? 'bg-slate-800/50 border-slate-700/70'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                {frequency === 'weekly' ? (
+                  /* Weekly: ONLY show "At what day" with all 7 weekdays + calculated dates */
+                  <div className="space-y-3">
+                    <div>
+                      <label className={labelClass}>At what day</label>
+                      <select
+                        value={weeklyDay}
+                        onChange={(e) => {
+                          const dayNum = Number(e.target.value);
+                          setWeeklyDay(dayNum);
+                          recomputeWeeklyDates(dayNum, '', 1, '');
+                        }}
+                        className={inputClass}
+                      >
+                        {WEEKDAY_OPTIONS.map((d) => (
+                          <option key={d.value} value={d.value}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <span className={labelClass}>
+                        Dates in {activeMonth.label} ({dueDates.length})
+                      </span>
+                      {dueDates.length === 0 ? (
+                        <p className={`text-xs ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                          No remaining {WEEKDAY_OPTIONS[weeklyDay]?.label}s in {activeMonth.label}.
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {dueDates.map((dIso) => (
+                            <span
+                              key={dIso}
+                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                                isDark
+                                  ? 'bg-blue-500/20 text-blue-200 border border-blue-500/30'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+                              }`}
+                            >
+                              <CalendarDays size={11} />
+                              {formatShortDate(dIso)}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDueDates((prev) => prev.filter((x) => x !== dIso))
+                                }
+                                aria-label={`Remove ${dIso}`}
+                                className="ml-0.5 hover:text-rose-400 cursor-pointer"
+                              >
+                                <X size={11} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                        6. Recurrence — Repeat Settings
+                      </span>
+                      <span className={`text-[11px] capitalize ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {frequency} schedule
+                      </span>
+                    </div>
+
+                    {/* Custom: Add multiple custom dates */}
+                    {frequency === 'custom' && !omitDate && (
+                      <div className="space-y-2.5">
+                        <label className={labelClass}>Add Multiple Dates</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="date"
+                            value={customDateDraft}
+                            onChange={(e) => setCustomDateDraft(e.target.value)}
+                            className={inputClass}
+                          />
+                          <button
+                            type="button"
+                            disabled={!customDateDraft}
+                            onClick={() => {
+                              if (!customDateDraft) return;
+                              setDueDates((prev) =>
+                                prev.includes(customDateDraft)
+                                  ? prev
+                                  : [...prev, customDateDraft].sort()
+                              );
+                              if (!dueDate) setDueDate(customDateDraft);
+                              setCustomDateDraft('');
+                            }}
+                            className="shrink-0 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-4 text-xs font-bold text-white cursor-pointer"
+                          >
+                            + Add Date
+                          </button>
+                        </div>
+                        {dueDates.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {dueDates.map((dIso) => (
+                              <span
+                                key={dIso}
+                                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                                  isDark
+                                    ? 'bg-blue-500/20 text-blue-200 border border-blue-500/30'
+                                    : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                }`}
+                              >
+                                <CalendarDays size={11} />
+                                {formatShortDate(dIso)}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDueDates((prev) => prev.filter((x) => x !== dIso))
+                                  }
+                                  aria-label={`Remove ${dIso}`}
+                                  className="ml-0.5 hover:text-rose-400 cursor-pointer"
+                                >
+                                  <X size={11} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Interval & Optional End Date */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelClass}>
+                          Repeat Interval (every N{' '}
+                          {frequency === 'daily' ? 'days' : 'months'})
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="30"
+                          value={recurrenceInterval}
+                          onChange={(e) => {
+                            setRecurrenceInterval(Math.max(1, Number(e.target.value) || 1));
+                          }}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>End Date (Optional)</label>
+                        <input
+                          type="date"
+                          value={recurrenceEndDate}
+                          onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Optional Notes */}
             <div>
               <label className={labelClass}>Notes (Optional)</label>
@@ -1817,7 +2608,8 @@ export default function ExpensesPage() {
           </DialogContent>
 
           <DialogActions
-            className={`border-t px-6 py-3.5 flex justify-end gap-2 ${
+            sx={{ py: 2, px: { xs: 2.5, sm: 3 } }}
+            className={`border-t flex justify-end gap-2 ${
               isDark ? 'border-white/10' : 'border-slate-200'
             }`}
           >
@@ -1851,108 +2643,308 @@ export default function ExpensesPage() {
       </Dialog>
 
       {/* ── Pay Expense Modal ──────────────────────────────────── */}
-      {payingItem && (
-        <Dialog
-          open={Boolean(payingItem)}
-          onClose={() => setPayingItem(null)}
-          fullWidth
-          maxWidth="xs"
-          PaperProps={{
-            sx: {
-              backgroundColor: isDark ? '#0f172a' : '#ffffff',
-              color: isDark ? '#f8fafc' : '#0f172a',
-              borderRadius: 4,
-              border: isDark ? '1px solid rgba(148, 163, 184, 0.2)' : '1px solid #e2e8f0',
-            },
-          }}
-        >
-          <form onSubmit={handleExecutePayment}>
-            <DialogTitle
-              className={`flex items-center justify-between pb-3 border-b ${
-                isDark ? 'border-white/10' : 'border-slate-200'
-              }`}
-            >
-              <div>
-                <h2
-                  className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}
-                >
-                  Pay: {payingItem.title}
-                </h2>
-                <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
-                  Deduct payment directly from your selected wallet
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPayingItem(null)}
-                className={`p-1 rounded-full transition cursor-pointer ${
-                  isDark ? 'text-neutral-400 hover:text-white' : 'text-slate-400 hover:text-slate-900'
+      {payingItem && (() => {
+        const numPayAmt = Number(payAmount) || 0;
+        const selectedWalletBal = getWalletBalanceByKey(payWalletKey);
+        const envelopeExceeds =
+          Boolean(selectedPayEnvelope) && numPayAmt > (selectedPayEnvelope?.amount ?? 0);
+        const walletExceeds = numPayAmt > selectedWalletBal;
+        const isLockedSelection = isPayWalletLocked || Boolean(selectedPayEnvelope?.isLocked);
+        const cannotConfirm =
+          paying ||
+          !payAmount ||
+          numPayAmt <= 0 ||
+          isLockedSelection ||
+          (payWalletEnvelopes.length > 0 && !selectedPayEnvelope);
+
+        return (
+          <Dialog
+            open={Boolean(payingItem)}
+            onClose={() => {
+              setPayingItem(null);
+              setPayEnvelopeId('');
+              setAutoMatchedEnvelopeInfo(null);
+            }}
+            fullWidth
+            maxWidth="xs"
+            PaperProps={{
+              sx: {
+                backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                color: isDark ? '#f8fafc' : '#0f172a',
+                borderRadius: 4,
+                border: isDark ? '1px solid rgba(148, 163, 184, 0.2)' : '1px solid #e2e8f0',
+              },
+            }}
+          >
+            <form onSubmit={handleExecutePayment}>
+              <DialogTitle
+                className={`flex items-center justify-between pb-3 border-b ${
+                  isDark ? 'border-white/10' : 'border-slate-200'
                 }`}
               >
-                <X size={18} />
-              </button>
-            </DialogTitle>
-
-            <DialogContent className="pt-4 flex flex-col gap-3.5 text-xs">
-              <div>
-                <label className={labelClass}>Payment Amount (PKR)</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  className={`${inputClass} font-bold`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>Deduct From Wallet *</label>
-                <select
-                  required
-                  value={payWalletKey}
-                  onChange={(e) => setPayWalletKey(e.target.value)}
-                  className={inputClass}
+                <div className="min-w-0 pr-2">
+                  <h2
+                    className={`text-base font-bold break-words ${isDark ? 'text-white' : 'text-slate-900'}`}
+                  >
+                    Pay: {payingItem.title}
+                  </h2>
+                  <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
+                    Deduct payment directly from your selected wallet
+                    {payWalletEnvelopes.length > 0 ? ' & envelope' : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPayingItem(null);
+                    setPayEnvelopeId('');
+                    setAutoMatchedEnvelopeInfo(null);
+                  }}
+                  className={`p-1 rounded-full transition cursor-pointer shrink-0 ${
+                    isDark ? 'text-neutral-400 hover:text-white' : 'text-slate-400 hover:text-slate-900'
+                  }`}
                 >
-                  {walletOptions.map((w) => (
-                    <option key={w.key} value={w.key}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </DialogContent>
+                  <X size={18} />
+                </button>
+              </DialogTitle>
 
-            <DialogActions
-              className={`border-t px-5 py-3 flex justify-end gap-2 ${
-                isDark ? 'border-white/10' : 'border-slate-200'
-              }`}
-            >
-              <Button
-                onClick={() => setPayingItem(null)}
-                disabled={paying}
-                sx={{ color: isDark ? '#a3a3a3' : '#64748b', textTransform: 'none', fontWeight: 600 }}
+              <DialogContent
+                sx={{ pt: '20px !important', pb: 2.5 }}
+                className="flex flex-col gap-3.5 text-xs"
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={paying || !payAmount}
-                variant="contained"
-                sx={{
-                  backgroundColor: '#10b981',
-                  '&:hover': { backgroundColor: '#059669' },
-                  textTransform: 'none',
-                  fontWeight: 700,
-                  borderRadius: 2.5,
-                }}
+                {/* Auto-matched Envelope Notice */}
+                {autoMatchedEnvelopeInfo &&
+                  autoMatchedEnvelopeInfo.walletKey === payWalletKey &&
+                  autoMatchedEnvelopeInfo.envelopeId === payEnvelopeId && (
+                    <div
+                      className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[11px] font-medium ${
+                        isDark
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      }`}
+                    >
+                      <Sparkles size={14} className="shrink-0 mt-0.5" />
+                      <span>
+                        Auto-selected envelope <strong>{autoMatchedEnvelopeInfo.envelopeName}</strong>{' '}
+                        in <strong>{autoMatchedEnvelopeInfo.walletName}</strong> matching this expense.
+                      </span>
+                    </div>
+                  )}
+
+                <div>
+                  <label className={labelClass}>Payment Amount (PKR)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    className={`${inputClass} font-bold`}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Deduct From Wallet *</label>
+                  <select
+                    required
+                    value={payWalletKey}
+                    onChange={(e) => {
+                      const nextKey = e.target.value;
+                      setPayWalletKey(nextKey);
+                      setPayEnvelopeId('');
+                    }}
+                    className={inputClass}
+                  >
+                    {walletOptions.map((w) => (
+                      <option key={w.key} value={w.key}>
+                        {w.name} — {formatRs(w.balance)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Envelope Picker (shown whenever the selected wallet has envelopes) */}
+                {payWalletEnvelopes.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Deduct From Envelope *
+                      </label>
+                      <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {payWalletEnvelopes.length} envelopes
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-0.5">
+                      {payWalletEnvelopes.map((env) => {
+                        const isSelected = env.id === payEnvelopeId;
+                        return (
+                          <button
+                            key={env.id}
+                            type="button"
+                            disabled={env.isLocked}
+                            onClick={() => setPayEnvelopeId(env.id)}
+                            className={`w-full text-left rounded-xl border px-3 py-2.5 transition flex items-center justify-between gap-2 ${
+                              env.isLocked
+                                ? isDark
+                                  ? 'border-slate-800 bg-slate-900/50 opacity-50 cursor-not-allowed'
+                                  : 'border-slate-200 bg-slate-100 opacity-55 cursor-not-allowed'
+                                : isSelected
+                                ? isDark
+                                  ? 'border-emerald-500 bg-emerald-500/15 ring-1 ring-emerald-500/40 cursor-pointer'
+                                  : 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500/30 cursor-pointer'
+                                : isDark
+                                ? 'border-slate-700/80 bg-slate-800/60 hover:border-slate-600 cursor-pointer'
+                                : 'border-slate-200 bg-slate-50 hover:border-slate-300 cursor-pointer'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span
+                                  className={`text-xs font-bold break-words ${
+                                    isDark ? 'text-white' : 'text-slate-900'
+                                  }`}
+                                >
+                                  {env.name}
+                                </span>
+                                {env.isMatchedExpense && (
+                                  <span
+                                    className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                                      isDark
+                                        ? 'bg-emerald-500/20 text-emerald-300'
+                                        : 'bg-emerald-100 text-emerald-700'
+                                    }`}
+                                  >
+                                    Matched
+                                  </span>
+                                )}
+                                {env.isLocked && (
+                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-500 font-semibold">
+                                    <Lock size={10} /> Locked
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                className={`text-[10px] font-medium ${
+                                  env.isReserved
+                                    ? isDark
+                                      ? 'text-blue-300'
+                                      : 'text-blue-600'
+                                    : isDark
+                                    ? 'text-slate-400'
+                                    : 'text-slate-500'
+                                }`}
+                              >
+                                {env.isReserved ? 'Reserved' : `Owner: ${env.owner}`}
+                              </span>
+                            </div>
+
+                            <div className="shrink-0 text-right">
+                              <span
+                                className={`text-xs font-extrabold tabular-nums ${
+                                  env.amount > 0
+                                    ? isDark
+                                      ? 'text-white'
+                                      : 'text-slate-900'
+                                    : isDark
+                                    ? 'text-slate-500'
+                                    : 'text-slate-400'
+                                }`}
+                              >
+                                {formatRs(env.amount)}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Lock / Balance Warnings */}
+                {isLockedSelection && (
+                  <div
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium ${
+                      isDark
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                        : 'bg-rose-50 border-rose-200 text-rose-700'
+                    }`}
+                  >
+                    <Lock size={13} className="shrink-0" />
+                    <span>
+                      {isPayWalletLocked
+                        ? 'This wallet is locked. Unlock it first or select another wallet.'
+                        : 'This envelope is locked. Select another envelope.'}
+                    </span>
+                  </div>
+                )}
+
+                {!isLockedSelection && envelopeExceeds && selectedPayEnvelope && (
+                  <div
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium ${
+                      isDark
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                        : 'bg-amber-50 border-amber-200 text-amber-700'
+                    }`}
+                  >
+                    <AlertTriangle size={13} className="shrink-0" />
+                    <span>
+                      Amount exceeds <strong>{selectedPayEnvelope.name}</strong> balance (
+                      {formatRs(selectedPayEnvelope.amount)}). Envelope balance will drop to Rs. 0.
+                    </span>
+                  </div>
+                )}
+
+                {!isLockedSelection && !envelopeExceeds && walletExceeds && (
+                  <div
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium ${
+                      isDark
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                        : 'bg-amber-50 border-amber-200 text-amber-700'
+                    }`}
+                  >
+                    <AlertTriangle size={13} className="shrink-0" />
+                    <span>
+                      Amount exceeds selected wallet balance ({formatRs(selectedWalletBal)}).
+                    </span>
+                  </div>
+                )}
+              </DialogContent>
+
+              <DialogActions
+                className={`border-t px-5 py-3 flex justify-end gap-2 ${
+                  isDark ? 'border-white/10' : 'border-slate-200'
+                }`}
               >
-                {paying ? 'Processing…' : 'Confirm Payment'}
-              </Button>
-            </DialogActions>
-          </form>
-        </Dialog>
-      )}
+                <Button
+                  onClick={() => {
+                    setPayingItem(null);
+                    setPayEnvelopeId('');
+                    setAutoMatchedEnvelopeInfo(null);
+                  }}
+                  disabled={paying}
+                  sx={{ color: isDark ? '#a3a3a3' : '#64748b', textTransform: 'none', fontWeight: 600 }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={cannotConfirm}
+                  variant="contained"
+                  sx={{
+                    backgroundColor: '#10b981',
+                    '&:hover': { backgroundColor: '#059669' },
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    borderRadius: 2.5,
+                  }}
+                >
+                  {paying ? 'Processing…' : 'Confirm Payment'}
+                </Button>
+              </DialogActions>
+            </form>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }

@@ -792,104 +792,82 @@ export default function BudgetPlanner() {
     const val = num(allocations[id]);
     const pct = budgetTotal > 0 ? Math.round((val / budgetTotal) * 100) : 0;
     const sliderMax = Math.max(budgetTotal || 50000, val, referenceAmount || 0, 1000);
+    const fillPct = Math.min(100, (val / sliderMax) * 100);
     const stepSize = sliderMax >= 50000 ? 500 : 100;
+    const isMatched = typeof referenceAmount === 'number' && val === referenceAmount && val > 0;
 
     return (
       <div
         key={id}
-        className={`rounded-2xl p-3.5 transition ${
-          isDark ? 'bg-[#282e3d]/80' : 'bg-slate-50 border border-slate-200/70'
+        className={`rounded-2xl border p-3.5 sm:p-4 transition-all ${
+          isDark
+            ? 'border-white/10 bg-[#282e3d]/85 hover:border-white/20'
+            : 'border-slate-200/80 bg-slate-50/90 hover:border-slate-300'
         }`}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        {/* Tier 1: Full untruncated title + % pill + metadata */}
+        <div className="flex items-start justify-between gap-2.5">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{label}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+            <div className="flex items-start gap-2">
+              <span
+                className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${BAR_TONES[tone]}`}
+              />
+              <p className="text-sm sm:text-base font-bold leading-snug break-words">
+                {label}
+              </p>
+            </div>
+
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-4.5 text-[11px]">
               <span className={mutedCls}>{sublabel}</span>
               {typeof referenceAmount === 'number' && referenceLabel && (
                 <span
-                  className={`rounded-full px-2 py-0.5 font-semibold tabular-nums ${
-                    isDark ? 'bg-white/10 text-slate-200' : 'bg-white text-slate-700 border border-slate-200'
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 font-semibold tabular-nums ${
+                    isDark
+                      ? 'bg-white/10 text-slate-200'
+                      : 'bg-white text-slate-700 border border-slate-200'
                   }`}
                 >
                   {referenceLabel}: {fmt(referenceAmount)}
                 </span>
               )}
-              <span className={mutedCls}>· {pct}% of budget</span>
             </div>
           </div>
 
-          {/* Tap - / Allocated Budget Input / + controls */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {typeof referenceAmount === 'number' && val !== referenceAmount && (
-              <button
-                type="button"
-                onClick={() => setItemAllocation(id, referenceAmount)}
-                className={`rounded-lg px-2 py-1 text-[10px] font-semibold transition cursor-pointer ${
-                  isDark
-                    ? 'bg-teal-500/15 text-teal-300 hover:bg-teal-500/25'
-                    : 'bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100'
-                }`}
-                title="Match expense value"
-              >
-                Match
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => stepItemAllocation(id, -stepSize)}
-              aria-label={`Decrease ${label}`}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition active:scale-95 cursor-pointer ${
-                isDark
-                  ? 'bg-white/10 text-slate-200 hover:bg-white/20'
-                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Minus size={14} />
-            </button>
-
-            <input
-              type="number"
-              inputMode="numeric"
-              min="0"
-              value={val === 0 ? '' : String(val)}
-              placeholder="0"
-              onChange={(e) => setItemAllocation(id, num(e.target.value))}
-              className={`w-24 rounded-lg border px-2.5 py-1.5 text-right text-sm font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-teal-500/30 ${
-                isDark
-                  ? 'border-white/15 bg-[#1f2430] text-white'
-                  : 'border-slate-200 bg-white text-slate-900'
-              }`}
-            />
-
-            <button
-              type="button"
-              onClick={() => stepItemAllocation(id, stepSize)}
-              aria-label={`Increase ${label}`}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition active:scale-95 cursor-pointer ${
-                isDark
-                  ? 'bg-white/10 text-slate-200 hover:bg-white/20'
-                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Plus size={14} />
-            </button>
-          </div>
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums ${
+              pct > 0
+                ? isDark
+                  ? 'bg-teal-500/15 text-teal-300'
+                  : 'bg-teal-50 text-teal-700 border border-teal-200'
+                : isDark
+                ? 'bg-white/5 text-slate-400'
+                : 'bg-slate-200/70 text-slate-500'
+            }`}
+          >
+            {pct}%
+          </span>
         </div>
 
-        {/* Interactive Tappable / Draggable Dynamic Progress Bar */}
-        <div className="relative mt-3 flex items-center">
+        {/* Tier 2: Full-width Interactive Tappable / Draggable Slider Bar */}
+        <div className="relative mt-3.5 flex items-center py-1">
           <div
-            className={`h-3 w-full overflow-hidden rounded-full ${
+            className={`h-2.5 w-full overflow-hidden rounded-full ${
               isDark ? 'bg-white/10' : 'bg-slate-200'
             }`}
           >
             <div
               className={`h-full rounded-full transition-all duration-150 ${BAR_TONES[tone]}`}
-              style={{ width: `${Math.min(100, (val / sliderMax) * 100)}%` }}
+              style={{ width: `${fillPct}%` }}
             />
           </div>
+          {/* Visual thumb indicator */}
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 shadow-sm transition-all duration-150 ${BAR_TONES[tone]} ${
+              isDark ? 'border-[#1f2430]' : 'border-white'
+            }`}
+            style={{ left: `clamp(8px, ${fillPct}%, calc(100% - 8px))` }}
+          />
           <input
             type="range"
             min={0}
@@ -901,6 +879,92 @@ export default function BudgetPlanner() {
             className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
           />
         </div>
+
+        {/* Tier 3: Clean Responsive Controls Row (Match pill + Unified Stepper) */}
+        <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center justify-between sm:justify-start gap-2">
+            <span className={`text-[11px] font-medium ${mutedCls}`}>
+              Allocated budget
+            </span>
+
+            {typeof referenceAmount === 'number' && referenceAmount > 0 && (
+              isMatched ? (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    isDark
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  <Check size={10} /> Matched
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setItemAllocation(id, referenceAmount)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition active:scale-95 cursor-pointer ${
+                    isDark
+                      ? 'bg-teal-500/15 text-teal-300 hover:bg-teal-500/25'
+                      : 'bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100'
+                  }`}
+                  title="Match reference value"
+                >
+                  Match {fmt(referenceAmount)}
+                </button>
+              )
+            )}
+          </div>
+
+          {/* Unified Stepper Control (Full-width on mobile, compact on desktop) */}
+          <div
+            className={`flex items-center rounded-xl border p-1 ${
+              isDark
+                ? 'border-white/15 bg-[#1f2430]'
+                : 'border-slate-200 bg-white'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => stepItemAllocation(id, -stepSize)}
+              aria-label={`Decrease ${label}`}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition active:scale-95 cursor-pointer ${
+                isDark
+                  ? 'bg-white/10 text-slate-200 hover:bg-white/20'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              <Minus size={15} />
+            </button>
+
+            <div className="relative flex flex-1 sm:w-28 items-center px-2">
+              <span className={`text-xs font-semibold mr-1 ${mutedCls}`}>Rs</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={val === 0 ? '' : String(val)}
+                placeholder="0"
+                onChange={(e) => setItemAllocation(id, num(e.target.value))}
+                className={`w-full bg-transparent py-1 text-right text-sm font-bold tabular-nums focus:outline-none ${
+                  isDark ? 'text-white placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'
+                }`}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => stepItemAllocation(id, stepSize)}
+              aria-label={`Increase ${label}`}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition active:scale-95 cursor-pointer ${
+                isDark
+                  ? 'bg-white/10 text-slate-200 hover:bg-white/20'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              <Plus size={15} />
+            </button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -911,7 +975,7 @@ export default function BudgetPlanner() {
         isDark ? 'bg-[#181c24] text-white' : 'bg-[#f8fafc] text-slate-900'
       }`}
     >
-      <div className="mx-auto w-full max-w-4xl space-y-5 px-4 pt-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-4xl space-y-4 sm:space-y-5 px-3 pt-4 sm:px-6 sm:pt-6 lg:px-8">
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -1098,29 +1162,29 @@ export default function BudgetPlanner() {
         </section>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className={`${cardCls} text-center !p-3.5`}>
-            <p className={`text-[11px] font-medium ${mutedCls}`}>Allocated</p>
-            <p className="mt-1 text-base sm:text-lg font-bold tabular-nums">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className={`${cardCls} text-center !p-2.5 sm:!p-3.5`}>
+            <p className={`text-[10px] sm:text-[11px] font-medium ${mutedCls}`}>Allocated</p>
+            <p className="mt-1 text-xs sm:text-lg font-bold tabular-nums break-words">
               {fmt(totalAllocated)}
             </p>
           </div>
-          <div className={`${cardCls} text-center !p-3.5`}>
-            <p className={`text-[11px] font-medium ${mutedCls}`}>To Wallets</p>
+          <div className={`${cardCls} text-center !p-2.5 sm:!p-3.5`}>
+            <p className={`text-[10px] sm:text-[11px] font-medium ${mutedCls}`}>To Wallets</p>
             <p
-              className={`mt-1 text-base sm:text-lg font-bold tabular-nums ${
+              className={`mt-1 text-xs sm:text-lg font-bold tabular-nums ${
                 isDark ? 'text-teal-300' : 'text-teal-600'
               }`}
             >
               {budgetTotal > 0 ? `${walletsPct}%` : '-'}
             </p>
           </div>
-          <div className={`${cardCls} text-center !p-3.5`}>
-            <p className={`text-[11px] font-medium ${mutedCls}`}>
+          <div className={`${cardCls} text-center !p-2.5 sm:!p-3.5`}>
+            <p className={`text-[10px] sm:text-[11px] font-medium ${mutedCls}`}>
               {isOverBudget ? 'Over Budget' : 'Unallocated'}
             </p>
             <p
-              className={`mt-1 text-base sm:text-lg font-bold tabular-nums ${
+              className={`mt-1 text-xs sm:text-lg font-bold tabular-nums break-words ${
                 isOverBudget
                   ? isDark
                     ? 'text-rose-400'
@@ -1287,7 +1351,7 @@ export default function BudgetPlanner() {
                           key={exp.id}
                           type="button"
                           onClick={() => toggleExpenseSelection(exp.id)}
-                          className={`flex w-full items-center justify-between gap-2 rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                          className={`flex w-full items-start justify-between gap-2.5 rounded-xl border p-2.5 text-left transition cursor-pointer ${
                             checked
                               ? isDark
                                 ? 'border-teal-500/50 bg-teal-500/10'
@@ -1297,13 +1361,13 @@ export default function BudgetPlanner() {
                               : 'border-slate-200 bg-slate-50'
                           }`}
                         >
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-bold">{exp.title}</p>
-                            <p className={`text-[10px] ${mutedCls}`}>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold leading-snug break-words">{exp.title}</p>
+                            <p className={`mt-0.5 text-[10px] ${mutedCls}`}>
                               {exp.category} · {exp.tag}
                             </p>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-2 shrink-0 pt-0.5">
                             <span className="text-xs font-bold tabular-nums">
                               {fmt(exp.expenseValue)}
                             </span>
@@ -1384,7 +1448,7 @@ export default function BudgetPlanner() {
                         key={w.id}
                         type="button"
                         onClick={() => toggleWalletSelection(w.id)}
-                        className={`flex w-full items-center justify-between gap-2 rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                        className={`flex w-full items-start justify-between gap-2.5 rounded-xl border p-2.5 text-left transition cursor-pointer ${
                           checked
                             ? isDark
                               ? 'border-emerald-500/50 bg-emerald-500/10'
@@ -1394,14 +1458,14 @@ export default function BudgetPlanner() {
                             : 'border-slate-200 bg-slate-50'
                         }`}
                       >
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-bold">{w.name}</p>
-                          <p className={`text-[10px] capitalize ${mutedCls}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold leading-snug break-words">{w.name}</p>
+                          <p className={`mt-0.5 text-[10px] capitalize ${mutedCls}`}>
                             {w.type.replace('_', ' ')} · Bal: {fmt(w.currentBalance)}
                           </p>
                         </div>
                         <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                             checked
                               ? 'border-emerald-500 bg-emerald-500 text-white'
                               : isDark

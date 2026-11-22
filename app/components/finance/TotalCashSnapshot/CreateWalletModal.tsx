@@ -5,6 +5,9 @@ import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import { WalletType, WalletAllocation } from '@/app/lib/interface';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 
+export type WalletOwnershipKind = 'own' | 'amanat';
+export type OwnFundClassification = 'spendable' | 'reserved' | 'long_term_saving';
+
 export interface CreateWalletPayload {
   name: string;
   walletType: WalletType;
@@ -12,6 +15,7 @@ export interface CreateWalletPayload {
   initialOwner: string;
   isLocked: boolean;
   isReserved?: boolean;
+  fundClassification?: OwnFundClassification | 'amanat';
   isVirtual: boolean;
   parentWalletKey?: string;
   purpose?: string;
@@ -142,18 +146,18 @@ const VIRTUAL_PRESETS: {
   subtitle: string;
   icon: IconKey;
   theme: ThemeKey;
-  iOwnIt: boolean;
-  isReserved: boolean;
+  ownershipKind: WalletOwnershipKind;
+  classification: OwnFundClassification;
 }[] = [
   {
     key: 'emergency',
     label: 'Emergency',
     defaultName: 'Emergency Fund',
-    subtitle: 'Protected savings',
+    subtitle: 'Long-term savings',
     icon: 'shield',
     theme: 'indigo',
-    iOwnIt: true,
-    isReserved: true,
+    ownershipKind: 'own',
+    classification: 'long_term_saving',
   },
   {
     key: 'amanat',
@@ -162,28 +166,62 @@ const VIRTUAL_PRESETS: {
     subtitle: 'Money held for others',
     icon: 'lock',
     theme: 'slate',
-    iOwnIt: false,
-    isReserved: true,
+    ownershipKind: 'amanat',
+    classification: 'reserved',
   },
   {
     key: 'qurbani',
     label: 'Qurbani',
     defaultName: 'Qurbani Fund',
-    subtitle: 'Event savings',
+    subtitle: 'Reserved for event',
     icon: 'goat',
     theme: 'emerald',
-    iOwnIt: true,
-    isReserved: true,
+    ownershipKind: 'own',
+    classification: 'reserved',
   },
   {
     key: 'wedding',
     label: 'Wedding',
     defaultName: 'Wedding Savings',
-    subtitle: 'Savings goal',
+    subtitle: 'Long-term savings goal',
     icon: 'heart',
     theme: 'rose',
-    iOwnIt: true,
-    isReserved: true,
+    ownershipKind: 'own',
+    classification: 'long_term_saving',
+  },
+];
+
+const OWN_CLASSIFICATION_OPTIONS: {
+  key: OwnFundClassification;
+  label: string;
+  hint: string;
+  dot: string;
+  darkActive: string;
+  lightActive: string;
+}[] = [
+  {
+    key: 'spendable',
+    label: 'Spendable',
+    hint: 'Available to spend anytime',
+    dot: 'bg-green-500',
+    darkActive: 'border-green-500 bg-green-500/15 text-white',
+    lightActive: 'border-green-500 bg-green-50 text-slate-900',
+  },
+  {
+    key: 'reserved',
+    label: 'Reserved',
+    hint: 'Set aside for near / short-term use',
+    dot: 'bg-blue-500',
+    darkActive: 'border-blue-500 bg-blue-500/15 text-white',
+    lightActive: 'border-blue-500 bg-blue-50 text-slate-900',
+  },
+  {
+    key: 'long_term_saving',
+    label: 'Long-term Saving',
+    hint: 'Protected for long-term savings & goals',
+    dot: 'bg-amber-500',
+    darkActive: 'border-amber-500 bg-amber-500/15 text-white',
+    lightActive: 'border-amber-500 bg-amber-50 text-slate-900',
   },
 ];
 
@@ -207,10 +245,10 @@ export default function CreateWalletModal({
   const [target, setTarget] = useState('');
   const [purpose, setPurpose] = useState('');
 
-  // Ownership & Reserved checkboxes
-  const [iOwnIt, setIOwnIt] = useState(true);
+  // Ownership (mutually exclusive: 'own' vs 'amanat') & Own Fund Classification
+  const [ownershipKind, setOwnershipKind] = useState<WalletOwnershipKind>('own');
+  const [fundClassification, setFundClassification] = useState<OwnFundClassification>('spendable');
   const [otherOwnerName, setOtherOwnerName] = useState('');
-  const [isReserved, setIsReserved] = useState(false);
 
   // Collapsible More options (Icons & Colors)
   const [showMoreOptions, setShowMoreOptions] = useState(false);
@@ -234,7 +272,9 @@ export default function CreateWalletModal({
   const t = THEMES[colorTheme];
   const amountNum = Math.max(0, Number(opening) || 0);
   const targetNum = Math.max(0, Number(target) || 0);
-  const isProtected = !iOwnIt || isReserved;
+  const iOwnIt = ownershipKind === 'own';
+  const isReserved = !iOwnIt || fundClassification !== 'spendable';
+  const isProtected = !iOwnIt || fundClassification !== 'spendable';
   const progress =
     !isProtected && targetNum > 0 ? Math.min(100, Math.round((amountNum / targetNum) * 100)) : 0;
 
@@ -255,9 +295,9 @@ export default function CreateWalletModal({
     setPurpose(preset.subtitle);
     setIcon(preset.icon);
     setColorTheme(preset.theme);
-    setIOwnIt(preset.iOwnIt);
-    setIsReserved(preset.isReserved);
-    if (!preset.iOwnIt) {
+    setOwnershipKind(preset.ownershipKind);
+    setFundClassification(preset.classification);
+    if (preset.ownershipKind === 'amanat') {
       setOtherOwnerName('Amanat');
     } else {
       setOtherOwnerName('');
@@ -274,9 +314,9 @@ export default function CreateWalletModal({
     setOpening('');
     setTarget('');
     setPurpose('');
-    setIOwnIt(true);
+    setOwnershipKind('own');
+    setFundClassification('spendable');
     setOtherOwnerName('');
-    setIsReserved(false);
     setShowMoreOptions(false);
     setIcon('wallet');
     setColorTheme('emerald');
@@ -296,13 +336,24 @@ export default function CreateWalletModal({
     }
 
     const resolvedOwner = iOwnIt ? 'You' : otherOwnerName.trim() || 'Amanat';
+    const isLongTermSaving = iOwnIt && fundClassification === 'long_term_saving';
+    const resolvedPurpose =
+      purpose.trim() ||
+      (!iOwnIt
+        ? 'Amanat · Held for others'
+        : isLongTermSaving
+        ? 'Long-term Savings'
+        : fundClassification === 'reserved'
+        ? 'Reserved for near-term use'
+        : activeTypeObj.subtitle);
+
     const defaultEnvelopeAllocation: WalletAllocation | undefined =
       amountNum > 0
         ? {
             id: `default_${Date.now()}`,
-            owner: isReserved ? 'Reserved' : resolvedOwner,
+            owner: !iOwnIt ? resolvedOwner : isReserved ? 'You' : 'You',
             amount: amountNum,
-            purpose: title,
+            purpose: isLongTermSaving ? `${title} (Long-term Savings)` : title,
             reservedAmount: isReserved ? amountNum : 0,
             isLocked: !iOwnIt,
             availabilityStatus: !iOwnIt ? 'external' : isReserved ? 'reserved' : 'available',
@@ -316,9 +367,10 @@ export default function CreateWalletModal({
       initialOwner: resolvedOwner,
       isLocked: !iOwnIt,
       isReserved,
+      fundClassification: iOwnIt ? fundClassification : 'amanat',
       isVirtual: walletType === 'virtual',
       parentWalletKey: walletType === 'virtual' ? parentWalletKey || undefined : undefined,
-      purpose: purpose.trim() || activeTypeObj.subtitle,
+      purpose: resolvedPurpose,
       color: t.hex,
       icon,
       target: targetNum || null,
@@ -413,7 +465,11 @@ export default function CreateWalletModal({
                 }`}
               >
                 <SvgIcon name="lock" className="h-3.5 w-3.5" />
-                {!iOwnIt ? 'Amanat · Protected balance' : 'Reserved · Not spendable'}
+                {!iOwnIt
+                  ? 'Amanat · Another person’s money'
+                  : fundClassification === 'long_term_saving'
+                  ? 'Long-term Saving · Protected'
+                  : 'Reserved · Near-term use'}
               </p>
             ) : (
               <div
@@ -584,55 +640,143 @@ export default function CreateWalletModal({
           </div>
         </div>
 
-        {/* Ownership & Reserved Checkboxes */}
+        {/* Ownership (I own it vs Amanat — mutually exclusive) & Fund Classification */}
         <div
-          className={`mt-4 space-y-2.5 rounded-2xl border p-3.5 ${
+          className={`mt-4 space-y-3 rounded-2xl border p-3.5 ${
             isDark
               ? 'border-white/10 bg-[#282e3d]/60'
               : 'border-slate-200 bg-slate-50'
           }`}
         >
-          <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <div className="leading-tight">
-              <span className="block text-sm font-semibold">I own it</span>
-              <span className={`block text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Uncheck if this money belongs to someone else (Amanat)
-              </span>
-            </div>
-            <input
-              type="checkbox"
-              checked={iOwnIt}
-              onChange={(e) => setIOwnIt(e.target.checked)}
-              className="h-4 w-4 accent-emerald-500 rounded cursor-pointer"
-            />
-          </label>
+          <div>
+            <span className={labelCls}>Who owns this money?</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setOwnershipKind('own');
+                  setOtherOwnerName('');
+                }}
+                className={`flex items-center gap-2.5 rounded-xl border p-3 text-left transition cursor-pointer ${
+                  iOwnIt
+                    ? isDark
+                      ? 'border-emerald-500 bg-emerald-500/15 text-white ring-1 ring-emerald-500/40'
+                      : 'border-emerald-500 bg-emerald-50 text-slate-900 ring-1 ring-emerald-500/30'
+                    : isDark
+                    ? 'border-white/10 bg-[#1f2430] text-slate-300 hover:border-white/25'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                <span
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+                    iOwnIt ? 'border-emerald-500' : isDark ? 'border-slate-500' : 'border-slate-400'
+                  }`}
+                >
+                  {iOwnIt && <span className="h-2 w-2 rounded-full bg-emerald-500" />}
+                </span>
+                <div className="min-w-0 leading-tight">
+                  <span className="block text-sm font-bold">I own it</span>
+                  <span className={`block text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Your own money
+                  </span>
+                </div>
+              </button>
 
-          {!iOwnIt && (
-            <input
-              type="text"
-              value={otherOwnerName}
-              onChange={(e) => setOtherOwnerName(e.target.value)}
-              placeholder="Owner name (e.g. Amanat, Father, Client)"
-              className={inputCls}
-            />
+              <button
+                type="button"
+                onClick={() => setOwnershipKind('amanat')}
+                className={`flex items-center gap-2.5 rounded-xl border p-3 text-left transition cursor-pointer ${
+                  !iOwnIt
+                    ? isDark
+                      ? 'border-slate-400 bg-slate-500/20 text-white ring-1 ring-slate-400/40'
+                      : 'border-slate-700 bg-slate-200/70 text-slate-900 ring-1 ring-slate-500/30'
+                    : isDark
+                    ? 'border-white/10 bg-[#1f2430] text-slate-300 hover:border-white/25'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                <span
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+                    !iOwnIt
+                      ? isDark
+                        ? 'border-slate-300'
+                        : 'border-slate-700'
+                      : isDark
+                      ? 'border-slate-500'
+                      : 'border-slate-400'
+                  }`}
+                >
+                  {!iOwnIt && (
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        isDark ? 'bg-slate-200' : 'bg-slate-700'
+                      }`}
+                    />
+                  )}
+                </span>
+                <div className="min-w-0 leading-tight">
+                  <span className="block text-sm font-bold">Amanat</span>
+                  <span className={`block text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Someone else&apos;s money
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {iOwnIt ? (
+            <div className="pt-1">
+              <div className={`mb-2.5 h-px w-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`} />
+              <span className={labelCls}>Classify this amount</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {OWN_CLASSIFICATION_OPTIONS.map((opt) => {
+                  const active = fundClassification === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setFundClassification(opt.key)}
+                      className={`flex items-start gap-2 rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                        active
+                          ? isDark
+                            ? opt.darkActive
+                            : opt.lightActive
+                          : isDark
+                          ? 'border-white/10 bg-[#1f2430] text-slate-300 hover:border-white/25'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${opt.dot}`} />
+                      <div className="min-w-0 leading-tight">
+                        <span className="block text-xs font-bold">{opt.label}</span>
+                        <span
+                          className={`mt-0.5 block text-[10px] ${
+                            isDark ? 'text-slate-400' : 'text-slate-500'
+                          }`}
+                        >
+                          {opt.hint}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2 pt-1">
+              <div className={`h-px w-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`} />
+              <p className={`text-[11px] px-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                This wallet will be recorded strictly as <strong>Amanat</strong> (excluded from your spendable balance).
+              </p>
+              <input
+                type="text"
+                value={otherOwnerName}
+                onChange={(e) => setOtherOwnerName(e.target.value)}
+                placeholder="Owner name (optional, e.g. Father, Friend, Client)"
+                className={inputCls}
+              />
+            </div>
           )}
-
-          <div className={`h-px w-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`} />
-
-          <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <div className="leading-tight">
-              <span className="block text-sm font-semibold">Reserved / Not Spendable</span>
-              <span className={`block text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Marks balance as reserved so it is excluded from spendable cash
-              </span>
-            </div>
-            <input
-              type="checkbox"
-              checked={isReserved}
-              onChange={(e) => setIsReserved(e.target.checked)}
-              className="h-4 w-4 accent-amber-500 rounded cursor-pointer"
-            />
-          </label>
         </div>
 
         {/* Collapsible More Options (Icons, Colors, Target) */}

@@ -100,7 +100,7 @@ export default function FinancialOverview({
 
   return (
     <div
-      className={`w-full h-full flex flex-col justify-between rounded-3xl border p-5 sm:p-6 transition-colors ${
+      className={`w-full h-full flex flex-col justify-between rounded-3xl border p-4 sm:p-5 transition-colors ${
         isDark
           ? 'border-white/10 bg-[#1f2430] text-white shadow-xl'
           : 'border-slate-200 bg-white text-slate-900 shadow-sm'

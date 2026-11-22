@@ -1,9 +1,18 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Lock, Plus, Trash2, Unlock, X } from 'lucide-react';
-import type { WalletAllocation as AppWalletAllocation } from '@/app/lib/interface';
+import { ArrowUpRight, Check, Download, Lock, Plus, Trash2, Unlock, X } from 'lucide-react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '@/app/lib/firebase';
+import { useAuth } from '@/app/lib/context/userContext';
+import type {
+  Expenditure,
+  LoanRecord,
+  PlannedExpense,
+  WalletAllocation as AppWalletAllocation,
+} from '@/app/lib/interface';
 import type { WalletItem } from '../TotalCashSnapshot';
 
 const PALETTE = [
@@ -72,6 +81,13 @@ interface EnvelopeItem {
 interface OwnerOption {
   name: string;
   color: string;
+}
+
+interface ImportableExpense {
+  id: string;
+  title: string;
+  category: string;
+  amount: number;
 }
 
 export interface WalletDeleteOptions {
@@ -178,6 +194,7 @@ export default function SmartWalletDetailDialog({
   onUpdateAllocations,
   onDeleteWallet,
 }: SmartWalletDetailDialogProps) {
+  const { user } = useAuth();
   const wallet = useMemo(
     () => wallets.find((w) => w.id === activeWalletId) ?? null,
     [wallets, activeWalletId]
@@ -197,6 +214,57 @@ export default function SmartWalletDetailDialog({
   const [newOwnerName, setNewOwnerName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Import Envelopes from Expenses state
+  const [importingExpenses, setImportingExpenses] = useState(false);
+  const [loadingExpenses, setLoadingExpenses] = useState(false);
+  const [availableExpenses, setAvailableExpenses] = useState<ImportableExpense[]>([]);
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
+  const [importError, setImportError] = useState('');
+
+  // Active Loans linked to this wallet
+  const [walletLoans, setWalletLoans] = useState<LoanRecord[]>([]);
+
+  useEffect(() => {
+    if (!open || !wallet || !user?.uid) {
+      setWalletLoans([]);
+      return;
+    }
+    let cancelled = false;
+    const fetchWalletLoans = async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, 'loans'), where('userId', '==', user.uid))
+        );
+        if (cancelled) return;
+        const matched: LoanRecord[] = [];
+        snap.forEach((d) => {
+          const l = { id: d.id, ...(d.data() as Omit<LoanRecord, 'id'>) };
+          if (l.isSettled) return;
+          const matchesFrom =
+            l.fromSourceKey === wallet.id ||
+            (!l.fromSourceKey && l.fromSource === wallet.id) ||
+            (wallet.bankName && l.fromSourceName === `Bank (${wallet.bankName})`) ||
+            (wallet.customName && l.fromSourceName === `Wallet (${wallet.customName})`);
+          const matchesTo =
+            l.toSourceKey === wallet.id ||
+            (!l.toSourceKey && l.toSource === wallet.id) ||
+            (wallet.bankName && l.toSourceName === `Bank (${wallet.bankName})`) ||
+            (wallet.customName && l.toSourceName === `Wallet (${wallet.customName})`);
+          if (matchesFrom || matchesTo) {
+            matched.push(l);
+          }
+        });
+        setWalletLoans(matched);
+      } catch (err) {
+        console.warn('Failed to fetch wallet loans:', err);
+      }
+    };
+    fetchWalletLoans();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, wallet, user?.uid]);
 
   // Inline quick Add / Spend state
   const [quickAction, setQuickAction] = useState<'add' | 'spend' | null>(null);
@@ -278,6 +346,9 @@ export default function SmartWalletDetailDialog({
     setMode(null);
     setAddingEnv(false);
     setAddingOwner(false);
+    setImportingExpenses(false);
+    setSelectedExpenseIds([]);
+    setImportError('');
     setError('');
     setQuickAction(null);
     setQuickAmount('');
@@ -430,6 +501,112 @@ export default function SmartWalletDetailDialog({
     setNewEnvName('');
     setError('');
     setAddingEnv(false);
+    await persistEnvelopes(next, defaultOwnerName);
+  };
+
+  const handleToggleImportExpenses = async () => {
+    const nextOpen = !importingExpenses;
+    setImportingExpenses(nextOpen);
+    setAddingEnv(false);
+    setImportError('');
+    setSelectedExpenseIds([]);
+
+    if (!nextOpen || !user?.uid) return;
+
+    setLoadingExpenses(true);
+    try {
+      const [snapPlanned, snapExp] = await Promise.all([
+        getDocs(query(collection(db, 'plannedExpenses'), where('userId', '==', user.uid))),
+        getDocs(query(collection(db, 'expenditures'), where('userId', '==', user.uid))),
+      ]);
+
+      const list: ImportableExpense[] = [];
+      snapPlanned.forEach((d) => {
+        const p = d.data() as PlannedExpense;
+        const amt = Math.round(Number(p.expectedAmount) || 0);
+        if (p.title && amt > 0) {
+          list.push({
+            id: `planned_${d.id}`,
+            title: p.title.trim(),
+            category: p.category || 'Expense',
+            amount: amt,
+          });
+        }
+      });
+
+      snapExp.forEach((d) => {
+        const e = d.data() as Expenditure;
+        const amt = Math.round(Number(e.amount) || 0);
+        if (e.title && amt > 0) {
+          list.push({
+            id: `exp_${d.id}`,
+            title: e.title.trim(),
+            category: e.category || 'Expense',
+            amount: amt,
+          });
+        }
+      });
+
+      list.sort((a, b) => b.amount - a.amount);
+      setAvailableExpenses(list);
+    } catch (err) {
+      console.error('Failed to load expenses for envelope import:', err);
+      setImportError('Could not load expenses. Please try again.');
+    } finally {
+      setLoadingExpenses(false);
+    }
+  };
+
+  const toggleSelectExpense = (expId: string) => {
+    setImportError('');
+    setSelectedExpenseIds((prev) =>
+      prev.includes(expId) ? prev.filter((id) => id !== expId) : [...prev, expId]
+    );
+  };
+
+  const selectedImportExpenses = availableExpenses.filter((exp) =>
+    selectedExpenseIds.includes(exp.id)
+  );
+  const selectedImportTotal = selectedImportExpenses.reduce((s, exp) => s + exp.amount, 0);
+  const importExceedsBalance = selectedImportTotal > defaultBalance;
+
+  const handleConfirmImportEnvelopes = async () => {
+    if (selectedImportExpenses.length === 0 || saving) return;
+    if (importExceedsBalance) {
+      setImportError(
+        `Selected total (${formatRs(selectedImportTotal)}) exceeds available balance in ${wallet.name} (${formatRs(defaultBalance)}).`
+      );
+      return;
+    }
+
+    const baseTime = Date.now();
+    const newEnvs: EnvelopeItem[] = [];
+    selectedImportExpenses.forEach((exp, idx) => {
+      const exists =
+        items.some((e) => e.name.toLowerCase() === exp.title.toLowerCase()) ||
+        newEnvs.some((e) => e.name.toLowerCase() === exp.title.toLowerCase());
+      if (exists) return;
+
+      const color = PALETTE[(envelopes.length + newEnvs.length) % PALETTE.length];
+      newEnvs.push({
+        id: `env_${baseTime}_${idx}`,
+        name: exp.title,
+        balance: exp.amount,
+        ownerName: null, // Reserved for this expense
+        color,
+      });
+    });
+
+    if (newEnvs.length === 0) {
+      setImportError('All selected expenses already exist as envelopes in this wallet.');
+      return;
+    }
+
+    const next = [...envelopes, ...newEnvs];
+    setEnvelopes(next);
+    setSelectedExpenseIds([]);
+    setImportingExpenses(false);
+    setImportError('');
     await persistEnvelopes(next, defaultOwnerName);
   };
 
@@ -916,6 +1093,71 @@ export default function SmartWalletDetailDialog({
 
         <div className={`my-5 h-px w-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`} />
 
+        {/* Active Loans Linked to This Wallet */}
+        {walletLoans.length > 0 && (
+          <div
+            className={`mb-4 rounded-2xl border p-3.5 ${
+              isDark
+                ? 'border-amber-500/25 bg-amber-500/10'
+                : 'border-amber-200 bg-amber-50/80'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className={`text-xs font-bold uppercase tracking-wide ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>
+                Active Loans ({walletLoans.length})
+              </p>
+              <Link
+                href="/finance/loans"
+                onClick={onClose}
+                className={`inline-flex items-center gap-0.5 text-[11px] font-bold hover:underline ${
+                  isDark ? 'text-amber-300' : 'text-amber-700'
+                }`}
+              >
+                <span>Settle on Loans</span>
+                <ArrowUpRight size={12} />
+              </Link>
+            </div>
+            <ul className="space-y-1.5">
+              {walletLoans.map((l) => {
+                const rem = Math.max(0, (l.amount || 0) - (l.paidAmount || 0));
+                const isOutFromHere =
+                  l.fromSourceKey === wallet.id ||
+                  (!l.fromSourceKey && l.fromSource === wallet.id) ||
+                  (wallet.bankName && l.fromSourceName === `Bank (${wallet.bankName})`) ||
+                  (wallet.customName && l.fromSourceName === `Wallet (${wallet.customName})`);
+                return (
+                  <li
+                    key={l.id}
+                    className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs ${
+                      isDark ? 'bg-[#1f2430]/80 text-slate-200' : 'bg-white text-slate-800 border border-amber-200/70'
+                    }`}
+                  >
+                    <div className="min-w-0 leading-tight">
+                      <p className="truncate font-semibold">
+                        {isOutFromHere
+                          ? `Transferred out as loan → ${l.toSourceName || l.counterparty}`
+                          : `Received as loan ← ${l.fromSourceName || l.counterparty}`}
+                      </p>
+                      <p className={`mt-0.5 truncate text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {isOutFromHere
+                          ? l.fromEnvelopeName
+                            ? `From envelope: ${l.fromEnvelopeName}${l.fromEnvelopeOwner ? ` (${l.fromEnvelopeOwner})` : ''}`
+                            : 'Will return to this wallet on settlement'
+                          : l.toEnvelopeName
+                          ? `Into envelope: ${l.toEnvelopeName}`
+                          : 'Active loan balance'}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 font-bold tabular-nums ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
+                      {formatRs(rem)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         {/* Envelopes Header */}
         <div className={`rounded-2xl p-3.5 ${isDark ? 'bg-[#282e3d]' : 'bg-slate-100'}`}>
           <div className="flex items-center justify-between gap-3">
@@ -936,19 +1178,200 @@ export default function SmartWalletDetailDialog({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setAddingEnv((a) => !a);
-                setError('');
-              }}
-              className={`shrink-0 rounded-full px-4 py-2 text-xs sm:text-sm font-semibold transition active:scale-95 cursor-pointer ${
-                isDark ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'
-              }`}
-            >
-              {addingEnv ? 'Close' : '+ Envelope'}
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleToggleImportExpenses}
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                  importingExpenses
+                    ? 'bg-teal-500 text-black'
+                    : isDark
+                    ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <Download size={13} />
+                <span>{importingExpenses ? 'Close' : 'Import'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddingEnv((a) => !a);
+                  setImportingExpenses(false);
+                  setError('');
+                }}
+                className={`shrink-0 rounded-full px-3.5 py-2 text-xs sm:text-sm font-semibold transition active:scale-95 cursor-pointer ${
+                  isDark ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'
+                }`}
+              >
+                {addingEnv ? 'Close' : '+ Envelope'}
+              </button>
+            </div>
           </div>
+
+          {/* Import Expenses as Envelopes Panel */}
+          <AnimatePresence initial={false}>
+            {importingExpenses && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div
+                  className={`mt-3 rounded-2xl border p-3 space-y-2.5 ${
+                    isDark
+                      ? 'border-white/10 bg-[#1f2430]'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold">
+                      Import expenses as envelopes
+                    </p>
+                    <span className={`text-[11px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Available: {formatRs(defaultBalance)}
+                    </span>
+                  </div>
+
+                  {loadingExpenses ? (
+                    <p className={`py-4 text-center text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Loading your expenses…
+                    </p>
+                  ) : availableExpenses.length === 0 ? (
+                    <p className={`py-4 text-center text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      No expenses found to import. Add expenses first from the Expenses page.
+                    </p>
+                  ) : (
+                    <>
+                      <ul className="max-h-52 space-y-1.5 overflow-y-auto pr-0.5">
+                        {availableExpenses.map((exp) => {
+                          const alreadyExists = items.some(
+                            (e) => e.name.toLowerCase() === exp.title.toLowerCase()
+                          );
+                          const isChecked = selectedExpenseIds.includes(exp.id);
+                          return (
+                            <li key={exp.id}>
+                              <button
+                                type="button"
+                                disabled={alreadyExists}
+                                onClick={() => toggleSelectExpense(exp.id)}
+                                className={`flex w-full items-center justify-between gap-2.5 rounded-xl border px-3 py-2 text-left transition ${
+                                  alreadyExists
+                                    ? 'opacity-45 cursor-not-allowed border-transparent bg-slate-500/10'
+                                    : isChecked
+                                    ? isDark
+                                      ? 'border-teal-500 bg-teal-500/15 cursor-pointer'
+                                      : 'border-teal-500 bg-teal-50 cursor-pointer'
+                                    : isDark
+                                    ? 'border-white/10 bg-[#282e3d]/70 hover:border-white/25 cursor-pointer'
+                                    : 'border-slate-200 bg-slate-50 hover:border-slate-300 cursor-pointer'
+                                }`}
+                              >
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                  <span
+                                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                      isChecked
+                                        ? 'border-teal-500 bg-teal-500 text-black'
+                                        : isDark
+                                        ? 'border-slate-500'
+                                        : 'border-slate-400'
+                                    }`}
+                                  >
+                                    {isChecked && <Check size={11} strokeWidth={3} />}
+                                  </span>
+                                  <div className="min-w-0 leading-tight">
+                                    <p className="truncate text-xs font-semibold">
+                                      {exp.title}
+                                      {alreadyExists && (
+                                        <span className="ml-1.5 text-[10px] text-slate-400">
+                                          (Exists)
+                                        </span>
+                                      )}
+                                    </p>
+                                    <p className={`truncate text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                      {exp.category}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="shrink-0 text-xs font-bold tabular-nums">
+                                  {formatRs(exp.amount)}
+                                </span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
+                      {selectedImportExpenses.length > 0 && (
+                        <div
+                          className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs ${
+                            importExceedsBalance
+                              ? isDark
+                                ? 'bg-rose-500/15 text-rose-300'
+                                : 'bg-rose-50 text-rose-700'
+                              : isDark
+                              ? 'bg-teal-500/10 text-teal-300'
+                              : 'bg-teal-50 text-teal-800'
+                          }`}
+                        >
+                          <span className="font-semibold">
+                            {selectedImportExpenses.length} selected
+                          </span>
+                          <span className="font-bold tabular-nums">
+                            Total: {formatRs(selectedImportTotal)}
+                          </span>
+                        </div>
+                      )}
+
+                      {importExceedsBalance && (
+                        <p className="text-[11px] font-medium text-rose-400 px-1">
+                          Selected total exceeds available balance ({formatRs(defaultBalance)}) in {wallet.name}.
+                        </p>
+                      )}
+
+                      {importError && (
+                        <p className="text-[11px] font-medium text-rose-400 px-1">
+                          {importError}
+                        </p>
+                      )}
+
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImportingExpenses(false);
+                            setSelectedExpenseIds([]);
+                            setImportError('');
+                          }}
+                          className={`flex-1 ${ghostBtn}`}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            saving ||
+                            selectedImportExpenses.length === 0 ||
+                            importExceedsBalance
+                          }
+                          onClick={handleConfirmImportEnvelopes}
+                          className="flex-[1.5] rounded-xl bg-teal-500 hover:bg-teal-400 py-2.5 text-xs sm:text-sm font-bold text-black transition active:scale-95 disabled:opacity-40 cursor-pointer"
+                        >
+                          {saving
+                            ? 'Importing…'
+                            : `Create ${selectedImportExpenses.length || ''} Envelope${
+                                selectedImportExpenses.length === 1 ? '' : 's'
+                              }`}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <AnimatePresence initial={false}>
             {addingEnv && (

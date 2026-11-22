@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import type {
   TransactionSource,
   Bank,
@@ -57,6 +58,8 @@ interface Props {
       eventType?: FinancialEventType;
       expenseCategory?: string;
       subCategory?: string;
+      envelopeId?: string;
+      envelopeName?: string;
     }
   ) => Promise<void>;
   saving: boolean;
@@ -65,6 +68,7 @@ interface Props {
   onExternalClose?: () => void;
   defaultMode?: 'add' | 'deduct';
   preselectedWalletId?: string;
+  onOpenCreateWallet?: () => void;
 }
 
 const MODES = {
@@ -119,6 +123,7 @@ export default function AddMoney({
   onExternalClose,
   defaultMode = 'add',
   preselectedWalletId,
+  onOpenCreateWallet,
 }: Props) {
   const { user } = useAuth();
   const { goals, updateLinkedItemStatusInGoal } = useGoals();
@@ -156,6 +161,9 @@ export default function AddMoney({
   // Custom payment head state
   const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
   const [selectedCustomHead, setSelectedCustomHead] = useState<string>('');
+
+  // Selected envelope (when spending from a wallet that has multiple envelopes)
+  const [selectedEnvelopeId, setSelectedEnvelopeId] = useState<string>('');
 
   useEffect(() => {
     if (!user || !showModal) return;
@@ -285,11 +293,65 @@ export default function AddMoney({
 
   const fromBalance = getSourceBalance(source, selectedBank, selectedCustomHead);
 
+  const activeSourceKey = useMemo(() => {
+    if (source === 'bank' && !fromBankName) return '';
+    if (source === 'custom' && !fromCustomName) return '';
+    return getSourceKey(source, fromBankName, fromCustomName);
+  }, [source, fromBankName, fromCustomName]);
+
+  const walletEnvelopes = useMemo(() => {
+    if (!activeSourceKey || !snapshot?.sourceOwnership) return [];
+    const ownership = snapshot.sourceOwnership[activeSourceKey];
+    const allocs = ownership?.allocations;
+    if (!allocs || allocs.length <= 1) return [];
+
+    const allocatedSum = allocs.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const unallocatedDiff = Math.max(0, fromBalance - allocatedSum);
+
+    return allocs.map((a, idx) => {
+      const isDefault = a.id.startsWith('default_') || idx === 0;
+      const baseAmt = Number(a.amount) || 0;
+      const effectiveAmt = isDefault ? baseAmt + unallocatedDiff : baseAmt;
+      const isReserved =
+        a.availabilityStatus === 'reserved' ||
+        a.owner.toLowerCase() === 'reserved' ||
+        (a.reservedAmount !== undefined && a.reservedAmount >= baseAmt && baseAmt > 0);
+      return {
+        id: a.id,
+        name: a.purpose || (isDefault ? 'Main Envelope' : `Envelope ${idx + 1}`),
+        owner: isReserved ? 'Reserved' : a.owner || 'You',
+        isReserved,
+        isLocked: Boolean(a.isLocked),
+        amount: effectiveAmt,
+      };
+    });
+  }, [activeSourceKey, snapshot, fromBalance]);
+
+  // Auto-select an envelope whenever switching wallets or entering deduct mode
+  useEffect(() => {
+    if (mode !== 'deduct' || walletEnvelopes.length <= 1) {
+      setSelectedEnvelopeId('');
+      return;
+    }
+    const stillValid = walletEnvelopes.some((e) => e.id === selectedEnvelopeId);
+    if (!stillValid) {
+      const preferred =
+        walletEnvelopes.find((e) => !e.isLocked && !e.isReserved && e.amount > 0) ||
+        walletEnvelopes.find((e) => !e.isLocked && e.amount > 0) ||
+        walletEnvelopes[0];
+      setSelectedEnvelopeId(preferred?.id || '');
+    }
+  }, [mode, walletEnvelopes, selectedEnvelopeId]);
+
+  const selectedEnvelope = useMemo(
+    () => walletEnvelopes.find((e) => e.id === selectedEnvelopeId) ?? null,
+    [walletEnvelopes, selectedEnvelopeId]
+  );
+
   const isFromLocked = useMemo(() => {
-    if (!snapshot?.sourceOwnership) return false;
-    const key = getSourceKey(source, fromBankName, fromCustomName);
-    return snapshot.sourceOwnership[key]?.isLocked ?? false;
-  }, [snapshot, source, fromBankName, fromCustomName]);
+    if (!activeSourceKey || !snapshot?.sourceOwnership) return false;
+    return snapshot.sourceOwnership[activeSourceKey]?.isLocked ?? false;
+  }, [snapshot, activeSourceKey]);
 
   const value = Number(amount) || 0;
   const isSourceReady =
@@ -297,8 +359,18 @@ export default function AddMoney({
     (source === 'bank' && !!selectedBank) ||
     (source === 'custom' && !!selectedCustomHead);
 
-  const overdraw = mode === 'deduct' && value > fromBalance;
-  const valid = value > 0 && isSourceReady && !isFromLocked && !overdraw;
+  const hasEnvelopesToChoose = mode === 'deduct' && walletEnvelopes.length > 1;
+  const isEnvelopeReady = !hasEnvelopesToChoose || Boolean(selectedEnvelope);
+  const isSelectedEnvelopeLocked = Boolean(selectedEnvelope?.isLocked);
+  const effectiveSpendBalance = selectedEnvelope ? selectedEnvelope.amount : fromBalance;
+  const overdraw = mode === 'deduct' && value > effectiveSpendBalance;
+  const valid =
+    value > 0 &&
+    isSourceReady &&
+    isEnvelopeReady &&
+    !isFromLocked &&
+    !isSelectedEnvelopeLocked &&
+    !overdraw;
 
   const handleClose = () => {
     setShowModal(false);
@@ -381,6 +453,8 @@ export default function AddMoney({
           eventType: 'expense',
           expenseCategory,
           subCategory: subCategory.trim() || undefined,
+          envelopeId: selectedEnvelope?.id,
+          envelopeName: selectedEnvelope?.name,
         }
       );
     }
@@ -391,6 +465,7 @@ export default function AddMoney({
     setSource('in_hand');
     setSelectedBank('');
     setSelectedCustomHead('');
+    setSelectedEnvelopeId('');
     setSelectedHolder('Unassigned');
     setNewHolderName('');
     setNote('');
@@ -479,12 +554,21 @@ export default function AddMoney({
             </div>
             {overdraw && (
               <p className="mt-2 text-xs font-semibold text-rose-400">
-                ⚠️ Selected wallet only has {formatCurrency(fromBalance, 'PKR')}.
+                ⚠️{' '}
+                {selectedEnvelope
+                  ? `Selected envelope "${selectedEnvelope.name}" only has ${formatCurrency(
+                      selectedEnvelope.amount,
+                      'PKR'
+                    )}.`
+                  : `Selected wallet only has ${formatCurrency(fromBalance, 'PKR')}.`}
               </p>
             )}
-            {isFromLocked && (
+            {(isFromLocked || isSelectedEnvelopeLocked) && (
               <p className="mt-2 text-xs font-semibold text-rose-400">
-                🔒 This wallet is security-locked. Unlock it from Wallet Settings before spending.
+                🔒{' '}
+                {isSelectedEnvelopeLocked
+                  ? 'Selected envelope is locked. Choose another envelope or unlock it first.'
+                  : 'This wallet is security-locked. Unlock it from Wallet Settings before spending.'}
               </p>
             )}
           </div>
@@ -600,12 +684,54 @@ export default function AddMoney({
             {/* Custom Sub-selector (small cards in 2 lines when <= 4 wallets, dropdown when > 4) */}
             {source === 'custom' && (
               <div className="mt-2.5 space-y-2 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
-                <label className="block text-[11px] font-bold uppercase text-slate-400">
-                  Select Custom Wallet
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block text-[11px] font-bold uppercase text-slate-400">
+                    Select Custom Wallet
+                  </label>
+                  {onOpenCreateWallet ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleClose();
+                        onOpenCreateWallet();
+                      }}
+                      className="text-xs font-semibold text-blue-400 hover:text-blue-300 hover:underline transition cursor-pointer"
+                    >
+                      + Create New Wallet
+                    </button>
+                  ) : (
+                    <Link
+                      href="/finance/wallets"
+                      onClick={handleClose}
+                      className="text-xs font-semibold text-blue-400 hover:text-blue-300 hover:underline transition"
+                    >
+                      + Create New Wallet
+                    </Link>
+                  )}
+                </div>
                 {allCustomHeads.length === 0 ? (
                   <p className="text-xs text-slate-400 py-1">
-                    No custom wallets found. Create one in Wallets first.
+                    No custom wallets yet.{' '}
+                    {onOpenCreateWallet ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleClose();
+                          onOpenCreateWallet();
+                        }}
+                        className="font-semibold text-blue-400 hover:underline cursor-pointer"
+                      >
+                        Create a wallet →
+                      </button>
+                    ) : (
+                      <Link
+                        href="/finance/wallets"
+                        onClick={handleClose}
+                        className="font-semibold text-blue-400 hover:underline"
+                      >
+                        Create a wallet →
+                      </Link>
+                    )}
                   </p>
                 ) : allCustomHeads.length <= 4 ? (
                   <div className="grid grid-cols-2 gap-2">
@@ -652,6 +778,58 @@ export default function AddMoney({
                     ))}
                   </select>
                 )}
+              </div>
+            )}
+
+            {/* Envelope Selector (in Spend mode when selected wallet has 2+ envelopes) */}
+            {hasEnvelopesToChoose && (
+              <div className="mt-2.5 space-y-2 rounded-2xl border border-rose-500/25 bg-slate-900/70 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block text-[11px] font-bold uppercase text-slate-300">
+                    Select Envelope
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    {walletEnvelopes.length} envelopes in this wallet
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {walletEnvelopes.map((env) => {
+                    const isSelected = selectedEnvelopeId === env.id;
+                    return (
+                      <button
+                        key={env.id}
+                        type="button"
+                        disabled={env.isLocked}
+                        onClick={() => setSelectedEnvelopeId(env.id)}
+                        className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition ${
+                          env.isLocked
+                            ? 'opacity-45 cursor-not-allowed border-white/10 bg-slate-950/60'
+                            : isSelected
+                            ? 'border-rose-500 bg-rose-500/15 ring-1 ring-rose-500/50 text-white cursor-pointer'
+                            : 'border-white/10 bg-slate-950/80 hover:border-white/25 text-slate-200 cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1.5 w-full">
+                          <span className="truncate text-xs font-bold text-white">
+                            ✉️ {env.name}
+                          </span>
+                          <span
+                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                              env.isReserved
+                                ? 'bg-amber-500/15 text-amber-300'
+                                : 'bg-emerald-500/15 text-emerald-300'
+                            }`}
+                          >
+                            {env.owner}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-semibold tabular-nums text-slate-300">
+                          {formatCurrency(env.amount, 'PKR')}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

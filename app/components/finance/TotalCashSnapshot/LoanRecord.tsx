@@ -56,7 +56,11 @@ import WarningIcon from '@mui/icons-material/WarningAmber';
 import Link from 'next/link';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import { formatCurrency } from '@/app/lib/utilts';
-import { getSourceKey } from '../TotalCashSnapshot';
+import {
+  applyWalletAllocationDelta,
+  computeTotalAmount,
+  getSourceKey,
+} from '../TotalCashSnapshot';
 
 interface Props {
   onAddMoney?: (
@@ -98,6 +102,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
   const [fromType, setFromType] = useState<'outside' | TransactionSource>('outside');
   const [fromBankId, setFromBankId] = useState('');
   const [fromCustomId, setFromCustomId] = useState('');
+  const [fromEnvelopeId, setFromEnvelopeId] = useState('');
   const [fromHolder, setFromHolder] = useState('Unassigned');
   const [newFromHolderName, setNewFromHolderName] = useState('');
   const [lenderName, setLenderName] = useState('');
@@ -106,6 +111,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
   const [toType, setToType] = useState<'outside' | 'immediate_expended' | TransactionSource>('in_hand');
   const [toBankId, setToBankId] = useState('');
   const [toCustomId, setToCustomId] = useState('');
+  const [toEnvelopeId, setToEnvelopeId] = useState('');
   const [toHolder, setToHolder] = useState('Unassigned');
   const [newToHolderName, setNewToHolderName] = useState('');
   const [borrowerName, setBorrowerName] = useState('');
@@ -141,10 +147,12 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
     setBorrowerName('');
     setFromBankId('');
     setFromCustomId('');
+    setFromEnvelopeId('');
     setFromHolder('Unassigned');
     setNewFromHolderName('');
     setToBankId('');
     setToCustomId('');
+    setToEnvelopeId('');
     setToHolder('Unassigned');
     setNewToHolderName('');
   };
@@ -280,30 +288,44 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
 
       const counterparty = loanType === 'borrow' ? lenderDispName : borrowerDispName;
 
-      const record: Omit<LoanRecord, 'id' | 'createdAt'> & {
-        fromSource: string; fromSourceName: string;
-        fromSourceBankId?: string | null; fromSourceCustomId?: string | null; fromSourceHolder?: string | null;
-        toSource: string; toSourceName: string;
-        toSourceBankId?: string | null; toSourceCustomId?: string | null; toSourceHolder?: string | null;
-      } = {
+      const fromKeyResolved =
+        fromType !== 'outside'
+          ? getSourceKey(fromType, fromBank?.name, fromCustom?.name)
+          : null;
+      const toKeyResolved =
+        toType !== 'outside' && toType !== 'immediate_expended'
+          ? getSourceKey(toType, toBank?.name, toCustom?.name)
+          : null;
+
+      const selectedFromEnv = fromEnvelopes.find((e) => e.id === fromEnvelopeId) || null;
+      const selectedToEnv = toEnvelopes.find((e) => e.id === toEnvelopeId) || null;
+
+      const record: Omit<LoanRecord, 'id' | 'createdAt'> = {
         userId: user.uid,
         amount: Number(amount),
         type: loanType,
         counterparty,
-        // Fix: use null instead of undefined to avoid Firestore error
         dueDate: dueDate ? Timestamp.fromDate(new Date(dueDate)) : null,
         note: note.trim(),
         isSettled: false,
         fromSource: fromType,
         fromSourceName: lenderDispName,
+        fromSourceKey: fromKeyResolved,
         fromSourceBankId: fromType === 'bank' ? fromBankId : null,
         fromSourceCustomId: fromType === 'custom' ? fromCustomId : null,
         fromSourceHolder: fromHolderToSave || null,
+        fromEnvelopeId: selectedFromEnv?.id || null,
+        fromEnvelopeName: selectedFromEnv?.name || null,
+        fromEnvelopeOwner: selectedFromEnv?.owner || (fromKeyResolved ? 'You' : null),
         toSource: toType,
         toSourceName: borrowerDispName,
+        toSourceKey: toKeyResolved,
         toSourceBankId: toType === 'bank' ? toBankId : null,
         toSourceCustomId: toType === 'custom' ? toCustomId : null,
         toSourceHolder: toHolderToSave || null,
+        toEnvelopeId: selectedToEnv?.id || null,
+        toEnvelopeName: selectedToEnv?.name || null,
+        toEnvelopeOwner: selectedToEnv?.owner || (toKeyResolved ? 'You' : null),
       };
 
       // fetch snapshot
@@ -314,7 +336,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
         : {
             userId: user.uid,
             sources: { in_hand: 0, bank: {}, easypaisa: 0, jazzcash: 0, other: 0, custom: {} },
-            heldBy: {}, totalAmount: 0, freezeAmount: 0,
+            heldBy: {}, sourceOwnership: {}, totalAmount: 0, freezeAmount: 0,
             createdAt: new Date(), updatedAt: new Date(),
           };
 
@@ -323,13 +345,19 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
       if (!dbSnapshot.sources.custom) dbSnapshot.sources.custom = {};
       if (!dbSnapshot.heldBy) dbSnapshot.heldBy = {};
 
-      const updatedSources = { ...dbSnapshot.sources };
+      const updatedSources: TotalCashSnapshot['sources'] = {
+        in_hand: dbSnapshot.sources.in_hand ?? 0,
+        easypaisa: dbSnapshot.sources.easypaisa ?? 0,
+        jazzcash: dbSnapshot.sources.jazzcash ?? 0,
+        other: dbSnapshot.sources.other ?? 0,
+        bank: { ...(dbSnapshot.sources.bank || {}) },
+        custom: { ...(dbSnapshot.sources.custom || {}) },
+      };
       const updatedHeldBy = { ...dbSnapshot.heldBy };
-      let newTotal = dbSnapshot.totalAmount;
+      let updatedSourceOwnership = { ...(dbSnapshot.sourceOwnership || {}) };
 
       // 1. Check balance & Deduct from source if existing source
-      if (fromType !== 'outside') {
-        const fromKey = getSourceKey(fromType, fromBank?.name, fromCustom?.name);
+      if (fromType !== 'outside' && fromKeyResolved) {
         const fromAvailableAmt =
           fromType === 'bank' && fromBank?.name
             ? (updatedSources.bank[fromBank.name] ?? 0)
@@ -337,7 +365,14 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
               ? (updatedSources.custom[fromCustom.name] ?? 0)
               : ((updatedSources[fromType] as number) ?? 0);
 
-        const fromHolders = updatedHeldBy[fromKey] || [];
+        if (selectedFromEnv && Number(amount) > selectedFromEnv.amount) {
+          setInsufficientFunds(true);
+          throw new Error(
+            `Insufficient balance in envelope "${selectedFromEnv.name}" (Available: ${formatCurrency(selectedFromEnv.amount, 'PKR')})`
+          );
+        }
+
+        const fromHolders = updatedHeldBy[fromKeyResolved] || [];
         if (fromHolders.length > 0) {
           const holdersSum = fromHolders.reduce((s, h) => s + h.amount, 0);
           const unassignedAmt = fromAvailableAmt - holdersSum;
@@ -360,30 +395,37 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
           }
         }
 
-        // Perform deduction
+        // Perform deduction on wallet balance
         if (fromType === 'bank' && fromBank?.name) {
-          updatedSources.bank[fromBank.name] -= amount;
+          updatedSources.bank[fromBank.name] = Math.max(0, (updatedSources.bank[fromBank.name] ?? 0) - amount);
         } else if (fromType === 'custom' && fromCustom?.name) {
-          updatedSources.custom[fromCustom.name] -= amount;
+          updatedSources.custom[fromCustom.name] = Math.max(0, (updatedSources.custom[fromCustom.name] ?? 0) - amount);
         } else {
-          (updatedSources[fromType] as number) -= amount;
+          (updatedSources[fromType] as number) = Math.max(0, ((updatedSources[fromType] as number) ?? 0) - amount);
         }
-        newTotal -= amount;
+
+        // Sync sourceOwnership envelope allocations in parallel
+        updatedSourceOwnership = applyWalletAllocationDelta(
+          updatedSourceOwnership,
+          fromKeyResolved,
+          -Number(amount),
+          selectedFromEnv?.id,
+          selectedFromEnv?.name
+        );
 
         if (fromHolderToSave) {
           const holders = [...fromHolders];
           const idx = holders.findIndex((h) => h.holderName === fromHolderToSave);
           if (idx > -1) {
             holders[idx] = { ...holders[idx], amount: Math.max(0, holders[idx].amount - amount) };
-            updatedHeldBy[fromKey] = holders;
+            updatedHeldBy[fromKeyResolved] = holders;
           }
         }
       }
 
       // 2. Add to destination if existing source
-      if (toType !== 'outside' && toType !== 'immediate_expended') {
-        const toKey = getSourceKey(toType, toBank?.name, toCustom?.name);
-        const toHolders = updatedHeldBy[toKey] || [];
+      if (toType !== 'outside' && toType !== 'immediate_expended' && toKeyResolved) {
+        const toHolders = updatedHeldBy[toKeyResolved] || [];
 
         if (toType === 'bank' && toBank?.name) {
           updatedSources.bank[toBank.name] = (updatedSources.bank[toBank.name] ?? 0) + amount;
@@ -392,7 +434,15 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
         } else {
           (updatedSources[toType] as number) = ((updatedSources[toType] as number) ?? 0) + amount;
         }
-        newTotal += amount;
+
+        // Sync destination envelope allocations in parallel
+        updatedSourceOwnership = applyWalletAllocationDelta(
+          updatedSourceOwnership,
+          toKeyResolved,
+          Number(amount),
+          selectedToEnv?.id,
+          selectedToEnv?.name
+        );
 
         if (toHolderToSave) {
           const holders = [...toHolders];
@@ -402,9 +452,16 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
           } else {
             holders.push({ holderName: toHolderToSave, amount });
           }
-          updatedHeldBy[toKey] = holders;
+          updatedHeldBy[toKeyResolved] = holders;
         }
       }
+
+      // Always recompute totalAmount directly from wallets (internal transfers stay net-0!)
+      const newTotal = computeTotalAmount({
+        ...dbSnapshot,
+        sources: updatedSources,
+        sourceOwnership: updatedSourceOwnership,
+      });
 
       // create loan doc
       const loanRef = await addDoc(collection(db, 'loans'), {
@@ -448,10 +505,13 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
         });
       }
 
-      // update snapshot
+      // update snapshot (including synced sourceOwnership allocations)
       await updateDoc(snapshotRef, {
-        sources: updatedSources, heldBy: updatedHeldBy,
-        totalAmount: newTotal, updatedAt: serverTimestamp(),
+        sources: updatedSources,
+        heldBy: updatedHeldBy,
+        sourceOwnership: updatedSourceOwnership,
+        totalAmount: newTotal,
+        updatedAt: serverTimestamp(),
       });
 
       // reset
@@ -459,6 +519,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
       setLenderName(''); setBorrowerName('');
       setFromType('outside'); setToType('in_hand');
       setFromBankId(''); setFromCustomId(''); setToBankId(''); setToCustomId('');
+      setFromEnvelopeId(''); setToEnvelopeId('');
       setFromHolder('Unassigned'); setNewFromHolderName('');
       setToHolder('Unassigned'); setNewToHolderName('');
       setLoanType(null); setFromCategory('outside'); setToCategory('my_account');
@@ -466,7 +527,7 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
       onExternalClose?.();
       if (onSuccess) onSuccess();
     } catch (err) {
-      setError(err.message || 'Something went wrong');
+      setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setLocalSaving(false);
     }
@@ -501,12 +562,38 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
   const isFromLocked = fromType !== 'outside' && snapshot.sourceOwnership?.[fromSourceKey]?.isLocked;
   const fromExistingHolders = fromType !== 'outside' ? (snapshot.heldBy?.[fromSourceKey] || []) : [];
 
+  const fromEnvelopes = (() => {
+    if (!fromSourceKey) return [];
+    const allocs = snapshot.sourceOwnership?.[fromSourceKey]?.allocations;
+    if (!allocs || allocs.length === 0) return [];
+    const sum = allocs.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const diff = Math.max(0, fromAvailable - sum);
+    return allocs.map((a, idx) => ({
+      id: a.id,
+      name: a.purpose || (idx === 0 ? 'Main Envelope' : `Envelope ${idx + 1}`),
+      owner: a.availabilityStatus === 'reserved' ? 'Reserved' : a.owner || 'You',
+      amount: idx === 0 ? (Number(a.amount) || 0) + diff : Number(a.amount) || 0,
+    }));
+  })();
+
   const toBankName = banks.find((b) => b.id === toBankId)?.name;
   const toCustomName = customPaymentHeads.find((c) => c.id === toCustomId)?.name;
   const toSourceKey = (toType !== 'outside' && toType !== 'immediate_expended')
     ? getSourceKey(toType as import('@/app/lib/interface').TransactionSource, toBankName, toCustomName)
     : '';
   const toExistingHolders = (toType !== 'outside' && toType !== 'immediate_expended') ? (snapshot.heldBy?.[toSourceKey] || []) : [];
+
+  const toEnvelopes = (() => {
+    if (!toSourceKey) return [];
+    const allocs = snapshot.sourceOwnership?.[toSourceKey]?.allocations;
+    if (!allocs || allocs.length === 0) return [];
+    return allocs.map((a, idx) => ({
+      id: a.id,
+      name: a.purpose || (idx === 0 ? 'Main Envelope' : `Envelope ${idx + 1}`),
+      owner: a.availabilityStatus === 'reserved' ? 'Reserved' : a.owner || 'You',
+      amount: Number(a.amount) || 0,
+    }));
+  })();
 
   const handleClose = () => {
     if (localSaving) return;
@@ -768,8 +855,25 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                           <FormControl fullWidth size="small">
                             <InputLabel>Select Custom Wallet</InputLabel>
                             <Select value={fromCustomId} label="Select Custom Wallet" startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
-                              onChange={(e) => { setFromCustomId(e.target.value); setFromHolder('Unassigned'); }}>
+                              onChange={(e) => { setFromCustomId(e.target.value); setFromEnvelopeId(''); setFromHolder('Unassigned'); }}>
                               {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {fromEnvelopes.length > 0 && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>From Envelope</InputLabel>
+                            <Select
+                              value={fromEnvelopeId}
+                              label="From Envelope"
+                              onChange={(e) => setFromEnvelopeId(e.target.value)}
+                            >
+                              <MenuItem value=""><em>Default / Main Envelope</em></MenuItem>
+                              {fromEnvelopes.map((env) => (
+                                <MenuItem key={env.id} value={env.id}>
+                                  ✉️ {env.name} ({env.owner} · {formatCurrency(env.amount, 'PKR')})
+                                </MenuItem>
+                              ))}
                             </Select>
                           </FormControl>
                         )}
@@ -869,8 +973,25 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                           <FormControl fullWidth size="small">
                             <InputLabel>Select Custom Wallet</InputLabel>
                             <Select value={toCustomId} label="Select Custom Wallet" startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
-                              onChange={(e) => { setToCustomId(e.target.value); setToHolder('Unassigned'); }}>
+                              onChange={(e) => { setToCustomId(e.target.value); setToEnvelopeId(''); setToHolder('Unassigned'); }}>
                               {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {toEnvelopes.length > 0 && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Into Envelope</InputLabel>
+                            <Select
+                              value={toEnvelopeId}
+                              label="Into Envelope"
+                              onChange={(e) => setToEnvelopeId(e.target.value)}
+                            >
+                              <MenuItem value=""><em>Default / Main Envelope</em></MenuItem>
+                              {toEnvelopes.map((env) => (
+                                <MenuItem key={env.id} value={env.id}>
+                                  ✉️ {env.name} ({env.owner} · {formatCurrency(env.amount, 'PKR')})
+                                </MenuItem>
+                              ))}
                             </Select>
                           </FormControl>
                         )}
@@ -922,8 +1043,25 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                           <FormControl fullWidth size="small">
                             <InputLabel>Select Custom Wallet</InputLabel>
                             <Select value={fromCustomId} label="Select Custom Wallet" startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
-                              onChange={(e) => { setFromCustomId(e.target.value); setFromHolder('Unassigned'); }}>
+                              onChange={(e) => { setFromCustomId(e.target.value); setFromEnvelopeId(''); setFromHolder('Unassigned'); }}>
                               {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {fromEnvelopes.length > 0 && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>From Envelope</InputLabel>
+                            <Select
+                              value={fromEnvelopeId}
+                              label="From Envelope"
+                              onChange={(e) => setFromEnvelopeId(e.target.value)}
+                            >
+                              <MenuItem value=""><em>Default / Main Envelope</em></MenuItem>
+                              {fromEnvelopes.map((env) => (
+                                <MenuItem key={env.id} value={env.id}>
+                                  ✉️ {env.name} ({env.owner} · {formatCurrency(env.amount, 'PKR')})
+                                </MenuItem>
+                              ))}
                             </Select>
                           </FormControl>
                         )}
@@ -1011,8 +1149,25 @@ export default function LoanDialog({ onAddMoney, onSuccess, snapshot, externalOp
                           <FormControl fullWidth size="small">
                             <InputLabel>Select Custom Wallet</InputLabel>
                             <Select value={toCustomId} label="Select Custom Wallet" startAdornment={<WalletIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />}
-                              onChange={(e) => { setToCustomId(e.target.value); setToHolder('Unassigned'); }}>
+                              onChange={(e) => { setToCustomId(e.target.value); setToEnvelopeId(''); setToHolder('Unassigned'); }}>
                               {customPaymentHeads.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
+                            </Select>
+                          </FormControl>
+                        )}
+                        {toEnvelopes.length > 0 && (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Into Envelope</InputLabel>
+                            <Select
+                              value={toEnvelopeId}
+                              label="Into Envelope"
+                              onChange={(e) => setToEnvelopeId(e.target.value)}
+                            >
+                              <MenuItem value=""><em>Default / Main Envelope</em></MenuItem>
+                              {toEnvelopes.map((env) => (
+                                <MenuItem key={env.id} value={env.id}>
+                                  ✉️ {env.name} ({env.owner} · {formatCurrency(env.amount, 'PKR')})
+                                </MenuItem>
+                              ))}
                             </Select>
                           </FormControl>
                         )}

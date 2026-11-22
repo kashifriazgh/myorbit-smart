@@ -410,13 +410,17 @@ export interface PlannedExpense {
   allocatedBudgetMonth?: string;
   actualPaidAmount?: number;
   dueDate: string | Date | Timestamp;
+  dueDates?: string[];
   paymentStatus: 'pending' | 'partially_paid' | 'paid' | 'overdue';
   walletId?: string;
   walletName?: string;
-  recurrence: 'one_time' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+  recurrence: 'one_time' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
   expenseType?: 'recurring' | 'one_time' | 'event_based' | 'wish_list';
   priority?: 'essential' | 'important' | 'wish_list' | 'lifestyle';
-  frequency?: 'monthly' | 'yearly' | 'weekly' | 'daily';
+  frequency?: 'one_time' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+  weeklyDay?: number; // 0 = Sunday ... 6 = Saturday
+  recurrenceInterval?: number;
+  recurrenceEndDate?: string;
   isGlobal?: boolean;
   notes?: string;
   createdAt?: Date | Timestamp;
@@ -487,6 +491,24 @@ export interface LoanRecord {
   note?: string;
   notes?: string;
   isSettled: boolean;
+  fromSource?: string;
+  fromSourceName?: string;
+  fromSourceKey?: string | null;
+  fromSourceBankId?: string | null;
+  fromSourceCustomId?: string | null;
+  fromSourceHolder?: string | null;
+  fromEnvelopeId?: string | null;
+  fromEnvelopeName?: string | null;
+  fromEnvelopeOwner?: string | null;
+  toSource?: string;
+  toSourceName?: string;
+  toSourceKey?: string | null;
+  toSourceBankId?: string | null;
+  toSourceCustomId?: string | null;
+  toSourceHolder?: string | null;
+  toEnvelopeId?: string | null;
+  toEnvelopeName?: string | null;
+  toEnvelopeOwner?: string | null;
   createdAt: Date | Timestamp;
   updatedAt?: Date | Timestamp;
 }

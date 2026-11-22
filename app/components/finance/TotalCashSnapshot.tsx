@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import {
   UserCircle2,
   PlusCircle,
@@ -50,6 +51,10 @@ import CreateWalletModal from './TotalCashSnapshot/CreateWalletModal';
 import WalletDetailsModal from './TotalCashSnapshot/WalletDetailsModal';
 import FinancialOverview, { type FinancialOverviewData } from './TotalCashSnapshot/FinancialOverview';
 import MonthlyMoneyOverview from './TotalCashSnapshot/MonthlyMoneyOverview';
+import ExpenseAnalytics, {
+  mapExpenseCategoryToId,
+  type ExpenseAnalyticsItem,
+} from './TotalCashSnapshot/ExpenseAnalytics';
 import UpcomingExpenses, { type UpcomingExpenseItem } from './TotalCashSnapshot/UpcomingExpenses';
 
 export const getSourceKey = (
@@ -61,6 +66,72 @@ export const getSourceKey = (
   if (source === 'custom' && customPaymentHeadName) return `custom:${customPaymentHeadName}`;
   return source;
 };
+
+/**
+ * Keep a wallet's `sourceOwnership[walletKey].allocations` and `reservedAmount`
+ * in sync whenever money is deducted (delta < 0) or added/returned (delta > 0)
+ * by a loan, settlement, or transfer.
+ */
+export function applyWalletAllocationDelta(
+  sourceOwnership: TotalCashSnapshot['sourceOwnership'] | undefined,
+  walletKey: string,
+  delta: number,
+  envelopeId?: string | null,
+  envelopeName?: string | null
+): TotalCashSnapshot['sourceOwnership'] {
+  const nextOwnership = { ...(sourceOwnership || {}) };
+  const existing = nextOwnership[walletKey];
+  if (!existing || !existing.allocations || existing.allocations.length === 0 || delta === 0) {
+    return nextOwnership;
+  }
+
+  const targetIdx = (() => {
+    if (envelopeId) {
+      const byId = existing.allocations!.findIndex((a) => a.id === envelopeId);
+      if (byId >= 0) return byId;
+    }
+    if (envelopeName) {
+      const byName = existing.allocations!.findIndex(
+        (a) => (a.purpose || '').toLowerCase() === envelopeName.toLowerCase()
+      );
+      if (byName >= 0) return byName;
+    }
+    const defIdx = existing.allocations!.findIndex((a) => a.id.startsWith('default_'));
+    return defIdx >= 0 ? defIdx : 0;
+  })();
+
+  const updatedAllocs = existing.allocations.map((alloc, idx) => {
+    if (idx !== targetIdx) return alloc;
+    const prevAmt = Number(alloc.amount) || 0;
+    const nextAmt = Math.max(0, prevAmt + delta);
+    const isReservedAlloc =
+      alloc.availabilityStatus === 'reserved' ||
+      (alloc.owner || '').toLowerCase() === 'reserved';
+    const nextReserved = isReservedAlloc
+      ? nextAmt
+      : delta < 0
+      ? Math.min(nextAmt, Math.max(0, (Number(alloc.reservedAmount) || 0) + delta))
+      : Math.min(nextAmt, Number(alloc.reservedAmount) || 0);
+    return {
+      ...alloc,
+      amount: nextAmt,
+      reservedAmount: nextReserved,
+    };
+  });
+
+  const nextTotalReserved = updatedAllocs.reduce(
+    (sum, a) => sum + (Number(a.reservedAmount) || 0),
+    0
+  );
+
+  nextOwnership[walletKey] = {
+    ...existing,
+    allocations: updatedAllocs,
+    reservedAmount: nextTotalReserved,
+  };
+
+  return nextOwnership;
+}
 
 /** Compute the overall total recorded money across all non-virtual wallets */
 export function computeTotalAmount(snapshot: TotalCashSnapshot): number {
@@ -168,12 +239,18 @@ function computeOverviewBreakdown(snapshot: TotalCashSnapshot): FinancialOvervie
         const aAmt = Number(a.amount) || 0;
         if (aAmt <= 0) return;
         allocatedTotal += aAmt;
-        const isSelf = a.owner.toLowerCase() === 'you' || a.owner.toLowerCase() === 'self';
+
+        const ownerLower = (a.owner || '').trim().toLowerCase();
+        const isSelf = ownerLower === 'you' || ownerLower === 'self' || ownerLower === '';
+        const isReservedEnvelope =
+          ownerLower === 'reserved' || a.availabilityStatus === 'reserved';
+        const isExternalAmanat =
+          a.availabilityStatus === 'external' || (!isSelf && !isReservedEnvelope);
         const isSavingsAlloc = isSavingsWallet || savingsRegex.test(a.purpose || '');
 
-        if (!isSelf) {
+        if (isExternalAmanat) {
           amanat += aAmt;
-        } else if (o.isLocked || a.isLocked) {
+        } else if (isReservedEnvelope || o.isLocked || a.isLocked) {
           if (isSavingsAlloc) savings += aAmt;
           else reserved += aAmt;
         } else {
@@ -351,8 +428,7 @@ export default function TotalCashSnapshotComponent({
 
   // Income & Expenses data
   const [monthlyIncomeTotal, setMonthlyIncomeTotal] = useState(0);
-  const [currentMonthExpensesPaid, setCurrentMonthExpensesPaid] = useState(0);
-  const [currentMonthExpensesPending, setCurrentMonthExpensesPending] = useState(0);
+  const [analyticsExpenses, setAnalyticsExpenses] = useState<ExpenseAnalyticsItem[]>([]);
   const [upcomingExpenses, setUpcomingExpenses] = useState<UpcomingExpenseItem[]>([]);
 
   // Sync state
@@ -503,11 +579,10 @@ export default function TotalCashSnapshotComponent({
       }
     );
 
-    // ── Fetch all expenses (recurring & one-time for current month + upcoming list) ──
+    // ── Fetch all expenses (recurring & one-time for current month + analytics + upcoming list) ──
     const fetchExpensesMonthly = async () => {
-      let paidSum = 0;
-      let pendingSum = 0;
       const upcomingList: UpcomingExpenseItem[] = [];
+      const analyticsList: ExpenseAnalyticsItem[] = [];
       const now = new Date();
       const curYear = now.getFullYear();
       const curMonth = now.getMonth();
@@ -553,8 +628,14 @@ export default function TotalCashSnapshotComponent({
               p.paymentStatus === 'paid'
                 ? monthAmt
                 : Math.min(monthAmt, Number(p.actualPaidAmount) || 0);
-            paidSum += paid;
-            pendingSum += Math.max(0, monthAmt - paid);
+            analyticsList.push({
+              id: d.id,
+              title: p.title,
+              categoryId: mapExpenseCategoryToId(p.category),
+              amount: Math.round(monthAmt),
+              paidAmount: Math.round(paid),
+              paid: p.paymentStatus === 'paid',
+            });
           }
 
           // Collect unpaid expenses for the Upcoming Expenses card
@@ -594,8 +675,14 @@ export default function TotalCashSnapshotComponent({
           }
 
           if (monthAmt > 0) {
-            if (e.isPaid) paidSum += monthAmt;
-            else pendingSum += monthAmt;
+            analyticsList.push({
+              id: `exp_${d.id}`,
+              title: e.title,
+              categoryId: mapExpenseCategoryToId(e.category),
+              amount: Math.round(monthAmt),
+              paidAmount: e.isPaid ? Math.round(monthAmt) : 0,
+              paid: Boolean(e.isPaid),
+            });
           }
 
           if (!e.isPaid && baseAmt > 0) {
@@ -612,8 +699,7 @@ export default function TotalCashSnapshotComponent({
         console.warn('Error fetching expenditures for summary:', e);
       }
 
-      setCurrentMonthExpensesPaid(Math.round(paidSum));
-      setCurrentMonthExpensesPending(Math.round(pendingSum));
+      setAnalyticsExpenses(analyticsList);
       setUpcomingExpenses(upcomingList);
     };
 
@@ -957,6 +1043,8 @@ export default function TotalCashSnapshotComponent({
       eventType?: FinancialEventType;
       expenseCategory?: string;
       subCategory?: string;
+      envelopeId?: string;
+      envelopeName?: string;
     }
   ) => {
     if (!snapshot || !userId) return;
@@ -983,10 +1071,48 @@ export default function TotalCashSnapshotComponent({
         (updatedSources[source] as number) = newWalletBalance;
       }
 
+      // If an envelope was selected, deduct from that specific envelope allocation too
+      let updatedOwnership = snapshot.sourceOwnership;
+      if (meta?.envelopeId && snapshot.sourceOwnership) {
+        const walletKey = getSourceKey(source, bankName, customPaymentHeadName);
+        const existingOwner = snapshot.sourceOwnership[walletKey];
+        if (existingOwner?.allocations && existingOwner.allocations.length > 0) {
+          const nextAllocs = existingOwner.allocations.map((alloc) => {
+            if (alloc.id !== meta.envelopeId) return alloc;
+            const nextAmt = Math.max(0, (Number(alloc.amount) || 0) - amount);
+            const nextRes = Math.min(nextAmt, Math.max(0, (Number(alloc.reservedAmount) || 0) - amount));
+            return {
+              ...alloc,
+              amount: nextAmt,
+              reservedAmount: alloc.availabilityStatus === 'reserved' ? nextAmt : nextRes,
+            };
+          });
+          const nextTotalReserved = nextAllocs.reduce(
+            (sum, a) => sum + (Number(a.reservedAmount) || 0),
+            0
+          );
+          updatedOwnership = {
+            ...snapshot.sourceOwnership,
+            [walletKey]: {
+              ...existingOwner,
+              allocations: nextAllocs,
+              reservedAmount: nextTotalReserved,
+            },
+          };
+        }
+      }
+
       const newTotal = computeTotalAmount({
         ...snapshot,
         sources: updatedSources,
+        sourceOwnership: updatedOwnership,
       });
+
+      const resolvedNote =
+        note ||
+        (meta?.envelopeName
+          ? `${meta?.expenseCategory || 'Expense'} (${meta.envelopeName})`
+          : meta?.expenseCategory || 'Expense deduction');
 
       await addDoc(collection(db, 'cashTransactions'), {
         userId,
@@ -998,9 +1124,11 @@ export default function TotalCashSnapshotComponent({
         expenseCategory: meta?.expenseCategory || 'General Expense',
         subCategory: meta?.subCategory || null,
         walletName: bankName || customPaymentHeadName || source,
+        envelopeId: meta?.envelopeId || null,
+        envelopeName: meta?.envelopeName || null,
         balanceAfter: newWalletBalance,
         balanceSnapshot: newTotal,
-        note: note || meta?.expenseCategory || 'Expense deduction',
+        note: resolvedNote,
         BankName: bankName || null,
         customPaymentHeadName: customPaymentHeadName || null,
         holderName: holderName || null,
@@ -1010,6 +1138,7 @@ export default function TotalCashSnapshotComponent({
       const updatedSnapshot: TotalCashSnapshot = {
         ...snapshot,
         sources: updatedSources,
+        sourceOwnership: updatedOwnership,
         totalAmount: newTotal,
         updatedAt: new Date(),
       };
@@ -1253,9 +1382,9 @@ export default function TotalCashSnapshotComponent({
         isDark ? 'bg-transparent text-white' : 'bg-transparent text-slate-900'
       }`}
     >
-      <div className="mx-auto flex w-full max-w-6xl flex-col px-1 pt-2 sm:px-2">
+      <div className="mx-auto flex w-full max-w-6xl flex-col px-0 pt-1">
         {/* ── Top Header ────────────────────────────────────────── */}
-        <header className="mb-5 flex items-start justify-between">
+        <header className="mb-3.5 flex items-start justify-between px-1">
           <div>
             <h1
               className={`text-2xl font-bold tracking-tight ${
@@ -1268,7 +1397,7 @@ export default function TotalCashSnapshotComponent({
               Your financial overview
             </p>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               onClick={triggerRefresh}
               aria-label="Refresh financial data"
@@ -1295,44 +1424,74 @@ export default function TotalCashSnapshotComponent({
           </div>
         </header>
 
-        <main className="flex-1 flex flex-col gap-5">
-          {/* ── Row 1: Financial Overview (Left 50%) + Monthly Money Overview (Right 50%) ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
-            <FinancialOverview
-              data={overviewData}
-              illustrative={false}
-              balancesVisible={balancesVisible}
-              onToggleBalancesVisible={() => setBalancesVisible((v) => !v)}
-              isDark={isDark}
-            />
+        <main className="flex-1 flex flex-col gap-3.5">
+          {/* ── Row 1: Financial Overview (Left 50%) + Expense Analytics (Right 50%) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-stretch">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28, ease: 'easeOut' }}
+              className="h-full"
+            >
+              <FinancialOverview
+                data={overviewData}
+                illustrative={false}
+                balancesVisible={balancesVisible}
+                onToggleBalancesVisible={() => setBalancesVisible((v) => !v)}
+                isDark={isDark}
+              />
+            </motion.div>
 
-            <MonthlyMoneyOverview
-              data={{
-                income: monthlyIncomeTotal,
-                expenses: {
-                  paid: currentMonthExpensesPaid,
-                  pending: currentMonthExpensesPending,
-                },
-                liabilities: loanMetrics.toPay,
-                receivables: loanMetrics.toReceive,
-              }}
-              balancesVisible={balancesVisible}
-              onPayBackClick={() => setOpenLoan(true)}
-              onGetBackClick={() => setOpenLiability(true)}
-              isDark={isDark}
-            />
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28, delay: 0.06, ease: 'easeOut' }}
+              className="h-full"
+            >
+              <ExpenseAnalytics
+                expenses={analyticsExpenses}
+                income={monthlyIncomeTotal}
+                heroCount={3}
+                topCount={5}
+                balancesVisible={balancesVisible}
+                isDark={isDark}
+              />
+            </motion.div>
           </div>
 
-          {/* ── Row 2: Upcoming Expenses + Quick Navigation Cards ─── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-            <UpcomingExpenses
-              items={upcomingExpenses}
-              max={4}
-              balancesVisible={balancesVisible}
-              isDark={isDark}
-            />
+          {/* ── Row 2: Income & Loans (Left) + Upcoming Expenses & Quick Actions (Right) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28, delay: 0.12, ease: 'easeOut' }}
+            >
+              <MonthlyMoneyOverview
+                data={{
+                  income: monthlyIncomeTotal,
+                  liabilities: loanMetrics.toPay,
+                  receivables: loanMetrics.toReceive,
+                }}
+                balancesVisible={balancesVisible}
+                onPayBackClick={() => setOpenLoan(true)}
+                onGetBackClick={() => setOpenLiability(true)}
+                isDark={isDark}
+              />
+            </motion.div>
 
-            <div className="flex flex-col gap-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28, delay: 0.18, ease: 'easeOut' }}
+              className="flex flex-col gap-3.5"
+            >
+              <UpcomingExpenses
+                items={upcomingExpenses}
+                max={4}
+                balancesVisible={balancesVisible}
+                isDark={isDark}
+              />
+
               {/* Horizontal splitter */}
               <div
                 className={`h-px w-full ${
@@ -1345,10 +1504,10 @@ export default function TotalCashSnapshotComponent({
               {/* ── Set Budget / Budget Allocation Creative Card ─── */}
               <Link
                 href="/finance/budget"
-                className={`group relative flex items-center justify-between overflow-hidden rounded-3xl border px-5 py-4 transition-all duration-300 hover:scale-[1.01] cursor-pointer ${
+                className={`group relative flex items-center justify-between overflow-hidden rounded-3xl border px-4 sm:px-5 py-4 transition-all duration-300 hover:scale-[1.01] cursor-pointer ${
                   isDark
-                    ? 'border-teal-500/25 bg-gradient-to-br from-[#1b2e35] via-[#1f2430] to-[#1a2234] text-white shadow-xl hover:border-teal-400/50'
-                    : 'border-teal-200/80 bg-gradient-to-br from-teal-50/90 via-white to-emerald-50/60 text-slate-900 shadow-sm hover:border-teal-300 hover:shadow-md'
+                    ? 'border-teal-500/25 bg-[#1f2430] text-white shadow-xl hover:border-teal-400/50'
+                    : 'border-teal-200/80 bg-white text-slate-900 shadow-sm hover:border-teal-300 hover:shadow-md'
                 }`}
               >
                 {/* Decorative corner bubbles */}
@@ -1483,7 +1642,7 @@ export default function TotalCashSnapshotComponent({
                   }`}
                 />
               </button>
-            </div>
+            </motion.div>
           </div>
         </main>
 
@@ -1554,6 +1713,7 @@ export default function TotalCashSnapshotComponent({
       {/* Add / Deduct Money Modal with preselected wallet */}
       <AddMoney
         externalOpen={openAdd}
+        onOpenCreateWallet={() => setOpenCreateWalletModal(true)}
         onExternalClose={() => {
           setOpenAdd(false);
           setPreselectedWalletId('');

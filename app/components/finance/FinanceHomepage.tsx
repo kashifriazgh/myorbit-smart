@@ -20,6 +20,7 @@ import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 
 import TotalCashSnapshotComponent from './TotalCashSnapshot';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -120,28 +121,48 @@ export default function FinanceHomepage() {
       lightSubText: '#334155',
       darkSubText: '#94a3b8',
     },
+    {
+      title: 'Urdu Money eBook',
+      href: '/finance/ebook',
+      description: '11-chapter Urdu guide on managing money & expenses',
+      icon: <MenuBookIcon sx={{ fontSize: 28 }} />,
+      lightBg: 'linear-gradient(135deg, #ecfdf5 0%, #a7f3d0 100%)',
+      darkBg: 'linear-gradient(135deg, #065f46 0%, #0f172a 100%)',
+      lightBubble: '#a7f3d0',
+      darkBubble: '#065f46',
+      lightText: '#0f172a',
+      darkText: '#f1f5f9',
+      lightSubText: '#334155',
+      darkSubText: '#94a3b8',
+    },
   ];
 
   return (
     <div
       style={{
-        backgroundColor: isDark ? '#181c24' : '#f8fafc',
+        backgroundColor: isDark ? '#181c24' : '#f1f5f9',
         color: isDark ? '#f1f5f9' : '#0f172a',
         minHeight: '100vh',
       }}
     >
-      <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 }, px: { xs: 1.5, sm: 2.5 } }}>
         <TotalCashSnapshotComponent userId={user.uid} />
 
-        <div className="mt-8">
+        <div
+          className={`mt-4 rounded-3xl border p-4 sm:p-5 transition-colors ${
+            isDark
+              ? 'border-white/10 bg-[#1f2430] text-white shadow-xl'
+              : 'border-slate-200 bg-white text-slate-900 shadow-sm'
+          }`}
+        >
           <p
-            className="text-lg font-bold mb-4"
+            className="text-base sm:text-lg font-bold mb-3.5"
             style={{ color: isDark ? '#f1f5f9' : '#0f172a' }}
           >
             Budget Sections
           </p>
 
-          <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
+          <div className="grid gap-3.5 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
             {cardData.map((card, idx) => {
               const bgColor = isDark ? card.darkBg : card.lightBg;
               const bubbleColor = isDark ? card.darkBubble : card.lightBubble;

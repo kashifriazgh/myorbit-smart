@@ -61,6 +61,10 @@ import LoginIcon from '@mui/icons-material/Login';
 import WalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import LoanDialog from '@/app/components/finance/TotalCashSnapshot/LoanRecord';
+import {
+  applyWalletAllocationDelta,
+  computeTotalAmount,
+} from '@/app/components/finance/TotalCashSnapshot';
 
 export default function LoanRecordsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -436,29 +440,87 @@ export default function LoanRecordsPage() {
 
         const updatedSources: TotalCashSnapshot['sources'] = {
           in_hand: snapshotSources.in_hand ?? 0,
-          bank: normalizedBank,
+          bank: { ...normalizedBank },
           easypaisa: snapshotSources.easypaisa ?? 0,
           jazzcash: snapshotSources.jazzcash ?? 0,
           other: snapshotSources.other ?? 0,
-          custom: normalizedCustom,
+          custom: { ...normalizedCustom },
         };
 
         const updatedHeldBy = snapshotData.heldBy ? { ...snapshotData.heldBy } : {};
-        let newTotal = snapshotData.totalAmount ?? 0;
+        let updatedSourceOwnership = { ...(snapshotData.sourceOwnership || {}) };
+
+        const applyBalanceDelta = (wKey: string, amtDelta: number) => {
+          const [wType, wSub] = wKey.split(':');
+          if (wType === 'bank' && wSub) {
+            updatedSources.bank[wSub] = Math.max(0, (updatedSources.bank[wSub] ?? 0) + amtDelta);
+          } else if (wType === 'custom' && wSub) {
+            updatedSources.custom[wSub] = Math.max(0, (updatedSources.custom[wSub] ?? 0) + amtDelta);
+          } else if (
+            wType === 'in_hand' ||
+            wType === 'easypaisa' ||
+            wType === 'jazzcash' ||
+            wType === 'other'
+          ) {
+            (updatedSources[wType] as number) = Math.max(
+              0,
+              ((updatedSources[wType] as number) ?? 0) + amtDelta
+            );
+          }
+        };
+
+        // Resolve original from/to wallet keys (for restoring internal wallets & envelopes)
+        const resolveWalletKey = (
+          explicitKey?: string | null,
+          src?: string,
+          bId?: string | null,
+          cId?: string | null
+        ): string | null => {
+          if (explicitKey) return explicitKey;
+          if (!src || src === 'outside' || src === 'immediate_expended') return null;
+          if (src === 'bank') {
+            const b = banks.find((item) => item.id === bId || item.name === src);
+            return b ? `bank:${b.name}` : null;
+          }
+          if (src === 'custom') {
+            const c = customPaymentHeads.find((item) => item.id === cId || item.name === src);
+            return c ? `custom:${c.name}` : null;
+          }
+          return src;
+        };
+
+        const origFromKey = resolveWalletKey(
+          selectedLoan.fromSourceKey,
+          selectedLoan.fromSource,
+          selectedLoan.fromSourceBankId,
+          selectedLoan.fromSourceCustomId
+        );
+        const origToKey = resolveWalletKey(
+          selectedLoan.toSourceKey,
+          selectedLoan.toSource,
+          selectedLoan.toSourceBankId,
+          selectedLoan.toSourceCustomId
+        );
 
         const [sourceType, subName] = selectedSource.split(':');
-        const sourceKey = sourceType === 'bank' ? `bank:${subName}` : sourceType === 'custom' ? `custom:${subName}` : sourceType;
+        const sourceKey =
+          sourceType === 'bank'
+            ? `bank:${subName}`
+            : sourceType === 'custom'
+            ? `custom:${subName}`
+            : sourceType;
         const holderToSave = selectedHolder === 'Unassigned' ? null : selectedHolder;
 
         if (selectedLoan.type === 'borrow') {
-          if (sourceType === 'bank' && subName) {
-            updatedSources.bank[subName] = (updatedSources.bank[subName] ?? 0) - delta;
-          } else if (sourceType === 'custom' && subName) {
-            updatedSources.custom[subName] = (updatedSources.custom[subName] ?? 0) - delta;
-          } else {
-            (updatedSources[sourceType] as number) = ((updatedSources[sourceType] as number) ?? 0) - delta;
-          }
-          newTotal -= delta;
+          // 1. Deduct repayment from selectedSource (e.g. Cash wallet)
+          applyBalanceDelta(sourceKey, -delta);
+          updatedSourceOwnership = applyWalletAllocationDelta(
+            updatedSourceOwnership,
+            sourceKey,
+            -delta,
+            sourceKey === origToKey ? selectedLoan.toEnvelopeId : undefined,
+            sourceKey === origToKey ? selectedLoan.toEnvelopeName : undefined
+          );
 
           if (holderToSave) {
             const holders = [...(updatedHeldBy[sourceKey] || [])];
@@ -471,15 +533,28 @@ export default function LoanRecordsPage() {
               updatedHeldBy[sourceKey] = holders;
             }
           }
-        } else if (selectedLoan.type === 'lend') {
-          if (sourceType === 'bank' && subName) {
-            updatedSources.bank[subName] = (updatedSources.bank[subName] ?? 0) + delta;
-          } else if (sourceType === 'custom' && subName) {
-            updatedSources.custom[subName] = (updatedSources.custom[subName] ?? 0) + delta;
-          } else {
-            (updatedSources[sourceType] as number) = ((updatedSources[sourceType] as number) ?? 0) + delta;
+
+          // 2. If borrowed from one of our own wallets (e.g. Bank), return the amount & restore its envelope!
+          if (origFromKey && origFromKey !== sourceKey) {
+            applyBalanceDelta(origFromKey, delta);
+            updatedSourceOwnership = applyWalletAllocationDelta(
+              updatedSourceOwnership,
+              origFromKey,
+              delta,
+              selectedLoan.fromEnvelopeId,
+              selectedLoan.fromEnvelopeName
+            );
           }
-          newTotal += delta;
+        } else if (selectedLoan.type === 'lend') {
+          // 1. Return recovered amount to selectedSource (defaults to original fromSource wallet) & restore envelope
+          applyBalanceDelta(sourceKey, delta);
+          updatedSourceOwnership = applyWalletAllocationDelta(
+            updatedSourceOwnership,
+            sourceKey,
+            delta,
+            sourceKey === origFromKey ? selectedLoan.fromEnvelopeId : undefined,
+            sourceKey === origFromKey ? selectedLoan.fromEnvelopeName : undefined
+          );
 
           if (holderToSave) {
             const holders = [...(updatedHeldBy[sourceKey] || [])];
@@ -494,12 +569,31 @@ export default function LoanRecordsPage() {
             }
             updatedHeldBy[sourceKey] = holders;
           }
+
+          // 2. If lent internally to one of our own wallets, deduct from that destination wallet in parallel
+          if (origToKey && origToKey !== sourceKey) {
+            applyBalanceDelta(origToKey, -delta);
+            updatedSourceOwnership = applyWalletAllocationDelta(
+              updatedSourceOwnership,
+              origToKey,
+              -delta,
+              selectedLoan.toEnvelopeId,
+              selectedLoan.toEnvelopeName
+            );
+          }
         }
+
+        const newTotal = computeTotalAmount({
+          ...snapshotData,
+          sources: updatedSources,
+          sourceOwnership: updatedSourceOwnership,
+        });
 
         const updatedSnapshot: TotalCashSnapshot = {
           ...snapshotData,
           sources: updatedSources,
           heldBy: updatedHeldBy,
+          sourceOwnership: updatedSourceOwnership,
           totalAmount: newTotal,
         };
 
@@ -1215,6 +1309,28 @@ export default function LoanRecordsPage() {
               <Typography variant="h5" fontWeight="900" color="primary">
                 ₨{selectedLoan?.amount.toLocaleString()}
               </Typography>
+              {(selectedLoan?.fromSourceName || selectedLoan?.fromEnvelopeName) && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  fontWeight="600"
+                  display="block"
+                  mt={0.75}
+                >
+                  Origin: {selectedLoan.fromSourceName || 'Wallet'}
+                  {selectedLoan.fromEnvelopeName ? ` · Envelope: ${selectedLoan.fromEnvelopeName}` : ''}
+                  {selectedLoan.fromEnvelopeOwner ? ` (${selectedLoan.fromEnvelopeOwner})` : ''}
+                </Typography>
+              )}
+              {selectedLoan?.type === 'borrow' && selectedLoan?.fromSourceKey && (
+                <Typography
+                  variant="caption"
+                  sx={{ color: '#10b981', fontWeight: 700, display: 'block', mt: 0.5 }}
+                >
+                  Settling will return funds back to {selectedLoan.fromSourceName}
+                  {selectedLoan.fromEnvelopeName ? ` (${selectedLoan.fromEnvelopeName})` : ''}.
+                </Typography>
+              )}
             </Box>
             <TextField
               fullWidth
