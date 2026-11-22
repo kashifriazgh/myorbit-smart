@@ -1,3 +1,20 @@
+import type { ComponentType } from 'react';
+import {
+  Home,
+  ShoppingCart,
+  Zap,
+  GraduationCap,
+  HeartPulse,
+  Car,
+  Wifi,
+  ShoppingBag,
+  Film,
+  Landmark,
+  HeartHandshake,
+  User,
+  MoreHorizontal,
+} from 'lucide-react';
+
 export const IDEA_LEVELS = [
   {
     key: 'super',
@@ -173,18 +190,39 @@ export const COUNTRIES = [
   // You can add more from a full list
 ];
 
-export const PAKISTANI_EXPENSE_CATEGORIES = [
-  'House rent',
-  'Groceries and food',
-  'Electricity, gas and water',
-  "Children's education",
-  'Healthcare and medicines',
-  'Transport and fuel',
-  'Mobile and internet',
-  'Clothing and shopping',
-  'Entertainment',
-  'Loans and installments',
-  'Charity',
-  'Personal',
-  'Other expenses',
+export type ExpenseCategoryIcon = ComponentType<{ size?: number; className?: string }>;
+
+export interface StandardExpenseCategory {
+  name: string;
+  icon: ExpenseCategoryIcon;
+  darkColor: string;
+  lightColor: string;
+}
+
+export const STANDARD_EXPENSE_CATEGORIES: readonly StandardExpenseCategory[] = [
+  { name: 'House rent', icon: Home, darkColor: 'text-teal-400', lightColor: 'text-teal-600' },
+  { name: 'Groceries and food', icon: ShoppingCart, darkColor: 'text-emerald-400', lightColor: 'text-emerald-600' },
+  { name: 'Electricity, gas and water', icon: Zap, darkColor: 'text-amber-400', lightColor: 'text-amber-600' },
+  { name: "Children's education", icon: GraduationCap, darkColor: 'text-blue-400', lightColor: 'text-blue-600' },
+  { name: 'Healthcare and medicines', icon: HeartPulse, darkColor: 'text-rose-400', lightColor: 'text-rose-600' },
+  { name: 'Transport and fuel', icon: Car, darkColor: 'text-indigo-400', lightColor: 'text-indigo-600' },
+  { name: 'Mobile and internet', icon: Wifi, darkColor: 'text-sky-400', lightColor: 'text-sky-600' },
+  { name: 'Clothing and shopping', icon: ShoppingBag, darkColor: 'text-fuchsia-400', lightColor: 'text-fuchsia-600' },
+  { name: 'Entertainment', icon: Film, darkColor: 'text-purple-400', lightColor: 'text-purple-600' },
+  { name: 'Loans and installments', icon: Landmark, darkColor: 'text-red-400', lightColor: 'text-red-600' },
+  { name: 'Charity', icon: HeartHandshake, darkColor: 'text-green-400', lightColor: 'text-green-600' },
+  { name: 'Personal', icon: User, darkColor: 'text-orange-400', lightColor: 'text-orange-600' },
+  { name: 'Other expenses', icon: MoreHorizontal, darkColor: 'text-slate-400', lightColor: 'text-slate-500' },
 ] as const;
+
+export const EXPENSE_CATEGORY_META: Record<
+  string,
+  { icon: ExpenseCategoryIcon; darkColor: string; lightColor: string }
+> = Object.fromEntries(
+  STANDARD_EXPENSE_CATEGORIES.map((c) => [
+    c.name,
+    { icon: c.icon, darkColor: c.darkColor, lightColor: c.lightColor },
+  ])
+);
+
+export const PAKISTANI_EXPENSE_CATEGORIES = STANDARD_EXPENSE_CATEGORIES.map((c) => c.name);

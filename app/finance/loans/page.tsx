@@ -53,6 +53,7 @@ import {
 import { useAuth } from '@/app/lib/context/userContext';
 import Link from 'next/link';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PaymentIcon from '@mui/icons-material/Payment';
 import LockIcon from '@mui/icons-material/LockOutlined';
@@ -86,6 +87,7 @@ export default function LoanRecordsPage() {
     updatedAt: new Date(),
   });
   // Dialog states
+  const [createLoanOpen, setCreateLoanOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [progressDialogOpen, setProgressDialogOpen] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState<LoanRecord | null>(null);
@@ -757,11 +759,32 @@ export default function LoanRecordsPage() {
             Loan Records
           </Typography>
         </Box>
-        <LoanDialog
-          snapshot={snapshot}
-          onAddMoney={handleAddMoney}
-          onSuccess={fetchLoans}
-        />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setCreateLoanOpen(true)}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              borderRadius: 2.5,
+              px: 2.5,
+              py: 1,
+              backgroundColor: '#2563eb',
+              '&:hover': { backgroundColor: '#1d4ed8' },
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+            }}
+          >
+            Record Loan
+          </Button>
+          <LoanDialog
+            snapshot={snapshot}
+            onAddMoney={handleAddMoney}
+            onSuccess={fetchLoans}
+            externalOpen={createLoanOpen}
+            onExternalClose={() => setCreateLoanOpen(false)}
+          />
+        </Box>
       </Box>
 
       {/* Totals Summary */}

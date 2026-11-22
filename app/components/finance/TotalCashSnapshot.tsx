@@ -10,7 +10,6 @@ import {
   RefreshCw,
   History,
   ArrowRightLeft,
-  PieChart,
 } from 'lucide-react';
 import { db } from '@/app/lib/firebase';
 import {
@@ -903,7 +902,10 @@ export default function TotalCashSnapshotComponent({
         (updatedSources[source] as number) = newWalletBalance;
       }
 
-      const newTotal = (snapshot.totalAmount || 0) + amount;
+      const newTotal = computeTotalAmount({
+        ...snapshot,
+        sources: updatedSources,
+      });
 
       await addDoc(collection(db, 'cashTransactions'), {
         userId,
@@ -912,7 +914,7 @@ export default function TotalCashSnapshotComponent({
         source,
         category: 'income',
         eventType: meta?.eventType || 'income',
-        sourceIncomeType: meta?.sourceIncomeType,
+        sourceIncomeType: meta?.sourceIncomeType || null,
         walletName: bankName || customPaymentHeadName || source,
         balanceAfter: newWalletBalance,
         balanceSnapshot: newTotal,
@@ -981,7 +983,10 @@ export default function TotalCashSnapshotComponent({
         (updatedSources[source] as number) = newWalletBalance;
       }
 
-      const newTotal = Math.max(0, (snapshot.totalAmount || 0) - amount);
+      const newTotal = computeTotalAmount({
+        ...snapshot,
+        sources: updatedSources,
+      });
 
       await addDoc(collection(db, 'cashTransactions'), {
         userId,
@@ -991,7 +996,7 @@ export default function TotalCashSnapshotComponent({
         category: 'expenditure',
         eventType: 'expense',
         expenseCategory: meta?.expenseCategory || 'General Expense',
-        subCategory: meta?.subCategory,
+        subCategory: meta?.subCategory || null,
         walletName: bankName || customPaymentHeadName || source,
         balanceAfter: newWalletBalance,
         balanceSnapshot: newTotal,
@@ -1328,42 +1333,51 @@ export default function TotalCashSnapshotComponent({
             />
 
             <div className="flex flex-col gap-4">
-              {/* ── View Your Wallets Creative Card ───────────────── */}
+              {/* Horizontal splitter */}
+              <div
+                className={`h-px w-full ${
+                  isDark
+                    ? 'bg-gradient-to-r from-transparent via-white/15 to-transparent'
+                    : 'bg-gradient-to-r from-transparent via-slate-300/90 to-transparent'
+                }`}
+              />
+
+              {/* ── Set Budget / Budget Allocation Creative Card ─── */}
               <Link
-                href="/finance/wallets"
+                href="/finance/budget"
                 className={`group relative flex items-center justify-between overflow-hidden rounded-3xl border px-5 py-4 transition-all duration-300 hover:scale-[1.01] cursor-pointer ${
                   isDark
-                    ? 'border-white/10 bg-[#1f2430] text-white shadow-xl hover:border-emerald-400/40'
-                    : 'border-slate-200 bg-white text-slate-900 shadow-sm hover:border-emerald-300 hover:shadow-md'
+                    ? 'border-teal-500/25 bg-gradient-to-br from-[#1b2e35] via-[#1f2430] to-[#1a2234] text-white shadow-xl hover:border-teal-400/50'
+                    : 'border-teal-200/80 bg-gradient-to-br from-teal-50/90 via-white to-emerald-50/60 text-slate-900 shadow-sm hover:border-teal-300 hover:shadow-md'
                 }`}
               >
-                {/* Decorative corner bubble background */}
+                {/* Decorative corner bubbles */}
                 <span
                   aria-hidden="true"
                   className={`pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full transition-transform duration-500 group-hover:scale-110 ${
-                    isDark ? 'bg-emerald-500/15' : 'bg-emerald-100/90'
+                    isDark ? 'bg-teal-500/15' : 'bg-teal-200/60'
                   }`}
                 />
                 <span
                   aria-hidden="true"
-                  className={`pointer-events-none absolute -bottom-10 right-6 h-24 w-24 rounded-full transition-transform duration-500 group-hover:scale-110 ${
-                    isDark ? 'bg-blue-500/15' : 'bg-blue-100/80'
+                  className={`pointer-events-none absolute -bottom-10 right-8 h-24 w-24 rounded-full transition-transform duration-500 group-hover:scale-110 ${
+                    isDark ? 'bg-cyan-500/15' : 'bg-emerald-200/50'
                   }`}
                 />
                 <span
                   aria-hidden="true"
-                  className={`pointer-events-none absolute right-20 top-3 h-3 w-3 rounded-full ${
-                    isDark ? 'bg-amber-400/30' : 'bg-amber-300/70'
+                  className={`pointer-events-none absolute right-24 top-3 h-2.5 w-2.5 rounded-full ${
+                    isDark ? 'bg-amber-400/35' : 'bg-amber-400/60'
                   }`}
                 />
 
-                <div className="relative z-10 flex items-center gap-4">
-                  {/* Custom colored SVG Wallet icon */}
+                <div className="relative z-10 flex items-center gap-4 min-w-0">
+                  {/* Custom colored SVG Budget Pie Icon */}
                   <div
                     className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1 ring-inset transition-transform duration-300 group-hover:scale-105 ${
                       isDark
-                        ? 'bg-emerald-500/10 ring-emerald-400/25'
-                        : 'bg-emerald-50 ring-emerald-200'
+                        ? 'bg-teal-500/15 ring-teal-400/30'
+                        : 'bg-white ring-teal-200 shadow-2xs'
                     }`}
                   >
                     <svg
@@ -1375,113 +1389,58 @@ export default function TotalCashSnapshotComponent({
                       aria-hidden="true"
                     >
                       <defs>
-                        <linearGradient id="walletBodyGrad" x1="4" y1="10" x2="31" y2="30" gradientUnits="userSpaceOnUse">
-                          <stop stopColor="#10B981" />
+                        <linearGradient id="budgetMainGrad" x1="6" y1="6" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#14B8A6" />
                           <stop offset="1" stopColor="#0D9488" />
                         </linearGradient>
-                        <linearGradient id="walletCardGrad" x1="8" y1="5" x2="26" y2="14" gradientUnits="userSpaceOnUse">
+                        <linearGradient id="budgetSliceGrad" x1="18" y1="5" x2="31" y2="18" gradientUnits="userSpaceOnUse">
                           <stop stopColor="#FBBF24" />
                           <stop offset="1" stopColor="#F59E0B" />
                         </linearGradient>
-                        <linearGradient id="walletClaspGrad" x1="21" y1="17" x2="33" y2="25" gradientUnits="userSpaceOnUse">
-                          <stop stopColor="#38BDF8" />
-                          <stop offset="1" stopColor="#2563EB" />
-                        </linearGradient>
                       </defs>
-                      <rect
-                        x="7"
-                        y="6"
-                        width="19"
-                        height="10"
-                        rx="3"
-                        transform="rotate(-6 7 6)"
-                        fill="url(#walletCardGrad)"
-                      />
-                      <rect
-                        x="4"
-                        y="11"
-                        width="26"
-                        height="19"
-                        rx="5"
-                        fill="url(#walletBodyGrad)"
-                      />
+                      <circle cx="17" cy="19" r="11.5" fill="url(#budgetMainGrad)" />
                       <path
-                        d="M9 14H24"
-                        stroke="white"
-                        strokeOpacity="0.35"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
+                        d="M19.5 6.5C25.3 6.9 29.9 11.5 30.3 17.3H19.5V6.5Z"
+                        fill="url(#budgetSliceGrad)"
                       />
-                      <rect
-                        x="21"
-                        y="16.5"
-                        width="11"
-                        height="8"
-                        rx="4"
-                        fill="url(#walletClaspGrad)"
-                      />
-                      <circle cx="25.5" cy="20.5" r="2" fill="#FEF08A" />
+                      <circle cx="17" cy="19" r="4.5" fill={isDark ? '#1f2430' : '#ffffff'} />
                     </svg>
                   </div>
 
-                  <span
-                    className={`text-base font-bold tracking-tight ${
-                      isDark ? 'text-white' : 'text-slate-900'
-                    }`}
-                  >
-                    View Your Wallets
-                  </span>
+                  <div className="min-w-0 text-left">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-base font-bold tracking-tight ${
+                          isDark ? 'text-white' : 'text-slate-900'
+                        }`}
+                      >
+                        Set Monthly Budget
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          isDark
+                            ? 'bg-teal-500/20 text-teal-300'
+                            : 'bg-teal-100 text-teal-700'
+                        }`}
+                      >
+                        Planner
+                      </span>
+                    </div>
+                    <span className={`block text-xs mt-0.5 truncate ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                      Allocate income across expenses &amp; wallets
+                    </span>
+                  </div>
                 </div>
 
                 <div
                   className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all duration-300 group-hover:translate-x-0.5 ${
                     isDark
-                      ? 'border-white/15 bg-white/10 text-emerald-300 group-hover:bg-emerald-500/20'
-                      : 'border-emerald-200 bg-white/90 text-emerald-700 shadow-xs group-hover:bg-emerald-50'
+                      ? 'border-teal-400/25 bg-teal-500/15 text-teal-300 group-hover:bg-teal-500/25'
+                      : 'border-teal-200 bg-white/90 text-teal-700 shadow-xs group-hover:bg-teal-50'
                   }`}
                 >
                   <ChevronRight size={18} />
                 </div>
-              </Link>
-
-              {/* ── Set Budget / Budget Allocation Card ─────────── */}
-              <Link
-                href="/finance/budget"
-                className={`w-full flex items-center justify-between p-4 rounded-3xl border transition-all cursor-pointer group shadow-sm ${
-                  isDark
-                    ? 'bg-[#1f2430] border-white/10 hover:border-teal-500/40 hover:bg-[#262c3b] text-slate-300 hover:text-white'
-                    : 'bg-white border-slate-200 hover:border-teal-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
-                      isDark
-                        ? 'bg-teal-500/20 text-teal-400 border-teal-500/30'
-                        : 'bg-teal-50 text-teal-600 border-teal-200'
-                    }`}
-                  >
-                    <PieChart size={18} />
-                  </div>
-                  <div className="text-left">
-                    <span
-                      className={`text-sm font-bold block ${isDark ? 'text-white' : 'text-slate-900'}`}
-                    >
-                      Set Monthly Budget
-                    </span>
-                    <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      Allocate income across expenses &amp; savings
-                    </span>
-                  </div>
-                </div>
-                <ChevronRight
-                  size={18}
-                  className={`transition-colors ${
-                    isDark
-                      ? 'text-slate-500 group-hover:text-teal-400'
-                      : 'text-slate-400 group-hover:text-teal-600'
-                  }`}
-                />
               </Link>
 
               {/* ── Transaction History Dedicated Button ────────── */}
@@ -1546,7 +1505,7 @@ export default function TotalCashSnapshotComponent({
             className="flex-1 py-2.5 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
           >
             <PlusCircle size={16} />
-            <span>Add Money</span>
+            <span>Add</span>
           </button>
 
           <button

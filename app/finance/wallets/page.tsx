@@ -368,7 +368,10 @@ export default function WalletsPage() {
         (updatedSources[source] as number) = newWalletBalance;
       }
 
-      const newTotal = (snapshot.totalAmount || 0) + amount;
+      const newTotal = computeTotalAmount({
+        ...snapshot,
+        sources: updatedSources,
+      });
 
       await addDoc(collection(db, 'cashTransactions'), {
         userId: user.uid,
@@ -400,6 +403,7 @@ export default function WalletsPage() {
       setSnapshot(updatedSnapshot);
     } catch (err) {
       console.error('Add money failed:', err);
+      throw err;
     } finally {
       setSaving(false);
     }
@@ -446,7 +450,10 @@ export default function WalletsPage() {
         (updatedSources[source] as number) = newWalletBalance;
       }
 
-      const newTotal = Math.max(0, (snapshot.totalAmount || 0) - amount);
+      const newTotal = computeTotalAmount({
+        ...snapshot,
+        sources: updatedSources,
+      });
 
       await addDoc(collection(db, 'cashTransactions'), {
         userId: user.uid,
@@ -479,6 +486,7 @@ export default function WalletsPage() {
       setSnapshot(updatedSnapshot);
     } catch (err) {
       console.error('Deduct money failed:', err);
+      throw err;
     } finally {
       setSaving(false);
     }

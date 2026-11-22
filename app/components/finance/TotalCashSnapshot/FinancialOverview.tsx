@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronRight, Eye, EyeOff } from 'lucide-react';
 
 export interface FinancialOverviewItem {
   key: 'spendable' | 'reserved' | 'savings' | 'amanat' | string;
@@ -156,6 +157,20 @@ export default function FinancialOverview({
           >
             {displayRs(total)}
           </h2>
+
+          <div className="mt-2 flex justify-end">
+            <Link
+              href="/finance/wallets"
+              className={`inline-flex items-center gap-0.5 text-xs font-semibold transition-colors ${
+                isDark
+                  ? 'text-emerald-400 hover:text-emerald-300'
+                  : 'text-emerald-700 hover:text-emerald-800'
+              }`}
+            >
+              <span>View your wallets</span>
+              <ChevronRight size={14} />
+            </Link>
+          </div>
         </div>
 
         {/* Segmented bar */}

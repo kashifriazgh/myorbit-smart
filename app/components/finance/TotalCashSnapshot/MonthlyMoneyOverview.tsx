@@ -207,30 +207,108 @@ export default function MonthlyMoneyOverview({
         </div>
       </div>
 
-      {/* 3 & 4. Loans */}
-      <div className="mt-4 grid grid-cols-2 gap-2.5">
-        <Tile
-          dot="bg-red-500"
-          label="To pay back"
-          hint="Loans you owe"
-          amount={displayRs(liabilities)}
-          amountClass={isDark ? 'text-red-400' : 'text-red-700'}
-          tint={isDark ? 'bg-red-500/10' : 'bg-red-50'}
-          ring={isDark ? 'ring-red-500/40' : 'ring-red-200'}
-          isDark={isDark}
-          onClick={onPayBackClick}
-        />
-        <Tile
-          dot="bg-blue-500"
-          label="To get back"
-          hint="Loans owed to you"
-          amount={displayRs(receivables)}
-          amountClass={isDark ? 'text-blue-400' : 'text-blue-700'}
-          tint={isDark ? 'bg-blue-500/10' : 'bg-blue-50'}
-          ring={isDark ? 'ring-blue-500/40' : 'ring-blue-200'}
-          isDark={isDark}
-          onClick={onGetBackClick}
-        />
+      {/* 3. Loans (Distinguished section with To Pay Back & To Get Back on separate lines) */}
+      <div
+        className={`mt-4 rounded-2xl p-4 ${
+          isDark ? 'bg-[#282e3d] border border-white/10' : 'border border-slate-200/80 bg-slate-50'
+        }`}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <p
+            className={`text-sm font-bold tracking-tight ${
+              isDark ? 'text-white' : 'text-slate-900'
+            }`}
+          >
+            Loans
+          </p>
+          <span
+            className={`text-[11px] font-medium ${
+              isDark ? 'text-slate-400' : 'text-slate-500'
+            }`}
+          >
+            Payables &amp; Receivables
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={onPayBackClick}
+            className={`w-full flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ring-1 ring-inset transition hover:scale-[1.01] cursor-pointer text-left ${
+              isDark
+                ? 'bg-red-500/10 ring-red-500/35 hover:bg-red-500/15'
+                : 'bg-red-50 ring-red-200 hover:bg-red-100/70'
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span
+                className={`h-3 w-3 shrink-0 rounded-full bg-red-500 ring-4 ${
+                  isDark ? 'ring-white/5' : 'ring-black/5'
+                }`}
+              />
+              <div className="min-w-0 leading-tight">
+                <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  To Pay back
+                </p>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Loans you owe
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span
+                className={`text-base sm:text-lg font-bold tabular-nums ${
+                  isDark ? 'text-red-400' : 'text-red-700'
+                }`}
+              >
+                {displayRs(liabilities)}
+              </span>
+              <ChevronRight
+                size={16}
+                className={isDark ? 'text-red-400/70' : 'text-red-500/70'}
+              />
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={onGetBackClick}
+            className={`w-full flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ring-1 ring-inset transition hover:scale-[1.01] cursor-pointer text-left ${
+              isDark
+                ? 'bg-blue-500/10 ring-blue-500/35 hover:bg-blue-500/15'
+                : 'bg-blue-50 ring-blue-200 hover:bg-blue-100/70'
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span
+                className={`h-3 w-3 shrink-0 rounded-full bg-blue-500 ring-4 ${
+                  isDark ? 'ring-white/5' : 'ring-black/5'
+                }`}
+              />
+              <div className="min-w-0 leading-tight">
+                <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  To get back
+                </p>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Loans owed to you
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span
+                className={`text-base sm:text-lg font-bold tabular-nums ${
+                  isDark ? 'text-blue-400' : 'text-blue-700'
+                }`}
+              >
+                {displayRs(receivables)}
+              </span>
+              <ChevronRight
+                size={16}
+                className={isDark ? 'text-blue-400/70' : 'text-blue-500/70'}
+              />
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   );

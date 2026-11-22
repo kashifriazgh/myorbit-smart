@@ -15,7 +15,6 @@ import {
 } from '@mui/material';
 import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
-import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
@@ -52,7 +51,7 @@ export default function FinanceHomepage() {
       darkSubText: '#94a3b8',
     },
     {
-      title: 'Wallets & Accounts',
+      title: 'View Wallets',
       href: '/finance/wallets',
       description: 'Manage cash, bank, mobile & virtual wallets',
       icon: <AccountBalanceWalletIcon sx={{ fontSize: 28 }} />,
@@ -102,20 +101,6 @@ export default function FinanceHomepage() {
       darkBg: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)',
       lightBubble: '#a5d6a7',
       darkBubble: '#111827',
-      lightText: '#0f172a',
-      darkText: '#f1f5f9',
-      lightSubText: '#334155',
-      darkSubText: '#94a3b8',
-    },
-    {
-      title: 'Liabilities',
-      href: '/finance/liabilities',
-      description: 'Track peer-to-peer debts',
-      icon: <AssignmentOutlinedIcon sx={{ fontSize: 28 }} />,
-      lightBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
-      darkBg: 'linear-gradient(135deg, #3730a3 0%, #1e1b4b 100%)',
-      lightBubble: '#ffe0b2',
-      darkBubble: '#1e1b4b',
       lightText: '#0f172a',
       darkText: '#f1f5f9',
       lightSubText: '#334155',

@@ -8,15 +8,16 @@ import type {
   TotalCashSnapshot,
   FinancialEventType,
 } from '@/app/lib/interface';
-import { PAKISTANI_EXPENSE_CATEGORIES } from '@/app/lib/constant';
+import {
+  PAKISTANI_EXPENSE_CATEGORIES,
+  STANDARD_EXPENSE_CATEGORIES,
+} from '@/app/lib/constant';
 import { db } from '@/app/lib/firebase';
 import {
   collection,
-  addDoc,
   getDocs,
   query,
   where,
-  Timestamp,
 } from 'firebase/firestore';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useGoals } from '@/app/lib/context/GoalsContext';
@@ -107,16 +108,6 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const SOURCE_OPTIONS: TransactionSource[] = ['in_hand', 'bank', 'easypaisa', 'jazzcash', 'other', 'custom'];
 
-const INFLOW_SOURCES = [
-  { id: 'salary', label: 'Salary Income', eventType: 'income' },
-  { id: 'business', label: 'Business / Profit', eventType: 'income' },
-  { id: 'freelance', label: 'Freelancing / Project', eventType: 'income' },
-  { id: 'borrowed', label: 'Borrowed Money (Loan)', eventType: 'loan_received' },
-  { id: 'opening_balance', label: 'Opening Balance', eventType: 'opening_balance' },
-  { id: 'adjustment', label: 'Correction / Adjustment', eventType: 'balance_adjustment' },
-  { id: 'gift', label: 'Gift / Allowance', eventType: 'income' },
-];
-
 const fmt = (n: number | string) => Number(n || 0).toLocaleString("en-PK");
 
 export default function AddMoney({
@@ -148,12 +139,9 @@ export default function AddMoney({
   const [source, setSource] = useState<TransactionSource>('in_hand');
   const [note, setNote] = useState('');
 
-  // Source Classifier (distinguish income from loans, adjustments, opening balance)
-  const [inflowSource, setInflowSource] = useState('salary');
-
   // Expense Categories for Deduct Mode
   const [expenseCategory, setExpenseCategory] = useState<string>(
-    PAKISTANI_EXPENSE_CATEGORIES?.[0] || 'Groceries'
+    PAKISTANI_EXPENSE_CATEGORIES?.[0] || 'House rent'
   );
   const [subCategory, setSubCategory] = useState('');
 
@@ -164,14 +152,10 @@ export default function AddMoney({
   // Bank-specific state
   const [banks, setBanks] = useState<Bank[]>([]);
   const [selectedBank, setSelectedBank] = useState<string>('');
-  const [newBankName, setNewBankName] = useState('');
-  const [showAddBank, setShowAddBank] = useState(false);
 
   // Custom payment head state
   const [customPaymentHeads, setCustomPaymentHeads] = useState<CustomPaymentHead[]>([]);
   const [selectedCustomHead, setSelectedCustomHead] = useState<string>('');
-  const [newCustomHeadName, setNewCustomHeadName] = useState('');
-  const [showAddCustom, setShowAddCustom] = useState(false);
 
   useEffect(() => {
     if (!user || !showModal) return;
@@ -276,39 +260,6 @@ export default function AddMoney({
     }
   };
 
-  const handleAddBank = async () => {
-    if (!user || !newBankName.trim()) return;
-    const docRef = await addDoc(collection(db, 'banks'), {
-      userId: user.uid,
-      name: newBankName.trim(),
-      createdAt: Timestamp.now(),
-    });
-    const newBank: Bank = { id: docRef.id, userId: user.uid, name: newBankName.trim(), createdAt: Timestamp.now() };
-    setBanks((prev) => [...prev, newBank]);
-    setSelectedBank(newBank.id!);
-    setNewBankName('');
-    setShowAddBank(false);
-  };
-
-  const handleAddCustomPaymentHead = async () => {
-    if (!user || !newCustomHeadName.trim()) return;
-    const docRef = await addDoc(collection(db, 'customPaymentHeads'), {
-      userId: user.uid,
-      name: newCustomHeadName.trim(),
-      createdAt: Timestamp.now(),
-    });
-    const newHead: CustomPaymentHead = {
-      id: docRef.id,
-      userId: user.uid,
-      name: newCustomHeadName.trim(),
-      createdAt: Timestamp.now(),
-    };
-    setCustomPaymentHeads((prev) => [...prev, newHead]);
-    setSelectedCustomHead(newHead.id!);
-    setNewCustomHeadName('');
-    setShowAddCustom(false);
-  };
-
   const fromBankName = useMemo(() => {
     return banks.find((b) => b.id === selectedBank)?.name;
   }, [banks, selectedBank]);
@@ -383,9 +334,6 @@ export default function AddMoney({
         }
       }
 
-      const selectedInflow = INFLOW_SOURCES.find((s) => s.id === inflowSource);
-      const resolvedEventType = (selectedInflow?.eventType || 'income') as FinancialEventType;
-
       await onSave(
         value,
         source,
@@ -397,19 +345,36 @@ export default function AddMoney({
         note,
         holderToSave,
         {
-          eventType: resolvedEventType,
-          sourceIncomeType: selectedInflow?.label,
+          eventType: 'income',
+          sourceIncomeType: 'Income',
         }
       );
     } else if (mode === 'deduct' && onDeduct) {
+      let bankId: string | undefined;
+      let bankName: string | undefined;
+      let customPaymentHeadId: string | undefined;
+      let customPaymentHeadName: string | undefined;
+
+      if (source === 'bank') {
+        bankId = selectedBank;
+        bankName = fromBankName;
+      }
+      if (source === 'custom') {
+        customPaymentHeadId = selectedCustomHead;
+        const foundHead = allCustomHeads.find(
+          (c) => c.id === selectedCustomHead || c.name === selectedCustomHead
+        );
+        customPaymentHeadName = foundHead?.name || fromCustomName || selectedCustomHead;
+      }
+
       await onDeduct(
         value,
         source,
-        selectedBank,
-        fromBankName,
+        bankId,
+        bankName,
         false,
-        selectedCustomHead,
-        fromCustomName,
+        customPaymentHeadId,
+        customPaymentHeadName,
         note,
         holderToSave,
         {
@@ -497,7 +462,6 @@ export default function AddMoney({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
                 placeholder="0"
-                autoFocus
                 className="w-full bg-transparent text-3xl font-bold text-white placeholder-slate-600 focus:outline-none"
               />
             </label>
@@ -525,53 +489,43 @@ export default function AddMoney({
             )}
           </div>
 
-          {/* Inflow Source Selector (for Add mode) */}
-          {mode === 'add' ? (
-            <div className="p-3 bg-slate-900/60 border border-white/10 rounded-2xl flex flex-col gap-2">
-              <label className="text-xs font-semibold text-slate-300">
-                Classify Inflow Source:
+          {/* Expense Categories (for Deduct mode only — no Classify Inflow Source in Add mode) */}
+          {mode === 'deduct' && (
+            <div className="p-3.5 bg-slate-900/60 border border-white/10 rounded-2xl flex flex-col gap-3">
+              <label className="text-sm font-bold text-white tracking-tight">
+                Select Category
               </label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {INFLOW_SOURCES.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setInflowSource(s.id)}
-                    className={`p-2 rounded-xl border text-left font-medium transition cursor-pointer ${
-                      inflowSource === s.id
-                        ? 'bg-blue-600/20 border-blue-500 text-blue-300 font-bold'
-                        : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-0.5">
+                {STANDARD_EXPENSE_CATEGORIES.map((cat) => {
+                  const CatIcon = cat.icon;
+                  const isSelected = expenseCategory === cat.name;
+                  return (
+                    <button
+                      key={cat.name}
+                      type="button"
+                      onClick={() => setExpenseCategory(cat.name)}
+                      className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-rose-500/20 border-rose-500 text-white ring-1 ring-rose-500/50'
+                          : 'bg-slate-950/80 border-white/10 text-slate-300 hover:border-white/20 hover:text-white'
+                      }`}
+                    >
+                      <CatIcon
+                        size={14}
+                        className={`shrink-0 ${isSelected ? 'text-rose-400' : cat.darkColor}`}
+                      />
+                      <span className="truncate">{cat.name}</span>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
-          ) : (
-            /* Pakistani Expense Categories (for Deduct mode) */
-            <div className="p-3 bg-slate-900/60 border border-white/10 rounded-2xl flex flex-col gap-2">
-              <label className="text-xs font-semibold text-slate-300">
-                Standard Pakistani Expense Category:
-              </label>
-              <select
-                value={expenseCategory}
-                onChange={(e) => setExpenseCategory(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-rose-500"
-              >
-                {(PAKISTANI_EXPENSE_CATEGORIES || []).map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
               <div>
                 <input
                   type="text"
                   value={subCategory}
                   onChange={(e) => setSubCategory(e.target.value)}
                   placeholder="Optional subcategory (e.g. Petrol, Medicine, Dinner)"
-                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs placeholder-slate-600 focus:outline-none"
+                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs placeholder-slate-600 focus:outline-none focus:border-rose-500"
                 />
               </div>
             </div>
@@ -619,95 +573,84 @@ export default function AddMoney({
             {/* Bank Sub-selector */}
             {source === 'bank' && (
               <div className="mt-2.5 space-y-2 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold uppercase text-slate-400">Select Bank Account</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddBank((p) => !p)}
-                    className="text-xs font-bold text-blue-400 hover:underline"
+                <label className="block text-[11px] font-bold uppercase text-slate-400">
+                  Select Bank Account
+                </label>
+                {banks.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-1">
+                    No bank accounts found. Create one in Wallets first.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedBank}
+                    onChange={(e) => setSelectedBank(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 p-2 text-xs font-semibold text-white focus:outline-none"
                   >
-                    + New Bank
-                  </button>
-                </div>
-                <select
-                  value={selectedBank}
-                  onChange={(e) => setSelectedBank(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-slate-950 p-2 text-xs font-semibold text-white focus:outline-none"
-                >
-                  <option value="">— Select Bank —</option>
-                  {banks.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      🏦 {b.name} ({formatCurrency(snapshot?.sources.bank?.[b.name] ?? 0, 'PKR')})
-                    </option>
-                  ))}
-                </select>
-
-                {showAddBank && (
-                  <div className="flex gap-2 pt-1">
-                    <input
-                      type="text"
-                      placeholder="Bank name (e.g. Meezan, HBL)"
-                      value={newBankName}
-                      onChange={(e) => setNewBankName(e.target.value)}
-                      className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-1.5 text-xs text-white focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddBank}
-                      disabled={!newBankName.trim()}
-                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blue-500 disabled:opacity-40"
-                    >
-                      Add
-                    </button>
-                  </div>
+                    <option value="">— Select Bank —</option>
+                    {banks.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        🏦 {b.name} ({formatCurrency(snapshot?.sources.bank?.[b.name] ?? 0, 'PKR')})
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
             )}
 
-            {/* Custom Sub-selector */}
+            {/* Custom Sub-selector (small cards in 2 lines when <= 4 wallets, dropdown when > 4) */}
             {source === 'custom' && (
               <div className="mt-2.5 space-y-2 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold uppercase text-slate-400">Select Custom Wallet</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddCustom((p) => !p)}
-                    className="text-xs font-bold text-blue-400 hover:underline"
-                  >
-                    + New Wallet
-                  </button>
-                </div>
-                <select
-                  value={selectedCustomHead}
-                  onChange={(e) => setSelectedCustomHead(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-slate-950 p-2 text-xs font-semibold text-white focus:outline-none"
-                >
-                  <option value="">— Select Wallet —</option>
-                  {allCustomHeads.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      🎯 {h.name} {h.goalTitle ? `(Goal: ${h.goalTitle})` : ''} ({formatCurrency(snapshot?.sources.custom?.[h.name] ?? 0, 'PKR')})
-                    </option>
-                  ))}
-                </select>
-
-                {showAddCustom && (
-                  <div className="flex gap-2 pt-1">
-                    <input
-                      type="text"
-                      placeholder="Wallet name (e.g. Emergency, Savings)"
-                      value={newCustomHeadName}
-                      onChange={(e) => setNewCustomHeadName(e.target.value)}
-                      className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-1.5 text-xs text-white focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddCustomPaymentHead}
-                      disabled={!newCustomHeadName.trim()}
-                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blue-500 disabled:opacity-40"
-                    >
-                      Add
-                    </button>
+                <label className="block text-[11px] font-bold uppercase text-slate-400">
+                  Select Custom Wallet
+                </label>
+                {allCustomHeads.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-1">
+                    No custom wallets found. Create one in Wallets first.
+                  </p>
+                ) : allCustomHeads.length <= 4 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {allCustomHeads.map((h) => {
+                      const isSelected = selectedCustomHead === h.id;
+                      const bal = snapshot?.sources.custom?.[h.name] ?? 0;
+                      return (
+                        <button
+                          key={h.id}
+                          type="button"
+                          onClick={() => setSelectedCustomHead(h.id || '')}
+                          className={`flex items-center gap-2 rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-500/15 ring-1 ring-blue-500 text-white'
+                              : 'border-white/10 bg-slate-950/80 hover:border-white/20 text-slate-200'
+                          }`}
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-xs">
+                            🎯
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-bold text-white">
+                              {h.name}
+                            </span>
+                            <span className="block truncate text-[10px] text-slate-400 font-medium">
+                              {formatCurrency(bal, 'PKR')}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
+                ) : (
+                  <select
+                    value={selectedCustomHead}
+                    onChange={(e) => setSelectedCustomHead(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 p-2 text-xs font-semibold text-white focus:outline-none"
+                  >
+                    <option value="">— Select Wallet —</option>
+                    {allCustomHeads.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        🎯 {h.name} {h.goalTitle ? `(Goal: ${h.goalTitle})` : ''} ({formatCurrency(snapshot?.sources.custom?.[h.name] ?? 0, 'PKR')})
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
             )}

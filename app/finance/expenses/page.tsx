@@ -7,25 +7,16 @@ import {
   Plus,
   Search,
   Trash2,
+  Pencil,
   CalendarDays,
   X,
   AlertTriangle,
   RefreshCw,
   LayoutGrid,
-  ShoppingCart,
-  Zap,
-  Wifi,
-  Car,
-  GraduationCap,
-  HeartPulse,
-  ShoppingBag,
-  Home,
-  HeartHandshake,
-  Film,
-  User,
-  MoreHorizontal,
-  Landmark,
   Globe,
+  CheckCircle2,
+  FileText,
+  PieChart,
 } from 'lucide-react';
 import {
   Dialog,
@@ -55,7 +46,7 @@ import {
   TotalCashSnapshot,
   TransactionSource,
 } from '@/app/lib/interface';
-import { PAKISTANI_EXPENSE_CATEGORIES } from '@/app/lib/constant';
+import { PAKISTANI_EXPENSE_CATEGORIES, EXPENSE_CATEGORY_META } from '@/app/lib/constant';
 
 type ExpenseTypeOption = 'recurring' | 'one_time' | 'event_based' | 'wish_list';
 type ExpensePriorityOption = 'essential' | 'important' | 'wish_list' | 'lifestyle';
@@ -132,26 +123,7 @@ const FREQUENCY_OPTIONS: { value: ExpenseFrequencyOption; label: string }[] = [
   { value: 'daily', label: 'Daily' },
 ];
 
-type CategoryIconComponent = React.ComponentType<{ size?: number; className?: string }>;
-
-const CATEGORY_META: Record<
-  string,
-  { icon: CategoryIconComponent; darkColor: string; lightColor: string }
-> = {
-  'House rent': { icon: Home, darkColor: 'text-teal-400', lightColor: 'text-teal-600' },
-  'Groceries and food': { icon: ShoppingCart, darkColor: 'text-emerald-400', lightColor: 'text-emerald-600' },
-  'Electricity, gas and water': { icon: Zap, darkColor: 'text-amber-400', lightColor: 'text-amber-600' },
-  "Children's education": { icon: GraduationCap, darkColor: 'text-blue-400', lightColor: 'text-blue-600' },
-  'Healthcare and medicines': { icon: HeartPulse, darkColor: 'text-rose-400', lightColor: 'text-rose-600' },
-  'Transport and fuel': { icon: Car, darkColor: 'text-indigo-400', lightColor: 'text-indigo-600' },
-  'Mobile and internet': { icon: Wifi, darkColor: 'text-sky-400', lightColor: 'text-sky-600' },
-  'Clothing and shopping': { icon: ShoppingBag, darkColor: 'text-fuchsia-400', lightColor: 'text-fuchsia-600' },
-  Entertainment: { icon: Film, darkColor: 'text-purple-400', lightColor: 'text-purple-600' },
-  'Loans and installments': { icon: Landmark, darkColor: 'text-red-400', lightColor: 'text-red-600' },
-  Charity: { icon: HeartHandshake, darkColor: 'text-green-400', lightColor: 'text-green-600' },
-  Personal: { icon: User, darkColor: 'text-orange-400', lightColor: 'text-orange-600' },
-  'Other expenses': { icon: MoreHorizontal, darkColor: 'text-slate-400', lightColor: 'text-slate-500' },
-};
+const CATEGORY_META = EXPENSE_CATEGORY_META;
 
 const FETCH_TIMEOUT_MS = 12000;
 
@@ -187,7 +159,25 @@ export default function ExpensesPage() {
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
-  const currentMonthName = MONTH_NAMES[new Date().getMonth()];
+  const [selectedMonthOffset, setSelectedMonthOffset] = useState<0 | 1>(0);
+
+  const monthOptions = useMemo(() => {
+    const now = new Date();
+    return ([0, 1] as const).map((offset) => {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      return {
+        offset,
+        year: d.getFullYear(),
+        month: d.getMonth(),
+        name: MONTH_NAMES[d.getMonth()],
+        label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
+        tag: offset === 0 ? 'Current Month' : 'Next Month',
+      };
+    });
+  }, []);
+
+  const activeMonth = monthOptions[selectedMonthOffset];
+  const currentMonthName = activeMonth.name;
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -201,8 +191,12 @@ export default function ExpensesPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Add Expense Dialog (Sequence: Title, Amount, Due Date, Category, Type, Priority, Frequency, Notes)
+  // Detail Dialog
+  const [detailItem, setDetailItem] = useState<PlannedExpense | null>(null);
+
+  // Add / Edit Expense Dialog (Sequence: Title, Amount, Due Date, Category, Type, Priority, Frequency, Notes)
   const [openAddModal, setOpenAddModal] = useState(false);
+  const [editingItem, setEditingItem] = useState<PlannedExpense | null>(null);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -298,18 +292,50 @@ export default function ExpensesPage() {
     return list;
   }, [snapshot]);
 
-  // Calculate current month's totals
+  // Helper: determine whether a plannedExpense belongs to the selected month
+  const itemMatchesMonth = useCallback(
+    (p: PlannedExpense, targetYear: number, targetMonth: number, isCurrentMonth: boolean): boolean => {
+      const isGlobalWishList =
+        p.expenseType === 'wish_list' || p.priority === 'wish_list' || p.isGlobal;
+      if (isGlobalWishList) return true;
+
+      const isOneTime =
+        p.expenseType === 'one_time' ||
+        p.expenseType === 'event_based' ||
+        p.recurrence === 'one_time';
+
+      if (!isOneTime) {
+        // Recurring expenses apply to every month
+        return true;
+      }
+
+      if (p.dueDate) {
+        const d = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+        if (!isNaN(d.getTime())) {
+          return d.getFullYear() === targetYear && d.getMonth() === targetMonth;
+        }
+      }
+
+      // One-time without due date shows in current month by default
+      return isCurrentMonth;
+    },
+    []
+  );
+
+  // Calculate selected month's totals
   const monthlyMetrics = useMemo(() => {
     let monthlyRecurring = 0;
     let oneTimeCurrentMonth = 0;
     let paidTotal = 0;
 
-    const now = new Date();
-    const curYear = now.getFullYear();
-    const curMonth = now.getMonth();
+    const curYear = activeMonth.year;
+    const curMonth = activeMonth.month;
+    const isCurrentMonth = activeMonth.offset === 0;
 
     // From plannedExpenses
     plannedList.forEach((p) => {
+      if (!itemMatchesMonth(p, curYear, curMonth, isCurrentMonth)) return;
+
       const amt = p.expectedAmount || 0;
       const isGlobalWishList =
         p.expenseType === 'wish_list' || p.priority === 'wish_list' || p.isGlobal;
@@ -318,7 +344,6 @@ export default function ExpensesPage() {
 
       let monthAmt = 0;
       if (isGlobalWishList) {
-        // Wish list items are global and always displayed every month
         monthAmt = amt;
         oneTimeCurrentMonth += amt;
       } else if (!isOneTime && effectiveFreq === 'monthly') {
@@ -333,18 +358,12 @@ export default function ExpensesPage() {
       } else if (!isOneTime && effectiveFreq === 'yearly') {
         monthAmt = amt / 12;
         monthlyRecurring += monthAmt;
-      } else if (p.dueDate) {
-        const d = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
-        if (!isNaN(d.getTime()) && d.getFullYear() === curYear && d.getMonth() === curMonth) {
-          monthAmt = amt;
-          oneTimeCurrentMonth += amt;
-        }
       } else {
         monthAmt = amt;
         oneTimeCurrentMonth += amt;
       }
 
-      if (monthAmt > 0) {
+      if (monthAmt > 0 && isCurrentMonth) {
         if (p.paymentStatus === 'paid') paidTotal += monthAmt;
         else paidTotal += Math.min(monthAmt, Number(p.actualPaidAmount) || 0);
       }
@@ -366,7 +385,7 @@ export default function ExpensesPage() {
           oneTimeCurrentMonth += amt;
         }
       }
-      if (monthAmt > 0 && e.isPaid) paidTotal += monthAmt;
+      if (monthAmt > 0 && isCurrentMonth && e.isPaid) paidTotal += monthAmt;
     });
 
     const totalThisMonth = Math.round(monthlyRecurring + oneTimeCurrentMonth);
@@ -380,11 +399,14 @@ export default function ExpensesPage() {
       paidThisMonth,
       pendingThisMonth,
     };
-  }, [plannedList, expendituresList]);
+  }, [plannedList, expendituresList, activeMonth, itemMatchesMonth]);
 
-  // Filtered List
+  // Filtered List (scoped to selected month)
   const filteredList = useMemo(() => {
     return plannedList.filter((item) => {
+      if (!itemMatchesMonth(item, activeMonth.year, activeMonth.month, activeMonth.offset === 0)) {
+        return false;
+      }
       if (selectedCategory !== 'all' && item.category !== selectedCategory) return false;
       if (statusFilter === 'pending' && item.paymentStatus === 'paid') return false;
       if (statusFilter === 'paid' && item.paymentStatus !== 'paid') return false;
@@ -398,14 +420,74 @@ export default function ExpensesPage() {
       }
       return true;
     });
-  }, [plannedList, selectedCategory, statusFilter, searchQuery]);
+  }, [plannedList, selectedCategory, statusFilter, searchQuery, activeMonth, itemMatchesMonth]);
 
-  const handleCreateExpense = async (e: React.FormEvent) => {
+  const resetForm = () => {
+    setEditingItem(null);
+    setTitle('');
+    setAmount('');
+    setDueDate('');
+    setCategory(PAKISTANI_EXPENSE_CATEGORIES?.[0] || 'House rent');
+    setCustomCat('');
+    setExpenseType('recurring');
+    setPriority('essential');
+    setFrequency('monthly');
+    setNotes('');
+    setFormError(null);
+  };
+
+  const openCreateModal = () => {
+    resetForm();
+    // Default due date to the selected month if viewing next month
+    if (activeMonth.offset === 1) {
+      const mStr = String(activeMonth.month + 1).padStart(2, '0');
+      setDueDate(`${activeMonth.year}-${mStr}-01`);
+    }
+    setOpenAddModal(true);
+  };
+
+  const openEditModal = (item: PlannedExpense) => {
+    setDetailItem(null);
+    setEditingItem(item);
+    setTitle(item.title || '');
+    setAmount(String(item.expectedAmount || ''));
+    const isKnownCat = (
+      (PAKISTANI_EXPENSE_CATEGORIES as readonly string[]) || []
+    ).includes(item.category);
+    if (isKnownCat) {
+      setCategory(item.category);
+      setCustomCat('');
+    } else {
+      setCategory('Other expenses');
+      setCustomCat(item.category || '');
+    }
+    const resolvedType: ExpenseTypeOption =
+      item.expenseType ||
+      (item.isGlobal || item.priority === 'wish_list'
+        ? 'wish_list'
+        : item.recurrence === 'one_time'
+        ? 'one_time'
+        : 'recurring');
+    setExpenseType(resolvedType);
+    setPriority((item.priority as ExpensePriorityOption) || 'essential');
+    const resolvedFreq: ExpenseFrequencyOption =
+      (item.frequency as ExpenseFrequencyOption) ||
+      (item.recurrence && item.recurrence !== 'one_time'
+        ? (item.recurrence as ExpenseFrequencyOption)
+        : 'monthly');
+    setFrequency(resolvedFreq);
+    setDueDate(resolvedType === 'wish_list' ? '' : formatDueDate(item.dueDate));
+    setNotes(item.notes || '');
+    setFormError(null);
+    setOpenAddModal(true);
+  };
+
+  const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
     if (!user?.uid) {
-      setFormError('You must be signed in to add an expense.');
+      setFormError('You must be signed in to save an expense.');
       return;
     }
     if (!title.trim()) {
@@ -433,62 +515,90 @@ export default function ExpensesPage() {
         : 'one_time';
       const trimmedNotes = notes.trim();
 
-      const newExpense: Omit<PlannedExpense, 'id'> = {
-        userId: user.uid,
-        title: title.trim(),
-        category: finalCat,
-        expectedAmount: numAmt,
-        actualPaidAmount: 0,
-        dueDate: isWishList ? '' : dueDate,
-        paymentStatus: 'pending',
-        recurrence: mappedRecurrence,
-        expenseType,
-        priority,
-        isGlobal: isWishList,
-        ...(isWishList ? {} : { frequency }),
-        ...(trimmedNotes ? { notes: trimmedNotes } : {}),
-        createdAt: new Date(),
-      };
+      if (editingItem?.id) {
+        const updatePayload: Record<string, unknown> = {
+          title: title.trim(),
+          category: finalCat,
+          expectedAmount: numAmt,
+          dueDate: isWishList ? '' : dueDate,
+          recurrence: mappedRecurrence,
+          expenseType,
+          priority,
+          isGlobal: isWishList,
+          notes: trimmedNotes || '',
+        };
+        if (!isWishList) {
+          updatePayload.frequency = frequency;
+        }
 
-      // Build clean Firestore payload with no `undefined` values
-      const firestorePayload: Record<string, unknown> = {
-        userId: user.uid,
-        title: newExpense.title,
-        category: newExpense.category,
-        expectedAmount: newExpense.expectedAmount,
-        actualPaidAmount: 0,
-        dueDate: newExpense.dueDate,
-        paymentStatus: 'pending',
-        recurrence: newExpense.recurrence,
-        expenseType: newExpense.expenseType,
-        priority: newExpense.priority,
-        isGlobal: isWishList,
-        createdAt: serverTimestamp(),
-      };
-      if (!isWishList) {
-        firestorePayload.frequency = frequency;
+        await updateDoc(doc(db, 'plannedExpenses', editingItem.id), updatePayload);
+
+        setPlannedList((prev) =>
+          prev.map((item) =>
+            item.id === editingItem.id
+              ? {
+                  ...item,
+                  title: title.trim(),
+                  category: finalCat,
+                  expectedAmount: numAmt,
+                  dueDate: isWishList ? '' : dueDate,
+                  recurrence: mappedRecurrence,
+                  expenseType,
+                  priority,
+                  isGlobal: isWishList,
+                  ...(isWishList ? { frequency: undefined } : { frequency }),
+                  notes: trimmedNotes || undefined,
+                }
+              : item
+          )
+        );
+      } else {
+        const newExpense: Omit<PlannedExpense, 'id'> = {
+          userId: user.uid,
+          title: title.trim(),
+          category: finalCat,
+          expectedAmount: numAmt,
+          actualPaidAmount: 0,
+          dueDate: isWishList ? '' : dueDate,
+          paymentStatus: 'pending',
+          recurrence: mappedRecurrence,
+          expenseType,
+          priority,
+          isGlobal: isWishList,
+          ...(isWishList ? {} : { frequency }),
+          ...(trimmedNotes ? { notes: trimmedNotes } : {}),
+          createdAt: new Date(),
+        };
+
+        const firestorePayload: Record<string, unknown> = {
+          userId: user.uid,
+          title: newExpense.title,
+          category: newExpense.category,
+          expectedAmount: newExpense.expectedAmount,
+          actualPaidAmount: 0,
+          dueDate: newExpense.dueDate,
+          paymentStatus: 'pending',
+          recurrence: newExpense.recurrence,
+          expenseType: newExpense.expenseType,
+          priority: newExpense.priority,
+          isGlobal: isWishList,
+          createdAt: serverTimestamp(),
+        };
+        if (!isWishList) {
+          firestorePayload.frequency = frequency;
+        }
+        if (trimmedNotes) {
+          firestorePayload.notes = trimmedNotes;
+        }
+
+        const docRef = await addDoc(collection(db, 'plannedExpenses'), firestorePayload);
+        setPlannedList((prev) => [{ id: docRef.id, ...newExpense }, ...prev]);
       }
-      if (trimmedNotes) {
-        firestorePayload.notes = trimmedNotes;
-      }
 
-      const docRef = await addDoc(collection(db, 'plannedExpenses'), firestorePayload);
-
-      setPlannedList((prev) => [{ id: docRef.id, ...newExpense }, ...prev]);
-
-      // Reset form
-      setTitle('');
-      setAmount('');
-      setDueDate('');
-      setCustomCat('');
-      setExpenseType('recurring');
-      setPriority('essential');
-      setFrequency('monthly');
-      setNotes('');
-      setFormError(null);
+      resetForm();
       setOpenAddModal(false);
     } catch (err) {
-      console.error('Error creating expense:', err);
+      console.error('Error saving expense:', err);
       const errMsg =
         err instanceof Error && err.message
           ? `Could not save expense: ${err.message}`
@@ -571,6 +681,7 @@ export default function ExpensesPage() {
     try {
       await deleteDoc(doc(db, 'plannedExpenses', id));
       setPlannedList((prev) => prev.filter((p) => p.id !== id));
+      setDetailItem((cur) => (cur?.id === id ? null : cur));
     } catch (err) {
       console.error('Error deleting expense:', err);
       setActionError('Failed to delete expense. Please try again.');
@@ -623,13 +734,54 @@ export default function ExpensesPage() {
 
           <button
             type="button"
-            onClick={() => setOpenAddModal(true)}
+            onClick={openCreateModal}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
           >
             <Plus size={16} />
             <span>Add Expense</span>
           </button>
         </header>
+
+        {/* Month Switcher: Current Month (default) & Next Month */}
+        <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
+          <div
+            className={`inline-flex rounded-2xl p-1 border ${
+              isDark ? 'bg-slate-900 border-slate-700/70' : 'bg-white border-slate-200 shadow-2xs'
+            }`}
+          >
+            {monthOptions.map((m) => {
+              const active = selectedMonthOffset === m.offset;
+              return (
+                <button
+                  key={m.offset}
+                  type="button"
+                  onClick={() => setSelectedMonthOffset(m.offset)}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    active
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : isDark
+                      ? 'text-slate-300 hover:text-white'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <CalendarDays size={13} />
+                  <span>{m.label}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                      active
+                        ? 'bg-white/20 text-white'
+                        : isDark
+                        ? 'bg-white/5 text-slate-400'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {m.offset === 0 ? 'Current' : 'Next'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Action Error Banner (create / pay / delete failures) */}
         {actionError && (
@@ -667,7 +819,7 @@ export default function ExpensesPage() {
           <span
             className={`text-sm font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}
           >
-            Total Expenses For Current Month ({currentMonthName})
+            Total Expenses For {activeMonth.tag} ({activeMonth.label})
           </span>
 
           {loading ? (
@@ -999,178 +1151,93 @@ export default function ExpensesPage() {
                 const isPaid = item.paymentStatus === 'paid';
                 const isGlobalWishList =
                   item.expenseType === 'wish_list' || item.priority === 'wish_list' || item.isGlobal;
-                const priorityMeta = PRIORITY_OPTIONS.find((p) => p.value === item.priority);
                 const catMeta = CATEGORY_META[item.category] ?? CATEGORY_META['Other expenses'];
                 const RowCatIcon = catMeta.icon;
-                const dueStr = isGlobalWishList ? '' : formatDueDate(item.dueDate);
-                const freqLabel = isGlobalWishList
-                  ? undefined
-                  : item.frequency || (item.recurrence !== 'one_time' ? item.recurrence : undefined);
-                const typeLabel =
-                  item.expenseType === 'event_based'
-                    ? 'Event-Based'
-                    : item.expenseType === 'one_time' || item.recurrence === 'one_time'
-                    ? 'One-Time'
-                    : 'Recurring';
+                const dueStr = isGlobalWishList ? 'Every month' : formatDueDate(item.dueDate) || activeMonth.label;
 
                 return (
                   <li
                     key={item.id}
-                    className={`flex items-center justify-between gap-3 rounded-xl px-3.5 py-3 transition ${
+                    onClick={() => setDetailItem(item)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setDetailItem(item);
+                      }
+                    }}
+                    className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3.5 transition cursor-pointer ${
                       isDark
-                        ? 'bg-slate-800/80 hover:bg-slate-800'
-                        : 'bg-slate-50 hover:bg-slate-100/90'
+                        ? 'bg-slate-800/80 hover:bg-slate-800 border border-transparent hover:border-slate-700'
+                        : 'bg-slate-50 hover:bg-slate-100/90 border border-transparent hover:border-slate-200'
                     }`}
                   >
-                    {/* Left: title + category + priority + due date */}
-                    <div className="min-w-0 leading-tight">
-                      <p
-                        className={`truncate text-sm font-semibold ${
-                          isPaid
-                            ? isDark
-                              ? 'text-neutral-400 line-through'
-                              : 'text-slate-400 line-through'
-                            : isDark
-                            ? 'text-white'
-                            : 'text-slate-900'
-                        }`}
-                      >
-                        {item.title}
-                      </p>
+                    {/* Left: Title + Category + Date */}
+                    <div className="min-w-0 flex-1 leading-tight">
+                      <div className="flex items-center gap-2">
+                        <p
+                          className={`truncate text-sm font-semibold ${
+                            isPaid
+                              ? isDark
+                                ? 'text-neutral-400 line-through'
+                                : 'text-slate-400 line-through'
+                              : isDark
+                              ? 'text-white'
+                              : 'text-slate-900'
+                          }`}
+                        >
+                          {item.title}
+                        </p>
+                        {isPaid && (
+                          <CheckCircle2
+                            size={14}
+                            className={isDark ? 'text-green-400 shrink-0' : 'text-green-600 shrink-0'}
+                          />
+                        )}
+                      </div>
 
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                             isDark
                               ? 'bg-white/10 text-neutral-300'
                               : 'bg-slate-200/80 text-slate-700'
                           }`}
                         >
                           <RowCatIcon
-                            size={10}
+                            size={11}
                             className={isDark ? catMeta.darkColor : catMeta.lightColor}
                           />
                           {item.category}
                         </span>
 
-                        {priorityMeta && (
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                              isDark ? priorityMeta.darkBadge : priorityMeta.lightBadge
-                            }`}
-                          >
-                            <span className={`h-1.5 w-1.5 rounded-full ${priorityMeta.dot}`} />
-                            {priorityMeta.label}
-                          </span>
-                        )}
-
-                        {isGlobalWishList ? (
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                              isDark
-                                ? 'bg-blue-500/10 text-blue-300'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200'
-                            }`}
-                          >
-                            <Globe size={10} />
-                            Global · Every month
-                          </span>
-                        ) : (
-                          <>
-                            <span
-                              className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${
-                                isDark
-                                  ? 'bg-white/5 text-neutral-400'
-                                  : 'bg-white text-slate-500 border border-slate-200'
-                              }`}
-                            >
-                              {typeLabel}
-                              {freqLabel && typeLabel === 'Recurring' ? ` · ${freqLabel}` : ''}
-                            </span>
-
-                            {dueStr && (
-                              <span
-                                className={`inline-flex items-center gap-1 text-[10px] ${
-                                  isDark ? 'text-neutral-400' : 'text-slate-500'
-                                }`}
-                              >
-                                <CalendarDays size={10} />
-                                {dueStr}
-                              </span>
-                            )}
-                          </>
-                        )}
+                        <span
+                          className={`inline-flex items-center gap-1 text-[11px] ${
+                            isDark ? 'text-neutral-400' : 'text-slate-500'
+                          }`}
+                        >
+                          {isGlobalWishList ? <Globe size={11} /> : <CalendarDays size={11} />}
+                          {dueStr}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Right: amount + status + delete */}
-                    <div className="flex shrink-0 items-center gap-2.5">
-                      <div className="flex flex-col items-end gap-1.5">
-                        <p
-                          className={`text-sm font-bold tabular-nums ${
-                            isPaid
-                              ? isDark
-                                ? 'text-neutral-400'
-                                : 'text-slate-400'
-                              : isDark
-                              ? 'text-white'
-                              : 'text-slate-900'
-                          }`}
-                        >
-                          {formatRs(item.expectedAmount)}
-                        </p>
-
-                        {typeof item.allocatedBudget === 'number' && (
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
-                              isDark
-                                ? 'bg-teal-500/15 text-teal-300'
-                                : 'bg-teal-50 text-teal-700 border border-teal-200'
-                            }`}
-                          >
-                            Budget: {formatRs(item.allocatedBudget)}
-                          </span>
-                        )}
-
-                        {isPaid ? (
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                              isDark
-                                ? 'bg-green-500/15 text-green-400'
-                                : 'bg-green-100 text-green-700'
-                            }`}
-                          >
-                            Paid
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPayingItem(item);
-                              setPayAmount(
-                                String(Math.max(1, item.expectedAmount - (item.actualPaidAmount || 0)))
-                              );
-                            }}
-                            className="rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-semibold text-black transition hover:bg-amber-400 active:scale-95 cursor-pointer"
-                          >
-                            Mark paid
-                          </button>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteExpense(item.id)}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          isDark
-                            ? 'text-neutral-500 hover:text-rose-400 hover:bg-white/5'
-                            : 'text-slate-400 hover:text-rose-600 hover:bg-slate-200/70'
+                    {/* Right: Amount */}
+                    <div className="shrink-0 text-right">
+                      <p
+                        className={`text-sm sm:text-base font-bold tabular-nums ${
+                          isPaid
+                            ? isDark
+                              ? 'text-neutral-400'
+                              : 'text-slate-400'
+                            : isDark
+                            ? 'text-white'
+                            : 'text-slate-900'
                         }`}
-                        title="Delete expense"
-                        aria-label={`Delete ${item.title}`}
                       >
-                        <Trash2 size={14} />
-                      </button>
+                        {formatRs(item.expectedAmount)}
+                      </p>
                     </div>
                   </li>
                 );
@@ -1180,15 +1247,294 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* ── Improved Add Expense Modal ─────────────────────────── */}
+      {/* ── Expense Detail Modal ──────────────────────────────── */}
+      {detailItem && (() => {
+        const isPaid = detailItem.paymentStatus === 'paid';
+        const isPartial = detailItem.paymentStatus === 'partially_paid';
+        const isGlobalWishList =
+          detailItem.expenseType === 'wish_list' ||
+          detailItem.priority === 'wish_list' ||
+          detailItem.isGlobal;
+        const priorityMeta = PRIORITY_OPTIONS.find((p) => p.value === detailItem.priority);
+        const catMeta = CATEGORY_META[detailItem.category] ?? CATEGORY_META['Other expenses'];
+        const DetailCatIcon = catMeta.icon;
+        const dueStr = isGlobalWishList ? '' : formatDueDate(detailItem.dueDate);
+        const freqLabel = isGlobalWishList
+          ? 'Global (Every Month)'
+          : detailItem.frequency ||
+            (detailItem.recurrence !== 'one_time' ? detailItem.recurrence : 'One-Time');
+        const typeLabel = isGlobalWishList
+          ? 'Wish List'
+          : detailItem.expenseType === 'event_based'
+          ? 'Event-Based'
+          : detailItem.expenseType === 'one_time' || detailItem.recurrence === 'one_time'
+          ? 'One-Time'
+          : 'Recurring';
+        const monthForLabel = (() => {
+          if (isGlobalWishList) return 'Every Month (Global)';
+          if (typeLabel === 'Recurring') return `${activeMonth.label} (Recurring)`;
+          if (dueStr) {
+            const d = new Date(dueStr);
+            if (!isNaN(d.getTime())) {
+              return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+            }
+          }
+          return activeMonth.label;
+        })();
+        const paidAmt = Number(detailItem.actualPaidAmount) || 0;
+        const remainingAmt = Math.max(0, (detailItem.expectedAmount || 0) - paidAmt);
+
+        return (
+          <Dialog
+            open={Boolean(detailItem)}
+            onClose={() => setDetailItem(null)}
+            fullWidth
+            maxWidth="sm"
+            PaperProps={{
+              sx: {
+                backgroundColor: isDark ? '#1f2430' : '#ffffff',
+                color: isDark ? '#f8fafc' : '#0f172a',
+                borderRadius: 4,
+                border: isDark ? '1px solid rgba(148, 163, 184, 0.2)' : '1px solid #e2e8f0',
+                boxShadow: isDark
+                  ? '0 24px 48px rgba(0,0,0,0.55)'
+                  : '0 24px 48px rgba(15,23,42,0.12)',
+              },
+            }}
+          >
+            <DialogTitle
+              className={`flex items-start justify-between gap-3 pb-3 border-b ${
+                isDark ? 'border-white/10' : 'border-slate-200'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className={`text-lg font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    {detailItem.title}
+                  </h2>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                      isPaid
+                        ? isDark
+                          ? 'bg-green-500/15 text-green-400'
+                          : 'bg-green-100 text-green-700'
+                        : isPartial
+                        ? isDark
+                          ? 'bg-blue-500/15 text-blue-300'
+                          : 'bg-blue-100 text-blue-700'
+                        : isDark
+                        ? 'bg-amber-500/15 text-amber-400'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {isPaid ? 'Paid' : isPartial ? 'Partially Paid' : 'Pending'}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                  <DetailCatIcon
+                    size={13}
+                    className={isDark ? catMeta.darkColor : catMeta.lightColor}
+                  />
+                  <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>
+                    {detailItem.category}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailItem(null)}
+                className={`p-1.5 rounded-full transition cursor-pointer ${
+                  isDark
+                    ? 'text-neutral-400 hover:text-white hover:bg-white/10'
+                    : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                aria-label="Close detail"
+              >
+                <X size={18} />
+              </button>
+            </DialogTitle>
+
+            <DialogContent className="pt-4 space-y-4">
+              {/* Financial Amounts Summary */}
+              <div className="grid grid-cols-2 gap-3">
+                <div
+                  className={`rounded-2xl p-3.5 border ${
+                    isDark ? 'bg-[#282e3d] border-white/10' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <span className={`block text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Expense Amount
+                  </span>
+                  <span className={`mt-0.5 block text-xl font-extrabold tabular-nums ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    {formatRs(detailItem.expectedAmount)}
+                  </span>
+                  {paidAmt > 0 && !isPaid && (
+                    <span className={`mt-1 block text-[11px] ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                      Paid: {formatRs(paidAmt)} · Rem: {formatRs(remainingAmt)}
+                    </span>
+                  )}
+                </div>
+
+                <div
+                  className={`rounded-2xl p-3.5 border ${
+                    typeof detailItem.allocatedBudget === 'number'
+                      ? isDark
+                        ? 'bg-teal-500/10 border-teal-500/30'
+                        : 'bg-teal-50 border-teal-200'
+                      : isDark
+                      ? 'bg-[#282e3d] border-white/10'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <span className={`flex items-center gap-1 text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <PieChart size={11} />
+                    Allocated Budget
+                  </span>
+                  {typeof detailItem.allocatedBudget === 'number' ? (
+                    <span className={`mt-0.5 block text-xl font-extrabold tabular-nums ${isDark ? 'text-teal-300' : 'text-teal-700'}`}>
+                      {formatRs(detailItem.allocatedBudget)}
+                    </span>
+                  ) : (
+                    <div className="mt-1">
+                      <span className={`block text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        Not allocated
+                      </span>
+                      <Link
+                        href="/finance/budget"
+                        className="text-[11px] font-bold text-teal-500 hover:underline"
+                      >
+                        Allocate in Budget Planner →
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Metadata Grid */}
+              <div
+                className={`rounded-2xl border divide-y text-xs ${
+                  isDark
+                    ? 'bg-[#282e3d]/60 border-white/10 divide-white/10'
+                    : 'bg-slate-50/80 border-slate-200 divide-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Month For</span>
+                  <span className="font-semibold">{monthForLabel}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Due Date</span>
+                  <span className="font-semibold">{dueStr || 'No specific date'}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Type</span>
+                  <span className="font-semibold">{typeLabel}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Frequency</span>
+                  <span className="font-semibold capitalize">{freqLabel}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Priority</span>
+                  {priorityMeta ? (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                        isDark ? priorityMeta.darkBadge : priorityMeta.lightBadge
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${priorityMeta.dot}`} />
+                      {priorityMeta.label}
+                    </span>
+                  ) : (
+                    <span className="font-semibold capitalize">{detailItem.priority || '—'}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes (if any) */}
+              {detailItem.notes && (
+                <div
+                  className={`rounded-2xl border p-3.5 text-xs ${
+                    isDark ? 'bg-[#282e3d]/60 border-white/10' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className={`flex items-center gap-1.5 font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <FileText size={13} />
+                    <span>Notes</span>
+                  </div>
+                  <p className={isDark ? 'text-slate-300 leading-relaxed' : 'text-slate-600 leading-relaxed'}>
+                    {detailItem.notes}
+                  </p>
+                </div>
+              )}
+            </DialogContent>
+
+            <DialogActions
+              className={`border-t px-5 py-3.5 flex flex-wrap items-center justify-between gap-2 ${
+                isDark ? 'border-white/10' : 'border-slate-200'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => handleDeleteExpense(detailItem.id)}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer ${
+                  isDark
+                    ? 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/25'
+                    : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                }`}
+              >
+                <Trash2 size={14} />
+                <span>Delete</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                {!isPaid && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = detailItem;
+                      setDetailItem(null);
+                      setPayingItem(target);
+                      setPayAmount(
+                        String(Math.max(1, target.expectedAmount - (target.actualPaidAmount || 0)))
+                      );
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3.5 py-2 text-xs font-bold text-black transition cursor-pointer"
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>Mark Paid</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => openEditModal(detailItem)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+                >
+                  <Pencil size={14} />
+                  <span>Edit</span>
+                </button>
+              </div>
+            </DialogActions>
+          </Dialog>
+        );
+      })()}
+
+      {/* ── Full-Width Add / Edit Expense Modal ────────────────── */}
       <Dialog
         open={openAddModal}
-        onClose={() => setOpenAddModal(false)}
+        onClose={() => {
+          resetForm();
+          setOpenAddModal(false);
+        }}
         fullWidth
-        maxWidth="sm"
+        maxWidth={false}
         PaperProps={{
           sx: {
-            backgroundColor: isDark ? '#0f172a' : '#ffffff',
+            width: '100%',
+            maxWidth: '100%',
+            margin: { xs: 1, sm: 2.5 },
+            backgroundColor: isDark ? '#1f2430' : '#ffffff',
             color: isDark ? '#f8fafc' : '#0f172a',
             borderRadius: 4,
             border: isDark ? '1px solid rgba(148, 163, 184, 0.2)' : '1px solid #e2e8f0',
@@ -1198,7 +1544,7 @@ export default function ExpensesPage() {
           },
         }}
       >
-        <form onSubmit={handleCreateExpense} noValidate>
+        <form onSubmit={handleSaveExpense} noValidate>
           <DialogTitle
             className={`flex items-center justify-between pb-3 border-b ${
               isDark ? 'border-white/10' : 'border-slate-200'
@@ -1210,16 +1556,18 @@ export default function ExpensesPage() {
                   isDark ? 'text-white' : 'text-slate-900'
                 }`}
               >
-                Add New Expense
+                {editingItem ? 'Edit Expense' : 'Add New Expense'}
               </h2>
               <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
-                Save a monthly, one-time, or event-based expense to your account
+                {editingItem
+                  ? 'Update the details of this expense'
+                  : 'Save a monthly, one-time, or event-based expense to your account'}
               </p>
             </div>
             <button
               type="button"
               onClick={() => {
-                setFormError(null);
+                resetForm();
                 setOpenAddModal(false);
               }}
               className={`p-1.5 rounded-full transition cursor-pointer ${
@@ -1475,7 +1823,7 @@ export default function ExpensesPage() {
           >
             <Button
               onClick={() => {
-                setFormError(null);
+                resetForm();
                 setOpenAddModal(false);
               }}
               disabled={saving}
@@ -1496,7 +1844,7 @@ export default function ExpensesPage() {
                 px: 3,
               }}
             >
-              {saving ? 'Saving…' : 'Save Expense'}
+              {saving ? 'Saving…' : editingItem ? 'Update Expense' : 'Save Expense'}
             </Button>
           </DialogActions>
         </form>
