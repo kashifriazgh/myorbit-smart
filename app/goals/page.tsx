@@ -23,7 +23,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useGoals } from '../lib/context/GoalsContext';
 import { useAuth } from '../lib/context/userContext';
 import { useCustomTheme } from '../lib/context/themeContext';
-import { GoalType, GoalPriority, GoalStatus } from '../lib/interface';
+import { GoalPriority, GoalStatus } from '../lib/interface';
 import GoalModal from '../components/goals/GoalModal';
 import GoalSimpleCard from '../components/goals/GoalSimpleCard';
 // import DailyChecks from '../components/global/DailyChecks';
@@ -78,7 +78,6 @@ const GoalsPageInner: React.FC = () => {
   const router = useRouter();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<GoalType | 'all'>('all');
   const [filterStatus, setFilterStatus] = useState<GoalStatus | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<GoalPriority | 'all'>(
     'all',
@@ -93,7 +92,9 @@ const GoalsPageInner: React.FC = () => {
 
   const userGoals = React.useMemo(() => {
     if (!user?.uid) return [];
-    const filtered = goals.filter((g) => g.userId === user.uid);
+    const filtered = goals.filter(
+      (g) => g.userId === user.uid && g.type === 'finance',
+    );
     return sortGoalsByPriorityIndex(filtered);
   }, [goals, user?.uid]);
 
@@ -101,12 +102,11 @@ const GoalsPageInner: React.FC = () => {
     const matchesSearch =
       goal.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       goal.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = filterType === 'all' || goal.type === filterType;
     const matchesStatus =
       filterStatus === 'all' || goal.status === filterStatus;
     const matchesPriority =
       filterPriority === 'all' || goal.priority === filterPriority;
-    return matchesSearch && matchesType && matchesStatus && matchesPriority;
+    return matchesSearch && matchesStatus && matchesPriority;
   });
 
   const overdueCount = userGoals.filter((g) => {
@@ -217,7 +217,7 @@ const GoalsPageInner: React.FC = () => {
               >
                 <Divider />
                 <CardContent className="p-3">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <TextField
                       size="small"
                       placeholder="Search..."
@@ -231,26 +231,6 @@ const GoalsPageInner: React.FC = () => {
                         ),
                       }}
                     />
-
-                    <FormControl size="small">
-                      <InputLabel>Type</InputLabel>
-                      <Select
-                        value={filterType}
-                        label="Type"
-                        onChange={(e) => setFilterType(e.target.value)}
-                      >
-                        <MenuItem value="all">All</MenuItem>
-                        <MenuItem value="finance">Finance</MenuItem>
-                        <MenuItem value="health">Health</MenuItem>
-                        <MenuItem value="learning">Learning</MenuItem>
-                        <MenuItem value="habit">Habit</MenuItem>
-                        <MenuItem value="work">Work</MenuItem>
-                        <MenuItem value="personal_growth">Personal Growth</MenuItem>
-                        <MenuItem value="travel">Travel</MenuItem>
-                        <MenuItem value="lifestyle">Lifestyle</MenuItem>
-                        <MenuItem value="custom">Custom</MenuItem>
-                      </Select>
-                    </FormControl>
 
                     <FormControl size="small">
                       <InputLabel>Status</InputLabel>

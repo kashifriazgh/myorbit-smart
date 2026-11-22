@@ -60,19 +60,6 @@ import IncomeTemplate from '@/app/components/goals/templates/IncomeTemplate';
 import DebtTemplate from '@/app/components/goals/templates/DebtTemplate';
 import InvestTemplate from '@/app/components/goals/templates/InvestTemplate';
 
-import FitnessTemplate from '@/app/components/goals/templates/FitnessTemplate';
-import NutritionTemplate from '@/app/components/goals/templates/NutritionTemplate';
-import WeightTemplate from '@/app/components/goals/templates/WeightTemplate';
-import SleepTemplate from '@/app/components/goals/templates/SleepTemplate';
-import MedicalTemplate from '@/app/components/goals/templates/MedicalTemplate';
-
-import CoursesTemplate from '@/app/components/goals/templates/CoursesTemplate';
-import ReadingTemplate from '@/app/components/goals/templates/ReadingTemplate';
-
-import BuildHabitTemplate from '@/app/components/goals/templates/BuildHabitTemplate';
-import QuitHabitTemplate from '@/app/components/goals/templates/QuitHabitTemplate';
-import DailyRoutineTemplate from '@/app/components/goals/templates/DailyRoutineTemplate';
-
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -1593,60 +1580,6 @@ const GoalDetailInner: React.FC = () => {
             )}
           </Box>
         )}
-
-        {/* Health Subcategory Milestone Template */}
-        {goal.type === 'health' && (
-          <Box sx={{ mb: 4 }}>
-            <SectionTitle isDark={isDark}>Health & Wellness Tracking</SectionTitle>
-            {(goal.subcategory === 'Fitness' || goal.subcategory === 'Walking' || goal.subcategory === 'Fitness & Exercise') && (
-              <FitnessTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-            {(goal.subcategory === 'Nutrition' || goal.subcategory === 'Diet') && (
-              <NutritionTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-            {(goal.subcategory === 'Weight' || goal.subcategory === 'Weight Loss' || goal.subcategory === 'Weight Gain') && (
-              <WeightTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-            {(goal.subcategory === 'Sleep' || goal.subcategory === 'Sleep Schedule') && (
-              <SleepTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-            {(goal.subcategory === 'Medical Care Plan' || goal.subcategory === 'Medical' || goal.subcategory === 'Medical Care') && (
-              <MedicalTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-          </Box>
-        )}
-
-        {/* Learning Subcategory Milestone Template */}
-        {goal.type === 'learning' && (
-          <Box sx={{ mb: 4 }}>
-            <SectionTitle isDark={isDark}>Learning & Skill Progress</SectionTitle>
-            {(goal.subcategory === 'Courses' || goal.subcategory === 'Course' || goal.subcategory === 'Skills' || goal.subcategory === 'Skill') && (
-              <CoursesTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-            {(goal.subcategory === 'Reading' || goal.subcategory === 'Book' || goal.subcategory === 'Books' || goal.subcategory === 'Quran' || goal.subcategory === 'Quran Reading') && (
-              <ReadingTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-          </Box>
-        )}
-
-        {/* Habit Subcategory Milestone Template */}
-        {goal.type === 'habit' && (
-          <Box sx={{ mb: 4 }}>
-            <SectionTitle isDark={isDark}>Habit & Routine Tracking</SectionTitle>
-            {(goal.subcategory === 'Build' || goal.subcategory === 'Build Habit') && (
-              <BuildHabitTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-            {(goal.subcategory === 'Quit' || goal.subcategory === 'Quit Habit') && (
-              <QuitHabitTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-            {(goal.subcategory === 'Daily Routine' || goal.subcategory === 'Routine') && (
-              <DailyRoutineTemplate goal={goal} onUpdateGoal={(id, updates) => _updateGoal(id, updates)} />
-            )}
-          </Box>
-        )}
-
-
-
 
         {/* Milestones / Steps — timeline style */}
         {steps.length > 0 && (

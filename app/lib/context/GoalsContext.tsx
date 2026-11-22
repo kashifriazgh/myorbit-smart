@@ -201,8 +201,9 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
     // Try cache first for immediate rendering
     const cached = loadGoalsCache(userId);
     if (cached) {
-      console.log(`%c[GoalCache] 📦 Loaded ${cached.length} goals from localStorage cache`, 'color:#6366f1;font-weight:bold');
-      setGoals(cached);
+      const financeCached = cached.filter((g) => g.type === 'finance');
+      console.log(`%c[GoalCache] 📦 Loaded ${financeCached.length} finance goals from localStorage cache`, 'color:#6366f1;font-weight:bold');
+      setGoals(financeCached);
       setLoading(false);
     }
 
@@ -219,6 +220,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         const goalsData: Goal[] = [];
         snapshot.forEach((doc) => {
           const data = doc.data();
+          if (data.type !== 'finance') return;
           goalsData.push({
             id: doc.id,
             ...data,
@@ -228,7 +230,7 @@ export const GoalsProvider: React.FC<{ children: ReactNode }> = ({
         setGoals(goalsData);
         setLoading(false);
         saveGoalsCache(goalsData, userId);
-        console.log(`%c[GoalCache] ✅ Saved ${goalsData.length} goals to cache`, 'color:#22c55e;font-weight:bold');
+        console.log(`%c[GoalCache] ✅ Saved ${goalsData.length} finance goals to cache`, 'color:#22c55e;font-weight:bold');
       },
       (err) => {
         console.error('Error fetching goals:', err);

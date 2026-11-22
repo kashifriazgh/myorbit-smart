@@ -29,13 +29,13 @@ const LIGHT_STYLES_BY_KEY: Record<string, { text: string; tint: string; ring: st
   amanat: { text: 'text-slate-700', tint: 'bg-slate-100', ring: 'ring-slate-200' },
 };
 
-export const DEFAULT_FINANCIAL_OVERVIEW_DATA: FinancialOverviewData = {
-  total: 100000,
+export const EMPTY_FINANCIAL_OVERVIEW_DATA: FinancialOverviewData = {
+  total: 0,
   items: [
     {
       key: 'spendable',
       label: 'Spendable',
-      amount: 45000,
+      amount: 0,
       bar: 'bg-green-500',
       dot: 'bg-green-500',
       text: 'text-green-400',
@@ -45,7 +45,7 @@ export const DEFAULT_FINANCIAL_OVERVIEW_DATA: FinancialOverviewData = {
     {
       key: 'reserved',
       label: 'Reserved',
-      amount: 30000,
+      amount: 0,
       bar: 'bg-blue-600',
       dot: 'bg-blue-500',
       text: 'text-blue-400',
@@ -55,7 +55,7 @@ export const DEFAULT_FINANCIAL_OVERVIEW_DATA: FinancialOverviewData = {
     {
       key: 'savings',
       label: 'Savings allocation',
-      amount: 15000,
+      amount: 0,
       bar: 'bg-amber-500',
       dot: 'bg-amber-500',
       text: 'text-amber-400',
@@ -65,7 +65,7 @@ export const DEFAULT_FINANCIAL_OVERVIEW_DATA: FinancialOverviewData = {
     {
       key: 'amanat',
       label: 'Amanat',
-      amount: 10000,
+      amount: 0,
       bar: 'bg-slate-400',
       dot: 'bg-slate-400',
       text: 'text-slate-300',
@@ -86,7 +86,7 @@ interface FinancialOverviewProps {
 const formatRs = (n: number) => `Rs. ${Math.round(Number(n || 0)).toLocaleString('en-US')}`;
 
 export default function FinancialOverview({
-  data = DEFAULT_FINANCIAL_OVERVIEW_DATA,
+  data = EMPTY_FINANCIAL_OVERVIEW_DATA,
   illustrative = false,
   balancesVisible = true,
   onToggleBalancesVisible,
@@ -223,8 +223,13 @@ export default function FinancialOverview({
             isDark ? 'bg-[#282e3d] border border-white/10' : 'border border-slate-200/80 bg-slate-50'
           }`}
         >
-          <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>
-            Actually available for discretionary spending
+          <p
+            dir="rtl"
+            className={`text-base font-semibold text-right ${
+              isDark ? 'text-slate-200' : 'text-slate-700'
+            }`}
+          >
+            قابلِ خرچ رقم
           </p>
           <p
             className={`mt-1 text-3xl font-bold tracking-tight tabular-nums ${

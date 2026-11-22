@@ -10,11 +10,13 @@ import {
   RefreshCw,
   History,
   ArrowRightLeft,
+  PieChart,
 } from 'lucide-react';
 import { db } from '@/app/lib/firebase';
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDocs,
   setDoc,
@@ -49,7 +51,7 @@ import CreateWalletModal from './TotalCashSnapshot/CreateWalletModal';
 import WalletDetailsModal from './TotalCashSnapshot/WalletDetailsModal';
 import FinancialOverview, { type FinancialOverviewData } from './TotalCashSnapshot/FinancialOverview';
 import MonthlyMoneyOverview from './TotalCashSnapshot/MonthlyMoneyOverview';
-import UpcomingExpenses from './TotalCashSnapshot/UpcomingExpenses';
+import UpcomingExpenses, { type UpcomingExpenseItem } from './TotalCashSnapshot/UpcomingExpenses';
 
 export const getSourceKey = (
   source: TransactionSource,
@@ -352,6 +354,7 @@ export default function TotalCashSnapshotComponent({
   const [monthlyIncomeTotal, setMonthlyIncomeTotal] = useState(0);
   const [currentMonthExpensesPaid, setCurrentMonthExpensesPaid] = useState(0);
   const [currentMonthExpensesPending, setCurrentMonthExpensesPending] = useState(0);
+  const [upcomingExpenses, setUpcomingExpenses] = useState<UpcomingExpenseItem[]>([]);
 
   // Sync state
   const [refreshing, setRefreshing] = useState(false);
@@ -501,13 +504,28 @@ export default function TotalCashSnapshotComponent({
       }
     );
 
-    // ── Fetch all expenses (recurring & one-time for current month) ──
+    // ── Fetch all expenses (recurring & one-time for current month + upcoming list) ──
     const fetchExpensesMonthly = async () => {
       let paidSum = 0;
       let pendingSum = 0;
+      const upcomingList: UpcomingExpenseItem[] = [];
       const now = new Date();
       const curYear = now.getFullYear();
       const curMonth = now.getMonth();
+
+      const toIsoDate = (val: string | Date | Timestamp | undefined): string => {
+        if (!val) return '';
+        if (typeof val === 'string') return val.slice(0, 10);
+        if (val instanceof Timestamp) return val.toDate().toISOString().split('T')[0];
+        if (val instanceof Date && !isNaN(val.getTime())) return val.toISOString().split('T')[0];
+        return '';
+      };
+
+      const mapPriority = (p?: PlannedExpense['priority']): 'high' | 'medium' | 'low' => {
+        if (p === 'essential') return 'high';
+        if (p === 'important') return 'medium';
+        return 'low';
+      };
 
       // 1. From plannedExpenses
       try {
@@ -539,6 +557,20 @@ export default function TotalCashSnapshotComponent({
             paidSum += paid;
             pendingSum += Math.max(0, monthAmt - paid);
           }
+
+          // Collect unpaid expenses for the Upcoming Expenses card
+          if (p.paymentStatus !== 'paid') {
+            const remaining = Math.max(0, baseAmt - (Number(p.actualPaidAmount) || 0));
+            if (remaining > 0) {
+              upcomingList.push({
+                id: d.id,
+                title: p.title,
+                date: toIsoDate(p.dueDate),
+                priority: mapPriority(p.priority),
+                amount: remaining,
+              });
+            }
+          }
         });
       } catch (e) {
         console.warn('Error fetching plannedExpenses for summary:', e);
@@ -566,6 +598,16 @@ export default function TotalCashSnapshotComponent({
             if (e.isPaid) paidSum += monthAmt;
             else pendingSum += monthAmt;
           }
+
+          if (!e.isPaid && baseAmt > 0) {
+            upcomingList.push({
+              id: `exp_${d.id}`,
+              title: e.title,
+              date: toIsoDate(e.dueDate),
+              priority: 'medium',
+              amount: baseAmt,
+            });
+          }
         });
       } catch (e) {
         console.warn('Error fetching expenditures for summary:', e);
@@ -573,6 +615,7 @@ export default function TotalCashSnapshotComponent({
 
       setCurrentMonthExpensesPaid(Math.round(paidSum));
       setCurrentMonthExpensesPending(Math.round(pendingSum));
+      setUpcomingExpenses(upcomingList);
     };
 
     fetchExpensesMonthly();
@@ -1125,29 +1168,61 @@ export default function TotalCashSnapshotComponent({
     }
   };
 
-  // ── Handler: Delete Custom Wallet ───────────────────────────
+  // ── Handler: Delete Custom / Bank Wallet ────────────────────
   const handleDeleteWallet = async (walletId: string) => {
     if (!snapshot || !userId) return;
     try {
-      const updatedSources = { ...snapshot.sources };
-      if (walletId.startsWith('bank:')) {
-        const bName = walletId.replace('bank:', '');
-        delete updatedSources.bank[bName];
-      } else if (walletId.startsWith('custom:')) {
-        const cName = walletId.replace('custom:', '');
-        delete updatedSources.custom[cName];
+      const updatedSources: TotalCashSnapshot['sources'] = {
+        in_hand: snapshot.sources.in_hand ?? 0,
+        easypaisa: snapshot.sources.easypaisa ?? 0,
+        jazzcash: snapshot.sources.jazzcash ?? 0,
+        other: snapshot.sources.other ?? 0,
+        bank: { ...(snapshot.sources.bank || {}) },
+        custom: { ...(snapshot.sources.custom || {}) },
+      };
+      const isBank = walletId.startsWith('bank:');
+      const isCustom = walletId.startsWith('custom:');
+      const walletName = isBank
+        ? walletId.replace('bank:', '')
+        : isCustom
+        ? walletId.replace('custom:', '')
+        : walletId;
+
+      if (isBank) {
+        delete updatedSources.bank[walletName];
+      } else if (isCustom) {
+        delete updatedSources.custom[walletName];
       }
+
+      const updatedOwnership = { ...(snapshot.sourceOwnership || {}) };
+      delete updatedOwnership[walletId];
 
       const updatedSnapshot: TotalCashSnapshot = {
         ...snapshot,
         sources: updatedSources,
-        totalAmount: computeTotalAmount({ ...snapshot, sources: updatedSources }),
+        sourceOwnership: updatedOwnership,
+        totalAmount: computeTotalAmount({
+          ...snapshot,
+          sources: updatedSources,
+          sourceOwnership: updatedOwnership,
+        }),
         updatedAt: new Date(),
       };
 
       const docRef = doc(db, 'totalCashSnapshots', userId);
       await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
       setSnapshot(updatedSnapshot);
+
+      if (isBank) {
+        const matchingBanks = banksList.filter((b) => b.name === walletName && b.id);
+        await Promise.all(matchingBanks.map((b) => deleteDoc(doc(db, 'banks', b.id!))));
+      } else if (isCustom) {
+        const matchingHeads = customHeadsList.filter((c) => c.name === walletName && c.id);
+        await Promise.all(
+          matchingHeads.map((c) => deleteDoc(doc(db, 'customPaymentHeads', c.id!)))
+        );
+      }
+
       setActiveWalletModal(null);
     } catch (e) {
       console.error('Delete wallet failed:', e);
@@ -1169,7 +1244,7 @@ export default function TotalCashSnapshotComponent({
 
   return (
     <div
-      className={`antialiased font-sans pb-16 transition-colors ${
+      className={`antialiased font-sans pb-28 sm:pb-16 transition-colors ${
         isDark ? 'bg-transparent text-white' : 'bg-transparent text-slate-900'
       }`}
     >
@@ -1245,7 +1320,12 @@ export default function TotalCashSnapshotComponent({
 
           {/* ── Row 2: Upcoming Expenses + Quick Navigation Cards ─── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-            <UpcomingExpenses max={4} balancesVisible={balancesVisible} isDark={isDark} />
+            <UpcomingExpenses
+              items={upcomingExpenses}
+              max={4}
+              balancesVisible={balancesVisible}
+              isDark={isDark}
+            />
 
             <div className="flex flex-col gap-4">
               {/* ── View Your Wallets Creative Card ───────────────── */}
@@ -1364,6 +1444,46 @@ export default function TotalCashSnapshotComponent({
                 </div>
               </Link>
 
+              {/* ── Set Budget / Budget Allocation Card ─────────── */}
+              <Link
+                href="/finance/budget"
+                className={`w-full flex items-center justify-between p-4 rounded-3xl border transition-all cursor-pointer group shadow-sm ${
+                  isDark
+                    ? 'bg-[#1f2430] border-white/10 hover:border-teal-500/40 hover:bg-[#262c3b] text-slate-300 hover:text-white'
+                    : 'bg-white border-slate-200 hover:border-teal-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
+                      isDark
+                        ? 'bg-teal-500/20 text-teal-400 border-teal-500/30'
+                        : 'bg-teal-50 text-teal-600 border-teal-200'
+                    }`}
+                  >
+                    <PieChart size={18} />
+                  </div>
+                  <div className="text-left">
+                    <span
+                      className={`text-sm font-bold block ${isDark ? 'text-white' : 'text-slate-900'}`}
+                    >
+                      Set Monthly Budget
+                    </span>
+                    <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Allocate income across expenses &amp; savings
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight
+                  size={18}
+                  className={`transition-colors ${
+                    isDark
+                      ? 'text-slate-500 group-hover:text-teal-400'
+                      : 'text-slate-400 group-hover:text-teal-600'
+                  }`}
+                />
+              </Link>
+
               {/* ── Transaction History Dedicated Button ────────── */}
               <button
                 type="button"
@@ -1410,7 +1530,7 @@ export default function TotalCashSnapshotComponent({
 
         {/* ── Floating Bottom Action Bar ────────────────────────── */}
         <div
-          className={`sticky bottom-4 mt-6 mx-auto w-full max-w-lg z-30 flex items-center justify-between gap-2 p-2 backdrop-blur-md border rounded-2xl ${
+          className={`sticky bottom-20 sm:bottom-6 mt-6 mx-auto w-full max-w-lg z-30 flex items-center justify-between gap-2 p-2 backdrop-blur-md border rounded-2xl ${
             isDark
               ? 'bg-[#1f2430]/95 border-white/10 shadow-2xl'
               : 'bg-white/95 border-slate-200 shadow-lg'
@@ -1553,20 +1673,26 @@ export default function TotalCashSnapshotComponent({
             const key = isBank ? `bank:${cleanName}` : `custom:${cleanName}`;
             const hasOwnThisMoney = wData.initialOwner.toLowerCase() === 'you';
 
+            const ownershipEntry: NonNullable<TotalCashSnapshot['sourceOwnership']>[string] = {
+              hasOwnThisMoney,
+              ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
+              isLocked: wData.isLocked,
+              isVirtual: wData.isVirtual,
+              reservedAmount: wData.isReserved
+                ? initAmt
+                : wData.allocations?.reduce((acc, a) => acc + (a.reservedAmount || 0), 0) || 0,
+              color: wData.color,
+              ...(wData.parentWalletKey ? { parentWalletKey: wData.parentWalletKey } : {}),
+              ...(wData.purpose ? { purpose: wData.purpose } : {}),
+              ...(wData.notes ? { notes: wData.notes } : {}),
+              ...(wData.allocations && wData.allocations.length > 0
+                ? { allocations: wData.allocations }
+                : {}),
+            };
+
             const updatedOwnership = {
               ...(snapshot.sourceOwnership || {}),
-              [key]: {
-                hasOwnThisMoney,
-                ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
-                isLocked: wData.isLocked,
-                isVirtual: wData.isVirtual,
-                parentWalletKey: wData.parentWalletKey || undefined,
-                reservedAmount: wData.allocations?.reduce((acc, a) => acc + (a.reservedAmount || 0), 0) || 0,
-                purpose: wData.purpose,
-                color: wData.color,
-                notes: wData.notes,
-                allocations: wData.allocations,
-              },
+              [key]: ownershipEntry,
             };
 
             let newTotal = snapshot.totalAmount || 0;

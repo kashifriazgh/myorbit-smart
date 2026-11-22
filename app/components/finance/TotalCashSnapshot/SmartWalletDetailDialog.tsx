@@ -1,58 +1,84 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
-import {
-  Alert,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
-  MenuItem,
-  Tab,
-  Tabs,
-  TextField,
-  Tooltip,
-} from '@mui/material';
-import {
-  ArrowLeftRight,
-  ArrowUpRight,
-  Eye,
-  EyeOff,
-  Lock,
-  LockKeyhole,
-  Plus,
-  ShieldCheck,
-  Split,
-  Trash2,
-  Unlock,
-  Wallet,
-  X,
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Lock, Plus, Trash2, Unlock, X } from 'lucide-react';
 import type { WalletAllocation as AppWalletAllocation } from '@/app/lib/interface';
 import type { WalletItem } from '../TotalCashSnapshot';
 
-export type Ownership = {
-  id: string;
-  name: string;
-  color: string;
+const PALETTE = [
+  'bg-indigo-600',
+  'bg-rose-600',
+  'bg-emerald-600',
+  'bg-amber-500',
+  'bg-sky-600',
+  'bg-fuchsia-600',
+];
+const DEFAULT_ENV_COLOR = 'bg-slate-600';
+
+const formatRs = (n: number) => `Rs. ${Math.round(Number(n || 0)).toLocaleString('en-US')}`;
+
+const PATHS = {
+  wallet: (
+    <>
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a1 1 0 0 1 1 1v2" />
+      <path d="M4 7.5V17a2 2 0 0 0 2 2h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 1 4 7.5z" />
+      <circle cx="15.5" cy="13.5" r="1" fill="currentColor" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  spend: <path d="M7 17L17 7M9 7h8v8" />,
+  transfer: <path d="M5 8h13l-3-3M19 16H6l3 3" />,
+  envelope: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="M3.5 7l8.5 6 8.5-6" />
+    </>
+  ),
 };
 
-type SubAction = 'ownership' | 'envelope' | null;
+function SvgIcon({
+  name,
+  className = 'h-5 w-5',
+}: {
+  name: keyof typeof PATHS;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      {PATHS[name]}
+    </svg>
+  );
+}
 
-const DEFAULT_OWNERS: Ownership[] = [
-  { id: 'mine', name: 'My Money', color: '#6366F1' },
-  { id: 'amanat', name: 'Amanat', color: '#F59E0B' },
-  { id: 'family', name: 'Family', color: '#10B981' },
-];
+interface EnvelopeItem {
+  id: string;
+  name: string;
+  balance: number;
+  ownerName: string | null; // null = Reserved
+  color: string;
+  isDefault?: boolean;
+}
 
-const ENVELOPE_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4'];
+interface OwnerOption {
+  name: string;
+  color: string;
+}
 
-const formatMoney = (n: number) =>
-  new Intl.NumberFormat('en-PK', {
-    maximumFractionDigits: 2,
-  }).format(Math.round(Number(n || 0)));
+export interface WalletDeleteOptions {
+  resolution: 'zero' | 'transfer' | 'adjustment';
+  destinationWalletId?: string;
+  note?: string;
+}
 
 interface SmartWalletDetailDialogProps {
   open: boolean;
@@ -61,8 +87,8 @@ interface SmartWalletDetailDialogProps {
   activeWalletId: string | null;
   onSelectWallet: (walletId: string) => void;
   isDark: boolean;
-  onAddMoney: (wallet: WalletItem) => void;
-  onSpendMoney: (wallet: WalletItem) => void;
+  onAddMoney: (wallet: WalletItem, amount: number, note?: string) => Promise<void>;
+  onSpendMoney: (wallet: WalletItem, amount: number, note?: string) => Promise<void>;
   onTransfer: (wallet: WalletItem) => void;
   onToggleLock: (walletId: string, currentLock: boolean) => Promise<void>;
   onUpdateAllocations: (
@@ -72,51 +98,70 @@ interface SmartWalletDetailDialogProps {
     ownerName: string,
     hasOwnThisMoney: boolean
   ) => Promise<void>;
-  onDeleteWallet: (walletId: string) => Promise<void>;
+  onDeleteWallet: (walletId: string, options: WalletDeleteOptions) => Promise<void>;
 }
 
 function ActionButton({
-  icon: Icon,
+  icon,
   label,
-  primary = false,
-  disabled = false,
   onClick,
+  disabled,
+  tone,
 }: {
-  icon: typeof Plus;
+  icon: keyof typeof PATHS;
   label: string;
-  primary?: boolean;
-  disabled?: boolean;
   onClick: () => void;
+  disabled?: boolean;
+  tone: string;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl text-xs font-semibold transition ${
+      className={`flex flex-col items-center gap-1.5 rounded-2xl py-3 text-sm font-semibold ring-1 ring-inset transition ${
         disabled
-          ? 'bg-white/5 text-white/35 cursor-not-allowed'
-          : primary
-          ? 'bg-white text-indigo-700 hover:bg-indigo-50 cursor-pointer active:scale-95'
-          : 'bg-white/10 text-white hover:bg-white/20 cursor-pointer active:scale-95'
+          ? 'opacity-35 cursor-not-allowed bg-slate-500/10 text-slate-400 ring-slate-500/20'
+          : `cursor-pointer hover:scale-[1.02] active:scale-95 ${tone}`
       }`}
     >
-      <Icon size={19} />
+      <SvgIcon name={icon} className="h-5 w-5" />
       {label}
     </button>
   );
 }
 
-function normalizeOwnerId(ownerName: string): string {
-  const lower = ownerName.trim().toLowerCase();
-  if (!lower || lower === 'you' || lower === 'self' || lower === 'my money' || lower === 'mine') {
-    return 'mine';
-  }
-  if (lower.includes('amanat')) return 'amanat';
-  if (lower.includes('family') || lower.includes('father') || lower.includes('wife') || lower.includes('mother')) {
-    return 'family';
-  }
-  return ownerName.trim();
+function Chip({
+  selected,
+  color,
+  isDark,
+  children,
+  onClick,
+}: {
+  selected: boolean;
+  color: string;
+  isDark: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition active:scale-95 cursor-pointer ${
+        selected
+          ? isDark
+            ? 'bg-white text-slate-900'
+            : 'bg-slate-900 text-white'
+          : isDark
+          ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+          : 'bg-slate-200/80 text-slate-700 hover:bg-slate-200'
+      }`}
+    >
+      <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+      {children}
+    </button>
+  );
 }
 
 export default function SmartWalletDetailDialog({
@@ -133,844 +178,1440 @@ export default function SmartWalletDetailDialog({
   onUpdateAllocations,
   onDeleteWallet,
 }: SmartWalletDetailDialogProps) {
-  const [tab, setTab] = useState(0);
-  const [hidden, setHidden] = useState(false);
-  const [subAction, setSubAction] = useState<SubAction>(null);
-  const [saving, setSaving] = useState(false);
-
-  // Sub-dialog form state
-  const [amount, setAmount] = useState('');
-  const [ownerId, setOwnerId] = useState('mine');
-  const [toOwnerId, setToOwnerId] = useState('amanat');
-  const [envelopeName, setEnvelopeName] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
   const wallet = useMemo(
     () => wallets.find((w) => w.id === activeWalletId) ?? null,
     [wallets, activeWalletId]
   );
 
+  // Local interactive states
+  const [envelopes, setEnvelopes] = useState<EnvelopeItem[]>([]);
+  const [defaultOwnerName, setDefaultOwnerName] = useState<string | null>('You');
+  const [customOwners, setCustomOwners] = useState<OwnerOption[]>([]);
+  const [activeEnvId, setActiveEnvId] = useState<string | null>(null);
+  const [mode, setMode] = useState<'transfer' | 'owner' | 'delete' | null>(null);
+  const [toId, setToId] = useState<string | null>(null);
+  const [value, setValue] = useState('');
+  const [addingEnv, setAddingEnv] = useState(false);
+  const [newEnvName, setNewEnvName] = useState('');
+  const [addingOwner, setAddingOwner] = useState(false);
+  const [newOwnerName, setNewOwnerName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // Inline quick Add / Spend state
+  const [quickAction, setQuickAction] = useState<'add' | 'spend' | null>(null);
+  const [quickAmount, setQuickAmount] = useState('');
+  const [quickNote, setQuickNote] = useState('');
+  const [quickError, setQuickError] = useState('');
+  const [quickSaving, setQuickSaving] = useState(false);
+
+  // Graceful Wallet Closure / Delete flow state
+  const [showDeleteFlow, setShowDeleteFlow] = useState(false);
+  const [deleteChoice, setDeleteChoice] = useState<'transfer' | 'adjustment' | null>(null);
+  const [deleteTargetWalletId, setDeleteTargetWalletId] = useState('');
+  const [deleteNote, setDeleteNote] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deletingWallet, setDeletingWallet] = useState(false);
+
+  // Sync envelopes & owners from the active wallet whenever wallet changes
   useEffect(() => {
-    setSuccess('');
-    setError('');
-  }, [activeWalletId, open]);
+    if (!wallet) return;
+    const isWalletReserved =
+      !wallet.hasOwnThisMoney ||
+      (wallet.amount > 0 && (wallet.reservedAmount || 0) >= wallet.amount);
 
-  // Derive owners list (defaults + any custom owner present on this wallet)
-  const owners = useMemo<Ownership[]>(() => {
-    const list = [...DEFAULT_OWNERS];
-    if (wallet?.allocations) {
-      wallet.allocations.forEach((a) => {
-        const id = normalizeOwnerId(a.owner);
-        if (!list.some((o) => o.id === id)) {
-          list.push({ id, name: a.owner, color: '#8B5CF6' });
-        }
-      });
-    }
-    if (wallet && !wallet.hasOwnThisMoney && wallet.owner && wallet.owner !== 'You') {
-      const id = normalizeOwnerId(wallet.owner);
-      if (!list.some((o) => o.id === id)) {
-        list.push({ id, name: wallet.owner, color: '#8B5CF6' });
+    const parsedCustom: EnvelopeItem[] = [];
+    const discoveredOwners: OwnerOption[] = [{ name: 'You', color: PALETTE[0] }];
+
+    const ensureOwner = (name: string) => {
+      const clean = name.trim();
+      if (!clean || clean.toLowerCase() === 'reserved') return;
+      if (!discoveredOwners.some((o) => o.name.toLowerCase() === clean.toLowerCase())) {
+        discoveredOwners.push({
+          name: clean,
+          color: PALETTE[discoveredOwners.length % PALETTE.length],
+        });
       }
-    }
-    return list;
-  }, [wallet]);
+    };
 
-  // Compute structured ownership & envelope breakdown from real wallet data
-  const breakdown = useMemo(() => {
-    if (!wallet) {
-      return {
-        balance: 0,
-        reserved: 0,
-        unallocated: 0,
-        ownerTotals: {} as Record<string, number>,
-        envelopes: [] as { id: string; name: string; amount: number; color: string }[],
-      };
+    if (wallet.owner && wallet.owner !== 'You') {
+      ensureOwner(wallet.owner);
     }
 
-    const balance = wallet.amount || 0;
-    const ownerTotals: Record<string, number> = { mine: 0, amanat: 0, family: 0 };
-    const envelopes: { id: string; name: string; amount: number; color: string }[] = [];
+    let derivedDefaultOwner: string | null = isWalletReserved
+      ? null
+      : wallet.hasOwnThisMoney
+      ? 'You'
+      : wallet.owner || null;
 
     if (wallet.allocations && wallet.allocations.length > 0) {
-      let allocatedSum = 0;
       wallet.allocations.forEach((a, idx) => {
-        const amt = Number(a.amount) || 0;
-        if (amt <= 0) return;
-        allocatedSum += amt;
-        const oid = normalizeOwnerId(a.owner);
-        ownerTotals[oid] = (ownerTotals[oid] || 0) + amt;
+        const isDefaultRow =
+          a.id.startsWith('default_') ||
+          (a.purpose && a.purpose.toLowerCase() === wallet.name.toLowerCase());
+        const isReservedRow =
+          a.availabilityStatus === 'reserved' ||
+          a.owner.toLowerCase() === 'reserved' ||
+          (a.reservedAmount !== undefined && a.reservedAmount >= a.amount && a.amount > 0);
 
-        if (a.purpose) {
-          envelopes.push({
+        const resolvedOwner = isReservedRow ? null : a.owner || null;
+        if (resolvedOwner) ensureOwner(resolvedOwner);
+
+        if (isDefaultRow) {
+          derivedDefaultOwner = resolvedOwner;
+        } else {
+          parsedCustom.push({
             id: a.id || `env_${idx}`,
-            name: a.purpose,
-            amount: amt,
-            color: ENVELOPE_COLORS[idx % ENVELOPE_COLORS.length],
+            name: a.purpose || `Envelope ${idx + 1}`,
+            balance: Number(a.amount) || 0,
+            ownerName: resolvedOwner,
+            color: PALETTE[parsedCustom.length % PALETTE.length],
           });
         }
       });
-
-      const remainder = Math.max(0, balance - allocatedSum);
-      if (remainder > 0) {
-        const defaultOwner = wallet.hasOwnThisMoney ? 'mine' : normalizeOwnerId(wallet.owner || 'amanat');
-        ownerTotals[defaultOwner] = (ownerTotals[defaultOwner] || 0) + remainder;
-      }
-    } else {
-      const defaultOwner = wallet.hasOwnThisMoney ? 'mine' : normalizeOwnerId(wallet.owner || 'amanat');
-      ownerTotals[defaultOwner] = balance;
-
-      if (wallet.reservedAmount && wallet.reservedAmount > 0) {
-        envelopes.push({
-          id: 'reserved_default',
-          name: wallet.purpose || 'Reserved Funds',
-          amount: Math.min(balance, wallet.reservedAmount),
-          color: ENVELOPE_COLORS[0],
-        });
-      }
     }
 
-    const inEnvelopes = envelopes.reduce((s, e) => s + e.amount, 0);
-    const reserved = Math.min(balance, Math.max(inEnvelopes, wallet.reservedAmount || 0));
-    const unallocated = Math.max(0, balance - reserved);
-
-    return { balance, reserved, unallocated, ownerTotals, envelopes };
+    setDefaultOwnerName(derivedDefaultOwner);
+    setEnvelopes(parsedCustom);
+    setCustomOwners(discoveredOwners);
+    setActiveEnvId(null);
+    setMode(null);
+    setAddingEnv(false);
+    setAddingOwner(false);
+    setError('');
+    setQuickAction(null);
+    setQuickAmount('');
+    setQuickNote('');
+    setQuickError('');
+    setShowDeleteFlow(false);
+    setDeleteChoice(null);
+    setDeleteTargetWalletId('');
+    setDeleteNote('');
+    setDeleteError('');
   }, [wallet]);
 
-  const numericAmount = Number(amount);
-  const ownershipSourceBalance = breakdown.ownerTotals[ownerId] || 0;
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
-  const canSubmitSubAction = useMemo(() => {
-    if (!wallet || !Number.isFinite(numericAmount) || numericAmount <= 0) return false;
-    if (subAction === 'ownership') {
-      return ownerId !== toOwnerId && Boolean(toOwnerId) && numericAmount <= ownershipSourceBalance;
-    }
-    if (subAction === 'envelope') {
-      return envelopeName.trim().length > 0 && numericAmount <= breakdown.unallocated;
-    }
-    return false;
-  }, [
-    wallet,
-    numericAmount,
-    subAction,
-    ownerId,
-    toOwnerId,
-    ownershipSourceBalance,
-    envelopeName,
-    breakdown.unallocated,
-  ]);
+  if (!open || !wallet) return null;
 
-  if (!wallet) return null;
+  const walletBalance = wallet.amount || 0;
+  const allocated = envelopes.reduce((s, e) => s + e.balance, 0);
+  const defaultBalance = Math.max(0, walletBalance - allocated);
 
-  const openSubAction = (next: SubAction) => {
-    setSubAction(next);
-    setAmount('');
-    setOwnerId('mine');
-    setToOwnerId('amanat');
-    setEnvelopeName('');
+  // Default 1 envelope named as per wallet creation name
+  const defaultEnvelope: EnvelopeItem = {
+    id: 'default',
+    name: wallet.name,
+    balance: defaultBalance,
+    ownerName: defaultOwnerName,
+    color: DEFAULT_ENV_COLOR,
+    isDefault: true,
+  };
+
+  const items: EnvelopeItem[] = [defaultEnvelope, ...envelopes];
+
+  const ownerOf = (e: EnvelopeItem) =>
+    e.ownerName
+      ? customOwners.find((o) => o.name.toLowerCase() === e.ownerName?.toLowerCase()) || {
+          name: e.ownerName,
+          color: PALETTE[1],
+        }
+      : null;
+
+  const isReservedEnv = (e: EnvelopeItem) => !ownerOf(e);
+
+  const total = items.reduce((s, e) => s + e.balance, 0);
+  const reserved = items.filter(isReservedEnv).reduce((s, e) => s + e.balance, 0);
+  const spendable = Math.max(0, total - reserved);
+  const spendPct = total > 0 ? Math.round((spendable / total) * 100) : 0;
+
+  const active = items.find((e) => e.id === activeEnvId) ?? null;
+  const others = items.filter((e) => e.id !== activeEnvId);
+
+  const resetPanel = () => {
+    setMode(null);
+    setToId(null);
+    setValue('');
+    setAddingOwner(false);
+    setNewOwnerName('');
     setError('');
   };
 
-  const closeSubAction = () => {
-    setSubAction(null);
-    setError('');
+  const selectItem = (id: string) => {
+    resetPanel();
+    setActiveEnvId((cur) => (cur === id ? null : id));
   };
 
-  const handleSubActionSubmit = async () => {
-    if (!canSubmitSubAction || !subAction) return;
+  const openMode = (m: 'transfer' | 'owner' | 'delete') => {
+    setMode(m);
+    setValue('');
+    setError('');
+    setToId(m === 'delete' ? 'default' : others[0]?.id ?? null);
+  };
+
+  // Persist current envelopes & default envelope owner back to Firestore
+  const persistEnvelopes = async (
+    nextEnvelopes: EnvelopeItem[],
+    nextDefaultOwner: string | null
+  ) => {
     setSaving(true);
-    setError('');
     try {
-      const value = Math.round(numericAmount * 100) / 100;
-      const existingAllocs: AppWalletAllocation[] = (wallet.allocations || []).map((a) => ({ ...a }));
+      const nextAllocated = nextEnvelopes.reduce((s, e) => s + e.balance, 0);
+      const nextDefaultBal = Math.max(0, walletBalance - nextAllocated);
 
-      if (subAction === 'ownership') {
-        // Seed unallocated remainder if allocations were empty
-        const existingSum = existingAllocs.reduce((s, a) => s + (a.amount || 0), 0);
-        const unallocRem = Math.max(0, breakdown.balance - existingSum);
-        if (unallocRem > 0) {
-          existingAllocs.push({
-            id: `base_${Date.now()}`,
-            owner: wallet.hasOwnThisMoney ? 'You' : wallet.owner || 'Amanat',
-            amount: unallocRem,
-            isLocked: wallet.isLocked,
-          });
-        }
+      const allAllocs: AppWalletAllocation[] = [
+        {
+          id: `default_${wallet.id}`,
+          owner: nextDefaultOwner ?? 'Reserved',
+          amount: nextDefaultBal,
+          purpose: wallet.name,
+          reservedAmount: nextDefaultOwner ? 0 : nextDefaultBal,
+          availabilityStatus: nextDefaultOwner ? 'available' : 'reserved',
+        },
+        ...nextEnvelopes.map((env) => ({
+          id: env.id,
+          owner: env.ownerName ?? 'Reserved',
+          amount: env.balance,
+          purpose: env.name,
+          reservedAmount: env.ownerName ? 0 : env.balance,
+          availabilityStatus: (env.ownerName ? 'available' : 'reserved') as
+            | 'available'
+            | 'reserved',
+        })),
+      ];
 
-        const fromOwnerLabel =
-          ownerId === 'mine' ? 'You' : owners.find((o) => o.id === ownerId)?.name || ownerId;
-        const toOwnerLabel =
-          toOwnerId === 'mine' ? 'You' : owners.find((o) => o.id === toOwnerId)?.name || toOwnerId;
+      const totalReserved = allAllocs.reduce((s, a) => s + (a.reservedAmount || 0), 0);
+      const hasSelf = allAllocs.some(
+        (a) => a.amount > 0 && a.owner.toLowerCase() === 'you'
+      );
+      const primaryOwner = hasSelf
+        ? 'You'
+        : nextDefaultOwner || wallet.owner || 'You';
 
-        let remaining = value;
-        const nextAllocs: AppWalletAllocation[] = [];
-
-        existingAllocs.forEach((alloc) => {
-          if (normalizeOwnerId(alloc.owner) === ownerId && remaining > 0) {
-            const take = Math.min(alloc.amount, remaining);
-            const left = Math.round((alloc.amount - take) * 100) / 100;
-            if (left > 0) nextAllocs.push({ ...alloc, amount: left });
-            remaining = Math.round((remaining - take) * 100) / 100;
-          } else {
-            nextAllocs.push(alloc);
-          }
-        });
-
-        const existingTargetIdx = nextAllocs.findIndex(
-          (a) => normalizeOwnerId(a.owner) === toOwnerId && !a.purpose
-        );
-        if (existingTargetIdx >= 0) {
-          nextAllocs[existingTargetIdx].amount =
-            Math.round((nextAllocs[existingTargetIdx].amount + value) * 100) / 100;
-        } else {
-          nextAllocs.push({
-            id: `own_${Date.now()}`,
-            owner: toOwnerLabel,
-            amount: value,
-            isLocked: toOwnerId === 'amanat',
-            availabilityStatus: toOwnerId === 'mine' ? 'available' : 'external',
-          });
-        }
-
-        const selfTotal = nextAllocs
-          .filter((a) => normalizeOwnerId(a.owner) === 'mine')
-          .reduce((s, a) => s + a.amount, 0);
-        const stillOwn = selfTotal > 0;
-        const primaryOwner = stillOwn ? 'You' : toOwnerLabel || fromOwnerLabel;
-
-        await onUpdateAllocations(
-          wallet.id,
-          nextAllocs,
-          wallet.reservedAmount || 0,
-          primaryOwner,
-          stillOwn
-        );
-        setSuccess('Ownership updated successfully.');
-        closeSubAction();
-      } else if (subAction === 'envelope') {
-        const ownerLabel =
-          ownerId === 'mine' ? 'You' : owners.find((o) => o.id === ownerId)?.name || ownerId;
-
-        const nextAllocs: AppWalletAllocation[] = [
-          ...existingAllocs,
-          {
-            id: `env_${Date.now()}`,
-            owner: ownerLabel,
-            amount: value,
-            purpose: envelopeName.trim(),
-            reservedAmount: value,
-            availabilityStatus: 'reserved',
-          },
-        ];
-
-        const newReserved = Math.min(
-          breakdown.balance,
-          (wallet.reservedAmount || 0) + value
-        );
-
-        await onUpdateAllocations(
-          wallet.id,
-          nextAllocs,
-          newReserved,
-          wallet.owner,
-          wallet.hasOwnThisMoney
-        );
-        setSuccess(`Envelope "${envelopeName.trim()}" created.`);
-        closeSubAction();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to update wallet.');
+      await onUpdateAllocations(
+        wallet.id,
+        allAllocs,
+        totalReserved,
+        primaryOwner,
+        hasSelf || wallet.hasOwnThisMoney
+      );
     } finally {
       setSaving(false);
     }
   };
 
-  const outlineButtonSx = {
-    mt: 1,
-    py: 1.3,
-    borderRadius: '12px',
-    textTransform: 'none' as const,
-    fontWeight: 600,
-    borderColor: isDark ? 'rgba(129, 140, 248, 0.4)' : '#C7D2FE',
-    color: isDark ? '#A5B4FC' : '#4F46E5',
-    '&:hover': {
-      borderColor: isDark ? '#818CF8' : '#6366F1',
-      backgroundColor: isDark ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.06)',
-    },
+  const handleCreateEnvelope = async () => {
+    const title = newEnvName.trim();
+    if (!title) return;
+    if (items.some((e) => e.name.toLowerCase() === title.toLowerCase())) {
+      setError('Envelope already exists');
+      return;
+    }
+    const color =
+      PALETTE.find((c) => !envelopes.some((e) => e.color === c)) ??
+      PALETTE[envelopes.length % PALETTE.length];
+    const newEnv: EnvelopeItem = {
+      id: `env_${Date.now()}`,
+      name: title,
+      balance: 0,
+      ownerName: null, // Reserved until an owner is assigned
+      color,
+    };
+    const next = [...envelopes, newEnv];
+    setEnvelopes(next);
+    setNewEnvName('');
+    setError('');
+    setAddingEnv(false);
+    await persistEnvelopes(next, defaultOwnerName);
   };
 
+  const handleTransferBetweenEnvelopes = async () => {
+    if (!active) return;
+    const amt = Number(value);
+    if (!toId) return setError('Choose the receiving envelope');
+    if (!amt || amt <= 0) return setError('Enter an amount');
+    if (amt > active.balance) return setError('More than available balance');
+
+    const next = envelopes.map((e) =>
+      e.id === active.id
+        ? { ...e, balance: e.balance - amt }
+        : e.id === toId
+        ? { ...e, balance: e.balance + amt }
+        : e
+    );
+    setEnvelopes(next);
+    resetPanel();
+    setActiveEnvId(null);
+    await persistEnvelopes(next, defaultOwnerName);
+  };
+
+  const handleSetOwner = async (ownerName: string | null) => {
+    if (!active) return;
+    if (active.isDefault) {
+      setDefaultOwnerName(ownerName);
+      resetPanel();
+      await persistEnvelopes(envelopes, ownerName);
+    } else {
+      const next = envelopes.map((e) =>
+        e.id === active.id ? { ...e, ownerName } : e
+      );
+      setEnvelopes(next);
+      resetPanel();
+      await persistEnvelopes(next, defaultOwnerName);
+    }
+  };
+
+  const handleCreateNewOwner = async () => {
+    const clean = newOwnerName.trim();
+    if (!clean) return;
+    if (!customOwners.some((o) => o.name.toLowerCase() === clean.toLowerCase())) {
+      setCustomOwners((prev) => [
+        ...prev,
+        { name: clean, color: PALETTE[prev.length % PALETTE.length] },
+      ]);
+    }
+    setNewOwnerName('');
+    setAddingOwner(false);
+    await handleSetOwner(clean);
+  };
+
+  const handleDeleteEnvelope = async () => {
+    if (!active || active.isDefault) return;
+    if (active.balance > 0 && !toId) {
+      return setError('Choose where the balance goes');
+    }
+    const next = envelopes
+      .filter((e) => e.id !== active.id)
+      .map((e) => (e.id === toId ? { ...e, balance: e.balance + active.balance } : e));
+    setEnvelopes(next);
+    resetPanel();
+    setActiveEnvId(null);
+    await persistEnvelopes(next, defaultOwnerName);
+  };
+
+  const toggleQuickAction = (next: 'add' | 'spend') => {
+    setQuickError('');
+    setQuickAmount('');
+    setQuickNote('');
+    setQuickAction((cur) => (cur === next ? null : next));
+  };
+
+  const handleQuickTransactionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickAction || quickSaving) return;
+    setQuickError('');
+
+    const trimmed = quickAmount.trim();
+    const num = Number(trimmed);
+
+    if (!trimmed || !Number.isFinite(num) || num <= 0) {
+      setQuickError('Please enter a valid amount greater than 0.');
+      return;
+    }
+
+    if (quickAction === 'spend') {
+      if (wallet.isLocked) {
+        setQuickError('This wallet is locked. Unlock it before spending.');
+        return;
+      }
+      if (num > walletBalance) {
+        setQuickError(`Insufficient balance. Maximum available is ${formatRs(walletBalance)}.`);
+        return;
+      }
+    }
+
+    setQuickSaving(true);
+    try {
+      const cleanNote = quickNote.trim() || undefined;
+      if (quickAction === 'add') {
+        await onAddMoney(wallet, num, cleanNote);
+      } else {
+        await onSpendMoney(wallet, num, cleanNote);
+      }
+      setQuickAction(null);
+      setQuickAmount('');
+      setQuickNote('');
+      setQuickError('');
+    } catch (err) {
+      setQuickError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Transaction failed. Please try again.'
+      );
+    } finally {
+      setQuickSaving(false);
+    }
+  };
+
+  const otherWallets = wallets.filter((w) => w.id !== wallet.id);
+
+  const openDeleteFlow = () => {
+    setDeleteError('');
+    setDeleteNote('');
+    setDeleteChoice(null);
+    setDeleteTargetWalletId(otherWallets[0]?.id || '');
+    setShowDeleteFlow(true);
+  };
+
+  const handleConfirmDeleteWallet = async () => {
+    if (deletingWallet) return;
+    setDeleteError('');
+
+    if (walletBalance <= 0) {
+      setDeletingWallet(true);
+      try {
+        await onDeleteWallet(wallet.id, { resolution: 'zero' });
+      } catch (err) {
+        setDeleteError(err instanceof Error ? err.message : 'Failed to delete wallet.');
+      } finally {
+        setDeletingWallet(false);
+      }
+      return;
+    }
+
+    if (!deleteChoice) {
+      setDeleteError('Please select what should happen to the remaining balance.');
+      return;
+    }
+
+    if (deleteChoice === 'transfer' && !deleteTargetWalletId) {
+      setDeleteError('Please choose a destination wallet for the transfer.');
+      return;
+    }
+
+    setDeletingWallet(true);
+    try {
+      await onDeleteWallet(wallet.id, {
+        resolution: deleteChoice,
+        destinationWalletId: deleteChoice === 'transfer' ? deleteTargetWalletId : undefined,
+        note: deleteNote.trim() || undefined,
+      });
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to close wallet.');
+    } finally {
+      setDeletingWallet(false);
+    }
+  };
+
+  const inputCls = `min-w-0 flex-1 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 ${
+    isDark
+      ? 'bg-[#1f2430] text-white placeholder:text-slate-400 focus:ring-blue-500/40'
+      : 'bg-white text-slate-900 placeholder:text-slate-400 focus:ring-blue-500/30 border border-slate-200'
+  }`;
+
+  const ghostBtn = `rounded-xl py-2.5 text-xs sm:text-sm font-semibold transition active:scale-95 disabled:opacity-30 cursor-pointer ${
+    isDark
+      ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+      : 'bg-slate-200/80 text-slate-700 hover:bg-slate-200'
+  }`;
+
   return (
-    <>
-      <Dialog
-        open={open}
-        onClose={onClose}
-        fullWidth
-        maxWidth="md"
-        PaperProps={{
-          sx: {
-            backgroundColor: isDark ? '#0f172a' : '#F5F7FB',
-            color: isDark ? '#f8fafc' : '#0f172a',
-            borderRadius: '26px',
-            border: isDark ? '1px solid rgba(148,163,184,0.2)' : '1px solid #e2e8f0',
-            overflow: 'hidden',
-          },
-        }}
+    <div
+      className="fixed inset-0 z-[1300] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Wallet details for ${wallet.name}`}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 24, scale: 0.98 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className={`max-h-[92vh] w-full sm:max-w-xl overflow-y-auto rounded-t-3xl sm:rounded-3xl border p-5 sm:p-6 shadow-2xl transition-colors ${
+          isDark
+            ? 'border-white/10 bg-[#1f2430] text-white'
+            : 'border-slate-200 bg-white text-slate-900'
+        }`}
       >
-        <div className="max-h-[90vh] overflow-y-auto p-4 sm:p-6 space-y-4">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                My Wallets
-              </h2>
-              <p className={`mt-0.5 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Money, ownership &amp; envelopes
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div
-                className={`rounded-xl p-2.5 ${
-                  isDark ? 'bg-indigo-500/15 text-indigo-300' : 'bg-indigo-50 text-indigo-600'
-                }`}
-              >
-                <Wallet size={20} />
-              </div>
-              <IconButton
-                onClick={onClose}
-                aria-label="Close wallet details"
-                sx={{ color: isDark ? '#94a3b8' : '#64748b' }}
-              >
-                <X size={20} />
-              </IconButton>
-            </div>
-          </div>
-
-          {/* Wallet switcher */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {wallets.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onSelectWallet(item.id)}
-                className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition cursor-pointer ${
-                  wallet.id === item.id
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : isDark
-                    ? 'border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white'
-                    : 'border border-slate-200 bg-white text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {item.name}
-              </button>
-            ))}
-          </div>
-
-          {/* Premium wallet hero card */}
-          <div className="relative overflow-hidden rounded-[26px] bg-[#171C39] p-5 text-white shadow-xl shadow-indigo-950/15 sm:p-7">
-            <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-indigo-400/15 blur-2xl" />
-
-            <div className="relative">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-white/10 p-3">
-                    <Wallet size={22} className="text-indigo-200" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{wallet.name}</h3>
-                      {wallet.isLocked && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-200 border border-rose-400/30">
-                          <Lock size={10} /> Locked
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-indigo-200">
-                      {wallet.purpose || 'Multi-ownership wallet'}
-                    </p>
-                  </div>
-                </div>
-
-                <Tooltip title={hidden ? 'Show balance' : 'Hide balance'}>
-                  <IconButton
-                    onClick={() => setHidden(!hidden)}
-                    aria-label={hidden ? 'Show balance' : 'Hide balance'}
-                    sx={{ color: '#C7D2FE' }}
-                  >
-                    {hidden ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </IconButton>
-                </Tooltip>
-              </div>
-
-              <div className="mt-6">
-                <p className="text-xs text-indigo-200">Total wallet balance</p>
-                <h2 className="mt-1 text-3xl font-bold tracking-tight tabular-nums sm:text-4xl">
-                  {hidden ? 'Rs. ••••••' : `Rs. ${formatMoney(breakdown.balance)}`}
-                </h2>
-              </div>
-
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-white/10 p-3">
-                  <p className="text-xs text-indigo-200">Unallocated</p>
-                  <p className="mt-1 text-base font-semibold tabular-nums">
-                    {hidden ? '••••' : `Rs. ${formatMoney(breakdown.unallocated)}`}
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-white/10 p-3">
-                  <p className="text-xs text-indigo-200">In envelopes</p>
-                  <p className="mt-1 text-base font-semibold tabular-nums">
-                    {hidden ? '••••' : `Rs. ${formatMoney(breakdown.reserved)}`}
-                  </p>
-                </div>
-              </div>
-
-              {/* Primary actions wired to existing handlers */}
-              <div className="mt-5 grid grid-cols-3 gap-2">
-                <ActionButton
-                  icon={Plus}
-                  label="Add"
-                  primary
-                  onClick={() => {
-                    onClose();
-                    onAddMoney(wallet);
-                  }}
-                />
-                <ActionButton
-                  icon={ArrowUpRight}
-                  label="Spend"
-                  disabled={wallet.isLocked || breakdown.balance <= 0}
-                  onClick={() => {
-                    onClose();
-                    onSpendMoney(wallet);
-                  }}
-                />
-                <ActionButton
-                  icon={ArrowLeftRight}
-                  label="Transfer"
-                  disabled={wallet.isLocked || breakdown.balance <= 0}
-                  onClick={() => {
-                    onClose();
-                    onTransfer(wallet);
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {success && (
-            <Alert severity="success" onClose={() => setSuccess('')} sx={{ borderRadius: 3 }}>
-              {success}
-            </Alert>
-          )}
-
-          {/* Money Organization Card (Ownership & Envelopes) */}
-          <div
-            className={`rounded-2xl border p-4 sm:p-5 ${
-              isDark
-                ? 'border-slate-700/70 bg-slate-800/70'
-                : 'border-slate-100 bg-white shadow-sm'
-            }`}
-          >
-            <div className="mb-3">
-              <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                Money organization
-              </h3>
-              <p className={`mt-1 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Track ownership and reserved funds
-              </p>
-            </div>
-
-            <Tabs
-              value={tab}
-              onChange={(_, value: number) => setTab(value)}
-              variant="fullWidth"
-              sx={{
-                mb: 3,
-                minHeight: 42,
-                '& .MuiTab-root': {
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  minHeight: 42,
-                  color: isDark ? '#94a3b8' : '#64748b',
-                },
-                '& .Mui-selected': {
-                  color: isDark ? '#a5b4fc !important' : '#4f46e5 !important',
-                },
-                '& .MuiTabs-indicator': {
-                  backgroundColor: isDark ? '#818cf8' : '#4f46e5',
-                },
-              }}
-            >
-              <Tab label="Ownership" />
-              <Tab label="Envelopes" />
-            </Tabs>
-
-            {tab === 0 ? (
-              <div className="space-y-4">
-                {/* Ownership distribution bar */}
-                <div
-                  className={`flex h-2.5 overflow-hidden rounded-full ${
-                    isDark ? 'bg-slate-700' : 'bg-slate-100'
+        {/* Wallet Switcher Pills (if multiple wallets) */}
+        {wallets.length > 1 && (
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {wallets.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => onSelectWallet(w.id)}
+                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition cursor-pointer ${
+                    w.id === wallet.id
+                      ? isDark
+                        ? 'bg-white text-slate-900'
+                        : 'bg-slate-900 text-white'
+                      : isDark
+                      ? 'bg-white/10 text-slate-300 hover:bg-white/15'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  {owners.map((owner) => {
-                    const amt = breakdown.ownerTotals[owner.id] || 0;
-                    return (
-                      <div
-                        key={owner.id}
-                        style={{
-                          width: `${breakdown.balance > 0 ? (amt / breakdown.balance) * 100 : 0}%`,
-                          backgroundColor: owner.color,
-                        }}
-                      />
-                    );
-                  })}
+                  {w.name}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition cursor-pointer ${
+                isDark
+                  ? 'bg-white/10 text-slate-300 hover:bg-white/15'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <X size={17} />
+            </button>
+          </div>
+        )}
+
+        {/* Wallet Header */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-xs"
+              style={{ backgroundColor: wallet.color || '#4f46e5' }}
+            >
+              <SvgIcon name="wallet" className="h-6 w-6" />
+            </div>
+            <div className="min-w-0 leading-tight">
+              <div className="flex items-center gap-2">
+                <p className="truncate text-lg font-semibold">{wallet.name}</p>
+                {wallet.isLocked && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-400">
+                    <Lock size={10} /> Locked
+                  </span>
+                )}
+              </div>
+              <p className={`truncate text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                {wallet.purpose || wallet.subtitle}
+              </p>
+            </div>
+          </div>
+
+          {wallets.length <= 1 && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition cursor-pointer ${
+                isDark
+                  ? 'bg-white/10 text-slate-300 hover:bg-white/15'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <X size={17} />
+            </button>
+          )}
+        </div>
+
+        {/* Amount */}
+        <div className="mt-5 px-1">
+          <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Wallet balance</p>
+          <h2 className="mt-1 text-4xl font-bold tracking-tight tabular-nums">
+            {formatRs(walletBalance)}
+          </h2>
+        </div>
+
+        {/* Wallet Actions: Add / Spend / Transfer */}
+        <div className="mt-5 grid grid-cols-3 gap-2.5">
+          <ActionButton
+            icon="plus"
+            label="Add"
+            onClick={() => toggleQuickAction('add')}
+            tone={
+              quickAction === 'add'
+                ? 'bg-green-500 text-black ring-green-500 shadow-md'
+                : isDark
+                ? 'bg-green-500/10 text-green-400 ring-green-500/40'
+                : 'bg-green-50 text-green-700 ring-green-200'
+            }
+          />
+          <ActionButton
+            icon="spend"
+            label="Spend"
+            disabled={wallet.isLocked || walletBalance <= 0}
+            onClick={() => toggleQuickAction('spend')}
+            tone={
+              quickAction === 'spend'
+                ? 'bg-rose-500 text-white ring-rose-500 shadow-md'
+                : isDark
+                ? 'bg-red-500/10 text-red-400 ring-red-500/40'
+                : 'bg-red-50 text-red-700 ring-red-200'
+            }
+          />
+          <ActionButton
+            icon="transfer"
+            label="Transfer"
+            disabled={wallet.isLocked || walletBalance <= 0}
+            onClick={() => {
+              onClose();
+              onTransfer(wallet);
+            }}
+            tone={
+              isDark
+                ? 'bg-blue-500/10 text-blue-400 ring-blue-500/40'
+                : 'bg-blue-50 text-blue-700 ring-blue-200'
+            }
+          />
+        </div>
+
+        {/* Inline Quick Add / Spend Form */}
+        <AnimatePresence initial={false}>
+          {quickAction && (
+            <motion.form
+              key={quickAction}
+              onSubmit={handleQuickTransactionSubmit}
+              noValidate
+              initial={{ opacity: 0, height: 0, y: -6 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+              className="overflow-hidden"
+            >
+              <div
+                className={`mt-3 rounded-2xl border p-3.5 space-y-3 ${
+                  quickAction === 'add'
+                    ? isDark
+                      ? 'border-green-500/30 bg-green-500/5'
+                      : 'border-green-200 bg-green-50/70'
+                    : isDark
+                    ? 'border-rose-500/30 bg-rose-500/5'
+                    : 'border-rose-200 bg-rose-50/70'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold">
+                    {quickAction === 'add'
+                      ? `Add money to ${wallet.name}`
+                      : `Spend from ${wallet.name}`}
+                  </p>
+                  {quickAction === 'spend' && (
+                    <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Available: {formatRs(walletBalance)}
+                    </span>
+                  )}
                 </div>
 
-                {owners.map((owner) => {
-                  const amt = breakdown.ownerTotals[owner.id] || 0;
-                  return (
-                    <div key={owner.id} className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-                          style={{
-                            backgroundColor: `${owner.color}20`,
-                            color: owner.color,
-                          }}
-                        >
-                          {owner.id === 'amanat' ? (
-                            <LockKeyhole size={18} />
-                          ) : (
-                            <ShieldCheck size={18} />
-                          )}
-                        </div>
-                        <div>
-                          <p
-                            className={`text-sm font-semibold ${
-                              isDark ? 'text-slate-100' : 'text-slate-800'
-                            }`}
-                          >
-                            {owner.name}
-                          </p>
-                          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>
-                            {breakdown.balance > 0
-                              ? Math.round((amt / breakdown.balance) * 100)
-                              : 0}
-                            % of wallet
-                          </p>
-                        </div>
-                      </div>
+                {/* Amount Input */}
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
+                      Rs.
+                    </span>
+                    <input
+                      autoFocus
+                      type="number"
+                      inputMode="decimal"
+                      min="1"
+                      step="any"
+                      value={quickAmount}
+                      onChange={(e) => {
+                        setQuickAmount(e.target.value);
+                        if (quickError) setQuickError('');
+                      }}
+                      placeholder="Enter amount"
+                      className={`${inputCls} w-full pl-9`}
+                    />
+                  </div>
+                  {quickAction === 'spend' && walletBalance > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickAmount(String(walletBalance));
+                        if (quickError) setQuickError('');
+                      }}
+                      className={`rounded-xl px-3 text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                        isDark
+                          ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Max
+                    </button>
+                  )}
+                </div>
 
-                      <p
-                        className={`shrink-0 text-sm font-bold tabular-nums ${
-                          isDark ? 'text-white' : 'text-slate-900'
+                {/* Quick Add Presets */}
+                {quickAction === 'add' && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {[500, 1000, 5000, 10000].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setQuickAmount(String((Number(quickAmount) || 0) + preset));
+                          if (quickError) setQuickError('');
+                        }}
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition active:scale-95 cursor-pointer ${
+                          isDark
+                            ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                         }`}
                       >
-                        {hidden ? '••••' : `Rs. ${formatMoney(amt)}`}
-                      </p>
-                    </div>
-                  );
-                })}
-
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  startIcon={<Split size={17} />}
-                  onClick={() => openSubAction('ownership')}
-                  disabled={breakdown.balance <= 0}
-                  sx={outlineButtonSx}
-                >
-                  Split / Change ownership
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {breakdown.envelopes.length === 0 && (
-                  <div
-                    className={`rounded-xl p-5 text-center text-sm ${
-                      isDark ? 'bg-slate-900/70 text-slate-400' : 'bg-slate-50 text-slate-500'
-                    }`}
-                  >
-                    No envelopes created yet.
+                        +{preset.toLocaleString('en-US')}
+                      </button>
+                    ))}
                   </div>
                 )}
 
-                {breakdown.envelopes.map((envelope) => {
-                  const percent =
-                    breakdown.balance > 0
-                      ? Math.min(100, (envelope.amount / breakdown.balance) * 100)
-                      : 0;
-                  return (
-                    <div
-                      key={envelope.id}
-                      className={`rounded-xl p-4 ${
-                        isDark ? 'bg-slate-900/70' : 'bg-slate-50'
-                      }`}
+                {/* Optional Notes Input */}
+                <input
+                  type="text"
+                  value={quickNote}
+                  onChange={(e) => setQuickNote(e.target.value)}
+                  placeholder={
+                    quickAction === 'spend'
+                      ? 'Note (optional, e.g. Groceries, Petrol, Bill)'
+                      : 'Note (optional, e.g. Salary, Deposit)'
+                  }
+                  maxLength={120}
+                  className={`${inputCls} w-full`}
+                />
+
+                {quickError && (
+                  <p role="alert" className="text-xs font-medium text-rose-500">
+                    {quickError}
+                  </p>
+                )}
+
+                {/* Confirm / Cancel */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={quickSaving}
+                    onClick={() => {
+                      setQuickAction(null);
+                      setQuickError('');
+                    }}
+                    className={`flex-1 ${ghostBtn}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={quickSaving}
+                    className={`flex-[1.5] rounded-xl py-2.5 text-xs sm:text-sm font-bold transition active:scale-95 disabled:opacity-50 cursor-pointer ${
+                      quickAction === 'add'
+                        ? 'bg-green-500 hover:bg-green-400 text-black'
+                        : 'bg-rose-600 hover:bg-rose-500 text-white'
+                    }`}
+                  >
+                    {quickSaving
+                      ? 'Processing…'
+                      : quickAction === 'add'
+                      ? `Add${Number(quickAmount) > 0 ? ` ${formatRs(Number(quickAmount))}` : ''}`
+                      : `Spend${Number(quickAmount) > 0 ? ` ${formatRs(Number(quickAmount))}` : ''}`}
+                  </button>
+                </div>
+              </div>
+            </motion.form>
+          )}
+        </AnimatePresence>
+
+        <div className={`my-5 h-px w-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`} />
+
+        {/* Envelopes Header */}
+        <div className={`rounded-2xl p-3.5 ${isDark ? 'bg-[#282e3d]' : 'bg-slate-100'}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed ${
+                  isDark
+                    ? 'border-white/25 text-slate-300'
+                    : 'border-slate-300 text-slate-500'
+                }`}
+              >
+                <SvgIcon name="envelope" />
+              </span>
+              <div className="min-w-0 leading-tight">
+                <p className="text-base font-semibold">Envelopes</p>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {items.length} {items.length === 1 ? 'envelope' : 'envelopes'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAddingEnv((a) => !a);
+                setError('');
+              }}
+              className={`shrink-0 rounded-full px-4 py-2 text-xs sm:text-sm font-semibold transition active:scale-95 cursor-pointer ${
+                isDark ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'
+              }`}
+            >
+              {addingEnv ? 'Close' : '+ Envelope'}
+            </button>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {addingEnv && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-3 flex gap-2">
+                  <input
+                    autoFocus
+                    value={newEnvName}
+                    onChange={(ev) => {
+                      setNewEnvName(ev.target.value);
+                      setError('');
+                    }}
+                    onKeyDown={(ev) => ev.key === 'Enter' && handleCreateEnvelope()}
+                    placeholder="Envelope name (e.g. Bills, Kids, Savings)"
+                    maxLength={28}
+                    className={inputCls}
+                  />
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={handleCreateEnvelope}
+                    className="rounded-xl bg-green-500 hover:bg-green-400 px-4 text-sm font-bold text-black transition active:scale-95 cursor-pointer"
+                  >
+                    Add
+                  </button>
+                </div>
+                {error && !activeEnvId && (
+                  <p className="mt-2 px-1 text-xs text-rose-500">{error}</p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Spendable / Reserved Breakdown — hide labels with 0 amount */}
+        {(spendable > 0 || reserved > 0) && (
+          <>
+            <div className="mt-4 flex h-3.5 w-full gap-1.5">
+              {spendable > 0 && (
+                <div
+                  className="rounded-full bg-green-500 transition-all duration-300"
+                  style={{ width: `${spendPct}%` }}
+                />
+              )}
+              {reserved > 0 && (
+                <div
+                  className="rounded-full bg-amber-500 transition-all duration-300"
+                  style={{ width: `${100 - spendPct}%` }}
+                />
+              )}
+            </div>
+
+            <div
+              className={`mt-3 grid gap-2.5 ${
+                spendable > 0 && reserved > 0 ? 'grid-cols-2' : 'grid-cols-1'
+              }`}
+            >
+              {spendable > 0 && (
+                <div
+                  className={`min-w-0 rounded-2xl px-3.5 py-3 ring-1 ring-inset ${
+                    isDark
+                      ? 'bg-green-500/10 ring-green-500/40'
+                      : 'bg-green-50 ring-green-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 shrink-0 rounded-full bg-green-500 ring-4 ring-white/5" />
+                    <p className="text-sm font-semibold">Spendable</p>
+                  </div>
+                  <p
+                    className={`mt-2 truncate text-lg font-bold tabular-nums ${
+                      isDark ? 'text-green-400' : 'text-green-700'
+                    }`}
+                  >
+                    {formatRs(spendable)}
+                  </p>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Has an owner
+                  </p>
+                </div>
+              )}
+
+              {reserved > 0 && (
+                <div
+                  className={`min-w-0 rounded-2xl px-3.5 py-3 ring-1 ring-inset ${
+                    isDark
+                      ? 'bg-amber-500/10 ring-amber-500/40'
+                      : 'bg-amber-50 ring-amber-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 shrink-0 rounded-full bg-amber-500 ring-4 ring-white/5" />
+                    <p className="text-sm font-semibold">Reserved</p>
+                  </div>
+                  <p
+                    className={`mt-2 truncate text-lg font-bold tabular-nums ${
+                      isDark ? 'text-amber-400' : 'text-amber-700'
+                    }`}
+                  >
+                    {formatRs(reserved)}
+                  </p>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    No owner
+                  </p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Envelopes List (always shows default 1 envelope + any custom envelopes) */}
+        <ul className="mt-4 space-y-2.5">
+          {items.map((e) => {
+            const isActive = e.id === activeEnvId;
+            const owner = ownerOf(e);
+            return (
+              <li
+                key={e.id}
+                className={`rounded-2xl transition ${
+                  isDark ? 'bg-[#282e3d]' : 'bg-slate-100'
+                } ${
+                  isActive
+                    ? isDark
+                      ? 'ring-1 ring-inset ring-white/25'
+                      : 'ring-1 ring-inset ring-slate-300'
+                    : ''
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => selectItem(e.id)}
+                  className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left cursor-pointer"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white ${e.color}`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: envelope.color }}
-                          />
-                          <p
-                            className={`text-sm font-semibold ${
-                              isDark ? 'text-slate-100' : 'text-slate-800'
+                      <SvgIcon name="envelope" />
+                    </span>
+                    <div className="min-w-0 leading-tight">
+                      <p className="truncate text-sm sm:text-base font-semibold">
+                        {e.name}
+                        {e.isDefault && (
+                          <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                            Default
+                          </span>
+                        )}
+                      </p>
+                      <div className="mt-1.5">
+                        {owner ? (
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                              isDark
+                                ? 'bg-white/10 text-slate-200'
+                                : 'bg-white text-slate-700 border border-slate-200'
                             }`}
                           >
-                            {envelope.name}
-                          </p>
+                            <span className={`h-2 w-2 rounded-full ${owner.color}`} />
+                            {owner.name}
+                          </span>
+                        ) : (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isDark
+                                ? 'bg-amber-500/15 text-amber-400'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            Reserved
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="shrink-0 text-base sm:text-lg font-bold tabular-nums">
+                    {formatRs(e.balance)}
+                  </p>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {isActive && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18 }}
+                      className={`overflow-hidden border-t px-3.5 pb-3.5 pt-3 ${
+                        isDark ? 'border-white/10' : 'border-slate-200'
+                      }`}
+                    >
+                      {!mode && (
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            disabled={others.length === 0 || e.balance === 0}
+                            onClick={() => openMode('transfer')}
+                            className={ghostBtn}
+                          >
+                            ⇄ Transfer
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openMode('owner')}
+                            className={ghostBtn}
+                          >
+                            Owner
+                          </button>
+                          <button
+                            type="button"
+                            disabled={e.isDefault}
+                            onClick={() => openMode('delete')}
+                            className={`rounded-xl py-2.5 text-xs sm:text-sm font-semibold transition active:scale-95 disabled:opacity-30 cursor-pointer ${
+                              isDark
+                                ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                                : 'bg-red-50 text-red-600 hover:bg-red-100'
+                            }`}
+                          >
+                            Delete
+                          </button>
                         </div>
-                        <p
-                          className={`text-sm font-bold tabular-nums ${
-                            isDark ? 'text-white' : 'text-slate-900'
-                          }`}
-                        >
-                          {hidden ? '••••' : `Rs. ${formatMoney(envelope.amount)}`}
+                      )}
+
+                      {/* Transfer between envelopes */}
+                      {mode === 'transfer' && (
+                        <div className="space-y-3">
+                          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            Send from <span className="font-semibold text-current">{e.name}</span> to
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {others.map((x) => (
+                              <Chip
+                                key={x.id}
+                                color={x.color}
+                                selected={toId === x.id}
+                                isDark={isDark}
+                                onClick={() => setToId(x.id)}
+                              >
+                                {x.name}
+                              </Chip>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="0"
+                              value={value}
+                              onChange={(ev) => {
+                                setValue(ev.target.value);
+                                setError('');
+                              }}
+                              placeholder="Amount"
+                              className={inputCls}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setValue(String(e.balance))}
+                              className={`rounded-xl px-3 text-xs font-semibold active:scale-95 cursor-pointer ${
+                                isDark
+                                  ? 'bg-white/10 text-slate-200'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              Max
+                            </button>
+                          </div>
+                          <div className="-mt-1 flex flex-wrap gap-1.5">
+                            {[5, 10, 20, 30, 50].map((p) => (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() => {
+                                  setValue(String(Math.round((e.balance * p) / 100)));
+                                  setError('');
+                                }}
+                                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition active:scale-95 cursor-pointer ${
+                                  isDark
+                                    ? 'bg-white/10 text-slate-300 hover:bg-white/15'
+                                    : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                                }`}
+                              >
+                                {p}%
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={resetPanel}
+                              className={`flex-1 ${ghostBtn}`}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={handleTransferBetweenEnvelopes}
+                              className="flex-1 rounded-xl bg-green-500 hover:bg-green-400 py-2.5 text-sm font-bold text-black active:scale-95 cursor-pointer"
+                            >
+                              Transfer
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Owner assignment + Create New Owner */}
+                      {mode === 'owner' && (
+                        <div className="space-y-3">
+                          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            Owner of <span className="font-semibold text-current">{e.name}</span>
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {customOwners.map((o) => (
+                              <Chip
+                                key={o.name}
+                                color={o.color}
+                                selected={e.ownerName?.toLowerCase() === o.name.toLowerCase()}
+                                isDark={isDark}
+                                onClick={() => handleSetOwner(o.name)}
+                              >
+                                {o.name}
+                              </Chip>
+                            ))}
+                            <Chip
+                              color="bg-amber-500"
+                              selected={!ownerOf(e)}
+                              isDark={isDark}
+                              onClick={() => handleSetOwner(null)}
+                            >
+                              Reserved
+                            </Chip>
+                            <button
+                              type="button"
+                              onClick={() => setAddingOwner((v) => !v)}
+                              className={`inline-flex items-center gap-1 rounded-full border border-dashed px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                                isDark
+                                  ? 'border-white/25 text-slate-300 hover:border-white/50'
+                                  : 'border-slate-300 text-slate-600 hover:border-slate-500'
+                              }`}
+                            >
+                              <Plus size={12} /> New owner
+                            </button>
+                          </div>
+
+                          {addingOwner && (
+                            <div className="flex gap-2">
+                              <input
+                                autoFocus
+                                value={newOwnerName}
+                                onChange={(ev) => setNewOwnerName(ev.target.value)}
+                                onKeyDown={(ev) => ev.key === 'Enter' && handleCreateNewOwner()}
+                                placeholder="Owner name (e.g. Father, Wife, Business)"
+                                maxLength={24}
+                                className={inputCls}
+                              />
+                              <button
+                                type="button"
+                                onClick={handleCreateNewOwner}
+                                className="rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 text-xs font-bold text-white cursor-pointer"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          )}
+
+                          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            No owner = reserved, not counted as spendable.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={resetPanel}
+                            className={`w-full ${ghostBtn}`}
+                          >
+                            Close
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Delete envelope */}
+                      {mode === 'delete' && (
+                        <div className="space-y-3">
+                          {e.balance > 0 ? (
+                            <>
+                              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                <span className="font-semibold text-current">
+                                  {formatRs(e.balance)}
+                                </span>{' '}
+                                will move to
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {others.map((x) => (
+                                  <Chip
+                                    key={x.id}
+                                    color={x.color}
+                                    selected={toId === x.id}
+                                    isDark={isDark}
+                                    onClick={() => setToId(x.id)}
+                                  >
+                                    {x.name}
+                                  </Chip>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Delete <span className="font-semibold text-current">{e.name}</span>? No
+                              balance to move.
+                            </p>
+                          )}
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={resetPanel}
+                              className={`flex-1 ${ghostBtn}`}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={handleDeleteEnvelope}
+                              className="flex-1 rounded-xl bg-red-500 hover:bg-red-400 py-2.5 text-sm font-bold text-white active:scale-95 cursor-pointer"
+                            >
+                              Delete envelope
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {error && <p className="mt-2 text-xs text-rose-500">{error}</p>}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Footer Security Lock & Graceful Delete Wallet Controls */}
+        <div
+          className={`mt-5 border-t pt-4 ${
+            isDark ? 'border-white/10' : 'border-slate-200'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => onToggleLock(wallet.id, wallet.isLocked)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                wallet.isLocked
+                  ? 'border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
+                  : isDark
+                  ? 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {wallet.isLocked ? <Unlock size={14} /> : <Lock size={14} />}
+              <span>{wallet.isLocked ? 'Unlock Wallet' : 'Lock Wallet'}</span>
+            </button>
+
+            {wallet.category !== 'built-in' && (
+              <button
+                type="button"
+                onClick={() => (showDeleteFlow ? setShowDeleteFlow(false) : openDeleteFlow())}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  isDark
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
+                    : 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                }`}
+              >
+                <Trash2 size={14} />
+                <span>Delete Wallet</span>
+              </button>
+            )}
+          </div>
+
+          {/* Graceful Wallet Closure Panel */}
+          <AnimatePresence initial={false}>
+            {showDeleteFlow && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                className="overflow-hidden"
+              >
+                <div
+                  className={`mt-3 rounded-2xl border p-4 space-y-3 ${
+                    isDark
+                      ? 'border-rose-500/30 bg-rose-500/5'
+                      : 'border-rose-200 bg-rose-50/70'
+                  }`}
+                >
+                  {walletBalance > 0 ? (
+                    <>
+                      <div>
+                        <p className="text-sm font-bold">
+                          What should happen to this money?
+                        </p>
+                        <p className={`mt-0.5 text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                          {wallet.name} currently holds{' '}
+                          <span className="font-bold text-current">{formatRs(walletBalance)}</span>.
                         </p>
                       </div>
 
-                      <div
-                        className={`mt-3 h-1.5 overflow-hidden rounded-full ${
-                          isDark ? 'bg-slate-700' : 'bg-slate-200'
-                        }`}
-                      >
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${percent}%`,
-                            backgroundColor: envelope.color,
+                      <div className="space-y-2">
+                        {/* Option 1: Transfer to another wallet */}
+                        <button
+                          type="button"
+                          disabled={otherWallets.length === 0}
+                          onClick={() => {
+                            setDeleteChoice('transfer');
+                            setDeleteError('');
                           }}
-                        />
+                          className={`w-full rounded-xl border p-3 text-left text-xs font-semibold transition cursor-pointer disabled:opacity-40 ${
+                            deleteChoice === 'transfer'
+                              ? 'border-blue-500 bg-blue-500/15 text-blue-400'
+                              : isDark
+                              ? 'border-white/10 bg-[#282e3d] text-slate-200 hover:border-white/25'
+                              : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
+                          }`}
+                        >
+                          1. Transfer {formatRs(walletBalance)} to another wallet
+                        </button>
+
+                        {deleteChoice === 'transfer' && (
+                          <div className="pl-2 space-y-1.5">
+                            <label
+                              className={`block text-[11px] font-semibold ${
+                                isDark ? 'text-slate-300' : 'text-slate-600'
+                              }`}
+                            >
+                              Choose receiving wallet
+                            </label>
+                            <select
+                              value={deleteTargetWalletId}
+                              onChange={(e) => {
+                                setDeleteTargetWalletId(e.target.value);
+                                setDeleteError('');
+                              }}
+                              className={`${inputCls} w-full`}
+                            >
+                              <option value="">— Select wallet —</option>
+                              {otherWallets.map((w) => (
+                                <option key={w.id} value={w.id}>
+                                  {w.name} ({formatRs(w.amount)})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {/* Option 2: Record balance adjustment */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteChoice('adjustment');
+                            setDeleteError('');
+                          }}
+                          className={`w-full rounded-xl border p-3 text-left text-xs font-semibold transition cursor-pointer ${
+                            deleteChoice === 'adjustment'
+                              ? 'border-amber-500 bg-amber-500/15 text-amber-400'
+                              : isDark
+                              ? 'border-white/10 bg-[#282e3d] text-slate-200 hover:border-white/25'
+                              : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
+                          }`}
+                        >
+                          2. Record a balance adjustment (money no longer held)
+                        </button>
+
+                        {deleteChoice === 'adjustment' && (
+                          <div className="pl-2">
+                            <input
+                              type="text"
+                              value={deleteNote}
+                              onChange={(e) => setDeleteNote(e.target.value)}
+                              placeholder="Optional reason (e.g. Spent outside app, closed account)"
+                              className={`${inputCls} w-full`}
+                            />
+                          </div>
+                        )}
+
+                        {/* Option 3: Cancel wallet closure */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowDeleteFlow(false);
+                            setDeleteChoice(null);
+                            setDeleteError('');
+                          }}
+                          className={`w-full rounded-xl border p-3 text-left text-xs font-semibold transition cursor-pointer ${
+                            isDark
+                              ? 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          3. Cancel wallet closure
+                        </button>
                       </div>
-                    </div>
-                  );
-                })}
 
-                <div
-                  className={`flex justify-between text-xs ${
-                    isDark ? 'text-slate-400' : 'text-slate-500'
-                  }`}
-                >
-                  <span>Unallocated funds</span>
-                  <span className="tabular-nums">Rs. {formatMoney(breakdown.unallocated)}</span>
+                      {deleteError && (
+                        <p role="alert" className="text-xs font-medium text-rose-500">
+                          {deleteError}
+                        </p>
+                      )}
+
+                      {deleteChoice && (
+                        <button
+                          type="button"
+                          disabled={deletingWallet}
+                          onClick={handleConfirmDeleteWallet}
+                          className="w-full rounded-xl bg-rose-600 hover:bg-rose-500 py-2.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                          {deletingWallet
+                            ? 'Closing wallet…'
+                            : deleteChoice === 'transfer'
+                            ? `Transfer ${formatRs(walletBalance)} & Delete Wallet`
+                            : 'Record Adjustment & Delete Wallet'}
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-medium">
+                        Delete <span className="font-bold">{wallet.name}</span>? Its balance is Rs.
+                        0, so your total money won&apos;t change.
+                      </p>
+                      {deleteError && (
+                        <p role="alert" className="text-xs font-medium text-rose-500">
+                          {deleteError}
+                        </p>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowDeleteFlow(false)}
+                          className={`flex-1 ${ghostBtn}`}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deletingWallet}
+                          onClick={handleConfirmDeleteWallet}
+                          className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-500 py-2.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                          {deletingWallet ? 'Deleting…' : 'Confirm Delete'}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
-
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  startIcon={<Plus size={17} />}
-                  onClick={() => openSubAction('envelope')}
-                  disabled={breakdown.unallocated <= 0}
-                  sx={outlineButtonSx}
-                >
-                  Create envelope
-                </Button>
-              </div>
+              </motion.div>
             )}
-          </div>
-
-          {/* Security Lock & Delete Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            <Button
-              onClick={() => onToggleLock(wallet.id, wallet.isLocked)}
-              variant="outlined"
-              size="small"
-              color={wallet.isLocked ? 'error' : 'inherit'}
-              startIcon={wallet.isLocked ? <Unlock size={14} /> : <Lock size={14} />}
-              sx={{
-                textTransform: 'none',
-                borderRadius: 2,
-                color: wallet.isLocked ? undefined : isDark ? '#cbd5e1' : '#475569',
-                borderColor: wallet.isLocked
-                  ? undefined
-                  : isDark
-                  ? 'rgba(148,163,184,0.3)'
-                  : '#cbd5e1',
-              }}
-            >
-              {wallet.isLocked ? 'Unlock Wallet' : 'Lock Wallet'}
-            </Button>
-
-            {wallet.category !== 'built-in' && (
-              <Button
-                onClick={() => {
-                  if (confirm(`Are you sure you want to delete ${wallet.name}?`)) {
-                    onDeleteWallet(wallet.id);
-                  }
-                }}
-                variant="outlined"
-                size="small"
-                color="error"
-                startIcon={<Trash2 size={14} />}
-                sx={{ textTransform: 'none', borderRadius: 2 }}
-              >
-                Delete Wallet
-              </Button>
-            )}
-          </div>
+          </AnimatePresence>
         </div>
-      </Dialog>
-
-      {/* Sub-dialog: Split / Change Ownership or Create Envelope */}
-      <Dialog
-        open={subAction !== null}
-        onClose={closeSubAction}
-        fullWidth
-        maxWidth="xs"
-        slotProps={{
-          paper: {
-            sx: {
-              m: 2,
-              width: 'calc(100% - 32px)',
-              borderRadius: '22px',
-              backgroundColor: isDark ? '#0f172a' : '#ffffff',
-              color: isDark ? '#f8fafc' : '#0f172a',
-              border: isDark ? '1px solid rgba(148,163,184,0.2)' : '1px solid #e2e8f0',
-            },
-          },
-        }}
-      >
-        <DialogTitle
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontWeight: 700,
-            fontSize: 18,
-          }}
-        >
-          {subAction === 'ownership' ? 'Change ownership' : 'Create envelope'}
-          <IconButton
-            onClick={closeSubAction}
-            aria-label="Close"
-            sx={{ color: isDark ? '#94a3b8' : '#64748b' }}
-          >
-            <X size={19} />
-          </IconButton>
-        </DialogTitle>
-
-        <DialogContent>
-          <div className="space-y-4 pt-2">
-            {subAction === 'envelope' && (
-              <TextField
-                fullWidth
-                size="small"
-                label="Envelope name"
-                value={envelopeName}
-                onChange={(e) => setEnvelopeName(e.target.value)}
-                placeholder="e.g. Medical expenses"
-              />
-            )}
-
-            <TextField
-              select
-              fullWidth
-              size="small"
-              label={subAction === 'ownership' ? 'Current owner' : 'Money belongs to'}
-              value={ownerId}
-              onChange={(e) => setOwnerId(e.target.value)}
-            >
-              {owners.map((owner) => (
-                <MenuItem key={owner.id} value={owner.id}>
-                  {owner.name}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            {subAction === 'ownership' && (
-              <TextField
-                select
-                fullWidth
-                size="small"
-                label="New owner"
-                value={toOwnerId}
-                onChange={(e) => setToOwnerId(e.target.value)}
-              >
-                {owners
-                  .filter((owner) => owner.id !== ownerId)
-                  .map((owner) => (
-                    <MenuItem key={owner.id} value={owner.id}>
-                      {owner.name}
-                    </MenuItem>
-                  ))}
-              </TextField>
-            )}
-
-            <TextField
-              fullWidth
-              size="small"
-              label="Amount (PKR)"
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              slotProps={{ htmlInput: { min: 1, step: 'any' } }}
-            />
-
-            <div
-              className={`rounded-xl p-3 ${
-                isDark ? 'bg-indigo-500/15 border border-indigo-400/20' : 'bg-indigo-50'
-              }`}
-            >
-              <p className={`text-xs ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>
-                {subAction === 'ownership'
-                  ? "Selected owner's total balance"
-                  : 'Available unallocated balance'}
-              </p>
-              <p
-                className={`mt-1 text-lg font-bold tabular-nums ${
-                  isDark ? 'text-white' : 'text-indigo-950'
-                }`}
-              >
-                Rs.{' '}
-                {formatMoney(
-                  subAction === 'ownership' ? ownershipSourceBalance : breakdown.unallocated
-                )}
-              </p>
-            </div>
-
-            {subAction === 'ownership' && (
-              <p className={`text-xs leading-5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Ownership will be reassigned without changing your total wallet balance.
-              </p>
-            )}
-
-            {subAction === 'envelope' && (
-              <p className={`text-xs leading-5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                This reserves existing unallocated money without increasing the wallet balance.
-              </p>
-            )}
-
-            {error && <Alert severity="error">{error}</Alert>}
-          </div>
-        </DialogContent>
-
-        <DialogActions sx={{ p: 2.5, pt: 1 }}>
-          <Button
-            onClick={closeSubAction}
-            disabled={saving}
-            sx={{ textTransform: 'none', color: isDark ? '#94a3b8' : '#64748b' }}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={saving || !canSubmitSubAction}
-            onClick={handleSubActionSubmit}
-            sx={{
-              borderRadius: '10px',
-              textTransform: 'none',
-              backgroundColor: '#4F46E5',
-              '&:hover': { backgroundColor: '#4338CA' },
-              boxShadow: 'none',
-            }}
-          >
-            {saving ? 'Saving…' : 'Confirm'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </>
+      </motion.div>
+    </div>
   );
 }
-

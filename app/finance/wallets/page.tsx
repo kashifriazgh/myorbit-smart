@@ -17,6 +17,7 @@ import {
   doc,
   setDoc,
   addDoc,
+  deleteDoc,
   onSnapshot,
   serverTimestamp,
   query,
@@ -34,8 +35,9 @@ import type {
 import { computeTotalAmount, computeAvailableToSpend, type WalletItem } from '@/app/components/finance/TotalCashSnapshot';
 import CreateWalletModal from '@/app/components/finance/TotalCashSnapshot/CreateWalletModal';
 import WalletsGrid from '@/app/components/finance/TotalCashSnapshot/WalletsGrid';
-import SmartWalletDetailDialog from '@/app/components/finance/TotalCashSnapshot/SmartWalletDetailDialog';
-import AddMoney from '@/app/components/finance/TotalCashSnapshot/AddMoney';
+import SmartWalletDetailDialog, {
+  type WalletDeleteOptions,
+} from '@/app/components/finance/TotalCashSnapshot/SmartWalletDetailDialog';
 import TransferFunds from '@/app/components/finance/TotalCashSnapshot/TransferFunds';
 
 const money = (amount: number) => `Rs. ${Number(amount || 0).toLocaleString('en-PK')}`;
@@ -60,11 +62,7 @@ export default function WalletsPage() {
   const [openCreateModal, setOpenCreateModal] = useState(false);
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
 
-  // Pre-selected wallet for Add / Spend / Transfer
-  const [openAddMoney, setOpenAddMoney] = useState(false);
-  const [moneyMode, setMoneyMode] = useState<'add' | 'deduct'>('add');
-  const [preselectedWalletId, setPreselectedWalletId] = useState<string>('');
-
+  // Pre-selected wallet for Transfer
   const [openTransfer, setOpenTransfer] = useState(false);
   const [transferFromSource, setTransferFromSource] = useState<TransactionSource | undefined>(undefined);
   const [transferFromBankName, setTransferFromBankName] = useState<string | undefined>(undefined);
@@ -322,18 +320,6 @@ export default function WalletsPage() {
   const reservedOrOther = Math.max(0, totalMoney - availableSpendable);
 
   // Pre-selected action triggers
-  const triggerAddMoneyForWallet = (wallet: WalletItem) => {
-    setPreselectedWalletId(wallet.id);
-    setMoneyMode('add');
-    setOpenAddMoney(true);
-  };
-
-  const triggerSpendMoneyForWallet = (wallet: WalletItem) => {
-    setPreselectedWalletId(wallet.id);
-    setMoneyMode('deduct');
-    setOpenAddMoney(true);
-  };
-
   const triggerTransferForWallet = (wallet: WalletItem) => {
     setTransferFromSource(wallet.sourceType);
     setTransferFromBankName(wallet.bankName);
@@ -391,7 +377,7 @@ export default function WalletsPage() {
         source,
         category: 'income',
         eventType: meta?.eventType || 'income',
-        sourceIncomeType: meta?.sourceIncomeType,
+        sourceIncomeType: meta?.sourceIncomeType || null,
         walletName: bankName || customPaymentHeadName || source,
         balanceAfter: newWalletBalance,
         balanceSnapshot: newTotal,
@@ -470,7 +456,7 @@ export default function WalletsPage() {
         category: 'expenditure',
         eventType: 'expense',
         expenseCategory: meta?.expenseCategory || 'General Expense',
-        subCategory: meta?.subCategory,
+        subCategory: meta?.subCategory || null,
         walletName: bankName || customPaymentHeadName || source,
         balanceAfter: newWalletBalance,
         balanceSnapshot: newTotal,
@@ -642,32 +628,133 @@ export default function WalletsPage() {
     }
   };
 
-  // ── Handler: Delete Custom Wallet ───────────────────────────
-  const handleDeleteWallet = async (walletId: string) => {
+  // ── Handler: Delete Custom / Bank Wallet (with graceful balance handling) ──
+  const handleDeleteWallet = async (walletId: string, options?: WalletDeleteOptions) => {
     if (!snapshot || !user?.uid) return;
     try {
-      const updatedSources = { ...snapshot.sources };
-      if (walletId.startsWith('bank:')) {
-        const bName = walletId.replace('bank:', '');
-        delete updatedSources.bank[bName];
-      } else if (walletId.startsWith('custom:')) {
-        const cName = walletId.replace('custom:', '');
-        delete updatedSources.custom[cName];
+      const updatedSources: TotalCashSnapshot['sources'] = {
+        in_hand: snapshot.sources.in_hand ?? 0,
+        easypaisa: snapshot.sources.easypaisa ?? 0,
+        jazzcash: snapshot.sources.jazzcash ?? 0,
+        other: snapshot.sources.other ?? 0,
+        bank: { ...(snapshot.sources.bank || {}) },
+        custom: { ...(snapshot.sources.custom || {}) },
+      };
+
+      const isBank = walletId.startsWith('bank:');
+      const isCustom = walletId.startsWith('custom:');
+      const walletName = isBank
+        ? walletId.replace('bank:', '')
+        : isCustom
+        ? walletId.replace('custom:', '')
+        : walletId;
+
+      const closingAmount = isBank
+        ? updatedSources.bank[walletName] ?? 0
+        : isCustom
+        ? updatedSources.custom[walletName] ?? 0
+        : 0;
+
+      // 1. Handle remaining balance gracefully before removing the wallet
+      if (closingAmount > 0 && options?.resolution === 'transfer' && options.destinationWalletId) {
+        const destId = options.destinationWalletId;
+        let destLabel = destId;
+
+        if (destId.startsWith('bank:')) {
+          const destBank = destId.replace('bank:', '');
+          updatedSources.bank[destBank] = (updatedSources.bank[destBank] ?? 0) + closingAmount;
+          destLabel = destBank;
+        } else if (destId.startsWith('custom:')) {
+          const destCustom = destId.replace('custom:', '');
+          updatedSources.custom[destCustom] =
+            (updatedSources.custom[destCustom] ?? 0) + closingAmount;
+          destLabel = destCustom;
+        } else if (
+          destId === 'in_hand' ||
+          destId === 'easypaisa' ||
+          destId === 'jazzcash' ||
+          destId === 'other'
+        ) {
+          updatedSources[destId] = (updatedSources[destId] ?? 0) + closingAmount;
+        }
+
+        await addDoc(collection(db, 'cashTransactions'), {
+          userId: user.uid,
+          amount: closingAmount,
+          type: 'transfer',
+          source: isBank ? 'bank' : 'custom',
+          category: 'transfer',
+          eventType: 'transfer',
+          walletName,
+          balanceAfter: 0,
+          note: `Wallet closure transfer: ${walletName} ➔ ${destLabel}`,
+          BankName: isBank ? walletName : null,
+          customPaymentHeadName: isCustom ? walletName : null,
+          createdAt: serverTimestamp(),
+        });
+      } else if (closingAmount > 0 && options?.resolution === 'adjustment') {
+        await addDoc(collection(db, 'cashTransactions'), {
+          userId: user.uid,
+          amount: closingAmount,
+          type: 'deduct',
+          source: isBank ? 'bank' : 'custom',
+          category: 'manual',
+          eventType: 'balance_adjustment',
+          walletName,
+          balanceAfter: 0,
+          note: options.note || `Balance adjustment on closing wallet: ${walletName}`,
+          BankName: isBank ? walletName : null,
+          customPaymentHeadName: isCustom ? walletName : null,
+          createdAt: serverTimestamp(),
+        });
       }
 
+      // 2. Remove wallet from snapshot sources, ownership, and heldBy
+      if (isBank) {
+        delete updatedSources.bank[walletName];
+      } else if (isCustom) {
+        delete updatedSources.custom[walletName];
+      }
+
+      const updatedOwnership = { ...(snapshot.sourceOwnership || {}) };
+      delete updatedOwnership[walletId];
+
+      const updatedHeldBy = { ...(snapshot.heldBy || {}) };
+      delete updatedHeldBy[walletId];
+
+      // 3. Recompute totalAmount directly from remaining wallets
       const updatedSnapshot: TotalCashSnapshot = {
         ...snapshot,
         sources: updatedSources,
-        totalAmount: computeTotalAmount({ ...snapshot, sources: updatedSources }),
+        sourceOwnership: updatedOwnership,
+        heldBy: updatedHeldBy,
+        totalAmount: computeTotalAmount({
+          ...snapshot,
+          sources: updatedSources,
+          sourceOwnership: updatedOwnership,
+        }),
         updatedAt: new Date(),
       };
 
       const docRef = doc(db, 'totalCashSnapshots', user.uid);
       await setDoc(docRef, { ...updatedSnapshot, updatedAt: serverTimestamp() });
       setSnapshot(updatedSnapshot);
+
+      // 4. Delete matching document(s) from `banks` or `customPaymentHeads` so it doesn't reappear
+      if (isBank) {
+        const matchingBanks = banksList.filter((b) => b.name === walletName && b.id);
+        await Promise.all(matchingBanks.map((b) => deleteDoc(doc(db, 'banks', b.id!))));
+      } else if (isCustom) {
+        const matchingHeads = customHeadsList.filter((c) => c.name === walletName && c.id);
+        await Promise.all(
+          matchingHeads.map((c) => deleteDoc(doc(db, 'customPaymentHeads', c.id!)))
+        );
+      }
+
       setActiveWalletId(null);
     } catch (e) {
       console.error('Delete wallet failed:', e);
+      throw e;
     }
   };
 
@@ -932,20 +1019,26 @@ export default function WalletsPage() {
             const key = isBank ? `bank:${cleanName}` : `custom:${cleanName}`;
             const hasOwnThisMoney = wData.initialOwner.toLowerCase() === 'you';
 
+            const ownershipEntry: NonNullable<TotalCashSnapshot['sourceOwnership']>[string] = {
+              hasOwnThisMoney,
+              ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
+              isLocked: wData.isLocked,
+              isVirtual: wData.isVirtual,
+              reservedAmount: wData.isReserved
+                ? initAmt
+                : wData.allocations?.reduce((acc, a) => acc + (a.reservedAmount || 0), 0) || 0,
+              color: wData.color,
+              ...(wData.parentWalletKey ? { parentWalletKey: wData.parentWalletKey } : {}),
+              ...(wData.purpose ? { purpose: wData.purpose } : {}),
+              ...(wData.notes ? { notes: wData.notes } : {}),
+              ...(wData.allocations && wData.allocations.length > 0
+                ? { allocations: wData.allocations }
+                : {}),
+            };
+
             const updatedOwnership = {
               ...(snapshot.sourceOwnership || {}),
-              [key]: {
-                hasOwnThisMoney,
-                ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
-                isLocked: wData.isLocked,
-                isVirtual: wData.isVirtual,
-                parentWalletKey: wData.parentWalletKey || undefined,
-                reservedAmount: wData.allocations?.reduce((acc, a) => acc + (a.reservedAmount || 0), 0) || 0,
-                purpose: wData.purpose,
-                color: wData.color,
-                notes: wData.notes,
-                allocations: wData.allocations,
-              },
+              [key]: ownershipEntry,
             };
 
             let newTotal = snapshot.totalAmount || 0;
@@ -998,27 +1091,38 @@ export default function WalletsPage() {
         activeWalletId={activeWalletId}
         onSelectWallet={(wId) => setActiveWalletId(wId)}
         isDark={isDark}
-        onAddMoney={(w) => triggerAddMoneyForWallet(w)}
-        onSpendMoney={(w) => triggerSpendMoneyForWallet(w)}
+        onAddMoney={async (w, amt, note) => {
+          await handleAddMoney(
+            amt,
+            w.sourceType,
+            false,
+            undefined,
+            w.bankName,
+            undefined,
+            w.customName,
+            note || `Added to ${w.name}`,
+            undefined,
+            { eventType: 'income', sourceIncomeType: 'Wallet Deposit' }
+          );
+        }}
+        onSpendMoney={async (w, amt, note) => {
+          await handleDeductMoney(
+            amt,
+            w.sourceType,
+            undefined,
+            w.bankName,
+            false,
+            undefined,
+            w.customName,
+            note || `Spent from ${w.name}`,
+            undefined,
+            { eventType: 'expense', expenseCategory: 'General Expense' }
+          );
+        }}
         onTransfer={(w) => triggerTransferForWallet(w)}
         onToggleLock={handleToggleLockWallet}
         onUpdateAllocations={handleUpdateWalletSettings}
         onDeleteWallet={handleDeleteWallet}
-      />
-
-      {/* Add / Spend with preselected wallet */}
-      <AddMoney
-        externalOpen={openAddMoney}
-        onExternalClose={() => {
-          setOpenAddMoney(false);
-          setPreselectedWalletId('');
-        }}
-        defaultMode={moneyMode}
-        preselectedWalletId={preselectedWalletId}
-        onSave={handleAddMoney}
-        onDeduct={handleDeductMoney}
-        saving={saving}
-        snapshot={snapshot}
       />
 
       {/* Transfer with preselected source wallet */}

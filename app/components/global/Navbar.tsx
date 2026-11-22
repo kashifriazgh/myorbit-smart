@@ -7,7 +7,6 @@ import BottomNavigation from '@mui/material/BottomNavigation';
 import BottomNavigationAction from '@mui/material/BottomNavigationAction';
 import HomeIcon from '@mui/icons-material/Home';
 import ChecklistIcon from '@mui/icons-material/Checklist';
-import PriceCheckIcon from '@mui/icons-material/PriceCheck';
 import FlagIcon from '@mui/icons-material/Flag';
 import { Skeleton, Box } from '@mui/material';
 
@@ -19,11 +18,18 @@ export default function BottomNav() {
   const { theme } = useCustomTheme();
   const { user, loading } = useAuth();
 
-  const [value, setValue] = React.useState(pathname);
+  const normalizedPath = React.useMemo(() => {
+    if (pathname === '/' || pathname.startsWith('/finance')) return '/';
+    if (pathname.startsWith('/tasks')) return '/tasks';
+    if (pathname.startsWith('/goals')) return '/goals';
+    return pathname;
+  }, [pathname]);
+
+  const [value, setValue] = React.useState(normalizedPath);
 
   React.useEffect(() => {
-    setValue(pathname);
-  }, [pathname]);
+    setValue(normalizedPath);
+  }, [normalizedPath]);
 
   if (!theme || loading) {
     return (
@@ -40,7 +46,7 @@ export default function BottomNav() {
           p: 1,
         }}
       >
-        {[...Array(4)].map((_, idx) => (
+        {[...Array(3)].map((_, idx) => (
           <Box
             key={idx}
             sx={{
@@ -70,9 +76,8 @@ export default function BottomNav() {
       ),
       path: '/',
     },
-    { label: 'To-Do', icon: <ChecklistIcon />, path: '/to-do' },
+    { label: 'Tasks', icon: <ChecklistIcon />, path: '/tasks' },
     { label: 'Goals', icon: <FlagIcon />, path: '/goals' },
-    { label: 'Finance', icon: <PriceCheckIcon />, path: '/finance' },
   ];
 
   const handleChange = (_: React.SyntheticEvent, newValue: string) => {

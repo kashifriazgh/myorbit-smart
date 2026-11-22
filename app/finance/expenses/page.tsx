@@ -1120,6 +1120,18 @@ export default function ExpensesPage() {
                           {formatRs(item.expectedAmount)}
                         </p>
 
+                        {typeof item.allocatedBudget === 'number' && (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
+                              isDark
+                                ? 'bg-teal-500/15 text-teal-300'
+                                : 'bg-teal-50 text-teal-700 border border-teal-200'
+                            }`}
+                          >
+                            Budget: {formatRs(item.allocatedBudget)}
+                          </span>
+                        )}
+
                         {isPaid ? (
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${

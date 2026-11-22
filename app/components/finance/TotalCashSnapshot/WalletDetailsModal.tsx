@@ -31,7 +31,7 @@ import {
   CashTransaction,
 } from '@/app/lib/interface';
 import { db } from '@/app/lib/firebase';
-import { collection, query, where, getDocs, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 
 interface WalletDetailsModalProps {
   open: boolean;
@@ -112,9 +112,7 @@ export default function WalletDetailsModal({
       try {
         const q = query(
           collection(db, 'cashTransactions'),
-          where('userId', '==', userId),
-          orderBy('createdAt', 'desc'),
-          limit(30)
+          where('userId', '==', userId)
         );
         const snap = await getDocs(q);
         const matched: CashTransaction[] = [];
@@ -139,6 +137,11 @@ export default function WalletDetailsModal({
                   : new Date(String(data.createdAt)),
             });
           }
+        });
+        matched.sort((a, b) => {
+          const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
         });
         setRecentTxns(matched.slice(0, 6));
       } catch (e) {

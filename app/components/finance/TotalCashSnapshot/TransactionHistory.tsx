@@ -27,8 +27,6 @@ import {
   where,
   getDocs,
   Timestamp,
-  orderBy,
-  limit,
   addDoc,
   updateDoc,
   doc,
@@ -72,11 +70,11 @@ export default function TransactionHistory({
     if (!open || !userId) return;
     setLoading(true);
     try {
+      // Single-field query avoids requiring a manual Firestore composite index;
+      // sort descending by createdAt on the client instead.
       const q = query(
         collection(db, 'cashTransactions'),
-        where('userId', '==', userId),
-        orderBy('createdAt', 'desc'),
-        limit(500)
+        where('userId', '==', userId)
       );
 
       const querySnapshot = await getDocs(q);
@@ -94,7 +92,23 @@ export default function TransactionHistory({
         } as CashTransaction);
       });
 
-      setTransactions(fetched);
+      fetched.sort((a, b) => {
+        const aTime =
+          a.createdAt instanceof Date
+            ? a.createdAt.getTime()
+            : a.createdAt instanceof Timestamp
+            ? a.createdAt.toMillis()
+            : 0;
+        const bTime =
+          b.createdAt instanceof Date
+            ? b.createdAt.getTime()
+            : b.createdAt instanceof Timestamp
+            ? b.createdAt.toMillis()
+            : 0;
+        return bTime - aTime;
+      });
+
+      setTransactions(fetched.slice(0, 500));
     } catch (error) {
       console.error('Error fetching transactions:', error);
     } finally {

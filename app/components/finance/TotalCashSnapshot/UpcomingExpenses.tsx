@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 
 export interface UpcomingExpenseItem {
   id: string | number;
@@ -9,13 +11,6 @@ export interface UpcomingExpenseItem {
   priority: 'high' | 'medium' | 'low';
   amount: number;
 }
-
-const DEFAULT_ITEMS: UpcomingExpenseItem[] = [
-  { id: 1, title: 'House rent', date: '2026-11-25', priority: 'high', amount: 35000 },
-  { id: 2, title: 'Electricity bill', date: '2026-11-27', priority: 'high', amount: 8500 },
-  { id: 3, title: 'Internet package', date: '2026-11-30', priority: 'medium', amount: 3000 },
-  { id: 4, title: 'Gym membership', date: '2026-12-02', priority: 'low', amount: 4000 },
-];
 
 const PRIORITY = {
   high: {
@@ -61,8 +56,10 @@ const formatRs = (n: number) => `Rs. ${Math.round(Number(n || 0)).toLocaleString
 // "2026-11-25" -> "25 Nov" (timezone-safe, no hydration mismatch)
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const formatDate = (iso: string) => {
-  const [, m, d] = iso.split('-').map(Number);
-  return `${d} ${MONTHS[m - 1] ?? ''}`;
+  if (!iso) return 'Monthly';
+  const parts = iso.split('-').map(Number);
+  if (parts.length < 3 || isNaN(parts[1]) || isNaN(parts[2])) return iso;
+  return `${parts[2]} ${MONTHS[parts[1] - 1] ?? ''}`;
 };
 
 interface UpcomingExpensesProps {
@@ -73,12 +70,14 @@ interface UpcomingExpensesProps {
 }
 
 export default function UpcomingExpenses({
-  items = DEFAULT_ITEMS,
+  items = [],
   max = 4,
   balancesVisible = true,
   isDark = true,
 }: UpcomingExpensesProps) {
-  const list = [...items].sort((a, b) => a.date.localeCompare(b.date)).slice(0, max);
+  const list = [...items]
+    .sort((a, b) => (a.date || '9999-99-99').localeCompare(b.date || '9999-99-99'))
+    .slice(0, max);
   const total = list.reduce((sum, i) => sum + i.amount, 0);
   const displayRs = (n: number) => (balancesVisible ? formatRs(n) : 'Rs. •••••');
 
@@ -91,71 +90,96 @@ export default function UpcomingExpenses({
       }`}
     >
       {/* Summary */}
-      <div className="px-4">
-        <p className={`text-sm ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
-          Upcoming expenses
-        </p>
-        <h2
-          className={`mt-1 text-3xl font-bold tracking-tight tabular-nums ${
-            isDark ? 'text-white' : 'text-slate-900'
+      <Link
+        href="/finance/expenses"
+        className={`group flex items-center justify-between rounded-2xl px-4 py-1 transition ${
+          isDark ? 'hover:bg-white/5' : 'hover:bg-slate-50'
+        }`}
+      >
+        <div>
+          <p className={`text-sm ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
+            Upcoming expenses
+          </p>
+          <h2
+            className={`mt-1 text-3xl font-bold tracking-tight tabular-nums ${
+              isDark ? 'text-white' : 'text-slate-900'
+            }`}
+          >
+            {displayRs(total)}
+          </h2>
+        </div>
+        <ChevronRight
+          size={18}
+          className={`transition-colors ${
+            isDark
+              ? 'text-slate-500 group-hover:text-blue-400'
+              : 'text-slate-400 group-hover:text-blue-600'
           }`}
-        >
-          {displayRs(total)}
-        </h2>
-      </div>
+        />
+      </Link>
 
       <div className={`my-5 h-px w-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`} />
 
       {/* Items */}
-      <ul className="space-y-2.5">
-        {list.map((item) => {
-          const p = PRIORITY[item.priority] ?? PRIORITY.low;
-          return (
-            <li
-              key={item.id}
-              className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5 ring-1 ring-inset transition hover:scale-[1.01] ${
-                isDark ? `${p.tint} ${p.ring}` : `${p.lightTint} ${p.lightRing}`
-              }`}
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <span
-                  className={`h-3.5 w-3.5 shrink-0 rounded-full ${p.dot} ring-4 ${
-                    isDark ? 'ring-white/5' : 'ring-black/5'
-                  }`}
-                />
-                <div className="min-w-0 leading-tight">
-                  <p
-                    className={`truncate text-base font-semibold ${
-                      isDark ? 'text-white' : 'text-slate-900'
-                    }`}
-                  >
-                    {item.title}
-                  </p>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <span className={`text-xs ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
-                      {formatDate(item.date)}
-                    </span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        isDark ? p.badge : p.lightBadge
-                      }`}
-                    >
-                      {p.label}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p
-                className={`shrink-0 text-lg font-bold tabular-nums ${
-                  isDark ? p.amount : p.lightAmount
+      {list.length === 0 ? (
+        <div
+          className={`rounded-2xl p-6 text-center text-xs ${
+            isDark ? 'bg-[#282e3d] text-slate-400' : 'bg-slate-50 text-slate-500'
+          }`}
+        >
+          No upcoming unpaid expenses found. Add expenses from the Monthly Expenses page.
+        </div>
+      ) : (
+        <ul className="space-y-2.5">
+          {list.map((item) => {
+            const p = PRIORITY[item.priority] ?? PRIORITY.low;
+            return (
+              <li
+                key={item.id}
+                className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5 ring-1 ring-inset transition hover:scale-[1.01] ${
+                  isDark ? `${p.tint} ${p.ring}` : `${p.lightTint} ${p.lightRing}`
                 }`}
               >
-                {displayRs(item.amount)}
-              </p>
-            </li>
-          );
-        })}
-      </ul>
+                <div className="flex min-w-0 items-center gap-3">
+                  <span
+                    className={`h-3.5 w-3.5 shrink-0 rounded-full ${p.dot} ring-4 ${
+                      isDark ? 'ring-white/5' : 'ring-black/5'
+                    }`}
+                  />
+                  <div className="min-w-0 leading-tight">
+                    <p
+                      className={`truncate text-base font-semibold ${
+                        isDark ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      {item.title}
+                    </p>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className={`text-xs ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
+                        {formatDate(item.date)}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          isDark ? p.badge : p.lightBadge
+                        }`}
+                      >
+                        {p.label}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <p
+                  className={`shrink-0 text-lg font-bold tabular-nums ${
+                    isDark ? p.amount : p.lightAmount
+                  }`}
+                >
+                  {displayRs(item.amount)}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

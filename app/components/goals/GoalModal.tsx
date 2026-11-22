@@ -181,7 +181,8 @@ export default function GoalModal({
         }
         setCurrentStep(4);
       } else {
-        setCurrentStep(1);
+        setSelectedCategory('finance');
+        setCurrentStep(2);
         setSelectedSubcatId('');
         setQuestionIndex(0);
         setAnswers({});
@@ -1046,7 +1047,7 @@ export default function GoalModal({
             justify: 'space-between',
           }}
         >
-          {currentStep > 1 && !saving && (
+          {currentStep > 2 && !saving && (
             <Button
               onClick={() => {
                 if (currentStep === 3) {

@@ -406,6 +406,8 @@ export interface PlannedExpense {
   category: string;
   subCategory?: string;
   expectedAmount: number;
+  allocatedBudget?: number;
+  allocatedBudgetMonth?: string;
   actualPaidAmount?: number;
   dueDate: string | Date | Timestamp;
   paymentStatus: 'pending' | 'partially_paid' | 'paid' | 'overdue';
@@ -1147,7 +1149,7 @@ export interface Goal {
   practiceSchedules?: Array<{ id?: string; activity: string; time?: string; frequencyPerWeek?: number }>;
   readingLogs?: Array<{ id?: string; date: string; pagesRead: number; chapterNote?: string }>;
   readingPreferences?: Record<string, unknown> | unknown;
-  quranProgress?: import('./config/quranData').QuranProgress;
+  quranProgress?: Record<string, unknown>;
   courseLessons?: Array<{ id?: string; title: string; durationMins?: number; completed: boolean; completedAt?: string }>;
   habitCheckIns?: Array<{ id?: string; date: string; completed: boolean; note?: string }>;
   habitCue?: string;

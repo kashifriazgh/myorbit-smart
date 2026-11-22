@@ -14,11 +14,11 @@ export interface MonthlyMoneyOverviewData {
   receivables: number; // loans / amounts others must give back to you
 }
 
-const DEFAULT_DATA: MonthlyMoneyOverviewData = {
-  income: 100000,
-  expenses: { paid: 38000, pending: 24000 },
-  liabilities: 80000,
-  receivables: 25000,
+const EMPTY_DATA: MonthlyMoneyOverviewData = {
+  income: 0,
+  expenses: { paid: 0, pending: 0 },
+  liabilities: 0,
+  receivables: 0,
 };
 
 const formatRs = (n: number) => `Rs. ${Math.round(Number(n || 0)).toLocaleString('en-US')}`;
@@ -82,7 +82,7 @@ interface MonthlyMoneyOverviewProps {
 }
 
 export default function MonthlyMoneyOverview({
-  data = DEFAULT_DATA,
+  data = EMPTY_DATA,
   balancesVisible = true,
   incomeHref = '/finance/income-sources',
   expensesHref = '/finance/expenses',
