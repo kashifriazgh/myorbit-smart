@@ -21,6 +21,7 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
+import CalculateIcon from '@mui/icons-material/Calculate';
 
 import TotalCashSnapshotComponent from './TotalCashSnapshot';
 import { useAuth } from '@/app/lib/context/userContext';
@@ -37,6 +38,20 @@ export default function FinanceHomepage() {
   if (!user) return null;
 
   const cardData = [
+    {
+      title: 'Affordability Analyzer',
+      href: '/finance/affordability',
+      description: 'Check if you can safely afford a purchase against bills & loans',
+      icon: <CalculateIcon sx={{ fontSize: 28 }} />,
+      lightBg: 'linear-gradient(135deg, #ede9fe 0%, #c7d2fe 100%)',
+      darkBg: 'linear-gradient(135deg, #312e81 0%, #0f172a 100%)',
+      lightBubble: '#c7d2fe',
+      darkBubble: '#312e81',
+      lightText: '#0f172a',
+      darkText: '#f1f5f9',
+      lightSubText: '#334155',
+      darkSubText: '#94a3b8',
+    },
     {
       title: 'Budget Allocation',
       href: '/finance/budget',

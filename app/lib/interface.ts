@@ -307,6 +307,7 @@ export interface TotalCashSnapshot {
       purpose?: string;
       color?: string;
       notes?: string;
+      fundState?: FundOwnershipState;
       allocations?: WalletAllocation[];
     };
   };
@@ -340,6 +341,8 @@ export interface CustomPaymentHead {
 
 export type WalletType = 'cash' | 'bank' | 'mobile_wallet' | 'virtual';
 
+export type FundOwnershipState = 'spendable' | 'reserved' | 'savings' | 'amanat';
+
 export interface WalletAllocation {
   id: string;
   owner: string;
@@ -348,7 +351,8 @@ export interface WalletAllocation {
   reservedAmount?: number;
   lockedAmount?: number;
   isLocked?: boolean;
-  availabilityStatus?: 'available' | 'reserved' | 'locked' | 'external';
+  availabilityStatus?: 'available' | 'reserved' | 'savings' | 'locked' | 'external';
+  fundState?: FundOwnershipState;
 }
 
 export interface WalletModel {

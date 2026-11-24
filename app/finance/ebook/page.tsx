@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
   BookOpen,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   List,
@@ -12,6 +13,9 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/app/lib/firebase';
+import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
 import {
   URDU_FINANCE_EBOOK_CHAPTERS,
@@ -20,6 +24,59 @@ import {
 } from '@/app/lib/data/urduFinanceEbook';
 
 type TextScale = 'sm' | 'md' | 'lg';
+
+interface ChapterReadingState {
+  scrollRatio: number; // 0..1
+  scrollY: number;
+  maxPercent: number; // 0..100
+  completed: boolean;
+  updatedAt: number;
+}
+
+interface StoredEbookProgress {
+  lastChapterId: number | null;
+  textScale?: TextScale;
+  chapters: Record<string, ChapterReadingState>;
+  updatedAt: number;
+}
+
+const EMPTY_PROGRESS: StoredEbookProgress = {
+  lastChapterId: null,
+  chapters: {},
+  updatedAt: 0,
+};
+
+function mergeProgress(
+  local: StoredEbookProgress,
+  remote: StoredEbookProgress
+): StoredEbookProgress {
+  const mergedChapters: Record<string, ChapterReadingState> = { ...local.chapters };
+  for (const [k, rState] of Object.entries(remote.chapters || {})) {
+    const lState = mergedChapters[k];
+    if (!lState || (rState.updatedAt || 0) >= (lState.updatedAt || 0)) {
+      mergedChapters[k] = {
+        ...rState,
+        maxPercent: Math.max(lState?.maxPercent || 0, rState.maxPercent || 0),
+        completed: Boolean(lState?.completed || rState.completed),
+      };
+    } else {
+      mergedChapters[k] = {
+        ...lState,
+        maxPercent: Math.max(lState.maxPercent || 0, rState.maxPercent || 0),
+        completed: Boolean(lState.completed || rState.completed),
+      };
+    }
+  }
+  const useRemoteMeta = (remote.updatedAt || 0) >= (local.updatedAt || 0);
+  return {
+    lastChapterId: useRemoteMeta
+      ? remote.lastChapterId ?? local.lastChapterId
+      : local.lastChapterId ?? remote.lastChapterId,
+    textScale: useRemoteMeta ? remote.textScale ?? local.textScale : local.textScale ?? remote.textScale,
+    chapters: mergedChapters,
+    updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0),
+  };
+}
 
 const SCALE_CLASSES: Record<TextScale, { body: string; pointTitle: string; majorHeading: string; subHeading: string }> = {
   sm: {
@@ -43,6 +100,7 @@ const SCALE_CLASSES: Record<TextScale, { body: string; pointTitle: string; major
 };
 
 export default function UrduFinanceEbookPage() {
+  const { user } = useAuth();
   const { theme } = useCustomTheme();
   const isDark = theme?.mode === 'dark';
 
@@ -50,7 +108,124 @@ export default function UrduFinanceEbookPage() {
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [textScale, setTextScale] = useState<TextScale>('md');
+  const [progress, setProgress] = useState<StoredEbookProgress>(EMPTY_PROGRESS);
+  const [liveScrollPct, setLiveScrollPct] = useState<number>(0);
+
   const topRef = useRef<HTMLDivElement | null>(null);
+  const progressRef = useRef<StoredEbookProgress>(EMPTY_PROGRESS);
+  const restoringScrollRef = useRef<boolean>(false);
+  const cloudSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const storageKey = `myorbit_urdu_ebook_progress_v1_${user?.uid || 'guest'}`;
+
+  useEffect(() => {
+    progressRef.current = progress;
+  }, [progress]);
+
+  // Persist progress to localStorage immediately & debounce Firestore sync
+  const persistProgress = useCallback(
+    (next: StoredEbookProgress, flushCloud = false) => {
+      progressRef.current = next;
+      setProgress(next);
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(next));
+        } catch {
+          // ignore storage quota errors
+        }
+      }
+
+      if (!user?.uid) return;
+
+      const writeCloud = () => {
+        setDoc(
+          doc(db, 'userEbookProgress', user.uid),
+          {
+            userId: user.uid,
+            lastChapterId: next.lastChapterId,
+            textScale: next.textScale || 'md',
+            chapters: next.chapters,
+            updatedAt: next.updatedAt,
+          },
+          { merge: true }
+        ).catch((err) => {
+          console.warn('Could not sync ebook progress to Firestore:', err);
+        });
+      };
+
+      if (cloudSyncTimerRef.current) {
+        clearTimeout(cloudSyncTimerRef.current);
+        cloudSyncTimerRef.current = null;
+      }
+
+      if (flushCloud) {
+        writeCloud();
+      } else {
+        cloudSyncTimerRef.current = setTimeout(writeCloud, 1500);
+      }
+    },
+    [storageKey, user?.uid]
+  );
+
+  // Load saved progress from localStorage + Firestore on mount / user change
+  useEffect(() => {
+    let cancelled = false;
+    let localData: StoredEbookProgress = EMPTY_PROGRESS;
+
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as StoredEbookProgress;
+          if (parsed && typeof parsed === 'object' && parsed.chapters) {
+            localData = parsed;
+            setProgress(localData);
+            progressRef.current = localData;
+            if (localData.textScale) setTextScale(localData.textScale);
+          }
+        }
+      } catch {
+        // ignore malformed localStorage
+      }
+    }
+
+    if (user?.uid) {
+      getDoc(doc(db, 'userEbookProgress', user.uid))
+        .then((snap) => {
+          if (cancelled || !snap.exists()) return;
+          const remote = snap.data() as StoredEbookProgress;
+          if (!remote || !remote.chapters) return;
+          const merged = mergeProgress(localData, remote);
+          setProgress(merged);
+          progressRef.current = merged;
+          if (merged.textScale) setTextScale(merged.textScale);
+          if (typeof window !== 'undefined') {
+            try {
+              window.localStorage.setItem(storageKey, JSON.stringify(merged));
+            } catch {
+              // ignore
+            }
+          }
+        })
+        .catch(() => {
+          // offline or permission fallback — localStorage still works
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storageKey, user?.uid]);
+
+  // Flush pending cloud sync on unmount
+  useEffect(() => {
+    return () => {
+      if (cloudSyncTimerRef.current) {
+        clearTimeout(cloudSyncTimerRef.current);
+      }
+    };
+  }, []);
 
   const activeChapter: EbookChapter | null = useMemo(
     () =>
@@ -74,13 +249,134 @@ export default function UrduFinanceEbookPage() {
       ? URDU_FINANCE_EBOOK_CHAPTERS[activeIdx + 1]
       : null;
 
+  // Restore saved scroll position whenever a chapter is opened
+  useEffect(() => {
+    if (activeChapterId === null || typeof window === 'undefined') {
+      setLiveScrollPct(0);
+      return;
+    }
+
+    const saved = progressRef.current.chapters[String(activeChapterId)];
+    const hasResumeSpot =
+      saved && saved.scrollRatio > 0.01 && saved.scrollRatio < 0.98;
+
+    restoringScrollRef.current = true;
+    const rafId = window.requestAnimationFrame(() => {
+      const docEl = document.documentElement;
+      const maxScroll = Math.max(0, docEl.scrollHeight - window.innerHeight);
+      if (hasResumeSpot && maxScroll > 0) {
+        const targetY = Math.round(saved.scrollRatio * maxScroll);
+        window.scrollTo({ top: targetY, behavior: 'auto' });
+        setLiveScrollPct(Math.round(saved.scrollRatio * 100));
+      } else {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        setLiveScrollPct(0);
+      }
+      setTimeout(() => {
+        restoringScrollRef.current = false;
+      }, 150);
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeChapterId]);
+
+  // Automatically track and save scroll progress while reading a chapter
+  useEffect(() => {
+    if (activeChapterId === null || typeof window === 'undefined') return;
+
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const recordScroll = () => {
+      if (restoringScrollRef.current) return;
+      const docEl = document.documentElement;
+      const maxScroll = Math.max(0, docEl.scrollHeight - window.innerHeight);
+      const currentY = Math.max(0, window.scrollY || docEl.scrollTop || 0);
+      const ratio = maxScroll > 0 ? Math.min(1, Math.max(0, currentY / maxScroll)) : 1;
+      const pct = Math.round(ratio * 100);
+      setLiveScrollPct(pct);
+
+      const key = String(activeChapterId);
+      const cur = progressRef.current;
+      const prevCh = cur.chapters[key];
+      const nextMaxPct = Math.max(prevCh?.maxPercent || 0, pct);
+      const nextCompleted = Boolean(prevCh?.completed || pct >= 92);
+
+      const nextProgress: StoredEbookProgress = {
+        ...cur,
+        lastChapterId: activeChapterId,
+        textScale,
+        updatedAt: Date.now(),
+        chapters: {
+          ...cur.chapters,
+          [key]: {
+            scrollRatio: Number(ratio.toFixed(4)),
+            scrollY: Math.round(currentY),
+            maxPercent: nextMaxPct,
+            completed: nextCompleted,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+
+      persistProgress(nextProgress, false);
+    };
+
+    const onScroll = () => {
+      if (throttleTimer) return;
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        recordScroll();
+      }, 200);
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (throttleTimer) clearTimeout(throttleTimer);
+    };
+  }, [activeChapterId, textScale, persistProgress]);
+
   const openChapter = (id: number) => {
+    const cur = progressRef.current;
+    const key = String(id);
+    const existing = cur.chapters[key];
+    const nextProgress: StoredEbookProgress = {
+      ...cur,
+      lastChapterId: id,
+      textScale,
+      updatedAt: Date.now(),
+      chapters: {
+        ...cur.chapters,
+        [key]: existing || {
+          scrollRatio: 0,
+          scrollY: 0,
+          maxPercent: 0,
+          completed: false,
+          updatedAt: Date.now(),
+        },
+      },
+    };
+    persistProgress(nextProgress, true);
     setActiveChapterId(id);
     setNavDrawerOpen(false);
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
   };
+
+  const handleChangeTextScale = (sz: TextScale) => {
+    setTextScale(sz);
+    persistProgress(
+      {
+        ...progressRef.current,
+        textScale: sz,
+        updatedAt: Date.now(),
+      },
+      true
+    );
+  };
+
+  const lastReadChapter = useMemo(() => {
+    if (!progress.lastChapterId) return null;
+    return URDU_FINANCE_EBOOK_CHAPTERS.find((c) => c.id === progress.lastChapterId) ?? null;
+  }, [progress.lastChapterId]);
 
   const scale = SCALE_CLASSES[textScale];
 
@@ -430,31 +726,42 @@ export default function UrduFinanceEbookPage() {
 
           <div className="flex items-center gap-2">
             {activeChapter && (
-              <div
-                className={`inline-flex items-center rounded-xl border p-0.5 ${
-                  isDark
-                    ? 'border-white/10 bg-[#1f2430]'
-                    : 'border-slate-200 bg-slate-100'
-                }`}
-                aria-label="Text size"
-              >
-                {(['sm', 'md', 'lg'] as const).map((sz) => (
-                  <button
-                    key={sz}
-                    type="button"
-                    onClick={() => setTextScale(sz)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
-                      textScale === sz
-                        ? 'bg-emerald-600 text-white'
-                        : isDark
-                        ? 'text-slate-400 hover:text-white'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {sz === 'sm' ? 'A-' : sz === 'md' ? 'A' : 'A+'}
-                  </button>
-                ))}
-              </div>
+              <>
+                <span
+                  className={`hidden sm:inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums ${
+                    isDark
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  }`}
+                >
+                  {liveScrollPct}%
+                </span>
+                <div
+                  className={`inline-flex items-center rounded-xl border p-0.5 ${
+                    isDark
+                      ? 'border-white/10 bg-[#1f2430]'
+                      : 'border-slate-200 bg-slate-100'
+                  }`}
+                  aria-label="Text size"
+                >
+                  {(['sm', 'md', 'lg'] as const).map((sz) => (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() => handleChangeTextScale(sz)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
+                        textScale === sz
+                          ? 'bg-emerald-600 text-white'
+                          : isDark
+                          ? 'text-slate-400 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {sz === 'sm' ? 'A-' : sz === 'md' ? 'A' : 'A+'}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
 
             <button
@@ -471,93 +778,196 @@ export default function UrduFinanceEbookPage() {
             </button>
           </div>
         </div>
+
+        {/* Live Reading Scroll Progress Bar */}
+        {activeChapter && (
+          <div className={`h-1 w-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`}>
+            <div
+              className="h-full bg-emerald-500 transition-all duration-150"
+              style={{ width: `${liveScrollPct}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
       <div className="mx-auto max-w-4xl px-3 pt-5 sm:px-6">
         {!activeChapter ? (
-          /* Starting Page: Clean 11-Section Clickable Navigation (no extra headlines) */
-          <div dir="rtl" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {URDU_FINANCE_EBOOK_CHAPTERS.map((chapter) => (
-              <button
-                key={chapter.id}
-                type="button"
-                onClick={() => openChapter(chapter.id)}
-                className={`group flex items-center justify-between gap-3 rounded-2xl border p-4 text-right transition-all cursor-pointer ${
-                  chapter.isComingSoon
-                    ? isDark
-                      ? 'border-white/5 bg-[#1f2430]/70 hover:border-white/15'
-                      : 'border-slate-200/80 bg-white/80 hover:border-slate-300'
-                    : isDark
-                    ? 'border-emerald-500/30 bg-[#1f2430] shadow-lg hover:border-emerald-400/60 hover:-translate-y-0.5'
-                    : 'border-emerald-200 bg-white shadow-sm hover:border-emerald-400 hover:-translate-y-0.5'
-                }`}
-              >
-                <div className="flex min-w-0 items-center gap-3.5">
-                  <span
-                    dir="ltr"
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold ${
+          /* Starting Page: Clean 11-Section Clickable Navigation (with saved progress & quick resume) */
+          <div className="space-y-3">
+            {lastReadChapter && (() => {
+              const savedCh = progress.chapters[String(lastReadChapter.id)];
+              const resumePct = savedCh ? Math.round((savedCh.scrollRatio || 0) * 100) : 0;
+              return (
+                <button
+                  key="resume"
+                  type="button"
+                  dir="rtl"
+                  onClick={() => openChapter(lastReadChapter.id)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-right transition cursor-pointer ${
+                    isDark
+                      ? 'border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15'
+                      : 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100/80'
+                  }`}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                      <BookOpen size={16} />
+                    </span>
+                    <div className="min-w-0">
+                      <span
+                        className={`block text-[11px] font-bold ${
+                          isDark ? 'text-emerald-300' : 'text-emerald-700'
+                        }`}
+                      >
+                        مطالعہ جاری رکھیں · باب {lastReadChapter.id}
+                      </span>
+                      <span
+                        className={`block truncate text-sm font-bold ${
+                          isDark ? 'text-white' : 'text-slate-900'
+                        }`}
+                      >
+                        {lastReadChapter.title}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span
+                      dir="ltr"
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-extrabold tabular-nums ${
+                        isDark
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-white text-emerald-700 border border-emerald-200'
+                      }`}
+                      style={{ fontFamily: 'var(--font-inter), sans-serif', lineHeight: 1.4 }}
+                    >
+                      {resumePct}%
+                    </span>
+                    <ChevronLeft
+                      size={16}
+                      className={isDark ? 'text-emerald-300' : 'text-emerald-700'}
+                    />
+                  </div>
+                </button>
+              );
+            })()}
+
+            <div dir="rtl" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {URDU_FINANCE_EBOOK_CHAPTERS.map((chapter) => {
+                const chProg = progress.chapters[String(chapter.id)];
+                const currentPct = chProg ? Math.round((chProg.scrollRatio || 0) * 100) : 0;
+                const displayPct = chProg?.completed ? 100 : Math.max(currentPct, chProg?.maxPercent || 0);
+                return (
+                  <button
+                    key={chapter.id}
+                    type="button"
+                    onClick={() => openChapter(chapter.id)}
+                    className={`group flex flex-col gap-2.5 rounded-2xl border p-4 text-right transition-all cursor-pointer ${
                       chapter.isComingSoon
                         ? isDark
-                          ? 'bg-white/5 text-slate-400'
-                          : 'bg-slate-100 text-slate-500'
-                        : 'bg-emerald-600 text-white shadow-sm'
+                          ? 'border-white/5 bg-[#1f2430]/70 hover:border-white/15'
+                          : 'border-slate-200/80 bg-white/80 hover:border-slate-300'
+                        : isDark
+                        ? 'border-emerald-500/30 bg-[#1f2430] shadow-lg hover:border-emerald-400/60 hover:-translate-y-0.5'
+                        : 'border-emerald-200 bg-white shadow-sm hover:border-emerald-400 hover:-translate-y-0.5'
                     }`}
-                    style={{ fontFamily: 'var(--font-inter), sans-serif', lineHeight: 1 }}
                   >
-                    {chapter.id}
-                  </span>
-                  <div className="min-w-0">
-                    <span
-                      className={`block text-xs font-semibold ${
-                        chapter.isComingSoon
-                          ? isDark
-                            ? 'text-slate-500'
-                            : 'text-slate-400'
-                          : isDark
-                          ? 'text-emerald-400'
-                          : 'text-emerald-700'
-                      }`}
-                    >
-                      {chapter.badge}
-                    </span>
-                    <p
-                      className={`mt-0.5 text-base font-bold break-words ${
-                        chapter.isComingSoon
-                          ? isDark
-                            ? 'text-slate-400'
-                            : 'text-slate-500'
-                          : isDark
-                          ? 'text-white'
-                          : 'text-slate-900'
-                      }`}
-                    >
-                      {chapter.title}
-                    </p>
-                  </div>
-                </div>
+                    <div className="flex w-full items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3.5">
+                        <span
+                          dir="ltr"
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold ${
+                            chapter.isComingSoon
+                              ? isDark
+                                ? 'bg-white/5 text-slate-400'
+                                : 'bg-slate-100 text-slate-500'
+                              : chProg?.completed
+                              ? 'bg-emerald-500 text-white shadow-sm'
+                              : 'bg-emerald-600 text-white shadow-sm'
+                          }`}
+                          style={{ fontFamily: 'var(--font-inter), sans-serif', lineHeight: 1 }}
+                        >
+                          {chProg?.completed ? <CheckCircle2 size={18} /> : chapter.id}
+                        </span>
+                        <div className="min-w-0">
+                          <span
+                            className={`block text-xs font-semibold ${
+                              chapter.isComingSoon
+                                ? isDark
+                                  ? 'text-slate-500'
+                                  : 'text-slate-400'
+                                : isDark
+                                ? 'text-emerald-400'
+                                : 'text-emerald-700'
+                            }`}
+                          >
+                            {chapter.badge}
+                          </span>
+                          <p
+                            className={`mt-0.5 text-base font-bold break-words ${
+                              chapter.isComingSoon
+                                ? isDark
+                                  ? 'text-slate-400'
+                                  : 'text-slate-500'
+                                : isDark
+                                ? 'text-white'
+                                : 'text-slate-900'
+                            }`}
+                          >
+                            {chapter.title}
+                          </p>
+                        </div>
+                      </div>
 
-                <div className="flex shrink-0 items-center gap-2">
-                  {chapter.isComingSoon && (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        isDark
-                          ? 'bg-white/5 text-slate-400'
-                          : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
-                      جلد آرہا ہے
-                    </span>
-                  )}
-                  <ChevronLeft
-                    size={18}
-                    className={`transition-transform group-hover:-translate-x-1 ${
-                      isDark ? 'text-slate-500' : 'text-slate-400'
-                    }`}
-                  />
-                </div>
-              </button>
-            ))}
+                      <div className="flex shrink-0 items-center gap-2">
+                        {chProg?.completed ? (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              isDark
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : 'bg-emerald-100 text-emerald-700'
+                            }`}
+                          >
+                            مکمل
+                          </span>
+                        ) : displayPct > 0 ? (
+                          <span
+                            dir="ltr"
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${
+                              isDark
+                                ? 'bg-white/10 text-emerald-300'
+                                : 'bg-emerald-50 text-emerald-700'
+                            }`}
+                            style={{ fontFamily: 'var(--font-inter), sans-serif', lineHeight: 1.4 }}
+                          >
+                            {displayPct}%
+                          </span>
+                        ) : null}
+                        <ChevronLeft
+                          size={18}
+                          className={`transition-transform group-hover:-translate-x-1 ${
+                            isDark ? 'text-slate-500' : 'text-slate-400'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {displayPct > 0 && (
+                      <div
+                        className={`h-1 w-full overflow-hidden rounded-full ${
+                          isDark ? 'bg-white/10' : 'bg-slate-200'
+                        }`}
+                      >
+                        <div
+                          className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                          style={{ width: `${displayPct}%` }}
+                        />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ) : (
           /* Chapter Reader View */
@@ -704,6 +1114,13 @@ export default function UrduFinanceEbookPage() {
             <div className="flex-1 space-y-2 overflow-y-auto pl-1">
               {URDU_FINANCE_EBOOK_CHAPTERS.map((ch) => {
                 const isActive = ch.id === activeChapterId;
+                const chProg = progress.chapters[String(ch.id)];
+                const chPct = chProg?.completed
+                  ? 100
+                  : Math.max(
+                      chProg ? Math.round((chProg.scrollRatio || 0) * 100) : 0,
+                      chProg?.maxPercent || 0
+                    );
                 return (
                   <button
                     key={ch.id}
@@ -722,7 +1139,7 @@ export default function UrduFinanceEbookPage() {
                     <span
                       dir="ltr"
                       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-extrabold ${
-                        isActive
+                        isActive || chProg?.completed
                           ? 'bg-emerald-600 text-white'
                           : isDark
                           ? 'bg-white/10 text-slate-300'
@@ -730,17 +1147,30 @@ export default function UrduFinanceEbookPage() {
                       }`}
                       style={{ fontFamily: 'var(--font-inter), sans-serif', lineHeight: 1 }}
                     >
-                      {ch.id}
+                      {chProg?.completed ? <CheckCircle2 size={14} /> : ch.id}
                     </span>
                     <div className="min-w-0 flex-1">
                       <span className="block text-sm font-bold break-words">{ch.title}</span>
-                      <span
-                        className={`text-[11px] ${
-                          isDark ? 'text-slate-400' : 'text-slate-500'
-                        }`}
-                      >
-                        {ch.isComingSoon ? 'جلد آرہا ہے' : ch.badge}
-                      </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-[11px] ${
+                            isDark ? 'text-slate-400' : 'text-slate-500'
+                          }`}
+                        >
+                          {ch.badge}
+                        </span>
+                        {chPct > 0 && (
+                          <span
+                            dir="ltr"
+                            className={`text-[10px] font-bold tabular-nums ${
+                              isDark ? 'text-emerald-300' : 'text-emerald-700'
+                            }`}
+                            style={{ fontFamily: 'var(--font-inter), sans-serif', lineHeight: 1.2 }}
+                          >
+                            {chPct}%
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 );

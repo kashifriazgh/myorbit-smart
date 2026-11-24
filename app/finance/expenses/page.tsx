@@ -19,6 +19,7 @@ import {
   PieChart,
   Lock,
   Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import {
   Dialog,
@@ -154,7 +155,6 @@ const MONTH_NAMES = [
 const EXPENSE_TYPE_OPTIONS: { value: ExpenseTypeOption; label: string }[] = [
   { value: 'recurring', label: 'Recurring' },
   { value: 'one_time', label: 'One-Time' },
-  { value: 'event_based', label: 'Event-Based' },
   { value: 'wish_list', label: 'Wish List' },
 ];
 
@@ -300,6 +300,9 @@ export default function ExpensesPage() {
   const [priority, setPriority] = useState<ExpensePriorityOption>('essential');
   const [frequency, setFrequency] = useState<ExpenseFrequencyOption>('monthly');
   const [notes, setNotes] = useState('');
+  const [showFrequencySection, setShowFrequencySection] = useState(false);
+  const [showRecurrenceSection, setShowRecurrenceSection] = useState(false);
+  const [showNotesSection, setShowNotesSection] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -680,9 +683,9 @@ export default function ExpensesPage() {
     };
   }, [plannedList, expendituresList, activeMonth, itemMatchesMonth]);
 
-  // Filtered List (scoped to selected month)
+  // Filtered List (scoped to selected month; expenses without a date appear at the end)
   const filteredList = useMemo(() => {
-    return plannedList.filter((item) => {
+    const matched = plannedList.filter((item) => {
       if (!itemMatchesMonth(item, activeMonth.year, activeMonth.month, activeMonth.offset === 0)) {
         return false;
       }
@@ -698,6 +701,23 @@ export default function ExpensesPage() {
         );
       }
       return true;
+    });
+
+    const hasDate = (item: PlannedExpense) => {
+      const single = formatDueDate(item.dueDate);
+      const multi = Array.isArray(item.dueDates) && item.dueDates.filter(Boolean).length > 0;
+      const isWeekly =
+        (item.frequency === 'weekly' || item.recurrence === 'weekly') &&
+        typeof item.weeklyDay === 'number';
+      return Boolean(single || multi || isWeekly);
+    };
+
+    return [...matched].sort((a, b) => {
+      const aHas = hasDate(a);
+      const bHas = hasDate(b);
+      if (aHas && !bHas) return -1;
+      if (!aHas && bHas) return 1;
+      return 0;
     });
   }, [plannedList, selectedCategory, statusFilter, searchQuery, activeMonth, itemMatchesMonth]);
 
@@ -718,6 +738,9 @@ export default function ExpensesPage() {
     setPriority('essential');
     setFrequency('monthly');
     setNotes('');
+    setShowFrequencySection(false);
+    setShowRecurrenceSection(false);
+    setShowNotesSection(false);
     setFormError(null);
   };
 
@@ -1456,12 +1479,29 @@ export default function ExpensesPage() {
 
         {/* Compact, Borderless ExpensesList Card */}
         <div
-          className={`w-full rounded-3xl p-4 sm:p-5 transition-colors ${
+          className={`w-full rounded-2xl p-2 sm:p-3 transition-colors ${
             isDark
-              ? 'bg-slate-900 text-white shadow-xl border border-slate-700/70'
-              : 'bg-white text-slate-900 shadow-sm border border-slate-200'
+              ? 'bg-slate-900 text-white shadow-xs border border-slate-700/70'
+              : 'bg-white text-slate-900 shadow-2xs border border-slate-200'
           }`}
         >
+          <div className="mb-2 flex items-center justify-between gap-2 px-1">
+            <h2
+              className={`text-sm font-bold tracking-tight ${
+                isDark ? 'text-slate-200' : 'text-slate-800'
+              }`}
+            >
+              Expenses {!loading && `(${filteredList.length})`}
+            </h2>
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="inline-flex items-center gap-1 rounded-xl bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-bold text-white shadow-2xs transition cursor-pointer active:scale-95"
+            >
+              <Plus size={14} />
+              <span>Add Expense</span>
+            </button>
+          </div>
           {loading ? (
             <ul className="space-y-2.5" aria-label="Loading expenses">
               {[0, 1, 2, 3, 4].map((idx) => (
@@ -1555,223 +1595,295 @@ export default function ExpensesPage() {
             >
               No expenses match your search or filter.
             </div>
-          ) : (
-            <ul className="space-y-2">
-              {filteredList.map((item) => {
-                const isPaid = item.paymentStatus === 'paid';
-                const isGlobalWishList =
-                  item.expenseType === 'wish_list' || item.priority === 'wish_list' || item.isGlobal;
-                const catMeta = CATEGORY_META[item.category] ?? CATEGORY_META['Other expenses'];
-                const RowCatIcon = catMeta.icon;
+          ) : (() => {
+            const stickyAmountBase = `sticky right-0 z-10 w-[22%] min-w-[5.25rem] before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-1.5 ${
+              isDark
+                ? 'bg-[#0a1628] before:bg-[linear-gradient(to_left,rgba(0,0,0,0.18),transparent)]'
+                : 'bg-white before:bg-[linear-gradient(to_left,rgba(15,23,42,0.08),transparent)]'
+            }`;
+            const headBgCls = isDark ? '!bg-[#0d1b30]' : '!bg-slate-50';
+            const rowHoverCls = isDark
+              ? 'group-hover:bg-[#0f2036]'
+              : 'group-hover:bg-slate-50';
+            const rowHoverStickyCls = isDark
+              ? 'group-hover:!bg-[#0f2036]'
+              : 'group-hover:!bg-slate-50';
+            const formatNum = (n: number) => Math.round(Number(n || 0)).toLocaleString('en-US');
 
-                const isWeekly = item.frequency === 'weekly' || item.recurrence === 'weekly';
-                const resolvedDates: string[] = (() => {
-                  if (isGlobalWishList) return [];
-                  if (isWeekly && typeof item.weeklyDay === 'number') {
-                    // For next month view, compute that month's dates dynamically; for current month use saved dueDates if in that month
-                    const savedInMonth = (item.dueDates || []).filter((dStr) => {
-                      const [yy, mm] = dStr.split('-').map(Number);
-                      return yy === activeMonth.year && mm - 1 === activeMonth.month;
-                    });
-                    if (savedInMonth.length > 0) return savedInMonth;
-                    return calculateWeeklyDatesInMonth(
-                      item.weeklyDay,
-                      activeMonth.year,
-                      activeMonth.month,
-                      undefined,
-                      item.recurrenceInterval || 1,
-                      item.recurrenceEndDate
-                    );
-                  }
-                  if (Array.isArray(item.dueDates) && item.dueDates.length > 0) {
-                    return item.dueDates;
-                  }
-                  const single = formatDueDate(item.dueDate);
-                  return single ? [single] : [];
-                })();
+            const filteredTotal = filteredList.reduce((sum, item) => {
+              const isGlobalWishList =
+                item.expenseType === 'wish_list' || item.priority === 'wish_list' || item.isGlobal;
+              const isWeekly = item.frequency === 'weekly' || item.recurrence === 'weekly';
+              let count = 1;
+              if (!isGlobalWishList) {
+                if (isWeekly && typeof item.weeklyDay === 'number') {
+                  const savedInMonth = (item.dueDates || []).filter((dStr) => {
+                    const [yy, mm] = dStr.split('-').map(Number);
+                    return yy === activeMonth.year && mm - 1 === activeMonth.month;
+                  });
+                  const dates =
+                    savedInMonth.length > 0
+                      ? savedInMonth
+                      : calculateWeeklyDatesInMonth(
+                          item.weeklyDay,
+                          activeMonth.year,
+                          activeMonth.month,
+                          undefined,
+                          item.recurrenceInterval || 1,
+                          item.recurrenceEndDate
+                        );
+                  if (dates.length > 1) count = dates.length;
+                } else if (Array.isArray(item.dueDates) && item.dueDates.length > 1) {
+                  count = item.dueDates.length;
+                }
+              }
+              return sum + (Number(item.expectedAmount) || 0) * count;
+            }, 0);
 
-                const hasMultipleDates = resolvedDates.length > 1;
-                const visibleDates = resolvedDates.slice(0, 4);
-                const extraDatesCount = Math.max(0, resolvedDates.length - visibleDates.length);
-                const singleDateLabel = isGlobalWishList
-                  ? 'Every month'
-                  : resolvedDates[0]
-                  ? formatShortDate(resolvedDates[0])
-                  : activeMonth.label;
+            return (
+              <div
+                className={`overflow-x-auto rounded-xl border ${
+                  isDark
+                    ? 'border-white/10 bg-[#0a1628]'
+                    : 'border-slate-200 bg-white'
+                }`}
+              >
+                <table className="w-full border-separate border-spacing-0 text-sm">
+                  <thead>
+                    <tr className={`text-left ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                      <th
+                        className={`w-[78%] border-b px-3 py-2.5 font-semibold ${headBgCls} ${
+                          isDark ? 'border-white/10' : 'border-slate-200'
+                        }`}
+                      >
+                        Title
+                      </th>
+                      <th
+                        className={`${stickyAmountBase} ${headBgCls} whitespace-nowrap border-b px-3 py-2.5 text-right font-semibold ${
+                          isDark ? 'border-white/10' : 'border-slate-200'
+                        }`}
+                      >
+                        Amount (Rs)
+                      </th>
+                    </tr>
+                  </thead>
 
-                const itemEffectiveAmt = hasMultipleDates
-                  ? item.expectedAmount * resolvedDates.length
-                  : item.expectedAmount;
-                const sharePct =
-                  monthlyMetrics.totalThisMonth > 0
-                    ? Math.min(100, Math.round((itemEffectiveAmt / monthlyMetrics.totalThisMonth) * 100))
-                    : 0;
-                const barColor =
-                  sharePct >= 25
-                    ? 'bg-rose-500'
-                    : sharePct >= 12
-                    ? 'bg-amber-500'
-                    : 'bg-teal-500';
+                  <tbody>
+                    {filteredList.map((item) => {
+                      const isPaid = item.paymentStatus === 'paid';
+                      const isGlobalWishList =
+                        item.expenseType === 'wish_list' ||
+                        item.priority === 'wish_list' ||
+                        item.isGlobal;
+                      const catMeta =
+                        CATEGORY_META[item.category] ?? CATEGORY_META['Other expenses'];
+                      const RowCatIcon = catMeta.icon;
 
-                return (
-                  <li
-                    key={item.id}
-                    onClick={() => setDetailItem(item)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setDetailItem(item);
-                      }
-                    }}
-                    className={`flex flex-col gap-2.5 rounded-xl px-4 py-3.5 transition cursor-pointer ${
-                      isDark
-                        ? 'bg-slate-800/80 hover:bg-slate-800 border border-transparent hover:border-slate-700'
-                        : 'bg-slate-50 hover:bg-slate-100/90 border border-transparent hover:border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      {/* Left: Title + Category + Single or Multiple Dates */}
-                      <div className="min-w-0 flex-1 leading-tight">
-                        <div className="flex items-center gap-2">
-                          <p
-                            className={`truncate text-sm font-semibold ${
-                              isPaid
-                                ? isDark
-                                  ? 'text-neutral-400 line-through'
-                                  : 'text-slate-400 line-through'
-                                : isDark
-                                ? 'text-white'
-                                : 'text-slate-900'
+                      const isWeekly =
+                        item.frequency === 'weekly' || item.recurrence === 'weekly';
+                      const resolvedDates: string[] = (() => {
+                        if (isGlobalWishList) return [];
+                        if (isWeekly && typeof item.weeklyDay === 'number') {
+                          const savedInMonth = (item.dueDates || []).filter((dStr) => {
+                            const [yy, mm] = dStr.split('-').map(Number);
+                            return yy === activeMonth.year && mm - 1 === activeMonth.month;
+                          });
+                          if (savedInMonth.length > 0) return savedInMonth;
+                          return calculateWeeklyDatesInMonth(
+                            item.weeklyDay,
+                            activeMonth.year,
+                            activeMonth.month,
+                            undefined,
+                            item.recurrenceInterval || 1,
+                            item.recurrenceEndDate
+                          );
+                        }
+                        if (Array.isArray(item.dueDates) && item.dueDates.length > 0) {
+                          return item.dueDates;
+                        }
+                        const single = formatDueDate(item.dueDate);
+                        return single ? [single] : [];
+                      })();
+
+                      const hasMultipleDates = resolvedDates.length > 1;
+                      const visibleDates = resolvedDates.slice(0, 4);
+                      const extraDatesCount = Math.max(
+                        0,
+                        resolvedDates.length - visibleDates.length
+                      );
+                      const singleDateLabel = isGlobalWishList
+                        ? 'Every month'
+                        : resolvedDates[0]
+                        ? formatShortDate(resolvedDates[0])
+                        : activeMonth.label;
+
+                      return (
+                        <tr
+                          key={item.id}
+                          onClick={() => setDetailItem(item)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setDetailItem(item);
+                            }
+                          }}
+                          className="group cursor-pointer"
+                        >
+                          <td
+                            className={`whitespace-nowrap border-b px-3 py-2.5 align-top transition-colors ${rowHoverCls} ${
+                              isDark ? 'border-white/5' : 'border-slate-100'
                             }`}
                           >
-                            {item.title}
-                          </p>
-                          {isPaid && (
-                            <CheckCircle2
-                              size={14}
-                              className={isDark ? 'text-green-400 shrink-0' : 'text-green-600 shrink-0'}
-                            />
-                          )}
-                        </div>
-
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                              isDark
-                                ? 'bg-white/10 text-neutral-300'
-                                : 'bg-slate-200/80 text-slate-700'
-                            }`}
-                          >
-                            <RowCatIcon
-                              size={11}
-                              className={isDark ? catMeta.darkColor : catMeta.lightColor}
-                            />
-                            {item.category}
-                          </span>
-
-                          {hasMultipleDates ? (
-                            <div className="inline-flex flex-wrap items-center gap-1">
+                            <div className="flex items-center gap-2">
                               <span
-                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                  isDark
-                                    ? 'bg-blue-500/15 text-blue-300'
-                                    : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                className={`text-sm font-semibold ${
+                                  isPaid
+                                    ? isDark
+                                      ? 'text-neutral-400 line-through'
+                                      : 'text-slate-400 line-through'
+                                    : isDark
+                                    ? 'text-slate-100'
+                                    : 'text-slate-900'
                                 }`}
                               >
-                                <CalendarDays size={10} />
-                                {resolvedDates.length} dates
+                                {item.title}
                               </span>
-                              {visibleDates.map((dIso) => (
-                                <span
-                                  key={dIso}
-                                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
+                              {isPaid && (
+                                <CheckCircle2
+                                  size={14}
+                                  className={
                                     isDark
-                                      ? 'bg-white/5 text-slate-300'
-                                      : 'bg-white text-slate-600 border border-slate-200'
+                                      ? 'text-green-400 shrink-0'
+                                      : 'text-green-600 shrink-0'
+                                  }
+                                />
+                              )}
+                            </div>
+
+                            <div className="mt-1 flex items-center gap-1.5 text-xs">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                  isDark
+                                    ? 'bg-white/10 text-neutral-300'
+                                    : 'bg-slate-100 text-slate-700'
+                                }`}
+                              >
+                                <RowCatIcon
+                                  size={11}
+                                  className={isDark ? catMeta.darkColor : catMeta.lightColor}
+                                />
+                                {item.category}
+                              </span>
+
+                              {hasMultipleDates ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                      isDark
+                                        ? 'bg-blue-500/15 text-blue-300'
+                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                    }`}
+                                  >
+                                    <CalendarDays size={10} />
+                                    {resolvedDates.length} dates
+                                  </span>
+                                  {visibleDates.map((dIso) => (
+                                    <span
+                                      key={dIso}
+                                      className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
+                                        isDark
+                                          ? 'bg-white/5 text-slate-300'
+                                          : 'bg-slate-50 text-slate-600 border border-slate-200'
+                                      }`}
+                                    >
+                                      {formatShortDate(dIso)}
+                                    </span>
+                                  ))}
+                                  {extraDatesCount > 0 && (
+                                    <span
+                                      className={`text-[10px] font-semibold ${
+                                        isDark ? 'text-slate-400' : 'text-slate-500'
+                                      }`}
+                                    >
+                                      +{extraDatesCount}
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[11px] ${
+                                    isDark ? 'text-slate-400' : 'text-slate-500'
                                   }`}
                                 >
-                                  {formatShortDate(dIso)}
-                                </span>
-                              ))}
-                              {extraDatesCount > 0 && (
-                                <span className={`text-[10px] font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                                  +{extraDatesCount}
+                                  {isGlobalWishList ? (
+                                    <Globe size={11} />
+                                  ) : (
+                                    <CalendarDays size={11} />
+                                  )}
+                                  {singleDateLabel}
                                 </span>
                               )}
                             </div>
-                          ) : (
-                            <span
-                              className={`inline-flex items-center gap-1 text-[11px] ${
-                                isDark ? 'text-neutral-400' : 'text-slate-500'
+                          </td>
+
+                          <td
+                            className={`${stickyAmountBase} ${rowHoverStickyCls} whitespace-nowrap border-b px-3 py-2.5 text-right align-top font-semibold tabular-nums transition-colors ${
+                              isDark ? 'border-white/5' : 'border-slate-100'
+                            }`}
+                          >
+                            <div
+                              className={`text-sm font-bold ${
+                                isPaid
+                                  ? isDark
+                                    ? 'text-neutral-400'
+                                    : 'text-slate-400'
+                                  : isDark
+                                  ? 'text-slate-100'
+                                  : 'text-slate-900'
                               }`}
                             >
-                              {isGlobalWishList ? <Globe size={11} /> : <CalendarDays size={11} />}
-                              {singleDateLabel}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                              {formatNum(item.expectedAmount)}
+                            </div>
+                            {hasMultipleDates && (
+                              <div
+                                className={`mt-0.5 text-[10px] font-medium tabular-nums ${
+                                  isDark ? 'text-slate-400' : 'text-slate-500'
+                                }`}
+                              >
+                                ×{resolvedDates.length} ={' '}
+                                {formatNum(item.expectedAmount * resolvedDates.length)}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
 
-                      {/* Right: Amount (+ multi-occurrence total hint if multiple dates) */}
-                      <div className="shrink-0 text-right">
-                        <p
-                          className={`text-sm sm:text-base font-bold tabular-nums ${
-                            isPaid
-                              ? isDark
-                                ? 'text-neutral-400'
-                                : 'text-slate-400'
-                              : isDark
-                              ? 'text-white'
-                              : 'text-slate-900'
-                          }`}
-                        >
-                          {formatRs(item.expectedAmount)}
-                        </p>
-                        {hasMultipleDates && (
-                          <p className={`text-[10px] font-medium tabular-nums ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            ×{resolvedDates.length} = {formatRs(item.expectedAmount * resolvedDates.length)}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Horizontal Share Progress Bar + Percentage */}
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`h-1.5 flex-1 overflow-hidden rounded-full ${
-                          isDark ? 'bg-white/10' : 'bg-slate-200/90'
+                  <tfoot>
+                    <tr>
+                      <td
+                        className={`px-3 py-2.5 font-semibold ${headBgCls} ${
+                          isDark ? 'text-slate-200' : 'text-slate-700'
                         }`}
                       >
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-                          style={{ width: `${Math.max(sharePct, sharePct > 0 ? 2 : 0)}%` }}
-                        />
-                      </div>
-                      <span
-                        className={`w-9 shrink-0 text-right text-[11px] font-bold tabular-nums ${
-                          sharePct >= 25
-                            ? isDark
-                              ? 'text-rose-400'
-                              : 'text-rose-600'
-                            : sharePct >= 12
-                            ? isDark
-                              ? 'text-amber-400'
-                              : 'text-amber-600'
-                            : isDark
-                            ? 'text-slate-400'
-                            : 'text-slate-500'
+                        Total ({filteredList.length})
+                      </td>
+                      <td
+                        className={`${stickyAmountBase} ${headBgCls} whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums ${
+                          isDark ? 'text-slate-100' : 'text-slate-900'
                         }`}
                       >
-                        {sharePct}%
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                        {formatNum(filteredTotal)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -2165,10 +2277,10 @@ export default function ExpensesPage() {
               </div>
             )}
 
-            {/* 1. Title — What is the expense? */}
+            {/* 1. Title */}
             <div>
               <label className={labelClass}>
-                1. Title — What is the expense? <span className="text-rose-500">*</span>
+                Title <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
@@ -2182,10 +2294,10 @@ export default function ExpensesPage() {
               />
             </div>
 
-            {/* 2. Amount — How much does it cost? */}
+            {/* 2. Amount */}
             <div>
               <label className={labelClass}>
-                2. Amount (PKR) — How much does it cost? <span className="text-rose-500">*</span>
+                Amount (PKR) <span className="text-rose-500">*</span>
               </label>
               <input
                 type="number"
@@ -2200,10 +2312,47 @@ export default function ExpensesPage() {
               />
             </div>
 
-            {/* 3. Type — Expense category / type & priority */}
+            {/* 3. Type (single line even on mobile, horizontally scrollable if needed) */}
+            <div>
+              <label className={labelClass}>Type</label>
+              <div className="flex flex-nowrap gap-2 overflow-x-auto no-scrollbar pb-0.5">
+                {EXPENSE_TYPE_OPTIONS.map((opt) => {
+                  const active = expenseType === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setExpenseType(opt.value);
+                        if (opt.value === 'wish_list') {
+                          setPriority('wish_list');
+                          setDueDate('');
+                          setDueDates([]);
+                          if (formError) setFormError(null);
+                        } else {
+                          if (priority === 'wish_list') setPriority('essential');
+                          if (opt.value === 'one_time') setFrequency('one_time');
+                        }
+                      }}
+                      className={`shrink-0 flex-1 min-w-[96px] whitespace-nowrap py-2.5 px-3 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                        active
+                          ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
+                          : isDark
+                          ? 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-500'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 4. Category */}
             <div className="space-y-3">
               <div>
-                <label className={labelClass}>3. Type — Expense Category</label>
+                <label className={labelClass}>Category</label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
@@ -2229,42 +2378,6 @@ export default function ExpensesPage() {
                   />
                 </div>
               )}
-
-              <div>
-                <label className={labelClass}>Expense Type</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {EXPENSE_TYPE_OPTIONS.map((opt) => {
-                    const active = expenseType === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => {
-                          setExpenseType(opt.value);
-                          if (opt.value === 'wish_list') {
-                            setPriority('wish_list');
-                            setDueDate('');
-                            setDueDates([]);
-                            if (formError) setFormError(null);
-                          } else {
-                            if (priority === 'wish_list') setPriority('essential');
-                            if (opt.value === 'one_time') setFrequency('one_time');
-                          }
-                        }}
-                        className={`py-2.5 px-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                          active
-                            ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
-                            : isDark
-                            ? 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-500'
-                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
 
               <div>
                 <label className={labelClass}>Priority</label>
@@ -2314,296 +2427,511 @@ export default function ExpensesPage() {
               </div>
             </div>
 
-            {/* 4. Frequency — One-time, Daily, Weekly, Monthly, Custom */}
-            <div>
-              <label className={labelClass}>4. Frequency</label>
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                {FREQUENCY_OPTIONS.map((opt) => {
-                  const active = !isWishList && frequency === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      disabled={isWishList}
-                      onClick={() => {
-                        setFrequency(opt.value);
-                        if (opt.value === 'one_time') {
-                          setExpenseType('one_time');
-                          setDueDates(dueDate ? [dueDate] : []);
-                        } else if (expenseType === 'one_time') {
-                          setExpenseType('recurring');
-                        }
-                        if (opt.value === 'weekly') {
-                          recomputeWeeklyDates(
-                            weeklyDay,
-                            dueDate,
-                            recurrenceInterval,
-                            recurrenceEndDate
-                          );
-                        }
-                      }}
-                      className={`py-2.5 px-2 rounded-xl text-xs font-semibold border transition ${
-                        isWishList
-                          ? isDark
-                            ? 'bg-slate-800/35 border-slate-800 text-slate-600 cursor-not-allowed'
-                            : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                          : active
-                          ? 'bg-blue-600 border-blue-600 text-white shadow-xs cursor-pointer'
-                          : isDark
-                          ? 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-500 cursor-pointer'
-                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300 cursor-pointer'
+            {/* 5. Date Picker — Predefined Weeks (1st–4th Week), Exact Date, or No Date */}
+            {frequency !== 'weekly' && (() => {
+              const mStr = String(activeMonth.month + 1).padStart(2, '0');
+              const weekPresets = [
+                {
+                  id: 'w1',
+                  label: '1st Week',
+                  sub: '1–7',
+                  iso: `${activeMonth.year}-${mStr}-01`,
+                },
+                {
+                  id: 'w2',
+                  label: '2nd Week',
+                  sub: '8–14',
+                  iso: `${activeMonth.year}-${mStr}-08`,
+                },
+                {
+                  id: 'w3',
+                  label: '3rd Week',
+                  sub: '15–21',
+                  iso: `${activeMonth.year}-${mStr}-15`,
+                },
+                {
+                  id: 'w4',
+                  label: '4th Week',
+                  sub: '22–End',
+                  iso: `${activeMonth.year}-${mStr}-22`,
+                },
+              ];
+              const isNoDateActive = !isWishList && (omitDate || !dueDate);
+
+              return (
+                <div
+                  className={`rounded-2xl border p-3.5 space-y-3 ${
+                    isDark
+                      ? 'bg-slate-800/45 border-slate-700/70'
+                      : 'bg-slate-50/90 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <CalendarDays
+                        size={14}
+                        className={isDark ? 'text-blue-400' : 'text-blue-600'}
+                      />
+                      <span
+                        className={`text-xs font-bold ${
+                          isDark ? 'text-slate-200' : 'text-slate-800'
+                        }`}
+                      >
+                        Due Date
+                      </span>
+                      <span
+                        className={`text-[11px] ${
+                          isDark ? 'text-slate-400' : 'text-slate-500'
+                        }`}
+                      >
+                        (optional)
+                      </span>
+                    </div>
+                    {!isWishList && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOmitDate(true);
+                          setDueDate('');
+                          setDueDates([]);
+                        }}
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition cursor-pointer ${
+                          isNoDateActive
+                            ? isDark
+                              ? 'bg-slate-700 text-white ring-1 ring-slate-500'
+                              : 'bg-slate-800 text-white'
+                            : isDark
+                            ? 'bg-white/5 text-slate-400 hover:text-white'
+                            : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-800'
+                        }`}
+                      >
+                        No Date
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quick Predefined Week Chips */}
+                  {!isWishList && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {weekPresets.map((wk) => {
+                        const active = !omitDate && dueDate === wk.iso;
+                        return (
+                          <button
+                            key={wk.id}
+                            type="button"
+                            onClick={() => {
+                              setOmitDate(false);
+                              setDueDate(wk.iso);
+                              if (formError) setFormError(null);
+                              if (frequency !== 'custom') {
+                                setDueDates([wk.iso]);
+                              } else if (!dueDates.includes(wk.iso)) {
+                                setDueDates((prev) => [...prev, wk.iso].sort());
+                              }
+                            }}
+                            className={`flex flex-col items-start rounded-xl border px-2.5 py-2 text-left transition cursor-pointer ${
+                              active
+                                ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
+                                : isDark
+                                ? 'bg-slate-900/70 border-slate-700/80 text-slate-200 hover:border-blue-500/60'
+                                : 'bg-white border-slate-200 text-slate-800 hover:border-blue-400'
+                            }`}
+                          >
+                            <span className="text-xs font-bold leading-tight">{wk.label}</span>
+                            <span
+                              className={`text-[10px] font-medium ${
+                                active
+                                  ? 'text-blue-100'
+                                  : isDark
+                                  ? 'text-slate-400'
+                                  : 'text-slate-500'
+                              }`}
+                            >
+                              {activeMonth.name.slice(0, 3)} {wk.sub}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Exact Date Picker */}
+                  <div>
+                    <label
+                      className={`block text-[11px] font-semibold mb-1 ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
                       }`}
                     >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {isWishList && (
-                <p className={`mt-1 text-[11px] ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
-                  Wish List items are global and display every month automatically.
-                </p>
+                      Or pick an exact date
+                    </label>
+                    <input
+                      type="date"
+                      disabled={isWishList}
+                      value={isWishList || omitDate ? '' : dueDate}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setOmitDate(!val);
+                        setDueDate(val);
+                        if (formError) setFormError(null);
+                        if (frequency !== 'custom') {
+                          setDueDates(val ? [val] : []);
+                        } else if (val && !dueDates.includes(val)) {
+                          setDueDates((prev) => [...prev, val].sort());
+                        }
+                      }}
+                      className={`${inputClass} ${
+                        isWishList ? 'opacity-45 cursor-not-allowed' : ''
+                      }`}
+                    />
+                  </div>
+
+                  {isWishList ? (
+                    <p className={`text-[11px] ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                      Disabled for Wish List (always shown every month)
+                    </p>
+                  ) : isNoDateActive ? (
+                    <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      No date selected — expense will appear at the end of the list.
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })()}
+
+            {/* Collapsible: Frequency (collapsed by default) */}
+            <div
+              className={`rounded-2xl border overflow-hidden ${
+                isDark
+                  ? 'bg-slate-800/40 border-slate-700/70'
+                  : 'bg-slate-50 border-slate-200'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setShowFrequencySection((v) => !v)}
+                className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                    Frequency
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${
+                      isDark ? 'bg-white/10 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    {isWishList ? 'Every month' : frequency.replace('_', '-')}
+                  </span>
+                </div>
+                <ChevronDown
+                  size={15}
+                  className={`transition-transform ${showFrequencySection ? 'rotate-180' : ''} ${
+                    isDark ? 'text-slate-400' : 'text-slate-500'
+                  }`}
+                />
+              </button>
+
+              {showFrequencySection && (
+                <div
+                  className={`border-t px-3.5 py-3 ${
+                    isDark ? 'border-white/10' : 'border-slate-200'
+                  }`}
+                >
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {FREQUENCY_OPTIONS.map((opt) => {
+                      const active = !isWishList && frequency === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          disabled={isWishList}
+                          onClick={() => {
+                            setFrequency(opt.value);
+                            if (opt.value === 'one_time') {
+                              setExpenseType('one_time');
+                              setDueDates(dueDate ? [dueDate] : []);
+                            } else if (expenseType === 'one_time') {
+                              setExpenseType('recurring');
+                            }
+                            if (opt.value === 'weekly') {
+                              setShowRecurrenceSection(true);
+                              recomputeWeeklyDates(
+                                weeklyDay,
+                                dueDate,
+                                recurrenceInterval,
+                                recurrenceEndDate
+                              );
+                            } else if (opt.value === 'custom') {
+                              setShowRecurrenceSection(true);
+                            }
+                          }}
+                          className={`py-2 px-2 rounded-xl text-xs font-semibold border transition ${
+                            isWishList
+                              ? isDark
+                                ? 'bg-slate-800/35 border-slate-800 text-slate-600 cursor-not-allowed'
+                                : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                              : active
+                              ? 'bg-blue-600 border-blue-600 text-white shadow-xs cursor-pointer'
+                              : isDark
+                              ? 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-500 cursor-pointer'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 cursor-pointer'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {isWishList && (
+                    <p className={`mt-1.5 text-[11px] ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                      Wish List items are global and display every month automatically.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
 
-            {/* 5. Date — When does it start or become due? (Hidden for Weekly; optional with Omit Date) */}
-            {frequency !== 'weekly' && (
-              <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <label className={`block text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                    5. Date — When does it start or become due?{' '}
-                    <span className={`font-normal ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      (optional)
-                    </span>
-                  </label>
-                  {!isWishList && (
-                    <label className="inline-flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={omitDate}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setOmitDate(checked);
-                          if (checked) {
-                            setDueDate('');
-                            setDueDates([]);
-                          }
-                        }}
-                        className="h-3.5 w-3.5 accent-blue-500 rounded cursor-pointer"
-                      />
-                      <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>
-                        Omit date
-                      </span>
-                    </label>
-                  )}
-                </div>
-                <input
-                  type="date"
-                  disabled={isWishList || omitDate}
-                  value={isWishList || omitDate ? '' : dueDate}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setDueDate(val);
-                    if (formError) setFormError(null);
-                    if (frequency !== 'custom') {
-                      setDueDates(val ? [val] : []);
-                    } else if (val && !dueDates.includes(val)) {
-                      setDueDates((prev) => [...prev, val].sort());
-                    }
-                  }}
-                  className={`${inputClass} ${
-                    isWishList || omitDate ? 'opacity-45 cursor-not-allowed' : ''
-                  }`}
-                />
-                {isWishList && (
-                  <p className={`mt-1 text-[11px] ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
-                    Disabled for Wish List (always shown every month)
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* 6. Recurrence — Repeat settings */}
+            {/* Collapsible: Recurrence on (collapsed by default) */}
             {!isWishList && frequency !== 'one_time' && (
               <div
-                className={`rounded-2xl border p-4 space-y-3.5 ${
+                className={`rounded-2xl border overflow-hidden ${
                   isDark
-                    ? 'bg-slate-800/50 border-slate-700/70'
+                    ? 'bg-slate-800/40 border-slate-700/70'
                     : 'bg-slate-50 border-slate-200'
                 }`}
               >
-                {frequency === 'weekly' ? (
-                  /* Weekly: ONLY show "At what day" with all 7 weekdays + calculated dates */
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>At what day</label>
-                      <select
-                        value={weeklyDay}
-                        onChange={(e) => {
-                          const dayNum = Number(e.target.value);
-                          setWeeklyDay(dayNum);
-                          recomputeWeeklyDates(dayNum, '', 1, '');
-                        }}
-                        className={inputClass}
-                      >
-                        {WEEKDAY_OPTIONS.map((d) => (
-                          <option key={d.value} value={d.value}>
-                            {d.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRecurrenceSection((v) => !v)}
+                  className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                      Recurrence on
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${
+                        isDark ? 'bg-white/10 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'
+                      }`}
+                    >
+                      {frequency === 'weekly'
+                        ? `Every ${WEEKDAY_OPTIONS[weeklyDay]?.label ?? 'Week'}`
+                        : `${frequency} schedule`}
+                    </span>
+                  </div>
+                  <ChevronDown
+                    size={15}
+                    className={`transition-transform ${showRecurrenceSection ? 'rotate-180' : ''} ${
+                      isDark ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  />
+                </button>
 
-                    <div>
-                      <span className={labelClass}>
-                        Dates in {activeMonth.label} ({dueDates.length})
-                      </span>
-                      {dueDates.length === 0 ? (
-                        <p className={`text-xs ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                          No remaining {WEEKDAY_OPTIONS[weeklyDay]?.label}s in {activeMonth.label}.
-                        </p>
-                      ) : (
-                        <div className="flex flex-wrap gap-1.5">
-                          {dueDates.map((dIso) => (
-                            <span
-                              key={dIso}
-                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums ${
-                                isDark
-                                  ? 'bg-blue-500/20 text-blue-200 border border-blue-500/30'
-                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
-                              }`}
-                            >
-                              <CalendarDays size={11} />
-                              {formatShortDate(dIso)}
+                {showRecurrenceSection && (
+                  <div
+                    className={`border-t px-3.5 py-3 space-y-3.5 ${
+                      isDark ? 'border-white/10' : 'border-slate-200'
+                    }`}
+                  >
+                    {frequency === 'weekly' ? (
+                      /* Weekly: ONLY show "At what day" with all 7 weekdays + calculated dates */
+                      <div className="space-y-3">
+                        <div>
+                          <label className={labelClass}>At what day</label>
+                          <select
+                            value={weeklyDay}
+                            onChange={(e) => {
+                              const dayNum = Number(e.target.value);
+                              setWeeklyDay(dayNum);
+                              recomputeWeeklyDates(dayNum, '', 1, '');
+                            }}
+                            className={inputClass}
+                          >
+                            {WEEKDAY_OPTIONS.map((d) => (
+                              <option key={d.value} value={d.value}>
+                                {d.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <span className={labelClass}>
+                            Dates in {activeMonth.label} ({dueDates.length})
+                          </span>
+                          {dueDates.length === 0 ? (
+                            <p className={`text-xs ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                              No remaining {WEEKDAY_OPTIONS[weeklyDay]?.label}s in {activeMonth.label}.
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {dueDates.map((dIso) => (
+                                <span
+                                  key={dIso}
+                                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                                    isDark
+                                      ? 'bg-blue-500/20 text-blue-200 border border-blue-500/30'
+                                      : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  }`}
+                                >
+                                  <CalendarDays size={11} />
+                                  {formatShortDate(dIso)}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDueDates((prev) => prev.filter((x) => x !== dIso))
+                                    }
+                                    aria-label={`Remove ${dIso}`}
+                                    className="ml-0.5 hover:text-rose-400 cursor-pointer"
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Custom: Add multiple custom dates */}
+                        {frequency === 'custom' && !omitDate && (
+                          <div className="space-y-2.5">
+                            <label className={labelClass}>Add Multiple Dates</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="date"
+                                value={customDateDraft}
+                                onChange={(e) => setCustomDateDraft(e.target.value)}
+                                className={inputClass}
+                              />
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setDueDates((prev) => prev.filter((x) => x !== dIso))
-                                }
-                                aria-label={`Remove ${dIso}`}
-                                className="ml-0.5 hover:text-rose-400 cursor-pointer"
+                                disabled={!customDateDraft}
+                                onClick={() => {
+                                  if (!customDateDraft) return;
+                                  setDueDates((prev) =>
+                                    prev.includes(customDateDraft)
+                                      ? prev
+                                      : [...prev, customDateDraft].sort()
+                                  );
+                                  if (!dueDate) setDueDate(customDateDraft);
+                                  setCustomDateDraft('');
+                                }}
+                                className="shrink-0 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-4 text-xs font-bold text-white cursor-pointer"
                               >
-                                <X size={11} />
+                                + Add Date
                               </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                        6. Recurrence — Repeat Settings
-                      </span>
-                      <span className={`text-[11px] capitalize ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        {frequency} schedule
-                      </span>
-                    </div>
-
-                    {/* Custom: Add multiple custom dates */}
-                    {frequency === 'custom' && !omitDate && (
-                      <div className="space-y-2.5">
-                        <label className={labelClass}>Add Multiple Dates</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="date"
-                            value={customDateDraft}
-                            onChange={(e) => setCustomDateDraft(e.target.value)}
-                            className={inputClass}
-                          />
-                          <button
-                            type="button"
-                            disabled={!customDateDraft}
-                            onClick={() => {
-                              if (!customDateDraft) return;
-                              setDueDates((prev) =>
-                                prev.includes(customDateDraft)
-                                  ? prev
-                                  : [...prev, customDateDraft].sort()
-                              );
-                              if (!dueDate) setDueDate(customDateDraft);
-                              setCustomDateDraft('');
-                            }}
-                            className="shrink-0 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-4 text-xs font-bold text-white cursor-pointer"
-                          >
-                            + Add Date
-                          </button>
-                        </div>
-                        {dueDates.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            {dueDates.map((dIso) => (
-                              <span
-                                key={dIso}
-                                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums ${
-                                  isDark
-                                    ? 'bg-blue-500/20 text-blue-200 border border-blue-500/30'
-                                    : 'bg-blue-50 text-blue-700 border border-blue-200'
-                                }`}
-                              >
-                                <CalendarDays size={11} />
-                                {formatShortDate(dIso)}
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDueDates((prev) => prev.filter((x) => x !== dIso))
-                                  }
-                                  aria-label={`Remove ${dIso}`}
-                                  className="ml-0.5 hover:text-rose-400 cursor-pointer"
-                                >
-                                  <X size={11} />
-                                </button>
-                              </span>
-                            ))}
+                            </div>
+                            {dueDates.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {dueDates.map((dIso) => (
+                                  <span
+                                    key={dIso}
+                                    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                                      isDark
+                                        ? 'bg-blue-500/20 text-blue-200 border border-blue-500/30'
+                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                    }`}
+                                  >
+                                    <CalendarDays size={11} />
+                                    {formatShortDate(dIso)}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setDueDates((prev) => prev.filter((x) => x !== dIso))
+                                      }
+                                      aria-label={`Remove ${dIso}`}
+                                      className="ml-0.5 hover:text-rose-400 cursor-pointer"
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
-                    )}
 
-                    {/* Interval & Optional End Date */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className={labelClass}>
-                          Repeat Interval (every N{' '}
-                          {frequency === 'daily' ? 'days' : 'months'})
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="30"
-                          value={recurrenceInterval}
-                          onChange={(e) => {
-                            setRecurrenceInterval(Math.max(1, Number(e.target.value) || 1));
-                          }}
-                          className={inputClass}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClass}>End Date (Optional)</label>
-                        <input
-                          type="date"
-                          value={recurrenceEndDate}
-                          onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                          className={inputClass}
-                        />
-                      </div>
-                    </div>
-                  </>
+                        {/* Interval & Optional End Date */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelClass}>
+                              Repeat Interval (every N{' '}
+                              {frequency === 'daily' ? 'days' : 'months'})
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="30"
+                              value={recurrenceInterval}
+                              onChange={(e) => {
+                                setRecurrenceInterval(Math.max(1, Number(e.target.value) || 1));
+                              }}
+                              className={inputClass}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>End Date (Optional)</label>
+                            <input
+                              type="date"
+                              value={recurrenceEndDate}
+                              onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                              className={inputClass}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             )}
 
-            {/* Optional Notes */}
-            <div>
-              <label className={labelClass}>Notes (Optional)</label>
-              <input
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Consumer number, bill details, etc."
-                className={inputClass}
-              />
+            {/* Collapsible: Notes (collapsed by default) */}
+            <div
+              className={`rounded-2xl border overflow-hidden ${
+                isDark
+                  ? 'bg-slate-800/40 border-slate-700/70'
+                  : 'bg-slate-50 border-slate-200'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setShowNotesSection((v) => !v)}
+                className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                    Notes
+                  </span>
+                  <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {notes.trim() ? 'Added' : 'Optional'}
+                  </span>
+                </div>
+                <ChevronDown
+                  size={15}
+                  className={`transition-transform ${showNotesSection ? 'rotate-180' : ''} ${
+                    isDark ? 'text-slate-400' : 'text-slate-500'
+                  }`}
+                />
+              </button>
+
+              {showNotesSection && (
+                <div
+                  className={`border-t px-3.5 py-3 ${
+                    isDark ? 'border-white/10' : 'border-slate-200'
+                  }`}
+                >
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Consumer number, bill details, etc."
+                    className={inputClass}
+                  />
+                </div>
+              )}
             </div>
           </DialogContent>
 

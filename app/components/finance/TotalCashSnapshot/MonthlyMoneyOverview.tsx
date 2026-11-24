@@ -53,9 +53,19 @@ export default function MonthlyMoneyOverview({
           className="group flex items-center justify-between gap-2"
         >
           <div>
-            <p className={`text-xs sm:text-sm font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Total income
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className={`text-xs sm:text-sm font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Total income
+              </p>
+              <span
+                dir="rtl"
+                className={`text-sm sm:text-base font-semibold ${
+                  isDark ? 'text-slate-200' : 'text-slate-700'
+                }`}
+              >
+                آمدنی
+              </span>
+            </div>
             <h2
               className={`mt-1 text-2xl sm:text-3xl font-extrabold tracking-tight tabular-nums ${
                 isDark ? 'text-white' : 'text-slate-900'

@@ -8,6 +8,7 @@ import type {
   CustomPaymentHead,
   TotalCashSnapshot,
   FinancialEventType,
+  FundOwnershipState,
 } from '@/app/lib/interface';
 import {
   PAKISTANI_EXPENSE_CATEGORIES,
@@ -42,6 +43,11 @@ interface Props {
       sourceIncomeType?: string;
       expenseCategory?: string;
       subCategory?: string;
+      fundState?: FundOwnershipState;
+      allocationLabel?: string;
+      amanatOwnerName?: string;
+      envelopeId?: string;
+      envelopeName?: string;
     }
   ) => Promise<void>;
   onDeduct?: (
@@ -164,6 +170,11 @@ export default function AddMoney({
 
   // Selected envelope (when spending from a wallet that has multiple envelopes)
   const [selectedEnvelopeId, setSelectedEnvelopeId] = useState<string>('');
+
+  // 4-state fund ownership selection (Add mode)
+  const [fundState, setFundState] = useState<FundOwnershipState>('spendable');
+  const [allocationLabel, setAllocationLabel] = useState<string>('');
+  const [amanatOwnerName, setAmanatOwnerName] = useState<string>('');
 
   useEffect(() => {
     if (!user || !showModal) return;
@@ -291,6 +302,24 @@ export default function AddMoney({
     return (snapshot.sources[src] as number) ?? 0;
   };
 
+  // Immediate total balance displayed on each wallet tile (even before clicking a bank/custom sub-wallet)
+  const getTileDisplayBalance = (src: TransactionSource): number => {
+    if (!snapshot || !snapshot.sources) return 0;
+    if (src === 'bank') {
+      return Object.values(snapshot.sources.bank || {}).reduce(
+        (sum, val) => sum + (Number(val) || 0),
+        0
+      );
+    }
+    if (src === 'custom') {
+      return Object.values(snapshot.sources.custom || {}).reduce(
+        (sum, val) => sum + (Number(val) || 0),
+        0
+      );
+    }
+    return (snapshot.sources[src] as number) ?? 0;
+  };
+
   const fromBalance = getSourceBalance(source, selectedBank, selectedCustomHead);
 
   const activeSourceKey = useMemo(() => {
@@ -312,34 +341,124 @@ export default function AddMoney({
       const isDefault = a.id.startsWith('default_') || idx === 0;
       const baseAmt = Number(a.amount) || 0;
       const effectiveAmt = isDefault ? baseAmt + unallocatedDiff : baseAmt;
-      const isReserved =
+      const ownerLower = (a.owner || '').trim().toLowerCase();
+      let resolvedState: FundOwnershipState = 'spendable';
+      if (a.fundState) {
+        resolvedState = a.fundState;
+      } else if (a.availabilityStatus === 'external') {
+        resolvedState = 'amanat';
+      } else if (a.availabilityStatus === 'savings' || ownerLower === 'savings') {
+        resolvedState = 'savings';
+      } else if (
         a.availabilityStatus === 'reserved' ||
-        a.owner.toLowerCase() === 'reserved' ||
-        (a.reservedAmount !== undefined && a.reservedAmount >= baseAmt && baseAmt > 0);
+        ownerLower === 'reserved' ||
+        (a.reservedAmount !== undefined &&
+          a.reservedAmount >= baseAmt &&
+          baseAmt > 0 &&
+          (ownerLower === 'you' || ownerLower === 'self' || ownerLower === ''))
+      ) {
+        resolvedState = 'reserved';
+      } else if (ownerLower && ownerLower !== 'you' && ownerLower !== 'self') {
+        resolvedState = 'amanat';
+      }
+
+      const displayOwner =
+        resolvedState === 'spendable'
+          ? 'Spendable'
+          : resolvedState === 'reserved'
+          ? 'Reserved'
+          : resolvedState === 'savings'
+          ? 'Savings'
+          : a.owner || 'Amanat';
+
       return {
         id: a.id,
         name: a.purpose || (isDefault ? 'Main Envelope' : `Envelope ${idx + 1}`),
-        owner: isReserved ? 'Reserved' : a.owner || 'You',
-        isReserved,
+        owner: displayOwner,
+        amanatOwner: resolvedState === 'amanat' ? a.owner || 'Amanat' : '',
+        fundState: resolvedState,
+        isReserved: resolvedState !== 'spendable',
         isLocked: Boolean(a.isLocked),
         amount: effectiveAmt,
       };
     });
   }, [activeSourceKey, snapshot, fromBalance]);
 
-  // Auto-select an envelope whenever switching wallets or entering deduct mode
+  // Default ownership state of the selected wallet (used when wallet has 0 or 1 envelope, or no envelope selected)
+  const walletDefaultOwnership = useMemo((): {
+    fundState: FundOwnershipState;
+    amanatOwner: string;
+  } => {
+    if (!activeSourceKey || !snapshot?.sourceOwnership) {
+      return { fundState: 'spendable', amanatOwner: '' };
+    }
+    const o = snapshot.sourceOwnership[activeSourceKey];
+    if (!o) return { fundState: 'spendable', amanatOwner: '' };
+
+    // If wallet has a single or default allocation, read its state
+    const singleOrDefault =
+      o.allocations && o.allocations.length > 0
+        ? o.allocations.find((a) => a.id.startsWith('default_')) || o.allocations[0]
+        : null;
+
+    if (singleOrDefault) {
+      const ownerLower = (singleOrDefault.owner || '').trim().toLowerCase();
+      if (singleOrDefault.fundState) {
+        return {
+          fundState: singleOrDefault.fundState,
+          amanatOwner:
+            singleOrDefault.fundState === 'amanat' ? singleOrDefault.owner || 'Amanat' : '',
+        };
+      }
+      if (singleOrDefault.availabilityStatus === 'external') {
+        return { fundState: 'amanat', amanatOwner: singleOrDefault.owner || 'Amanat' };
+      }
+      if (singleOrDefault.availabilityStatus === 'savings' || ownerLower === 'savings') {
+        return { fundState: 'savings', amanatOwner: '' };
+      }
+      if (singleOrDefault.availabilityStatus === 'reserved' || ownerLower === 'reserved') {
+        return { fundState: 'reserved', amanatOwner: '' };
+      }
+      if (ownerLower && ownerLower !== 'you' && ownerLower !== 'self') {
+        return { fundState: 'amanat', amanatOwner: singleOrDefault.owner };
+      }
+    }
+
+    if (o.fundState) {
+      return {
+        fundState: o.fundState,
+        amanatOwner: o.fundState === 'amanat' ? o.ownerName || 'Amanat' : '',
+      };
+    }
+    if (o.hasOwnThisMoney === false) {
+      return { fundState: 'amanat', amanatOwner: o.ownerName || 'Amanat' };
+    }
+    const savingsRegex = /saving|emergency|goal|fund|invest/i;
+    const isSavingsWallet = savingsRegex.test(`${o.purpose || ''} ${activeSourceKey}`);
+    if ((Number(o.reservedAmount) || 0) > 0 && fromBalance > 0 && (Number(o.reservedAmount) || 0) >= fromBalance) {
+      return { fundState: isSavingsWallet ? 'savings' : 'reserved', amanatOwner: '' };
+    }
+    return { fundState: 'spendable', amanatOwner: '' };
+  }, [activeSourceKey, snapshot, fromBalance]);
+
+  // Auto-select envelope in Spend mode, and reset invalid envelope when switching wallets
   useEffect(() => {
-    if (mode !== 'deduct' || walletEnvelopes.length <= 1) {
+    if (walletEnvelopes.length <= 1) {
       setSelectedEnvelopeId('');
       return;
     }
     const stillValid = walletEnvelopes.some((e) => e.id === selectedEnvelopeId);
     if (!stillValid) {
-      const preferred =
-        walletEnvelopes.find((e) => !e.isLocked && !e.isReserved && e.amount > 0) ||
-        walletEnvelopes.find((e) => !e.isLocked && e.amount > 0) ||
-        walletEnvelopes[0];
-      setSelectedEnvelopeId(preferred?.id || '');
+      if (mode === 'deduct') {
+        const preferred =
+          walletEnvelopes.find((e) => !e.isLocked && !e.isReserved && e.amount > 0) ||
+          walletEnvelopes.find((e) => !e.isLocked && e.amount > 0) ||
+          walletEnvelopes[0];
+        setSelectedEnvelopeId(preferred?.id || '');
+      } else {
+        // In Add mode, clear stale envelope from previous wallet (defaults to wallet's own state until user picks an envelope)
+        setSelectedEnvelopeId('');
+      }
     }
   }, [mode, walletEnvelopes, selectedEnvelopeId]);
 
@@ -347,6 +466,22 @@ export default function AddMoney({
     () => walletEnvelopes.find((e) => e.id === selectedEnvelopeId) ?? null,
     [walletEnvelopes, selectedEnvelopeId]
   );
+
+  // Auto-sync ownership state in Add mode:
+  // - If an envelope is selected, inherit that envelope's ownership state
+  // - Otherwise (0 or 1 envelope, or no envelope selected), inherit the wallet's default creation ownership state
+  useEffect(() => {
+    if (mode !== 'add') return;
+    if (selectedEnvelope) {
+      setFundState(selectedEnvelope.fundState);
+      setAmanatOwnerName(selectedEnvelope.fundState === 'amanat' ? selectedEnvelope.amanatOwner : '');
+    } else {
+      setFundState(walletDefaultOwnership.fundState);
+      setAmanatOwnerName(
+        walletDefaultOwnership.fundState === 'amanat' ? walletDefaultOwnership.amanatOwner : ''
+      );
+    }
+  }, [mode, activeSourceKey, selectedEnvelope, walletDefaultOwnership]);
 
   const isFromLocked = useMemo(() => {
     if (!activeSourceKey || !snapshot?.sourceOwnership) return false;
@@ -359,17 +494,17 @@ export default function AddMoney({
     (source === 'bank' && !!selectedBank) ||
     (source === 'custom' && !!selectedCustomHead);
 
-  const hasEnvelopesToChoose = mode === 'deduct' && walletEnvelopes.length > 1;
-  const isEnvelopeReady = !hasEnvelopesToChoose || Boolean(selectedEnvelope);
-  const isSelectedEnvelopeLocked = Boolean(selectedEnvelope?.isLocked);
+  const hasEnvelopesToChoose = walletEnvelopes.length > 1;
+  const isEnvelopeReady = mode !== 'deduct' || !hasEnvelopesToChoose || Boolean(selectedEnvelope);
+  const isSelectedEnvelopeLocked = mode === 'deduct' && Boolean(selectedEnvelope?.isLocked);
+  const isSpendLocked = mode === 'deduct' && (isFromLocked || isSelectedEnvelopeLocked);
   const effectiveSpendBalance = selectedEnvelope ? selectedEnvelope.amount : fromBalance;
   const overdraw = mode === 'deduct' && value > effectiveSpendBalance;
   const valid =
     value > 0 &&
     isSourceReady &&
     isEnvelopeReady &&
-    !isFromLocked &&
-    !isSelectedEnvelopeLocked &&
+    !isSpendLocked &&
     !overdraw;
 
   const handleClose = () => {
@@ -406,6 +541,9 @@ export default function AddMoney({
         }
       }
 
+      const resolvedAmanatOwner =
+        fundState === 'amanat' ? amanatOwnerName.trim() || 'Amanat' : undefined;
+
       await onSave(
         value,
         source,
@@ -415,10 +553,15 @@ export default function AddMoney({
         customPaymentHeadId,
         customPaymentHeadName,
         note,
-        holderToSave,
+        resolvedAmanatOwner || holderToSave,
         {
           eventType: 'income',
           sourceIncomeType: 'Income',
+          fundState,
+          allocationLabel: selectedEnvelope ? undefined : allocationLabel.trim() || undefined,
+          amanatOwnerName: resolvedAmanatOwner,
+          envelopeId: selectedEnvelope?.id,
+          envelopeName: selectedEnvelope?.name,
         }
       );
     } else if (mode === 'deduct' && onDeduct) {
@@ -466,6 +609,9 @@ export default function AddMoney({
     setSelectedBank('');
     setSelectedCustomHead('');
     setSelectedEnvelopeId('');
+    setFundState('spendable');
+    setAllocationLabel('');
+    setAmanatOwnerName('');
     setSelectedHolder('Unassigned');
     setNewHolderName('');
     setNote('');
@@ -563,7 +709,7 @@ export default function AddMoney({
                   : `Selected wallet only has ${formatCurrency(fromBalance, 'PKR')}.`}
               </p>
             )}
-            {(isFromLocked || isSelectedEnvelopeLocked) && (
+            {isSpendLocked && (
               <p className="mt-2 text-xs font-semibold text-rose-400">
                 🔒{' '}
                 {isSelectedEnvelopeLocked
@@ -573,49 +719,7 @@ export default function AddMoney({
             )}
           </div>
 
-          {/* Expense Categories (for Deduct mode only — no Classify Inflow Source in Add mode) */}
-          {mode === 'deduct' && (
-            <div className="p-3.5 bg-slate-900/60 border border-white/10 rounded-2xl flex flex-col gap-3">
-              <label className="text-sm font-bold text-white tracking-tight">
-                Select Category
-              </label>
-              <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-0.5">
-                {STANDARD_EXPENSE_CATEGORIES.map((cat) => {
-                  const CatIcon = cat.icon;
-                  const isSelected = expenseCategory === cat.name;
-                  return (
-                    <button
-                      key={cat.name}
-                      type="button"
-                      onClick={() => setExpenseCategory(cat.name)}
-                      className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition cursor-pointer ${
-                        isSelected
-                          ? 'bg-rose-500/20 border-rose-500 text-white ring-1 ring-rose-500/50'
-                          : 'bg-slate-950/80 border-white/10 text-slate-300 hover:border-white/20 hover:text-white'
-                      }`}
-                    >
-                      <CatIcon
-                        size={14}
-                        className={`shrink-0 ${isSelected ? 'text-rose-400' : cat.darkColor}`}
-                      />
-                      <span className="truncate">{cat.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div>
-                <input
-                  type="text"
-                  value={subCategory}
-                  onChange={(e) => setSubCategory(e.target.value)}
-                  placeholder="Optional subcategory (e.g. Petrol, Medicine, Dinner)"
-                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs placeholder-slate-600 focus:outline-none focus:border-rose-500"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Target / Source Wallet Selection */}
+          {/* Target / Source Wallet Selection (with immediate balances) */}
           <div>
             <p className="mb-2 text-xs font-semibold text-slate-300">
               {mode === "add" ? "Deposit into Wallet" : "Deduct from Wallet"}
@@ -623,7 +727,7 @@ export default function AddMoney({
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {SOURCE_OPTIONS.map((sKey) => {
                 const selected = source === sKey;
-                const bal = getSourceBalance(sKey, selectedBank, selectedCustomHead);
+                const bal = getTileDisplayBalance(sKey);
                 const label = SOURCE_LABELS[sKey];
                 const icon = SOURCE_ICONS[sKey];
 
@@ -645,7 +749,7 @@ export default function AddMoney({
                       <span className="block truncate text-xs font-bold text-white">
                         {label}
                       </span>
-                      <span className="block truncate text-[11px] text-slate-400 font-medium">
+                      <span className="block truncate text-[11px] text-emerald-300/90 font-semibold tabular-nums">
                         {formatCurrency(bal, 'PKR')}
                       </span>
                     </span>
@@ -654,7 +758,7 @@ export default function AddMoney({
               })}
             </div>
 
-            {/* Bank Sub-selector */}
+            {/* Bank Sub-selector (compact cards when <= 4 banks so balances show immediately) */}
             {source === 'bank' && (
               <div className="mt-2.5 space-y-2 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
                 <label className="block text-[11px] font-bold uppercase text-slate-400">
@@ -664,6 +768,37 @@ export default function AddMoney({
                   <p className="text-xs text-slate-400 py-1">
                     No bank accounts found. Create one in Wallets first.
                   </p>
+                ) : banks.length <= 4 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {banks.map((b) => {
+                      const isSelected = selectedBank === b.id;
+                      const bal = snapshot?.sources.bank?.[b.name] ?? 0;
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => setSelectedBank(b.id || '')}
+                          className={`flex items-center gap-2 rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-500/15 ring-1 ring-blue-500 text-white'
+                              : 'border-white/10 bg-slate-950/80 hover:border-white/20 text-slate-200'
+                          }`}
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-xs">
+                            🏦
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-bold text-white">
+                              {b.name}
+                            </span>
+                            <span className="block truncate text-[10px] text-emerald-300/90 font-semibold tabular-nums">
+                              {formatCurrency(bal, 'PKR')}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <select
                     value={selectedBank}
@@ -756,7 +891,7 @@ export default function AddMoney({
                             <span className="block truncate text-xs font-bold text-white">
                               {h.name}
                             </span>
-                            <span className="block truncate text-[10px] text-slate-400 font-medium">
+                            <span className="block truncate text-[10px] text-emerald-300/90 font-semibold tabular-nums">
                               {formatCurrency(bal, 'PKR')}
                             </span>
                           </span>
@@ -781,12 +916,16 @@ export default function AddMoney({
               </div>
             )}
 
-            {/* Envelope Selector (in Spend mode when selected wallet has 2+ envelopes) */}
+            {/* Envelope Selector (shown in both Add and Spend modes when selected wallet has 2+ envelopes) */}
             {hasEnvelopesToChoose && (
-              <div className="mt-2.5 space-y-2 rounded-2xl border border-rose-500/25 bg-slate-900/70 p-3">
+              <div
+                className={`mt-2.5 space-y-2 rounded-2xl border bg-slate-900/70 p-3 ${
+                  mode === 'add' ? 'border-emerald-500/25' : 'border-rose-500/25'
+                }`}
+              >
                 <div className="flex items-center justify-between gap-2">
                   <label className="block text-[11px] font-bold uppercase text-slate-300">
-                    Select Envelope
+                    {mode === 'add' ? 'Select Envelope (Optional)' : 'Select Envelope'}
                   </label>
                   <span className="text-[11px] text-slate-400">
                     {walletEnvelopes.length} envelopes in this wallet
@@ -795,17 +934,34 @@ export default function AddMoney({
                 <div className="grid grid-cols-2 gap-2">
                   {walletEnvelopes.map((env) => {
                     const isSelected = selectedEnvelopeId === env.id;
+                    const disabledInMode = mode === 'deduct' && env.isLocked;
+                    const badgeCls =
+                      env.fundState === 'spendable'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : env.fundState === 'reserved'
+                        ? 'bg-blue-500/15 text-blue-300'
+                        : env.fundState === 'savings'
+                        ? 'bg-amber-500/15 text-amber-300'
+                        : 'bg-purple-500/15 text-purple-300';
                     return (
                       <button
                         key={env.id}
                         type="button"
-                        disabled={env.isLocked}
-                        onClick={() => setSelectedEnvelopeId(env.id)}
+                        disabled={disabledInMode}
+                        onClick={() => {
+                          if (mode === 'add' && isSelected) {
+                            setSelectedEnvelopeId('');
+                          } else {
+                            setSelectedEnvelopeId(env.id);
+                          }
+                        }}
                         className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition ${
-                          env.isLocked
+                          disabledInMode
                             ? 'opacity-45 cursor-not-allowed border-white/10 bg-slate-950/60'
                             : isSelected
-                            ? 'border-rose-500 bg-rose-500/15 ring-1 ring-rose-500/50 text-white cursor-pointer'
+                            ? mode === 'add'
+                              ? 'border-emerald-500 bg-emerald-500/15 ring-1 ring-emerald-500/50 text-white cursor-pointer'
+                              : 'border-rose-500 bg-rose-500/15 ring-1 ring-rose-500/50 text-white cursor-pointer'
                             : 'border-white/10 bg-slate-950/80 hover:border-white/25 text-slate-200 cursor-pointer'
                         }`}
                       >
@@ -814,11 +970,7 @@ export default function AddMoney({
                             ✉️ {env.name}
                           </span>
                           <span
-                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
-                              env.isReserved
-                                ? 'bg-amber-500/15 text-amber-300'
-                                : 'bg-emerald-500/15 text-emerald-300'
-                            }`}
+                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${badgeCls}`}
                           >
                             {env.owner}
                           </span>
@@ -833,6 +985,145 @@ export default function AddMoney({
               </div>
             )}
           </div>
+
+          {/* 4-State Ownership Classification (Add mode) */}
+          {mode === 'add' && (
+            <div className="p-3.5 bg-slate-900/60 border border-white/10 rounded-2xl flex flex-col gap-3">
+              <div>
+                <label className="text-sm font-bold text-white tracking-tight block">
+                  Ownership &amp; Fund State
+                </label>
+                <p className="text-[11px] text-slate-400">
+                  Classify how this amount should be counted across your finances
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    {
+                      id: 'spendable',
+                      label: 'Spendable',
+                      desc: 'Own · Spend anytime',
+                      activeCls: 'border-emerald-500 bg-emerald-500/15 ring-1 ring-emerald-500/50',
+                      dotCls: 'bg-emerald-500',
+                    },
+                    {
+                      id: 'reserved',
+                      label: 'Reserved',
+                      desc: 'Own · Near-term expense',
+                      activeCls: 'border-blue-500 bg-blue-500/15 ring-1 ring-blue-500/50',
+                      dotCls: 'bg-blue-500',
+                    },
+                    {
+                      id: 'savings',
+                      label: 'Savings',
+                      desc: 'Own · Long-term / event',
+                      activeCls: 'border-amber-500 bg-amber-500/15 ring-1 ring-amber-500/50',
+                      dotCls: 'bg-amber-500',
+                    },
+                    {
+                      id: 'amanat',
+                      label: 'Amanat',
+                      desc: 'Third person · Not owned',
+                      activeCls: 'border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/50',
+                      dotCls: 'bg-purple-500',
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const active = fundState === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setFundState(opt.id);
+                        if (selectedEnvelope && selectedEnvelope.fundState !== opt.id) {
+                          setSelectedEnvelopeId('');
+                        }
+                      }}
+                      className={`flex flex-col gap-0.5 rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                        active
+                          ? `${opt.activeCls} text-white`
+                          : 'border-white/10 bg-slate-950/80 text-slate-300 hover:border-white/20'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5 text-xs font-bold">
+                        <span className={`h-2 w-2 rounded-full ${opt.dotCls}`} />
+                        {opt.label}
+                      </span>
+                      <span className="text-[10px] text-slate-400">{opt.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {fundState === 'amanat' && (
+                <input
+                  type="text"
+                  value={amanatOwnerName}
+                  onChange={(e) => setAmanatOwnerName(e.target.value)}
+                  placeholder="Person / owner name (e.g. Father, Ali, Office)"
+                  className="w-full px-3 py-2 bg-slate-950 border border-purple-500/30 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                />
+              )}
+
+              {(fundState === 'reserved' || fundState === 'savings') && (
+                <input
+                  type="text"
+                  value={allocationLabel}
+                  onChange={(e) => setAllocationLabel(e.target.value)}
+                  placeholder={
+                    fundState === 'reserved'
+                      ? 'Optional purpose / envelope (e.g. Electricity Bill, Rent)'
+                      : 'Optional saving goal (e.g. Car, Wedding, Emergency)'
+                  }
+                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Expense Categories (Spend mode — right below Wallets selection) */}
+          {mode === 'deduct' && (
+            <div className="p-3.5 bg-slate-900/60 border border-white/10 rounded-2xl flex flex-col gap-3">
+              <label className="text-sm font-bold text-white tracking-tight">
+                Select Category
+              </label>
+              <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-0.5">
+                {STANDARD_EXPENSE_CATEGORIES.map((cat) => {
+                  const CatIcon = cat.icon;
+                  const isSelected = expenseCategory === cat.name;
+                  return (
+                    <button
+                      key={cat.name}
+                      type="button"
+                      onClick={() => setExpenseCategory(cat.name)}
+                      className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-rose-500/20 border-rose-500 text-white ring-1 ring-rose-500/50'
+                          : 'bg-slate-950/80 border-white/10 text-slate-300 hover:border-white/20 hover:text-white'
+                      }`}
+                    >
+                      <CatIcon
+                        size={14}
+                        className={`shrink-0 ${isSelected ? 'text-rose-400' : cat.darkColor}`}
+                      />
+                      <span className="truncate">{cat.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div>
+                <input
+                  type="text"
+                  value={subCategory}
+                  onChange={(e) => setSubCategory(e.target.value)}
+                  placeholder="Optional subcategory (e.g. Petrol, Medicine, Dinner)"
+                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs placeholder-slate-600 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Note Input */}
           <input

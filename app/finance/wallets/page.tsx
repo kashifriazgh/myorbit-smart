@@ -30,9 +30,17 @@ import type {
   CustomPaymentHead,
   WalletAllocation,
   WalletType,
+  FundOwnershipState,
   FinancialEventType,
 } from '@/app/lib/interface';
-import { computeTotalAmount, computeAvailableToSpend, type WalletItem } from '@/app/components/finance/TotalCashSnapshot';
+import {
+  computeTotalAmount,
+  computeAvailableToSpend,
+  applyDepositFundState,
+  applyWalletAllocationDelta,
+  getSourceKey,
+  type WalletItem,
+} from '@/app/components/finance/TotalCashSnapshot';
 import CreateWalletModal from '@/app/components/finance/TotalCashSnapshot/CreateWalletModal';
 import WalletsGrid from '@/app/components/finance/TotalCashSnapshot/WalletsGrid';
 import SmartWalletDetailDialog, {
@@ -342,6 +350,11 @@ export default function WalletsPage() {
       sourceIncomeType?: string;
       expenseCategory?: string;
       subCategory?: string;
+      fundState?: FundOwnershipState;
+      allocationLabel?: string;
+      amanatOwnerName?: string;
+      envelopeId?: string;
+      envelopeName?: string;
     }
   ) => {
     if (!snapshot || !user?.uid) return;
@@ -356,21 +369,53 @@ export default function WalletsPage() {
         custom: { ...(snapshot.sources.custom || {}) },
       };
 
+      let prevWalletBalance = 0;
       let newWalletBalance = 0;
       if (source === 'bank' && bankName) {
-        newWalletBalance = (updatedSources.bank[bankName] ?? 0) + amount;
+        prevWalletBalance = updatedSources.bank[bankName] ?? 0;
+        newWalletBalance = prevWalletBalance + amount;
         updatedSources.bank[bankName] = newWalletBalance;
       } else if (source === 'custom' && customPaymentHeadName) {
-        newWalletBalance = (updatedSources.custom[customPaymentHeadName] ?? 0) + amount;
+        prevWalletBalance = updatedSources.custom[customPaymentHeadName] ?? 0;
+        newWalletBalance = prevWalletBalance + amount;
         updatedSources.custom[customPaymentHeadName] = newWalletBalance;
       } else if (source !== 'bank' && source !== 'custom') {
-        newWalletBalance = (updatedSources[source] as number) + amount;
+        prevWalletBalance = Number(updatedSources[source]) || 0;
+        newWalletBalance = prevWalletBalance + amount;
         (updatedSources[source] as number) = newWalletBalance;
       }
+
+      const walletKey = getSourceKey(source, bankName, customPaymentHeadName);
+      const walletDisplayName =
+        bankName ||
+        customPaymentHeadName ||
+        (source === 'in_hand'
+          ? 'Cash in Hand'
+          : source === 'easypaisa'
+          ? 'Easypaisa'
+          : source === 'jazzcash'
+          ? 'JazzCash'
+          : 'Personal Spending');
+
+      const updatedOwnership = applyDepositFundState(
+        snapshot.sourceOwnership,
+        walletKey,
+        walletDisplayName,
+        prevWalletBalance,
+        amount,
+        meta?.fundState || 'spendable',
+        {
+          allocationLabel: meta?.allocationLabel,
+          amanatOwnerName: meta?.amanatOwnerName || holderName,
+          envelopeId: meta?.envelopeId,
+          envelopeName: meta?.envelopeName,
+        }
+      );
 
       const newTotal = computeTotalAmount({
         ...snapshot,
         sources: updatedSources,
+        sourceOwnership: updatedOwnership,
       });
 
       await addDoc(collection(db, 'cashTransactions'), {
@@ -381,19 +426,21 @@ export default function WalletsPage() {
         category: 'income',
         eventType: meta?.eventType || 'income',
         sourceIncomeType: meta?.sourceIncomeType || null,
+        fundState: meta?.fundState || 'spendable',
         walletName: bankName || customPaymentHeadName || source,
         balanceAfter: newWalletBalance,
         balanceSnapshot: newTotal,
-        note: note || meta?.sourceIncomeType || 'Money added',
+        note: note || meta?.allocationLabel || meta?.sourceIncomeType || 'Money added',
         BankName: bankName || null,
         customPaymentHeadName: customPaymentHeadName || null,
-        holderName: holderName || null,
+        holderName: meta?.amanatOwnerName || holderName || null,
         createdAt: serverTimestamp(),
       });
 
       const updatedSnapshot: TotalCashSnapshot = {
         ...snapshot,
         sources: updatedSources,
+        sourceOwnership: updatedOwnership,
         totalAmount: newTotal,
         updatedAt: new Date(),
       };
@@ -503,39 +550,106 @@ export default function WalletsPage() {
     toBankName?: string,
     toCustomName?: string,
     toHolder?: string,
-    note?: string
+    note?: string,
+    meta?: {
+      fromEnvelopeId?: string;
+      fromEnvelopeName?: string;
+      fromFundState?: FundOwnershipState;
+      toEnvelopeId?: string;
+      toEnvelopeName?: string;
+      toFundState?: FundOwnershipState;
+    }
   ) => {
     if (!snapshot || !user?.uid) return;
     setSaving(true);
     try {
-      const updatedSources = { ...snapshot.sources };
+      const updatedSources: TotalCashSnapshot['sources'] = {
+        in_hand: snapshot.sources.in_hand ?? 0,
+        bank: { ...(snapshot.sources.bank || {}) },
+        easypaisa: snapshot.sources.easypaisa ?? 0,
+        jazzcash: snapshot.sources.jazzcash ?? 0,
+        other: snapshot.sources.other ?? 0,
+        custom: { ...(snapshot.sources.custom || {}) },
+      };
       const targetSource = toSource || fromSource;
-      const targetBankName = toBankName || fromBankName;
-      const targetCustomName = toCustomName || fromCustomName;
+      const targetBankName = toSource ? toBankName : fromBankName;
+      const targetCustomName = toSource ? toCustomName : fromCustomName;
 
       let fromRemaining = 0;
       if (fromSource === 'bank' && fromBankName) {
-        fromRemaining = (updatedSources.bank[fromBankName] ?? 0) - amount;
+        fromRemaining = Math.max(0, (updatedSources.bank[fromBankName] ?? 0) - amount);
         updatedSources.bank[fromBankName] = fromRemaining;
       } else if (fromSource === 'custom' && fromCustomName) {
-        fromRemaining = (updatedSources.custom[fromCustomName] ?? 0) - amount;
+        fromRemaining = Math.max(0, (updatedSources.custom[fromCustomName] ?? 0) - amount);
         updatedSources.custom[fromCustomName] = fromRemaining;
-      } else {
-        fromRemaining = ((updatedSources[fromSource] as number) ?? 0) - amount;
+      } else if (fromSource !== 'bank' && fromSource !== 'custom') {
+        fromRemaining = Math.max(0, ((updatedSources[fromSource] as number) ?? 0) - amount);
         (updatedSources[fromSource] as number) = fromRemaining;
       }
 
+      let toPrevBal = 0;
       let toNewBal = 0;
       if (targetSource === 'bank' && targetBankName) {
-        toNewBal = (updatedSources.bank[targetBankName] ?? 0) + amount;
+        toPrevBal = updatedSources.bank[targetBankName] ?? 0;
+        toNewBal = toPrevBal + amount;
         updatedSources.bank[targetBankName] = toNewBal;
       } else if (targetSource === 'custom' && targetCustomName) {
-        toNewBal = (updatedSources.custom[targetCustomName] ?? 0) + amount;
+        toPrevBal = updatedSources.custom[targetCustomName] ?? 0;
+        toNewBal = toPrevBal + amount;
         updatedSources.custom[targetCustomName] = toNewBal;
-      } else {
-        toNewBal = ((updatedSources[targetSource] as number) ?? 0) + amount;
+      } else if (targetSource !== 'bank' && targetSource !== 'custom') {
+        toPrevBal = (updatedSources[targetSource] as number) ?? 0;
+        toNewBal = toPrevBal + amount;
         (updatedSources[targetSource] as number) = toNewBal;
       }
+
+      const fromKey = getSourceKey(fromSource, fromBankName, fromCustomName);
+      const toKey = getSourceKey(targetSource, targetBankName, targetCustomName);
+      const toDisplayName =
+        targetBankName ||
+        targetCustomName ||
+        (targetSource === 'in_hand'
+          ? 'Cash in Hand'
+          : targetSource === 'easypaisa'
+          ? 'Easypaisa'
+          : targetSource === 'jazzcash'
+          ? 'JazzCash'
+          : 'Personal Spending');
+
+      let updatedOwnership = applyWalletAllocationDelta(
+        snapshot.sourceOwnership,
+        fromKey,
+        -amount,
+        meta?.fromEnvelopeId,
+        meta?.fromEnvelopeName
+      );
+
+      if (meta?.toEnvelopeId) {
+        updatedOwnership = applyDepositFundState(
+          updatedOwnership,
+          toKey,
+          toDisplayName,
+          toPrevBal,
+          amount,
+          meta?.toFundState || 'spendable',
+          {
+            envelopeId: meta.toEnvelopeId,
+            envelopeName: meta.toEnvelopeName,
+          }
+        );
+      } else {
+        updatedOwnership = applyWalletAllocationDelta(
+          updatedOwnership,
+          toKey,
+          amount
+        );
+      }
+
+      const newTotal = computeTotalAmount({
+        ...snapshot,
+        sources: updatedSources,
+        sourceOwnership: updatedOwnership,
+      });
 
       await addDoc(collection(db, 'cashTransactions'), {
         userId: user.uid,
@@ -545,10 +659,17 @@ export default function WalletsPage() {
         category: 'transfer',
         eventType: 'transfer',
         balanceAfter: fromRemaining,
+        balanceSnapshot: newTotal,
+        fromEnvelopeId: meta?.fromEnvelopeId || null,
+        fromEnvelopeName: meta?.fromEnvelopeName || null,
+        toEnvelopeId: meta?.toEnvelopeId || null,
+        toEnvelopeName: meta?.toEnvelopeName || null,
         note:
           note ||
-          `Transfer: ${fromBankName || fromCustomName || fromSource} ➔ ${
-            targetBankName || targetCustomName || targetSource
+          `Transfer: ${fromBankName || fromCustomName || fromSource}${
+            meta?.fromEnvelopeName ? ` (${meta.fromEnvelopeName})` : ''
+          } ➔ ${targetBankName || targetCustomName || targetSource}${
+            meta?.toEnvelopeName ? ` (${meta.toEnvelopeName})` : ''
           }`,
         BankName: fromBankName || null,
         customPaymentHeadName: fromCustomName || null,
@@ -560,6 +681,8 @@ export default function WalletsPage() {
       const updatedSnapshot: TotalCashSnapshot = {
         ...snapshot,
         sources: updatedSources,
+        sourceOwnership: updatedOwnership,
+        totalAmount: newTotal,
         updatedAt: new Date(),
       };
 
@@ -1099,7 +1222,7 @@ export default function WalletsPage() {
         activeWalletId={activeWalletId}
         onSelectWallet={(wId) => setActiveWalletId(wId)}
         isDark={isDark}
-        onAddMoney={async (w, amt, note) => {
+        onAddMoney={async (w, amt, note, opts) => {
           await handleAddMoney(
             amt,
             w.sourceType,
@@ -1109,8 +1232,14 @@ export default function WalletsPage() {
             undefined,
             w.customName,
             note || `Added to ${w.name}`,
-            undefined,
-            { eventType: 'income', sourceIncomeType: 'Wallet Deposit' }
+            opts?.amanatOwnerName,
+            {
+              eventType: 'income',
+              sourceIncomeType: 'Wallet Deposit',
+              fundState: opts?.fundState || 'spendable',
+              allocationLabel: opts?.allocationLabel,
+              amanatOwnerName: opts?.amanatOwnerName,
+            }
           );
         }}
         onSpendMoney={async (w, amt, note) => {

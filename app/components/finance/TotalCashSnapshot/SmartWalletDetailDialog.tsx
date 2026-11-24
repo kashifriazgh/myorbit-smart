@@ -9,6 +9,7 @@ import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/context/userContext';
 import type {
   Expenditure,
+  FundOwnershipState,
   LoanRecord,
   PlannedExpense,
   WalletAllocation as AppWalletAllocation,
@@ -73,7 +74,8 @@ interface EnvelopeItem {
   id: string;
   name: string;
   balance: number;
-  ownerName: string | null; // null = Reserved
+  fundState: FundOwnershipState;
+  ownerName: string | null; // person name when amanat, 'You' when spendable, null for reserved/savings
   color: string;
   isDefault?: boolean;
 }
@@ -103,7 +105,16 @@ interface SmartWalletDetailDialogProps {
   activeWalletId: string | null;
   onSelectWallet: (walletId: string) => void;
   isDark: boolean;
-  onAddMoney: (wallet: WalletItem, amount: number, note?: string) => Promise<void>;
+  onAddMoney: (
+    wallet: WalletItem,
+    amount: number,
+    note?: string,
+    opts?: {
+      fundState?: FundOwnershipState;
+      allocationLabel?: string;
+      amanatOwnerName?: string;
+    }
+  ) => Promise<void>;
   onSpendMoney: (wallet: WalletItem, amount: number, note?: string) => Promise<void>;
   onTransfer: (wallet: WalletItem) => void;
   onToggleLock: (walletId: string, currentLock: boolean) => Promise<void>;
@@ -202,6 +213,7 @@ export default function SmartWalletDetailDialog({
 
   // Local interactive states
   const [envelopes, setEnvelopes] = useState<EnvelopeItem[]>([]);
+  const [defaultFundState, setDefaultFundState] = useState<FundOwnershipState>('spendable');
   const [defaultOwnerName, setDefaultOwnerName] = useState<string | null>('You');
   const [customOwners, setCustomOwners] = useState<OwnerOption[]>([]);
   const [activeEnvId, setActiveEnvId] = useState<string | null>(null);
@@ -270,6 +282,8 @@ export default function SmartWalletDetailDialog({
   const [quickAction, setQuickAction] = useState<'add' | 'spend' | null>(null);
   const [quickAmount, setQuickAmount] = useState('');
   const [quickNote, setQuickNote] = useState('');
+  const [quickFundState, setQuickFundState] = useState<FundOwnershipState>('spendable');
+  const [quickAmanatOwner, setQuickAmanatOwner] = useState('');
   const [quickError, setQuickError] = useState('');
   const [quickSaving, setQuickSaving] = useState(false);
 
@@ -285,16 +299,20 @@ export default function SmartWalletDetailDialog({
   useEffect(() => {
     if (!wallet) return;
     const isWalletReserved =
-      !wallet.hasOwnThisMoney ||
-      (wallet.amount > 0 && (wallet.reservedAmount || 0) >= wallet.amount);
+      wallet.hasOwnThisMoney &&
+      wallet.amount > 0 &&
+      (wallet.reservedAmount || 0) >= wallet.amount;
 
     const parsedCustom: EnvelopeItem[] = [];
-    const discoveredOwners: OwnerOption[] = [{ name: 'You', color: PALETTE[0] }];
+    const discoveredOwners: OwnerOption[] = [];
 
     const ensureOwner = (name: string) => {
       const clean = name.trim();
-      if (!clean || clean.toLowerCase() === 'reserved') return;
-      if (!discoveredOwners.some((o) => o.name.toLowerCase() === clean.toLowerCase())) {
+      const lower = clean.toLowerCase();
+      if (!clean || lower === 'you' || lower === 'self' || lower === 'reserved' || lower === 'savings') {
+        return;
+      }
+      if (!discoveredOwners.some((o) => o.name.toLowerCase() === lower)) {
         discoveredOwners.push({
           name: clean,
           color: PALETTE[discoveredOwners.length % PALETTE.length],
@@ -306,39 +324,68 @@ export default function SmartWalletDetailDialog({
       ensureOwner(wallet.owner);
     }
 
-    let derivedDefaultOwner: string | null = isWalletReserved
-      ? null
-      : wallet.hasOwnThisMoney
-      ? 'You'
-      : wallet.owner || null;
+    let derivedDefaultState: FundOwnershipState = !wallet.hasOwnThisMoney
+      ? 'amanat'
+      : isWalletReserved
+      ? 'reserved'
+      : 'spendable';
+    let derivedDefaultOwner: string | null =
+      derivedDefaultState === 'spendable'
+        ? 'You'
+        : derivedDefaultState === 'amanat'
+        ? wallet.owner || 'Amanat'
+        : null;
+
+    const resolveRowState = (a: AppWalletAllocation): { state: FundOwnershipState; ownerName: string | null } => {
+      const ownerLower = (a.owner || '').trim().toLowerCase();
+      if (a.fundState === 'amanat' || a.availabilityStatus === 'external') {
+        const cleanOwner = a.owner && ownerLower !== 'you' && ownerLower !== 'reserved' && ownerLower !== 'savings' ? a.owner : 'Amanat';
+        return { state: 'amanat', ownerName: cleanOwner };
+      }
+      if (a.fundState === 'savings' || a.availabilityStatus === 'savings' || ownerLower === 'savings') {
+        return { state: 'savings', ownerName: null };
+      }
+      if (
+        a.fundState === 'reserved' ||
+        a.availabilityStatus === 'reserved' ||
+        ownerLower === 'reserved' ||
+        (a.reservedAmount !== undefined && a.reservedAmount >= a.amount && a.amount > 0 && (ownerLower === 'you' || ownerLower === 'self' || ownerLower === ''))
+      ) {
+        return { state: 'reserved', ownerName: null };
+      }
+      if (a.fundState === 'spendable' || ownerLower === 'you' || ownerLower === 'self' || ownerLower === '') {
+        return { state: 'spendable', ownerName: 'You' };
+      }
+      return { state: 'amanat', ownerName: a.owner };
+    };
 
     if (wallet.allocations && wallet.allocations.length > 0) {
       wallet.allocations.forEach((a, idx) => {
         const isDefaultRow =
           a.id.startsWith('default_') ||
           (a.purpose && a.purpose.toLowerCase() === wallet.name.toLowerCase());
-        const isReservedRow =
-          a.availabilityStatus === 'reserved' ||
-          a.owner.toLowerCase() === 'reserved' ||
-          (a.reservedAmount !== undefined && a.reservedAmount >= a.amount && a.amount > 0);
-
-        const resolvedOwner = isReservedRow ? null : a.owner || null;
-        if (resolvedOwner) ensureOwner(resolvedOwner);
+        const resolved = resolveRowState(a);
+        if (resolved.state === 'amanat' && resolved.ownerName) {
+          ensureOwner(resolved.ownerName);
+        }
 
         if (isDefaultRow) {
-          derivedDefaultOwner = resolvedOwner;
+          derivedDefaultState = resolved.state;
+          derivedDefaultOwner = resolved.ownerName;
         } else {
           parsedCustom.push({
             id: a.id || `env_${idx}`,
             name: a.purpose || `Envelope ${idx + 1}`,
             balance: Number(a.amount) || 0,
-            ownerName: resolvedOwner,
+            fundState: resolved.state,
+            ownerName: resolved.ownerName,
             color: PALETTE[parsedCustom.length % PALETTE.length],
           });
         }
       });
     }
 
+    setDefaultFundState(derivedDefaultState);
     setDefaultOwnerName(derivedDefaultOwner);
     setEnvelopes(parsedCustom);
     setCustomOwners(discoveredOwners);
@@ -353,6 +400,8 @@ export default function SmartWalletDetailDialog({
     setQuickAction(null);
     setQuickAmount('');
     setQuickNote('');
+    setQuickFundState('spendable');
+    setQuickAmanatOwner('');
     setQuickError('');
     setShowDeleteFlow(false);
     setDeleteChoice(null);
@@ -382,6 +431,7 @@ export default function SmartWalletDetailDialog({
     id: 'default',
     name: wallet.name,
     balance: defaultBalance,
+    fundState: defaultFundState,
     ownerName: defaultOwnerName,
     color: DEFAULT_ENV_COLOR,
     isDefault: true,
@@ -389,20 +439,19 @@ export default function SmartWalletDetailDialog({
 
   const items: EnvelopeItem[] = [defaultEnvelope, ...envelopes];
 
-  const ownerOf = (e: EnvelopeItem) =>
-    e.ownerName
-      ? customOwners.find((o) => o.name.toLowerCase() === e.ownerName?.toLowerCase()) || {
-          name: e.ownerName,
-          color: PALETTE[1],
-        }
-      : null;
-
-  const isReservedEnv = (e: EnvelopeItem) => !ownerOf(e);
-
   const total = items.reduce((s, e) => s + e.balance, 0);
-  const reserved = items.filter(isReservedEnv).reduce((s, e) => s + e.balance, 0);
-  const spendable = Math.max(0, total - reserved);
-  const spendPct = total > 0 ? Math.round((spendable / total) * 100) : 0;
+  const spendable = items
+    .filter((e) => e.fundState === 'spendable')
+    .reduce((s, e) => s + e.balance, 0);
+  const reserved = items
+    .filter((e) => e.fundState === 'reserved')
+    .reduce((s, e) => s + e.balance, 0);
+  const savingsAmt = items
+    .filter((e) => e.fundState === 'savings')
+    .reduce((s, e) => s + e.balance, 0);
+  const amanatAmt = items
+    .filter((e) => e.fundState === 'amanat')
+    .reduce((s, e) => s + e.balance, 0);
 
   const active = items.find((e) => e.id === activeEnvId) ?? null;
   const others = items.filter((e) => e.id !== activeEnvId);
@@ -428,9 +477,61 @@ export default function SmartWalletDetailDialog({
     setToId(m === 'delete' ? 'default' : others[0]?.id ?? null);
   };
 
-  // Persist current envelopes & default envelope owner back to Firestore
+  const mapEnvelopeToAllocation = (
+    id: string,
+    name: string,
+    balance: number,
+    state: FundOwnershipState,
+    ownerName: string | null
+  ): AppWalletAllocation => {
+    if (state === 'spendable') {
+      return {
+        id,
+        owner: 'You',
+        amount: balance,
+        purpose: name,
+        reservedAmount: 0,
+        availabilityStatus: 'available',
+        fundState: 'spendable',
+      };
+    }
+    if (state === 'reserved') {
+      return {
+        id,
+        owner: 'Reserved',
+        amount: balance,
+        purpose: name,
+        reservedAmount: balance,
+        availabilityStatus: 'reserved',
+        fundState: 'reserved',
+      };
+    }
+    if (state === 'savings') {
+      return {
+        id,
+        owner: 'Savings',
+        amount: balance,
+        purpose: name,
+        reservedAmount: balance,
+        availabilityStatus: 'savings',
+        fundState: 'savings',
+      };
+    }
+    return {
+      id,
+      owner: ownerName?.trim() || 'Amanat',
+      amount: balance,
+      purpose: name,
+      reservedAmount: balance,
+      availabilityStatus: 'external',
+      fundState: 'amanat',
+    };
+  };
+
+  // Persist current envelopes & default envelope state back to Firestore
   const persistEnvelopes = async (
     nextEnvelopes: EnvelopeItem[],
+    nextDefaultState: FundOwnershipState,
     nextDefaultOwner: string | null
   ) => {
     setSaving(true);
@@ -439,31 +540,23 @@ export default function SmartWalletDetailDialog({
       const nextDefaultBal = Math.max(0, walletBalance - nextAllocated);
 
       const allAllocs: AppWalletAllocation[] = [
-        {
-          id: `default_${wallet.id}`,
-          owner: nextDefaultOwner ?? 'Reserved',
-          amount: nextDefaultBal,
-          purpose: wallet.name,
-          reservedAmount: nextDefaultOwner ? 0 : nextDefaultBal,
-          availabilityStatus: nextDefaultOwner ? 'available' : 'reserved',
-        },
-        ...nextEnvelopes.map((env) => ({
-          id: env.id,
-          owner: env.ownerName ?? 'Reserved',
-          amount: env.balance,
-          purpose: env.name,
-          reservedAmount: env.ownerName ? 0 : env.balance,
-          availabilityStatus: (env.ownerName ? 'available' : 'reserved') as
-            | 'available'
-            | 'reserved',
-        })),
+        mapEnvelopeToAllocation(
+          `default_${wallet.id}`,
+          wallet.name,
+          nextDefaultBal,
+          nextDefaultState,
+          nextDefaultOwner
+        ),
+        ...nextEnvelopes.map((env) =>
+          mapEnvelopeToAllocation(env.id, env.name, env.balance, env.fundState, env.ownerName)
+        ),
       ];
 
       const totalReserved = allAllocs.reduce((s, a) => s + (a.reservedAmount || 0), 0);
-      const hasSelf = allAllocs.some(
-        (a) => a.amount > 0 && a.owner.toLowerCase() === 'you'
+      const hasOwnedFunds = allAllocs.some(
+        (a) => a.amount > 0 && a.fundState !== 'amanat' && a.availabilityStatus !== 'external'
       );
-      const primaryOwner = hasSelf
+      const primaryOwner = hasOwnedFunds
         ? 'You'
         : nextDefaultOwner || wallet.owner || 'You';
 
@@ -472,7 +565,7 @@ export default function SmartWalletDetailDialog({
         allAllocs,
         totalReserved,
         primaryOwner,
-        hasSelf || wallet.hasOwnThisMoney
+        hasOwnedFunds || wallet.hasOwnThisMoney
       );
     } finally {
       setSaving(false);
@@ -493,7 +586,8 @@ export default function SmartWalletDetailDialog({
       id: `env_${Date.now()}`,
       name: title,
       balance: 0,
-      ownerName: null, // Reserved until an owner is assigned
+      fundState: 'reserved',
+      ownerName: null,
       color,
     };
     const next = [...envelopes, newEnv];
@@ -501,7 +595,7 @@ export default function SmartWalletDetailDialog({
     setNewEnvName('');
     setError('');
     setAddingEnv(false);
-    await persistEnvelopes(next, defaultOwnerName);
+    await persistEnvelopes(next, defaultFundState, defaultOwnerName);
   };
 
   const handleToggleImportExpenses = async () => {
@@ -592,6 +686,7 @@ export default function SmartWalletDetailDialog({
         id: `env_${baseTime}_${idx}`,
         name: exp.title,
         balance: exp.amount,
+        fundState: 'reserved',
         ownerName: null, // Reserved for this expense
         color,
       });
@@ -607,7 +702,7 @@ export default function SmartWalletDetailDialog({
     setSelectedExpenseIds([]);
     setImportingExpenses(false);
     setImportError('');
-    await persistEnvelopes(next, defaultOwnerName);
+    await persistEnvelopes(next, defaultFundState, defaultOwnerName);
   };
 
   const handleTransferBetweenEnvelopes = async () => {
@@ -627,22 +722,33 @@ export default function SmartWalletDetailDialog({
     setEnvelopes(next);
     resetPanel();
     setActiveEnvId(null);
-    await persistEnvelopes(next, defaultOwnerName);
+    await persistEnvelopes(next, defaultFundState, defaultOwnerName);
   };
 
-  const handleSetOwner = async (ownerName: string | null) => {
+  const handleSetFundState = async (
+    nextState: FundOwnershipState,
+    amanatOwner?: string | null
+  ) => {
     if (!active) return;
+    const resolvedOwner =
+      nextState === 'spendable'
+        ? 'You'
+        : nextState === 'amanat'
+        ? amanatOwner?.trim() || 'Amanat'
+        : null;
+
     if (active.isDefault) {
-      setDefaultOwnerName(ownerName);
+      setDefaultFundState(nextState);
+      setDefaultOwnerName(resolvedOwner);
       resetPanel();
-      await persistEnvelopes(envelopes, ownerName);
+      await persistEnvelopes(envelopes, nextState, resolvedOwner);
     } else {
       const next = envelopes.map((e) =>
-        e.id === active.id ? { ...e, ownerName } : e
+        e.id === active.id ? { ...e, fundState: nextState, ownerName: resolvedOwner } : e
       );
       setEnvelopes(next);
       resetPanel();
-      await persistEnvelopes(next, defaultOwnerName);
+      await persistEnvelopes(next, defaultFundState, defaultOwnerName);
     }
   };
 
@@ -657,7 +763,7 @@ export default function SmartWalletDetailDialog({
     }
     setNewOwnerName('');
     setAddingOwner(false);
-    await handleSetOwner(clean);
+    await handleSetFundState('amanat', clean);
   };
 
   const handleDeleteEnvelope = async () => {
@@ -671,7 +777,7 @@ export default function SmartWalletDetailDialog({
     setEnvelopes(next);
     resetPanel();
     setActiveEnvId(null);
-    await persistEnvelopes(next, defaultOwnerName);
+    await persistEnvelopes(next, defaultFundState, defaultOwnerName);
   };
 
   const toggleQuickAction = (next: 'add' | 'spend') => {
@@ -709,13 +815,20 @@ export default function SmartWalletDetailDialog({
     try {
       const cleanNote = quickNote.trim() || undefined;
       if (quickAction === 'add') {
-        await onAddMoney(wallet, num, cleanNote);
+        await onAddMoney(wallet, num, cleanNote, {
+          fundState: quickFundState,
+          allocationLabel: cleanNote,
+          amanatOwnerName:
+            quickFundState === 'amanat' ? quickAmanatOwner.trim() || 'Amanat' : undefined,
+        });
       } else {
         await onSpendMoney(wallet, num, cleanNote);
       }
       setQuickAction(null);
       setQuickAmount('');
       setQuickNote('');
+      setQuickFundState('spendable');
+      setQuickAmanatOwner('');
       setQuickError('');
     } catch (err) {
       setQuickError(
@@ -1014,27 +1127,76 @@ export default function SmartWalletDetailDialog({
                   )}
                 </div>
 
-                {/* Quick Add Presets */}
+                {/* Quick Add Presets + 4-State Ownership Selector */}
                 {quickAction === 'add' && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {[500, 1000, 5000, 10000].map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => {
-                          setQuickAmount(String((Number(quickAmount) || 0) + preset));
-                          if (quickError) setQuickError('');
-                        }}
-                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition active:scale-95 cursor-pointer ${
-                          isDark
-                            ? 'bg-white/10 text-slate-200 hover:bg-white/15'
-                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        +{preset.toLocaleString('en-US')}
-                      </button>
-                    ))}
-                  </div>
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[500, 1000, 5000, 10000].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            setQuickAmount(String((Number(quickAmount) || 0) + preset));
+                            if (quickError) setQuickError('');
+                          }}
+                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition active:scale-95 cursor-pointer ${
+                            isDark
+                              ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          +{preset.toLocaleString('en-US')}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className={`text-[11px] font-semibold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                        Ownership State
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(
+                          [
+                            { id: 'spendable', label: 'Spendable', dot: 'bg-green-500' },
+                            { id: 'reserved', label: 'Reserved', dot: 'bg-blue-500' },
+                            { id: 'savings', label: 'Savings', dot: 'bg-amber-500' },
+                            { id: 'amanat', label: 'Amanat', dot: 'bg-purple-500' },
+                          ] as const
+                        ).map((st) => {
+                          const selected = quickFundState === st.id;
+                          return (
+                            <button
+                              key={st.id}
+                              type="button"
+                              onClick={() => setQuickFundState(st.id)}
+                              className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                                selected
+                                  ? isDark
+                                    ? 'bg-white text-slate-900'
+                                    : 'bg-slate-900 text-white'
+                                  : isDark
+                                  ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              <span className={`h-2 w-2 rounded-full ${st.dot}`} />
+                              {st.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {quickFundState === 'amanat' && (
+                        <input
+                          type="text"
+                          value={quickAmanatOwner}
+                          onChange={(e) => setQuickAmanatOwner(e.target.value)}
+                          placeholder="Third person / owner name (e.g. Father, Ali)"
+                          maxLength={40}
+                          className={`${inputCls} w-full`}
+                        />
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {/* Optional Notes Input */}
@@ -1412,87 +1574,110 @@ export default function SmartWalletDetailDialog({
           </AnimatePresence>
         </div>
 
-        {/* Spendable / Reserved Breakdown — hide labels with 0 amount */}
-        {(spendable > 0 || reserved > 0) && (
-          <>
-            <div className="mt-4 flex h-3.5 w-full gap-1.5">
-              {spendable > 0 && (
-                <div
-                  className="rounded-full bg-green-500 transition-all duration-300"
-                  style={{ width: `${spendPct}%` }}
-                />
-              )}
-              {reserved > 0 && (
-                <div
-                  className="rounded-full bg-amber-500 transition-all duration-300"
-                  style={{ width: `${100 - spendPct}%` }}
-                />
-              )}
-            </div>
+        {/* 4-State Breakdown (Spendable / Reserved / Savings / Amanat) — hide 0 categories */}
+        {(() => {
+          const buckets = [
+            {
+              key: 'spendable',
+              label: 'Spendable',
+              hint: 'Own · anytime',
+              amount: spendable,
+              bar: 'bg-green-500',
+              dot: 'bg-green-500',
+              darkCard: 'bg-green-500/10 ring-green-500/40',
+              lightCard: 'bg-green-50 ring-green-200',
+              darkText: 'text-green-400',
+              lightText: 'text-green-700',
+            },
+            {
+              key: 'reserved',
+              label: 'Reserved',
+              hint: 'Near-term expense',
+              amount: reserved,
+              bar: 'bg-blue-600',
+              dot: 'bg-blue-500',
+              darkCard: 'bg-blue-500/10 ring-blue-500/40',
+              lightCard: 'bg-blue-50 ring-blue-200',
+              darkText: 'text-blue-400',
+              lightText: 'text-blue-700',
+            },
+            {
+              key: 'savings',
+              label: 'Savings',
+              hint: 'Long-term / event',
+              amount: savingsAmt,
+              bar: 'bg-amber-500',
+              dot: 'bg-amber-500',
+              darkCard: 'bg-amber-500/10 ring-amber-500/40',
+              lightCard: 'bg-amber-50 ring-amber-200',
+              darkText: 'text-amber-400',
+              lightText: 'text-amber-700',
+            },
+            {
+              key: 'amanat',
+              label: 'Amanat',
+              hint: 'Third person',
+              amount: amanatAmt,
+              bar: 'bg-purple-500',
+              dot: 'bg-purple-500',
+              darkCard: 'bg-purple-500/10 ring-purple-500/40',
+              lightCard: 'bg-purple-50 ring-purple-200',
+              darkText: 'text-purple-400',
+              lightText: 'text-purple-700',
+            },
+          ].filter((b) => b.amount > 0);
 
-            <div
-              className={`mt-3 grid gap-2.5 ${
-                spendable > 0 && reserved > 0 ? 'grid-cols-2' : 'grid-cols-1'
-              }`}
-            >
-              {spendable > 0 && (
-                <div
-                  className={`min-w-0 rounded-2xl px-3.5 py-3 ring-1 ring-inset ${
-                    isDark
-                      ? 'bg-green-500/10 ring-green-500/40'
-                      : 'bg-green-50 ring-green-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 shrink-0 rounded-full bg-green-500 ring-4 ring-white/5" />
-                    <p className="text-sm font-semibold">Spendable</p>
-                  </div>
-                  <p
-                    className={`mt-2 truncate text-lg font-bold tabular-nums ${
-                      isDark ? 'text-green-400' : 'text-green-700'
+          if (buckets.length === 0) return null;
+
+          return (
+            <>
+              <div className="mt-4 flex h-3.5 w-full gap-1">
+                {buckets.map((b) => (
+                  <div
+                    key={b.key}
+                    className={`rounded-full transition-all duration-300 ${b.bar}`}
+                    style={{ width: `${total > 0 ? Math.max(4, Math.round((b.amount / total) * 100)) : 0}%` }}
+                  />
+                ))}
+              </div>
+
+              <div
+                className={`mt-3 grid gap-2.5 ${
+                  buckets.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+                }`}
+              >
+                {buckets.map((b) => (
+                  <div
+                    key={b.key}
+                    className={`min-w-0 rounded-2xl px-3.5 py-2.5 ring-1 ring-inset ${
+                      isDark ? b.darkCard : b.lightCard
                     }`}
                   >
-                    {formatRs(spendable)}
-                  </p>
-                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Has an owner
-                  </p>
-                </div>
-              )}
-
-              {reserved > 0 && (
-                <div
-                  className={`min-w-0 rounded-2xl px-3.5 py-3 ring-1 ring-inset ${
-                    isDark
-                      ? 'bg-amber-500/10 ring-amber-500/40'
-                      : 'bg-amber-50 ring-amber-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 shrink-0 rounded-full bg-amber-500 ring-4 ring-white/5" />
-                    <p className="text-sm font-semibold">Reserved</p>
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${b.dot}`} />
+                      <p className="text-xs sm:text-sm font-semibold">{b.label}</p>
+                    </div>
+                    <p
+                      className={`mt-1.5 truncate text-base sm:text-lg font-bold tabular-nums ${
+                        isDark ? b.darkText : b.lightText
+                      }`}
+                    >
+                      {formatRs(b.amount)}
+                    </p>
+                    <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {b.hint}
+                    </p>
                   </div>
-                  <p
-                    className={`mt-2 truncate text-lg font-bold tabular-nums ${
-                      isDark ? 'text-amber-400' : 'text-amber-700'
-                    }`}
-                  >
-                    {formatRs(reserved)}
-                  </p>
-                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    No owner
-                  </p>
-                </div>
-              )}
-            </div>
-          </>
-        )}
+                ))}
+              </div>
+            </>
+          );
+        })()}
 
         {/* Envelopes List (always shows default 1 envelope + any custom envelopes) */}
         <ul className="mt-4 space-y-2.5">
           {items.map((e) => {
             const isActive = e.id === activeEnvId;
-            const owner = ownerOf(e);
             return (
               <li
                 key={e.id}
@@ -1527,26 +1712,49 @@ export default function SmartWalletDetailDialog({
                         )}
                       </p>
                       <div className="mt-1.5">
-                        {owner ? (
+                        {e.fundState === 'spendable' ? (
                           <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                               isDark
-                                ? 'bg-white/10 text-slate-200'
-                                : 'bg-white text-slate-700 border border-slate-200'
+                                ? 'bg-green-500/15 text-green-400'
+                                : 'bg-green-100 text-green-700'
                             }`}
                           >
-                            <span className={`h-2 w-2 rounded-full ${owner.color}`} />
-                            {owner.name}
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                            Spendable (You)
                           </span>
-                        ) : (
+                        ) : e.fundState === 'reserved' ? (
                           <span
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isDark
+                                ? 'bg-blue-500/15 text-blue-400'
+                                : 'bg-blue-100 text-blue-700'
+                            }`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                            Reserved
+                          </span>
+                        ) : e.fundState === 'savings' ? (
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                               isDark
                                 ? 'bg-amber-500/15 text-amber-400'
                                 : 'bg-amber-100 text-amber-700'
                             }`}
                           >
-                            Reserved
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            Savings
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isDark
+                                ? 'bg-purple-500/15 text-purple-300'
+                                : 'bg-purple-100 text-purple-700'
+                            }`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+                            Amanat · {e.ownerName || 'Other'}
                           </span>
                         )}
                       </div>
@@ -1683,32 +1891,59 @@ export default function SmartWalletDetailDialog({
                         </div>
                       )}
 
-                      {/* Owner assignment + Create New Owner */}
+                      {/* 4-State Ownership Assignment */}
                       {mode === 'owner' && (
                         <div className="space-y-3">
                           <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            Owner of <span className="font-semibold text-current">{e.name}</span>
+                            Ownership state of <span className="font-semibold text-current">{e.name}</span>
                           </p>
                           <div className="flex flex-wrap gap-2">
-                            {customOwners.map((o) => (
-                              <Chip
-                                key={o.name}
-                                color={o.color}
-                                selected={e.ownerName?.toLowerCase() === o.name.toLowerCase()}
-                                isDark={isDark}
-                                onClick={() => handleSetOwner(o.name)}
-                              >
-                                {o.name}
-                              </Chip>
-                            ))}
                             <Chip
-                              color="bg-amber-500"
-                              selected={!ownerOf(e)}
+                              color="bg-green-500"
+                              selected={e.fundState === 'spendable'}
                               isDark={isDark}
-                              onClick={() => handleSetOwner(null)}
+                              onClick={() => handleSetFundState('spendable')}
+                            >
+                              Spendable (You)
+                            </Chip>
+                            <Chip
+                              color="bg-blue-500"
+                              selected={e.fundState === 'reserved'}
+                              isDark={isDark}
+                              onClick={() => handleSetFundState('reserved')}
                             >
                               Reserved
                             </Chip>
+                            <Chip
+                              color="bg-amber-500"
+                              selected={e.fundState === 'savings'}
+                              isDark={isDark}
+                              onClick={() => handleSetFundState('savings')}
+                            >
+                              Savings
+                            </Chip>
+                            <Chip
+                              color="bg-purple-500"
+                              selected={e.fundState === 'amanat' && (!e.ownerName || e.ownerName.toLowerCase() === 'amanat')}
+                              isDark={isDark}
+                              onClick={() => handleSetFundState('amanat', 'Amanat')}
+                            >
+                              Amanat
+                            </Chip>
+                            {customOwners.map((o) => (
+                              <Chip
+                                key={o.name}
+                                color="bg-purple-500"
+                                selected={
+                                  e.fundState === 'amanat' &&
+                                  e.ownerName?.toLowerCase() === o.name.toLowerCase()
+                                }
+                                isDark={isDark}
+                                onClick={() => handleSetFundState('amanat', o.name)}
+                              >
+                                Amanat: {o.name}
+                              </Chip>
+                            ))}
                             <button
                               type="button"
                               onClick={() => setAddingOwner((v) => !v)}
@@ -1718,7 +1953,7 @@ export default function SmartWalletDetailDialog({
                                   : 'border-slate-300 text-slate-600 hover:border-slate-500'
                               }`}
                             >
-                              <Plus size={12} /> New owner
+                              <Plus size={12} /> Amanat person
                             </button>
                           </div>
 
@@ -1729,22 +1964,22 @@ export default function SmartWalletDetailDialog({
                                 value={newOwnerName}
                                 onChange={(ev) => setNewOwnerName(ev.target.value)}
                                 onKeyDown={(ev) => ev.key === 'Enter' && handleCreateNewOwner()}
-                                placeholder="Owner name (e.g. Father, Wife, Business)"
+                                placeholder="Person name (e.g. Father, Wife, Ali)"
                                 maxLength={24}
                                 className={inputCls}
                               />
                               <button
                                 type="button"
                                 onClick={handleCreateNewOwner}
-                                className="rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 text-xs font-bold text-white cursor-pointer"
+                                className="rounded-xl bg-purple-600 hover:bg-purple-500 px-3.5 text-xs font-bold text-white cursor-pointer"
                               >
                                 Save
                               </button>
                             </div>
                           )}
 
-                          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            No owner = reserved, not counted as spendable.
+                          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            Spendable = own &amp; free to spend · Reserved = near-term expense · Savings = long-term/event · Amanat = belongs to someone else.
                           </p>
                           <button
                             type="button"

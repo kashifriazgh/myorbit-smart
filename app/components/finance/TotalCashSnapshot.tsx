@@ -35,6 +35,7 @@ import {
   Liability,
   WalletAllocation,
   WalletType,
+  FundOwnershipState,
   FinancialEventType,
   PlannedExpense,
   Expenditure,
@@ -133,6 +134,266 @@ export function applyWalletAllocationDelta(
   return nextOwnership;
 }
 
+/**
+ * Apply an incoming deposit with an explicit ownership state
+ * ('spendable' | 'reserved' | 'savings' | 'amanat') to `sourceOwnership[walletKey]`.
+ */
+export function applyDepositFundState(
+  sourceOwnership: TotalCashSnapshot['sourceOwnership'] | undefined,
+  walletKey: string,
+  walletDisplayName: string,
+  previousBalance: number,
+  depositAmount: number,
+  fundState: FundOwnershipState = 'spendable',
+  opts?: {
+    allocationLabel?: string;
+    amanatOwnerName?: string;
+    envelopeId?: string;
+    envelopeName?: string;
+  }
+): TotalCashSnapshot['sourceOwnership'] {
+  const nextOwnership = { ...(sourceOwnership || {}) };
+  if (depositAmount <= 0) return nextOwnership;
+
+  const existing = nextOwnership[walletKey];
+  const existingAllocs = existing?.allocations ? [...existing.allocations] : [];
+
+  // If a specific existing envelope was chosen, deposit directly into that envelope
+  if (opts?.envelopeId && existingAllocs.length > 0) {
+    const targetIdx = existingAllocs.findIndex((a) => a.id === opts.envelopeId);
+    if (targetIdx >= 0) {
+      const target = existingAllocs[targetIdx];
+      const nextAmt = (Number(target.amount) || 0) + depositAmount;
+      const isNonSpendable =
+        fundState !== 'spendable' ||
+        target.fundState === 'reserved' ||
+        target.fundState === 'savings' ||
+        target.fundState === 'amanat' ||
+        target.availabilityStatus === 'reserved' ||
+        target.availabilityStatus === 'savings' ||
+        target.availabilityStatus === 'external';
+      existingAllocs[targetIdx] = {
+        ...target,
+        amount: nextAmt,
+        reservedAmount: isNonSpendable ? nextAmt : Number(target.reservedAmount) || 0,
+      };
+
+      const nextTotalReserved = existingAllocs.reduce(
+        (sum, a) => sum + (Number(a.reservedAmount) || 0),
+        0
+      );
+      nextOwnership[walletKey] = {
+        ...existing,
+        allocations: existingAllocs,
+        reservedAmount: nextTotalReserved,
+      };
+      return nextOwnership;
+    }
+  }
+
+  // Simple spendable deposit into a wallet with no envelopes yet and already owned/spendable
+  if (
+    fundState === 'spendable' &&
+    existingAllocs.length === 0 &&
+    (existing?.hasOwnThisMoney ?? true) &&
+    (Number(existing?.reservedAmount) || 0) === 0
+  ) {
+    return nextOwnership;
+  }
+
+  // Seed a default allocation for the existing balance if allocations didn't exist yet
+  if (existingAllocs.length === 0) {
+    const prevBal = Math.max(0, Number(previousBalance) || 0);
+    const prevOwn = existing?.hasOwnThisMoney ?? true;
+    const prevRes = Number(existing?.reservedAmount) || 0;
+    const prevState: FundOwnershipState = !prevOwn
+      ? 'amanat'
+      : existing?.fundState
+      ? existing.fundState
+      : prevBal > 0 && prevRes >= prevBal
+      ? 'reserved'
+      : 'spendable';
+    existingAllocs.push({
+      id: `default_${walletKey}`,
+      owner:
+        prevState === 'amanat'
+          ? existing?.ownerName || 'Amanat'
+          : prevState === 'reserved'
+          ? 'Reserved'
+          : prevState === 'savings'
+          ? 'Savings'
+          : 'You',
+      amount: prevBal,
+      purpose: walletDisplayName,
+      reservedAmount: prevState === 'spendable' ? Math.min(prevBal, prevRes) : prevBal,
+      availabilityStatus:
+        prevState === 'amanat'
+          ? 'external'
+          : prevState === 'reserved'
+          ? 'reserved'
+          : prevState === 'savings'
+          ? 'savings'
+          : 'available',
+      fundState: prevState,
+    });
+  }
+
+  if (fundState === 'spendable') {
+    const defIdx = existingAllocs.findIndex(
+      (a) =>
+        a.id.startsWith('default_') &&
+        (a.fundState === 'spendable' ||
+          (!a.fundState &&
+            a.availabilityStatus !== 'reserved' &&
+            a.availabilityStatus !== 'savings' &&
+            a.availabilityStatus !== 'external' &&
+            (a.owner.toLowerCase() === 'you' || a.owner.toLowerCase() === 'self')))
+    );
+    const spendIdx =
+      defIdx >= 0
+        ? defIdx
+        : existingAllocs.findIndex(
+            (a) =>
+              a.fundState === 'spendable' ||
+              (!a.fundState &&
+                a.availabilityStatus === 'available' &&
+                (a.owner.toLowerCase() === 'you' || a.owner.toLowerCase() === 'self'))
+          );
+    if (spendIdx >= 0) {
+      const target = existingAllocs[spendIdx];
+      existingAllocs[spendIdx] = {
+        ...target,
+        amount: (Number(target.amount) || 0) + depositAmount,
+        fundState: 'spendable',
+        availabilityStatus: 'available',
+      };
+    } else {
+      existingAllocs.push({
+        id: `env_${Date.now()}`,
+        owner: 'You',
+        amount: depositAmount,
+        purpose: opts?.allocationLabel?.trim() || 'Spendable',
+        reservedAmount: 0,
+        availabilityStatus: 'available',
+        fundState: 'spendable',
+      });
+    }
+  } else if (fundState === 'reserved') {
+    const label = opts?.allocationLabel?.trim() || 'Reserved';
+    const matchIdx = existingAllocs.findIndex(
+      (a) =>
+        (a.fundState === 'reserved' ||
+          a.availabilityStatus === 'reserved' ||
+          a.owner.toLowerCase() === 'reserved') &&
+        (a.purpose || '').trim().toLowerCase() === label.toLowerCase()
+    );
+    if (matchIdx >= 0) {
+      const target = existingAllocs[matchIdx];
+      const nextAmt = (Number(target.amount) || 0) + depositAmount;
+      existingAllocs[matchIdx] = {
+        ...target,
+        amount: nextAmt,
+        reservedAmount: nextAmt,
+        owner: 'Reserved',
+        availabilityStatus: 'reserved',
+        fundState: 'reserved',
+      };
+    } else {
+      existingAllocs.push({
+        id: `env_${Date.now()}`,
+        owner: 'Reserved',
+        amount: depositAmount,
+        purpose: label,
+        reservedAmount: depositAmount,
+        availabilityStatus: 'reserved',
+        fundState: 'reserved',
+      });
+    }
+  } else if (fundState === 'savings') {
+    const label = opts?.allocationLabel?.trim() || 'Savings';
+    const matchIdx = existingAllocs.findIndex(
+      (a) =>
+        (a.fundState === 'savings' ||
+          a.availabilityStatus === 'savings' ||
+          a.owner.toLowerCase() === 'savings') &&
+        (a.purpose || '').trim().toLowerCase() === label.toLowerCase()
+    );
+    if (matchIdx >= 0) {
+      const target = existingAllocs[matchIdx];
+      const nextAmt = (Number(target.amount) || 0) + depositAmount;
+      existingAllocs[matchIdx] = {
+        ...target,
+        amount: nextAmt,
+        reservedAmount: nextAmt,
+        owner: 'Savings',
+        availabilityStatus: 'savings',
+        fundState: 'savings',
+      };
+    } else {
+      existingAllocs.push({
+        id: `env_${Date.now()}`,
+        owner: 'Savings',
+        amount: depositAmount,
+        purpose: label,
+        reservedAmount: depositAmount,
+        availabilityStatus: 'savings',
+        fundState: 'savings',
+      });
+    }
+  } else if (fundState === 'amanat') {
+    const ownerName = opts?.amanatOwnerName?.trim() || 'Amanat';
+    const label = opts?.allocationLabel?.trim() || `Amanat (${ownerName})`;
+    const matchIdx = existingAllocs.findIndex(
+      (a) =>
+        (a.fundState === 'amanat' || a.availabilityStatus === 'external') &&
+        a.owner.trim().toLowerCase() === ownerName.toLowerCase() &&
+        (a.purpose || '').trim().toLowerCase() === label.toLowerCase()
+    );
+    if (matchIdx >= 0) {
+      const target = existingAllocs[matchIdx];
+      const nextAmt = (Number(target.amount) || 0) + depositAmount;
+      existingAllocs[matchIdx] = {
+        ...target,
+        amount: nextAmt,
+        reservedAmount: nextAmt,
+        owner: ownerName,
+        availabilityStatus: 'external',
+        fundState: 'amanat',
+      };
+    } else {
+      existingAllocs.push({
+        id: `env_${Date.now()}`,
+        owner: ownerName,
+        amount: depositAmount,
+        purpose: label,
+        reservedAmount: depositAmount,
+        availabilityStatus: 'external',
+        fundState: 'amanat',
+      });
+    }
+  }
+
+  const nextTotalReserved = existingAllocs.reduce(
+    (sum, a) => sum + (Number(a.reservedAmount) || 0),
+    0
+  );
+  const hasOwnedFunds = existingAllocs.some(
+    (a) =>
+      (Number(a.amount) || 0) > 0 &&
+      a.fundState !== 'amanat' &&
+      a.availabilityStatus !== 'external'
+  );
+
+  nextOwnership[walletKey] = {
+    ...(existing || { hasOwnThisMoney: hasOwnedFunds }),
+    hasOwnThisMoney: hasOwnedFunds || Boolean(existing?.hasOwnThisMoney),
+    allocations: existingAllocs,
+    reservedAmount: nextTotalReserved,
+  };
+
+  return nextOwnership;
+}
+
 /** Compute the overall total recorded money across all non-virtual wallets */
 export function computeTotalAmount(snapshot: TotalCashSnapshot): number {
   let total = 0;
@@ -178,8 +439,20 @@ export function computeAvailableToSpend(snapshot: TotalCashSnapshot): number {
     if (allocations && allocations.length > 0) {
       let allocSpendable = 0;
       allocations.forEach((a) => {
-        const isSelf = a.owner.toLowerCase() === 'you' || a.owner.toLowerCase() === 'self';
-        if (isSelf && !a.isLocked) {
+        if (a.isLocked) return;
+        if (
+          a.fundState === 'reserved' ||
+          a.fundState === 'savings' ||
+          a.fundState === 'amanat' ||
+          a.availabilityStatus === 'reserved' ||
+          a.availabilityStatus === 'savings' ||
+          a.availabilityStatus === 'external'
+        ) {
+          return;
+        }
+        const ownerLower = (a.owner || '').trim().toLowerCase();
+        const isSelf = ownerLower === 'you' || ownerLower === 'self';
+        if (a.fundState === 'spendable' || isSelf) {
           const usable = Math.max(0, a.amount - (a.reservedAmount || 0));
           allocSpendable += usable;
         }
@@ -242,15 +515,39 @@ function computeOverviewBreakdown(snapshot: TotalCashSnapshot): FinancialOvervie
 
         const ownerLower = (a.owner || '').trim().toLowerCase();
         const isSelf = ownerLower === 'you' || ownerLower === 'self' || ownerLower === '';
-        const isReservedEnvelope =
-          ownerLower === 'reserved' || a.availabilityStatus === 'reserved';
-        const isExternalAmanat =
-          a.availabilityStatus === 'external' || (!isSelf && !isReservedEnvelope);
         const isSavingsAlloc = isSavingsWallet || savingsRegex.test(a.purpose || '');
 
-        if (isExternalAmanat) {
+        // 1. Respect explicit 4-state fundState / availabilityStatus first
+        if (a.fundState === 'amanat' || a.availabilityStatus === 'external') {
           amanat += aAmt;
-        } else if (isReservedEnvelope || o.isLocked || a.isLocked) {
+          return;
+        }
+        if (
+          a.fundState === 'savings' ||
+          a.availabilityStatus === 'savings' ||
+          ownerLower === 'savings'
+        ) {
+          savings += aAmt;
+          return;
+        }
+        if (
+          a.fundState === 'reserved' ||
+          a.availabilityStatus === 'reserved' ||
+          ownerLower === 'reserved'
+        ) {
+          reserved += aAmt;
+          return;
+        }
+        if (a.fundState === 'spendable') {
+          if (o.isLocked || a.isLocked) reserved += aAmt;
+          else spendable += aAmt;
+          return;
+        }
+
+        // 2. Fallback for legacy allocations without explicit fundState
+        if (!isSelf) {
+          amanat += aAmt;
+        } else if (o.isLocked || a.isLocked) {
           if (isSavingsAlloc) savings += aAmt;
           else reserved += aAmt;
         } else {
@@ -962,6 +1259,11 @@ export default function TotalCashSnapshotComponent({
       sourceIncomeType?: string;
       expenseCategory?: string;
       subCategory?: string;
+      fundState?: FundOwnershipState;
+      allocationLabel?: string;
+      amanatOwnerName?: string;
+      envelopeId?: string;
+      envelopeName?: string;
     }
   ) => {
     if (!snapshot || !userId) return;
@@ -976,21 +1278,53 @@ export default function TotalCashSnapshotComponent({
         custom: { ...(snapshot.sources.custom || {}) },
       };
 
+      let prevWalletBalance = 0;
       let newWalletBalance = 0;
       if (source === 'bank' && bankName) {
-        newWalletBalance = (updatedSources.bank[bankName] ?? 0) + amount;
+        prevWalletBalance = updatedSources.bank[bankName] ?? 0;
+        newWalletBalance = prevWalletBalance + amount;
         updatedSources.bank[bankName] = newWalletBalance;
       } else if (source === 'custom' && customPaymentHeadName) {
-        newWalletBalance = (updatedSources.custom[customPaymentHeadName] ?? 0) + amount;
+        prevWalletBalance = updatedSources.custom[customPaymentHeadName] ?? 0;
+        newWalletBalance = prevWalletBalance + amount;
         updatedSources.custom[customPaymentHeadName] = newWalletBalance;
       } else if (source !== 'bank' && source !== 'custom') {
-        newWalletBalance = (updatedSources[source] as number) + amount;
+        prevWalletBalance = Number(updatedSources[source]) || 0;
+        newWalletBalance = prevWalletBalance + amount;
         (updatedSources[source] as number) = newWalletBalance;
       }
+
+      const walletKey = getSourceKey(source, bankName, customPaymentHeadName);
+      const walletDisplayName =
+        bankName ||
+        customPaymentHeadName ||
+        (source === 'in_hand'
+          ? 'Cash in Hand'
+          : source === 'easypaisa'
+          ? 'Easypaisa'
+          : source === 'jazzcash'
+          ? 'JazzCash'
+          : 'Personal Spending');
+
+      const updatedOwnership = applyDepositFundState(
+        snapshot.sourceOwnership,
+        walletKey,
+        walletDisplayName,
+        prevWalletBalance,
+        amount,
+        meta?.fundState || 'spendable',
+        {
+          allocationLabel: meta?.allocationLabel,
+          amanatOwnerName: meta?.amanatOwnerName || holderName,
+          envelopeId: meta?.envelopeId,
+          envelopeName: meta?.envelopeName,
+        }
+      );
 
       const newTotal = computeTotalAmount({
         ...snapshot,
         sources: updatedSources,
+        sourceOwnership: updatedOwnership,
       });
 
       await addDoc(collection(db, 'cashTransactions'), {
@@ -1001,19 +1335,27 @@ export default function TotalCashSnapshotComponent({
         category: 'income',
         eventType: meta?.eventType || 'income',
         sourceIncomeType: meta?.sourceIncomeType || null,
+        fundState: meta?.fundState || 'spendable',
         walletName: bankName || customPaymentHeadName || source,
+        envelopeId: meta?.envelopeId || null,
+        envelopeName: meta?.envelopeName || null,
         balanceAfter: newWalletBalance,
         balanceSnapshot: newTotal,
-        note: note || meta?.sourceIncomeType || 'Money added',
+        note:
+          note ||
+          (meta?.envelopeName ? `Added to ${meta.envelopeName}` : meta?.allocationLabel) ||
+          meta?.sourceIncomeType ||
+          'Money added',
         BankName: bankName || null,
         customPaymentHeadName: customPaymentHeadName || null,
-        holderName: holderName || null,
+        holderName: meta?.amanatOwnerName || holderName || null,
         createdAt: serverTimestamp(),
       });
 
       const updatedSnapshot: TotalCashSnapshot = {
         ...snapshot,
         sources: updatedSources,
+        sourceOwnership: updatedOwnership,
         totalAmount: newTotal,
         updatedAt: new Date(),
       };
@@ -1164,39 +1506,108 @@ export default function TotalCashSnapshotComponent({
     toBankName?: string,
     toCustomName?: string,
     toHolder?: string,
-    note?: string
+    note?: string,
+    meta?: {
+      fromEnvelopeId?: string;
+      fromEnvelopeName?: string;
+      fromFundState?: FundOwnershipState;
+      toEnvelopeId?: string;
+      toEnvelopeName?: string;
+      toFundState?: FundOwnershipState;
+    }
   ) => {
     if (!snapshot || !userId) return;
     setSaving(true);
     try {
-      const updatedSources = { ...snapshot.sources };
+      const updatedSources: TotalCashSnapshot['sources'] = {
+        in_hand: snapshot.sources.in_hand ?? 0,
+        bank: { ...(snapshot.sources.bank || {}) },
+        easypaisa: snapshot.sources.easypaisa ?? 0,
+        jazzcash: snapshot.sources.jazzcash ?? 0,
+        other: snapshot.sources.other ?? 0,
+        custom: { ...(snapshot.sources.custom || {}) },
+      };
       const targetSource = toSource || fromSource;
-      const targetBankName = toBankName || fromBankName;
-      const targetCustomName = toCustomName || fromCustomName;
+      const targetBankName = toSource ? toBankName : fromBankName;
+      const targetCustomName = toSource ? toCustomName : fromCustomName;
 
       let fromRemaining = 0;
       if (fromSource === 'bank' && fromBankName) {
-        fromRemaining = (updatedSources.bank[fromBankName] ?? 0) - amount;
+        fromRemaining = Math.max(0, (updatedSources.bank[fromBankName] ?? 0) - amount);
         updatedSources.bank[fromBankName] = fromRemaining;
       } else if (fromSource === 'custom' && fromCustomName) {
-        fromRemaining = (updatedSources.custom[fromCustomName] ?? 0) - amount;
+        fromRemaining = Math.max(0, (updatedSources.custom[fromCustomName] ?? 0) - amount);
         updatedSources.custom[fromCustomName] = fromRemaining;
-      } else {
-        fromRemaining = ((updatedSources[fromSource] as number) ?? 0) - amount;
+      } else if (fromSource !== 'bank' && fromSource !== 'custom') {
+        fromRemaining = Math.max(0, ((updatedSources[fromSource] as number) ?? 0) - amount);
         (updatedSources[fromSource] as number) = fromRemaining;
       }
 
+      let toPrevBal = 0;
       let toNewBal = 0;
       if (targetSource === 'bank' && targetBankName) {
-        toNewBal = (updatedSources.bank[targetBankName] ?? 0) + amount;
+        toPrevBal = updatedSources.bank[targetBankName] ?? 0;
+        toNewBal = toPrevBal + amount;
         updatedSources.bank[targetBankName] = toNewBal;
       } else if (targetSource === 'custom' && targetCustomName) {
-        toNewBal = (updatedSources.custom[targetCustomName] ?? 0) + amount;
+        toPrevBal = updatedSources.custom[targetCustomName] ?? 0;
+        toNewBal = toPrevBal + amount;
         updatedSources.custom[targetCustomName] = toNewBal;
-      } else {
-        toNewBal = ((updatedSources[targetSource] as number) ?? 0) + amount;
+      } else if (targetSource !== 'bank' && targetSource !== 'custom') {
+        toPrevBal = (updatedSources[targetSource] as number) ?? 0;
+        toNewBal = toPrevBal + amount;
         (updatedSources[targetSource] as number) = toNewBal;
       }
+
+      const fromKey = getSourceKey(fromSource, fromBankName, fromCustomName);
+      const toKey = getSourceKey(targetSource, targetBankName, targetCustomName);
+      const toDisplayName =
+        targetBankName ||
+        targetCustomName ||
+        (targetSource === 'in_hand'
+          ? 'Cash in Hand'
+          : targetSource === 'easypaisa'
+          ? 'Easypaisa'
+          : targetSource === 'jazzcash'
+          ? 'JazzCash'
+          : 'Personal Spending');
+
+      // 1. Deduct from source wallet envelope allocation
+      let updatedOwnership = applyWalletAllocationDelta(
+        snapshot.sourceOwnership,
+        fromKey,
+        -amount,
+        meta?.fromEnvelopeId,
+        meta?.fromEnvelopeName
+      );
+
+      // 2. Credit destination wallet envelope allocation
+      if (meta?.toEnvelopeId) {
+        updatedOwnership = applyDepositFundState(
+          updatedOwnership,
+          toKey,
+          toDisplayName,
+          toPrevBal,
+          amount,
+          meta?.toFundState || 'spendable',
+          {
+            envelopeId: meta.toEnvelopeId,
+            envelopeName: meta.toEnvelopeName,
+          }
+        );
+      } else {
+        updatedOwnership = applyWalletAllocationDelta(
+          updatedOwnership,
+          toKey,
+          amount
+        );
+      }
+
+      const newTotal = computeTotalAmount({
+        ...snapshot,
+        sources: updatedSources,
+        sourceOwnership: updatedOwnership,
+      });
 
       await addDoc(collection(db, 'cashTransactions'), {
         userId,
@@ -1206,10 +1617,17 @@ export default function TotalCashSnapshotComponent({
         category: 'transfer',
         eventType: 'transfer',
         balanceAfter: fromRemaining,
+        balanceSnapshot: newTotal,
+        fromEnvelopeId: meta?.fromEnvelopeId || null,
+        fromEnvelopeName: meta?.fromEnvelopeName || null,
+        toEnvelopeId: meta?.toEnvelopeId || null,
+        toEnvelopeName: meta?.toEnvelopeName || null,
         note:
           note ||
-          `Transfer: ${fromBankName || fromCustomName || fromSource} ➔ ${
-            targetBankName || targetCustomName || targetSource
+          `Transfer: ${fromBankName || fromCustomName || fromSource}${
+            meta?.fromEnvelopeName ? ` (${meta.fromEnvelopeName})` : ''
+          } ➔ ${targetBankName || targetCustomName || targetSource}${
+            meta?.toEnvelopeName ? ` (${meta.toEnvelopeName})` : ''
           }`,
         BankName: fromBankName || null,
         customPaymentHeadName: fromCustomName || null,
@@ -1221,6 +1639,8 @@ export default function TotalCashSnapshotComponent({
       const updatedSnapshot: TotalCashSnapshot = {
         ...snapshot,
         sources: updatedSources,
+        sourceOwnership: updatedOwnership,
+        totalAmount: newTotal,
         updatedAt: new Date(),
       };
 
