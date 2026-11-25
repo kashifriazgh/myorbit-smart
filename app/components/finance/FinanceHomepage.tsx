@@ -39,9 +39,9 @@ export default function FinanceHomepage() {
 
   const cardData = [
     {
-      title: 'Affordability Analyzer',
+      title: 'Can I Purchase?',
       href: '/finance/affordability',
-      description: 'Check if you can safely afford a purchase against bills & loans',
+      description: 'کیا میں خرید سکتا ہوں؟ Check safe spending limit',
       icon: <CalculateIcon sx={{ fontSize: 28 }} />,
       lightBg: 'linear-gradient(135deg, #ede9fe 0%, #c7d2fe 100%)',
       darkBg: 'linear-gradient(135deg, #312e81 0%, #0f172a 100%)',

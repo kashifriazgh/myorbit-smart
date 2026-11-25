@@ -13,13 +13,13 @@ import {
   AlertTriangle,
   RefreshCw,
   LayoutGrid,
-  Globe,
   CheckCircle2,
   FileText,
   PieChart,
   Lock,
   Sparkles,
   ChevronDown,
+  Settings2,
 } from 'lucide-react';
 import {
   Dialog,
@@ -30,6 +30,10 @@ import {
 } from '@mui/material';
 import { useAuth } from '@/app/lib/context/userContext';
 import { useCustomTheme } from '@/app/lib/context/themeContext';
+import { ExpenseCategoryIconBadge } from '@/app/components/finance/ExpenseCategoryIcon';
+import { BudgetStartDayPickerBody } from '@/app/components/finance/BudgetStartDayPicker';
+import { useBudgetStartDay } from '@/app/lib/finance/useBudgetStartDay';
+import { getBudgetCycle } from '@/app/lib/finance/budgetCycle';
 import { db } from '@/app/lib/firebase';
 import {
   collection,
@@ -245,24 +249,30 @@ export default function ExpensesPage() {
   const isDark = theme?.mode === 'dark';
 
   const [selectedMonthOffset, setSelectedMonthOffset] = useState<0 | 1>(0);
+  const [showCycleSettings, setShowCycleSettings] = useState(false);
+  const {
+    startDay: budgetStartDay,
+    saving: savingBudgetStartDay,
+    updateStartDay: updateBudgetStartDay,
+  } = useBudgetStartDay(user?.uid);
 
   const monthOptions = useMemo(() => {
     const now = new Date();
     return ([0, 1] as const).map((offset) => {
-      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      const cycle = getBudgetCycle(budgetStartDay, now, offset);
       return {
         offset,
-        year: d.getFullYear(),
-        month: d.getMonth(),
-        name: MONTH_NAMES[d.getMonth()],
-        label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
+        year: cycle.year,
+        month: cycle.month,
+        name: cycle.name,
+        label: cycle.label,
+        rangeLabel: cycle.rangeLabel,
         tag: offset === 0 ? 'Current Month' : 'Next Month',
       };
     });
-  }, []);
+  }, [budgetStartDay]);
 
   const activeMonth = monthOptions[selectedMonthOffset];
-  const currentMonthName = activeMonth.name;
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -1139,11 +1149,11 @@ export default function ExpensesPage() {
     >
       <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 pt-6 sm:px-6 lg:px-8">
         {/* Header */}
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <header className="mb-6 flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <Link
               href="/finance"
-              className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+              className={`p-2.5 shrink-0 rounded-xl border transition-all cursor-pointer ${
                 isDark
                   ? 'bg-slate-900 border-slate-700/70 text-slate-400 hover:text-white hover:border-slate-600'
                   : 'bg-white border-slate-200 text-slate-500 hover:text-slate-900 shadow-xs'
@@ -1151,16 +1161,16 @@ export default function ExpensesPage() {
             >
               <ArrowLeft size={18} />
             </Link>
-            <div>
+            <div className="min-w-0">
               <h1
-                className={`text-2xl font-bold tracking-tight ${
+                className={`text-xl sm:text-2xl font-bold tracking-tight truncate ${
                   isDark ? 'text-white' : 'text-slate-900'
                 }`}
               >
                 Monthly Expenses
               </h1>
-              <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
-                Track recurring, one-time &amp; event-based expenses
+              <p className={`text-xs truncate ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
+                Track recurring, one-time &amp; wish list expenses
               </p>
             </div>
           </div>
@@ -1168,10 +1178,11 @@ export default function ExpensesPage() {
           <button
             type="button"
             onClick={openCreateModal}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
+            aria-label="Add Expense"
+            className="flex h-11 w-11 sm:h-auto sm:w-auto shrink-0 items-center justify-center gap-1.5 sm:px-4 sm:py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
           >
-            <Plus size={16} />
-            <span>Add Expense</span>
+            <Plus className="size-6 sm:size-4" strokeWidth={2.5} />
+            <span className="hidden sm:inline">Add Expense</span>
           </button>
         </header>
 
@@ -1214,7 +1225,49 @@ export default function ExpensesPage() {
               );
             })}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowCycleSettings((prev) => !prev)}
+            title="Change budget month start day"
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-semibold transition-colors cursor-pointer ${
+              showCycleSettings
+                ? 'border-indigo-500 bg-indigo-600/15 text-indigo-400'
+                : isDark
+                ? 'bg-slate-900 border-slate-700/70 text-slate-400 hover:text-white'
+                : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Settings2 size={13} />
+            <span>Start: {budgetStartDay}</span>
+          </button>
         </div>
+
+        {/* Collapsible compact Month Start Day form (hidden by default) */}
+        {showCycleSettings && (
+          <div
+            className={`mb-4 rounded-2xl border p-4 transition-colors ${
+              isDark
+                ? 'bg-slate-900 border-slate-700/70'
+                : 'bg-white border-slate-200 shadow-xs'
+            }`}
+          >
+            <div className="mb-2.5 flex items-center justify-between">
+              <span className="text-xs font-bold">Salary / Month Start Date</span>
+              <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Active: {activeMonth.rangeLabel}
+              </span>
+            </div>
+            <BudgetStartDayPickerBody
+              currentDay={budgetStartDay}
+              onSave={updateBudgetStartDay}
+              saving={savingBudgetStartDay}
+              isDark={isDark}
+              compact
+              onClose={() => setShowCycleSettings(false)}
+            />
+          </div>
+        )}
 
         {/* Action Error Banner (create / pay / delete failures) */}
         {actionError && (
@@ -1249,25 +1302,24 @@ export default function ExpensesPage() {
               : 'bg-white border-slate-200 shadow-sm'
           }`}
         >
-          <span
-            className={`text-sm font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}
-          >
-            Total Expenses For {activeMonth.tag} ({activeMonth.label})
-          </span>
-
           {loading ? (
             <>
+              <span
+                className={`text-sm font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}
+              >
+                Total Expenses for {selectedMonthOffset === 0 ? 'Current Month' : 'Next Month'}
+              </span>
               <div
                 className={`mt-2 h-10 w-48 rounded-xl animate-pulse ${
                   isDark ? 'bg-slate-800' : 'bg-slate-200'
                 }`}
               />
               <div
-                className={`mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 border-t pt-4 ${
+                className={`mt-4 grid grid-cols-2 gap-3 border-t pt-4 ${
                   isDark ? 'border-slate-800' : 'border-slate-200'
                 }`}
               >
-                {[0, 1, 2, 3].map((idx) => (
+                {[0, 1].map((idx) => (
                   <div
                     key={idx}
                     className={`rounded-2xl p-3 space-y-2 ${
@@ -1288,91 +1340,152 @@ export default function ExpensesPage() {
                 ))}
               </div>
             </>
-          ) : (
-            <>
-              <p
-                className={`mt-1 text-3xl sm:text-4xl font-extrabold tabular-nums tracking-tight ${
-                  isDark ? 'text-white' : 'text-slate-900'
-                }`}
-              >
-                {formatRs(monthlyMetrics.totalThisMonth)}
-              </p>
+          ) : (() => {
+            const totalForRatio = monthlyMetrics.paidThisMonth + monthlyMetrics.pendingThisMonth;
+            const paidPct =
+              totalForRatio > 0
+                ? Math.round((monthlyMetrics.paidThisMonth / totalForRatio) * 100)
+                : 0;
+            const pendingPct = totalForRatio > 0 ? Math.max(0, 100 - paidPct) : 0;
+            const radius = 38;
+            const circumference = 2 * Math.PI * radius;
+            const paidLen = (paidPct / 100) * circumference;
+            const pendingLen = (pendingPct / 100) * circumference;
+            const gap = paidPct > 0 && pendingPct > 0 ? 2 : 0;
 
-              <div
-                className={`mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 border-t pt-4 text-xs ${
-                  isDark ? 'border-slate-800' : 'border-slate-200'
-                }`}
-              >
-                <div
-                  className={`rounded-2xl p-3 ${
-                    isDark ? 'bg-slate-800/80 border border-slate-700/50' : 'bg-slate-50 border border-slate-200/70'
-                  }`}
-                >
-                  <span className={`block text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Monthly Recurring
-                  </span>
-                  <span
-                    className={`mt-0.5 block font-bold text-base tabular-nums ${
-                      isDark ? 'text-rose-400' : 'text-rose-600'
-                    }`}
-                  >
-                    {formatRs(monthlyMetrics.monthlyRecurring)}
-                  </span>
+            return (
+              <>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <span
+                      className={`text-sm font-medium ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
+                      }`}
+                    >
+                      Total Expenses for {selectedMonthOffset === 0 ? 'Current Month' : 'Next Month'}
+                    </span>
+                    <p
+                      className={`mt-1 text-3xl sm:text-4xl font-extrabold tabular-nums tracking-tight ${
+                        isDark ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      {formatRs(monthlyMetrics.totalThisMonth)}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>
+                          Paid {paidPct}%
+                        </span>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-amber-500" />
+                        <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>
+                          Pending {pendingPct}%
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Round Paid / Pending Donut Progress Chart */}
+                  <div className="relative h-24 w-24 shrink-0">
+                    <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r={radius}
+                        fill="none"
+                        stroke={isDark ? 'rgba(255,255,255,0.08)' : '#E2E8F0'}
+                        strokeWidth="11"
+                      />
+                      {paidLen > 0 && (
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r={radius}
+                          fill="none"
+                          stroke="#10B981"
+                          strokeWidth="11"
+                          strokeLinecap="round"
+                          strokeDasharray={`${Math.max(0, paidLen - gap)} ${circumference}`}
+                          strokeDashoffset={0}
+                        />
+                      )}
+                      {pendingLen > 0 && (
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r={radius}
+                          fill="none"
+                          stroke="#F59E0B"
+                          strokeWidth="11"
+                          strokeLinecap="round"
+                          strokeDasharray={`${Math.max(0, pendingLen - gap)} ${circumference}`}
+                          strokeDashoffset={-paidLen}
+                        />
+                      )}
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                      <span
+                        className={`text-base font-extrabold leading-none tabular-nums ${
+                          isDark ? 'text-white' : 'text-slate-900'
+                        }`}
+                      >
+                        {paidPct}%
+                      </span>
+                      <span
+                        className={`mt-0.5 text-[10px] font-medium ${
+                          isDark ? 'text-slate-400' : 'text-slate-500'
+                        }`}
+                      >
+                        Paid
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 <div
-                  className={`rounded-2xl p-3 ${
-                    isDark ? 'bg-slate-800/80 border border-slate-700/50' : 'bg-slate-50 border border-slate-200/70'
+                  className={`mt-4 grid grid-cols-2 gap-3 border-t pt-4 text-xs ${
+                    isDark ? 'border-slate-800' : 'border-slate-200'
                   }`}
                 >
-                  <span className={`block text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    One-Time ({currentMonthName})
-                  </span>
-                  <span
-                    className={`mt-0.5 block font-bold text-base tabular-nums ${
-                      isDark ? 'text-amber-400' : 'text-amber-600'
+                  <div
+                    className={`rounded-2xl p-3 ${
+                      isDark ? 'bg-green-500/10 ring-1 ring-green-500/30' : 'bg-green-50 ring-1 ring-green-200'
                     }`}
                   >
-                    {formatRs(monthlyMetrics.oneTimeCurrentMonth)}
-                  </span>
-                </div>
+                    <span className={`block text-[11px] ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
+                      Paid Off
+                    </span>
+                    <span
+                      className={`mt-0.5 block font-bold text-base tabular-nums ${
+                        isDark ? 'text-green-400' : 'text-green-700'
+                      }`}
+                    >
+                      {formatRs(monthlyMetrics.paidThisMonth)}
+                    </span>
+                  </div>
 
-                <div
-                  className={`rounded-2xl p-3 ${
-                    isDark ? 'bg-green-500/10 ring-1 ring-green-500/30' : 'bg-green-50 ring-1 ring-green-200'
-                  }`}
-                >
-                  <span className={`block text-[11px] ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
-                    Paid Off
-                  </span>
-                  <span
-                    className={`mt-0.5 block font-bold text-base tabular-nums ${
-                      isDark ? 'text-green-400' : 'text-green-700'
+                  <div
+                    className={`rounded-2xl p-3 ${
+                      isDark ? 'bg-amber-500/10 ring-1 ring-amber-500/30' : 'bg-amber-50 ring-1 ring-amber-200'
                     }`}
                   >
-                    {formatRs(monthlyMetrics.paidThisMonth)}
-                  </span>
+                    <span className={`block text-[11px] ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
+                      Pending
+                    </span>
+                    <span
+                      className={`mt-0.5 block font-bold text-base tabular-nums ${
+                        isDark ? 'text-amber-400' : 'text-amber-700'
+                      }`}
+                    >
+                      {formatRs(monthlyMetrics.pendingThisMonth)}
+                    </span>
+                  </div>
                 </div>
-
-                <div
-                  className={`rounded-2xl p-3 ${
-                    isDark ? 'bg-amber-500/10 ring-1 ring-amber-500/30' : 'bg-amber-50 ring-1 ring-amber-200'
-                  }`}
-                >
-                  <span className={`block text-[11px] ${isDark ? 'text-neutral-400' : 'text-slate-500'}`}>
-                    Pending
-                  </span>
-                  <span
-                    className={`mt-0.5 block font-bold text-base tabular-nums ${
-                      isDark ? 'text-amber-400' : 'text-amber-700'
-                    }`}
-                  >
-                    {formatRs(monthlyMetrics.pendingThisMonth)}
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
+              </>
+            );
+          })()}
         </section>
 
         {/* Search, Status & Category Filters */}
@@ -1596,291 +1709,219 @@ export default function ExpensesPage() {
               No expenses match your search or filter.
             </div>
           ) : (() => {
-            const stickyAmountBase = `sticky right-0 z-10 w-[22%] min-w-[5.25rem] before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-1.5 ${
-              isDark
-                ? 'bg-[#0a1628] before:bg-[linear-gradient(to_left,rgba(0,0,0,0.18),transparent)]'
-                : 'bg-white before:bg-[linear-gradient(to_left,rgba(15,23,42,0.08),transparent)]'
-            }`;
-            const headBgCls = isDark ? '!bg-[#0d1b30]' : '!bg-slate-50';
-            const rowHoverCls = isDark
-              ? 'group-hover:bg-[#0f2036]'
-              : 'group-hover:bg-slate-50';
-            const rowHoverStickyCls = isDark
-              ? 'group-hover:!bg-[#0f2036]'
-              : 'group-hover:!bg-slate-50';
-            const formatNum = (n: number) => Math.round(Number(n || 0)).toLocaleString('en-US');
+            const fmtRow = (n: number) =>
+              'Rs ' + Math.round(Number(n || 0)).toLocaleString('en-PK');
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
 
-            const filteredTotal = filteredList.reduce((sum, item) => {
-              const isGlobalWishList =
-                item.expenseType === 'wish_list' || item.priority === 'wish_list' || item.isGlobal;
-              const isWeekly = item.frequency === 'weekly' || item.recurrence === 'weekly';
-              let count = 1;
-              if (!isGlobalWishList) {
+            const resolveItemMeta = (item: PlannedExpense) => {
+              const isPaid = item.paymentStatus === 'paid';
+              const isWish = Boolean(
+                item.expenseType === 'wish_list' ||
+                  item.priority === 'wish_list' ||
+                  item.isGlobal
+              );
+              const isWeekly =
+                item.frequency === 'weekly' || item.recurrence === 'weekly';
+
+              const resolvedDates: string[] = (() => {
+                if (isWish) return [];
                 if (isWeekly && typeof item.weeklyDay === 'number') {
                   const savedInMonth = (item.dueDates || []).filter((dStr) => {
                     const [yy, mm] = dStr.split('-').map(Number);
                     return yy === activeMonth.year && mm - 1 === activeMonth.month;
                   });
-                  const dates =
-                    savedInMonth.length > 0
-                      ? savedInMonth
-                      : calculateWeeklyDatesInMonth(
-                          item.weeklyDay,
-                          activeMonth.year,
-                          activeMonth.month,
-                          undefined,
-                          item.recurrenceInterval || 1,
-                          item.recurrenceEndDate
-                        );
-                  if (dates.length > 1) count = dates.length;
-                } else if (Array.isArray(item.dueDates) && item.dueDates.length > 1) {
-                  count = item.dueDates.length;
+                  if (savedInMonth.length > 0) return savedInMonth;
+                  return calculateWeeklyDatesInMonth(
+                    item.weeklyDay,
+                    activeMonth.year,
+                    activeMonth.month,
+                    undefined,
+                    item.recurrenceInterval || 1,
+                    item.recurrenceEndDate
+                  );
+                }
+                if (Array.isArray(item.dueDates) && item.dueDates.length > 0) {
+                  return item.dueDates;
+                }
+                const single = formatDueDate(item.dueDate);
+                return single ? [single] : [];
+              })();
+
+              const count = !isWish && resolvedDates.length > 1 ? resolvedDates.length : 1;
+              const monthlyTotal = (Number(item.expectedAmount) || 0) * count;
+
+              // Calculate dueIn (days until next/first due date; negative = overdue)
+              let dueIn: number | null = null;
+              if (!isPaid && !isWish && resolvedDates.length > 0) {
+                const firstDate = resolvedDates[0];
+                const parts = firstDate.split('-').map(Number);
+                if (parts.length === 3 && !parts.some(Number.isNaN)) {
+                  const dueObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                  dueObj.setHours(0, 0, 0, 0);
+                  dueIn = Math.round(
+                    (dueObj.getTime() - todayStart.getTime()) / 86400000
+                  );
                 }
               }
-              return sum + (Number(item.expectedAmount) || 0) * count;
-            }, 0);
+
+              const dateLabel = isWish
+                ? 'Every month'
+                : resolvedDates[0]
+                ? formatShortDate(resolvedDates[0])
+                : activeMonth.label;
+
+              return {
+                item,
+                isPaid,
+                isWish,
+                count,
+                monthlyTotal,
+                dueIn,
+                dateLabel,
+              };
+            };
+
+            const enriched = filteredList.map(resolveItemMeta);
+            const pendingRows = enriched
+              .filter((r) => !r.isPaid)
+              .sort((a, b) => {
+                const aDue = a.dueIn ?? Number.POSITIVE_INFINITY;
+                const bDue = b.dueIn ?? Number.POSITIVE_INFINITY;
+                return aDue - bDue;
+              });
+            const paidRows = enriched.filter((r) => r.isPaid);
+
+            const renderStatusBadge = (r: ReturnType<typeof resolveItemMeta>) => {
+              let text = 'Paid';
+              let cls = isDark
+                ? 'bg-emerald-950/90 text-emerald-400'
+                : 'bg-emerald-50 text-emerald-700';
+
+              if (!r.isPaid) {
+                if (r.isWish) {
+                  text = 'Wish List';
+                  cls = isDark
+                    ? 'bg-violet-950/90 text-violet-300'
+                    : 'bg-violet-50 text-violet-700';
+                } else if (r.dueIn === null) {
+                  text = 'Pending';
+                  cls = isDark
+                    ? 'bg-amber-950/90 text-amber-400'
+                    : 'bg-amber-50 text-amber-700';
+                } else if (r.dueIn < 0) {
+                  const days = -r.dueIn;
+                  text = `Overdue by ${days} day${days > 1 ? 's' : ''}`;
+                  cls = isDark
+                    ? 'bg-red-950/90 text-red-400'
+                    : 'bg-red-50 text-red-700';
+                } else {
+                  text =
+                    r.dueIn === 0
+                      ? 'Due today'
+                      : `Due in ${r.dueIn} day${r.dueIn > 1 ? 's' : ''}`;
+                  cls = isDark
+                    ? 'bg-amber-950/90 text-amber-400'
+                    : 'bg-amber-50 text-amber-700';
+                }
+              }
+
+              return (
+                <span
+                  className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}`}
+                >
+                  {text}
+                </span>
+              );
+            };
+
+            const renderGroup = (
+              heading: string,
+              rows: ReturnType<typeof resolveItemMeta>[]
+            ) => {
+              if (!rows.length) return null;
+              const groupTotal = rows.reduce((s, r) => s + r.monthlyTotal, 0);
+              return (
+                <div>
+                  <div className="mt-3 mb-1 flex items-center justify-between px-1">
+                    <p
+                      className={`text-xs font-medium ${
+                        isDark ? 'text-slate-400' : 'text-gray-500'
+                      }`}
+                    >
+                      {heading} ({rows.length})
+                    </p>
+                    <span
+                      className={`text-xs font-semibold tabular-nums ${
+                        isDark ? 'text-slate-400' : 'text-gray-500'
+                      }`}
+                    >
+                      {fmtRow(groupTotal)}
+                    </span>
+                  </div>
+                  <ul>
+                    {rows.map((r) => (
+                      <li
+                        key={r.item.id}
+                        onClick={() => setDetailItem(r.item)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setDetailItem(r.item);
+                          }
+                        }}
+                        className={`flex items-center gap-3 border-b py-3 px-1 last:border-0 transition-colors cursor-pointer rounded-xl ${
+                          isDark
+                            ? 'border-gray-800 hover:bg-white/5'
+                            : 'border-gray-100 hover:bg-gray-50'
+                        }`}
+                      >
+                        <ExpenseCategoryIconBadge
+                          title={r.item.title}
+                          category={r.item.category}
+                          isDark={isDark}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={`truncate text-[15px] font-medium ${
+                              isDark ? 'text-gray-50' : 'text-gray-900'
+                            }`}
+                          >
+                            {r.item.title}
+                          </p>
+                          <p
+                            className={`mt-0.5 text-xs ${
+                              isDark ? 'text-gray-400' : 'text-gray-500'
+                            }`}
+                          >
+                            {r.isPaid ? 'Paid on' : r.isWish ? 'Wish list •' : 'Due'}{' '}
+                            {r.dateLabel}
+                            {r.count > 1 ? ` • ${r.count} dates` : ''}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p
+                            className={`text-[15px] font-semibold tabular-nums ${
+                              isDark ? 'text-gray-50' : 'text-gray-900'
+                            }`}
+                          >
+                            {fmtRow(r.monthlyTotal)}
+                          </p>
+                          {renderStatusBadge(r)}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            };
 
             return (
-              <div
-                className={`overflow-x-auto rounded-xl border ${
-                  isDark
-                    ? 'border-white/10 bg-[#0a1628]'
-                    : 'border-slate-200 bg-white'
-                }`}
-              >
-                <table className="w-full border-separate border-spacing-0 text-sm">
-                  <thead>
-                    <tr className={`text-left ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                      <th
-                        className={`w-[78%] border-b px-3 py-2.5 font-semibold ${headBgCls} ${
-                          isDark ? 'border-white/10' : 'border-slate-200'
-                        }`}
-                      >
-                        Title
-                      </th>
-                      <th
-                        className={`${stickyAmountBase} ${headBgCls} whitespace-nowrap border-b px-3 py-2.5 text-right font-semibold ${
-                          isDark ? 'border-white/10' : 'border-slate-200'
-                        }`}
-                      >
-                        Amount (Rs)
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {filteredList.map((item) => {
-                      const isPaid = item.paymentStatus === 'paid';
-                      const isGlobalWishList =
-                        item.expenseType === 'wish_list' ||
-                        item.priority === 'wish_list' ||
-                        item.isGlobal;
-                      const catMeta =
-                        CATEGORY_META[item.category] ?? CATEGORY_META['Other expenses'];
-                      const RowCatIcon = catMeta.icon;
-
-                      const isWeekly =
-                        item.frequency === 'weekly' || item.recurrence === 'weekly';
-                      const resolvedDates: string[] = (() => {
-                        if (isGlobalWishList) return [];
-                        if (isWeekly && typeof item.weeklyDay === 'number') {
-                          const savedInMonth = (item.dueDates || []).filter((dStr) => {
-                            const [yy, mm] = dStr.split('-').map(Number);
-                            return yy === activeMonth.year && mm - 1 === activeMonth.month;
-                          });
-                          if (savedInMonth.length > 0) return savedInMonth;
-                          return calculateWeeklyDatesInMonth(
-                            item.weeklyDay,
-                            activeMonth.year,
-                            activeMonth.month,
-                            undefined,
-                            item.recurrenceInterval || 1,
-                            item.recurrenceEndDate
-                          );
-                        }
-                        if (Array.isArray(item.dueDates) && item.dueDates.length > 0) {
-                          return item.dueDates;
-                        }
-                        const single = formatDueDate(item.dueDate);
-                        return single ? [single] : [];
-                      })();
-
-                      const hasMultipleDates = resolvedDates.length > 1;
-                      const visibleDates = resolvedDates.slice(0, 4);
-                      const extraDatesCount = Math.max(
-                        0,
-                        resolvedDates.length - visibleDates.length
-                      );
-                      const singleDateLabel = isGlobalWishList
-                        ? 'Every month'
-                        : resolvedDates[0]
-                        ? formatShortDate(resolvedDates[0])
-                        : activeMonth.label;
-
-                      return (
-                        <tr
-                          key={item.id}
-                          onClick={() => setDetailItem(item)}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              setDetailItem(item);
-                            }
-                          }}
-                          className="group cursor-pointer"
-                        >
-                          <td
-                            className={`whitespace-nowrap border-b px-3 py-2.5 align-top transition-colors ${rowHoverCls} ${
-                              isDark ? 'border-white/5' : 'border-slate-100'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-sm font-semibold ${
-                                  isPaid
-                                    ? isDark
-                                      ? 'text-neutral-400 line-through'
-                                      : 'text-slate-400 line-through'
-                                    : isDark
-                                    ? 'text-slate-100'
-                                    : 'text-slate-900'
-                                }`}
-                              >
-                                {item.title}
-                              </span>
-                              {isPaid && (
-                                <CheckCircle2
-                                  size={14}
-                                  className={
-                                    isDark
-                                      ? 'text-green-400 shrink-0'
-                                      : 'text-green-600 shrink-0'
-                                  }
-                                />
-                              )}
-                            </div>
-
-                            <div className="mt-1 flex items-center gap-1.5 text-xs">
-                              <span
-                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                  isDark
-                                    ? 'bg-white/10 text-neutral-300'
-                                    : 'bg-slate-100 text-slate-700'
-                                }`}
-                              >
-                                <RowCatIcon
-                                  size={11}
-                                  className={isDark ? catMeta.darkColor : catMeta.lightColor}
-                                />
-                                {item.category}
-                              </span>
-
-                              {hasMultipleDates ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span
-                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                      isDark
-                                        ? 'bg-blue-500/15 text-blue-300'
-                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
-                                    }`}
-                                  >
-                                    <CalendarDays size={10} />
-                                    {resolvedDates.length} dates
-                                  </span>
-                                  {visibleDates.map((dIso) => (
-                                    <span
-                                      key={dIso}
-                                      className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
-                                        isDark
-                                          ? 'bg-white/5 text-slate-300'
-                                          : 'bg-slate-50 text-slate-600 border border-slate-200'
-                                      }`}
-                                    >
-                                      {formatShortDate(dIso)}
-                                    </span>
-                                  ))}
-                                  {extraDatesCount > 0 && (
-                                    <span
-                                      className={`text-[10px] font-semibold ${
-                                        isDark ? 'text-slate-400' : 'text-slate-500'
-                                      }`}
-                                    >
-                                      +{extraDatesCount}
-                                    </span>
-                                  )}
-                                </span>
-                              ) : (
-                                <span
-                                  className={`inline-flex items-center gap-1 text-[11px] ${
-                                    isDark ? 'text-slate-400' : 'text-slate-500'
-                                  }`}
-                                >
-                                  {isGlobalWishList ? (
-                                    <Globe size={11} />
-                                  ) : (
-                                    <CalendarDays size={11} />
-                                  )}
-                                  {singleDateLabel}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          <td
-                            className={`${stickyAmountBase} ${rowHoverStickyCls} whitespace-nowrap border-b px-3 py-2.5 text-right align-top font-semibold tabular-nums transition-colors ${
-                              isDark ? 'border-white/5' : 'border-slate-100'
-                            }`}
-                          >
-                            <div
-                              className={`text-sm font-bold ${
-                                isPaid
-                                  ? isDark
-                                    ? 'text-neutral-400'
-                                    : 'text-slate-400'
-                                  : isDark
-                                  ? 'text-slate-100'
-                                  : 'text-slate-900'
-                              }`}
-                            >
-                              {formatNum(item.expectedAmount)}
-                            </div>
-                            {hasMultipleDates && (
-                              <div
-                                className={`mt-0.5 text-[10px] font-medium tabular-nums ${
-                                  isDark ? 'text-slate-400' : 'text-slate-500'
-                                }`}
-                              >
-                                ×{resolvedDates.length} ={' '}
-                                {formatNum(item.expectedAmount * resolvedDates.length)}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-
-                  <tfoot>
-                    <tr>
-                      <td
-                        className={`px-3 py-2.5 font-semibold ${headBgCls} ${
-                          isDark ? 'text-slate-200' : 'text-slate-700'
-                        }`}
-                      >
-                        Total ({filteredList.length})
-                      </td>
-                      <td
-                        className={`${stickyAmountBase} ${headBgCls} whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums ${
-                          isDark ? 'text-slate-100' : 'text-slate-900'
-                        }`}
-                      >
-                        {formatNum(filteredTotal)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+              <div className="px-0.5">
+                {renderGroup('To pay', pendingRows)}
+                {renderGroup('Paid', paidRows)}
               </div>
             );
           })()}

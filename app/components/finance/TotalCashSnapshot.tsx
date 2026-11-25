@@ -11,6 +11,8 @@ import {
   RefreshCw,
   History,
   ArrowRightLeft,
+  X,
+  Settings,
 } from 'lucide-react';
 import { db } from '@/app/lib/firebase';
 import {
@@ -57,6 +59,10 @@ import ExpenseAnalytics, {
   type ExpenseAnalyticsItem,
 } from './TotalCashSnapshot/ExpenseAnalytics';
 import UpcomingExpenses, { type UpcomingExpenseItem } from './TotalCashSnapshot/UpcomingExpenses';
+import QuickExpense, { type QuickExpensePayload } from './TotalCashSnapshot/QuickExpense';
+import { BudgetStartDayModal } from './BudgetStartDayPicker';
+import { useBudgetStartDay } from '@/app/lib/finance/useBudgetStartDay';
+import { getBudgetCycle } from '@/app/lib/finance/budgetCycle';
 
 export const getSourceKey = (
   source: TransactionSource,
@@ -404,18 +410,18 @@ export function computeTotalAmount(snapshot: TotalCashSnapshot): number {
     if (key === 'bank' && typeof val === 'object' && val !== null) {
       for (const [bName, bAmt] of Object.entries(val as Record<string, number>)) {
         const fullKey = `bank:${bName}`;
-        const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
-        if (!isVirtual && typeof bAmt === 'number') total += bAmt;
+        const isBackedVirtual = Boolean(sourceOwnership?.[fullKey]?.parentWalletKey);
+        if (!isBackedVirtual && typeof bAmt === 'number') total += bAmt;
       }
     } else if (key === 'custom' && typeof val === 'object' && val !== null) {
       for (const [cName, cAmt] of Object.entries(val as Record<string, number>)) {
         const fullKey = `custom:${cName}`;
-        const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
-        if (!isVirtual && typeof cAmt === 'number') total += cAmt;
+        const isBackedVirtual = Boolean(sourceOwnership?.[fullKey]?.parentWalletKey);
+        if (!isBackedVirtual && typeof cAmt === 'number') total += cAmt;
       }
     } else if (typeof val === 'number') {
-      const isVirtual = sourceOwnership?.[key]?.parentWalletKey || sourceOwnership?.[key]?.isVirtual;
-      if (!isVirtual) total += val;
+      const isBackedVirtual = Boolean(sourceOwnership?.[key]?.parentWalletKey);
+      if (!isBackedVirtual) total += val;
     }
   }
   return total;
@@ -473,18 +479,18 @@ export function computeAvailableToSpend(snapshot: TotalCashSnapshot): number {
     if (key === 'bank' && typeof val === 'object' && val !== null) {
       for (const [bankName, bankAmt] of Object.entries(val as Record<string, number>)) {
         const fullKey = `bank:${bankName}`;
-        const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
-        if (!isVirtual) available += calculateWalletSpendable(fullKey, bankAmt, false);
+        const isBackedVirtual = Boolean(sourceOwnership?.[fullKey]?.parentWalletKey);
+        if (!isBackedVirtual) available += calculateWalletSpendable(fullKey, bankAmt, false);
       }
     } else if (key === 'custom' && typeof val === 'object' && val !== null) {
       for (const [customName, customAmt] of Object.entries(val as Record<string, number>)) {
         const fullKey = `custom:${customName}`;
-        const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
-        if (!isVirtual) available += calculateWalletSpendable(fullKey, customAmt, true);
+        const isBackedVirtual = Boolean(sourceOwnership?.[fullKey]?.parentWalletKey);
+        if (!isBackedVirtual) available += calculateWalletSpendable(fullKey, customAmt, true);
       }
     } else if (typeof val === 'number') {
-      const isVirtual = sourceOwnership?.[key]?.parentWalletKey || sourceOwnership?.[key]?.isVirtual;
-      if (!isVirtual) available += calculateWalletSpendable(key, val, false);
+      const isBackedVirtual = Boolean(sourceOwnership?.[key]?.parentWalletKey);
+      if (!isBackedVirtual) available += calculateWalletSpendable(key, val, false);
     }
   }
 
@@ -599,18 +605,18 @@ function computeOverviewBreakdown(snapshot: TotalCashSnapshot): FinancialOvervie
       if (key === 'bank' && typeof val === 'object' && val !== null) {
         for (const [bankName, bankAmt] of Object.entries(val as Record<string, number>)) {
           const fullKey = `bank:${bankName}`;
-          const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
-          if (!isVirtual && typeof bankAmt === 'number') classifyWallet(fullKey, bankName, bankAmt, false);
+          const isBackedVirtual = Boolean(sourceOwnership?.[fullKey]?.parentWalletKey);
+          if (!isBackedVirtual && typeof bankAmt === 'number') classifyWallet(fullKey, bankName, bankAmt, false);
         }
       } else if (key === 'custom' && typeof val === 'object' && val !== null) {
         for (const [customName, customAmt] of Object.entries(val as Record<string, number>)) {
           const fullKey = `custom:${customName}`;
-          const isVirtual = sourceOwnership?.[fullKey]?.parentWalletKey || sourceOwnership?.[fullKey]?.isVirtual;
-          if (!isVirtual && typeof customAmt === 'number') classifyWallet(fullKey, customName, customAmt, true);
+          const isBackedVirtual = Boolean(sourceOwnership?.[fullKey]?.parentWalletKey);
+          if (!isBackedVirtual && typeof customAmt === 'number') classifyWallet(fullKey, customName, customAmt, true);
         }
       } else if (typeof val === 'number') {
-        const isVirtual = sourceOwnership?.[key]?.parentWalletKey || sourceOwnership?.[key]?.isVirtual;
-        if (!isVirtual) classifyWallet(key, key, val, false);
+        const isBackedVirtual = Boolean(sourceOwnership?.[key]?.parentWalletKey);
+        if (!isBackedVirtual) classifyWallet(key, key, val, false);
       }
     }
   }
@@ -711,7 +717,15 @@ export default function TotalCashSnapshotComponent({
 
   const [openLoan, setOpenLoan] = useState(false);
   const [openLiability, setOpenLiability] = useState(false);
+  const [loanDetailModal, setLoanDetailModal] = useState<'pay' | 'receive' | null>(null);
   const [showTransactionHistory, setShowTransactionHistory] = useState(false);
+  const [openBudgetSettings, setOpenBudgetSettings] = useState(false);
+  const {
+    startDay: budgetStartDay,
+    saving: savingBudgetStartDay,
+    updateStartDay: updateBudgetStartDay,
+  } = useBudgetStartDay(userId);
+  const activeBudgetCycle = useMemo(() => getBudgetCycle(budgetStartDay), [budgetStartDay]);
 
   // Wallet creation & details modals
   const [openCreateWalletModal, setOpenCreateWalletModal] = useState(false);
@@ -1220,6 +1234,229 @@ export default function TotalCashSnapshotComponent({
     });
     return { toPay, toReceive };
   }, [loans, liabilities]);
+
+  // Build spendable wallet + envelope options (only sources with actual spendable > 0)
+  const spendableWalletsForQuickAdd = useMemo(() => {
+    const opts: {
+      optionId: string;
+      walletKey: string;
+      label: string;
+      envelopeId?: string | null;
+      envelopeName?: string | null;
+      spendable: number;
+    }[] = [];
+
+    walletsList.forEach((w) => {
+      if (w.isLocked || w.parentWalletKey) return;
+      const ownership = snapshot?.sourceOwnership?.[w.id];
+
+      if (w.allocations && w.allocations.length > 0) {
+        let allocatedSum = 0;
+        w.allocations.forEach((a) => {
+          const amt = Number(a.amount) || 0;
+          allocatedSum += amt;
+          if (a.isLocked) return;
+          if (
+            a.fundState === 'reserved' ||
+            a.fundState === 'savings' ||
+            a.fundState === 'amanat' ||
+            a.availabilityStatus === 'reserved' ||
+            a.availabilityStatus === 'savings' ||
+            a.availabilityStatus === 'external'
+          ) {
+            return;
+          }
+          const ownerLower = (a.owner || '').trim().toLowerCase();
+          const isSelf = ownerLower === 'you' || ownerLower === 'self' || ownerLower === '';
+          if (a.fundState === 'spendable' || isSelf) {
+            const usable = Math.max(0, amt - (Number(a.reservedAmount) || 0));
+            if (usable > 0) {
+              opts.push({
+                optionId: `${w.id}::${a.id}`,
+                walletKey: w.id,
+                label: w.name,
+                envelopeId: a.id,
+                envelopeName: a.purpose || 'Spendable',
+                spendable: usable,
+              });
+            }
+          }
+        });
+
+        const remainder = Math.max(0, w.amount - allocatedSum);
+        if (
+          remainder > 0 &&
+          w.hasOwnThisMoney &&
+          ownership?.fundState !== 'reserved' &&
+          ownership?.fundState !== 'savings' &&
+          ownership?.fundState !== 'amanat'
+        ) {
+          opts.push({
+            optionId: `${w.id}::remainder`,
+            walletKey: w.id,
+            label: w.name,
+            envelopeId: null,
+            envelopeName: null,
+            spendable: remainder,
+          });
+        }
+        return;
+      }
+
+      if (
+        !w.hasOwnThisMoney ||
+        ownership?.fundState === 'reserved' ||
+        ownership?.fundState === 'savings' ||
+        ownership?.fundState === 'amanat'
+      ) {
+        return;
+      }
+
+      const usable = Math.max(0, w.amount - (Number(w.reservedAmount) || 0));
+      if (usable > 0) {
+        opts.push({
+          optionId: w.id,
+          walletKey: w.id,
+          label: w.name,
+          envelopeId: null,
+          envelopeName: null,
+          spendable: usable,
+        });
+      }
+    });
+
+    return opts;
+  }, [walletsList, snapshot]);
+
+  // Instant Quick Expense handler: marks paid in plannedExpenses, deducts Spendable wallet/envelope immediately
+  const handleQuickAddExpense = async ({
+    amount,
+    title,
+    category,
+    walletKey,
+    envelopeId,
+    envelopeName,
+    createdAt,
+  }: QuickExpensePayload) => {
+    if (!snapshot || !userId || amount <= 0) return;
+
+    const targetKey = walletKey;
+    const targetWallet = walletsList.find((w) => w.id === targetKey);
+    const targetLabel = targetWallet?.name || 'Cash in Hand';
+
+    const updatedSources: TotalCashSnapshot['sources'] = {
+      ...snapshot.sources,
+      bank: { ...(snapshot.sources.bank || {}) },
+      custom: { ...(snapshot.sources.custom || {}) },
+    };
+
+    let sourceType: TransactionSource = 'in_hand';
+    let bankName: string | null = null;
+    let customName: string | null = null;
+    let newWalletBalance = 0;
+
+    if (targetKey.startsWith('bank:')) {
+      sourceType = 'bank';
+      bankName = targetKey.slice(5);
+      const prev = Number(updatedSources.bank[bankName] || 0);
+      newWalletBalance = Math.max(0, prev - amount);
+      updatedSources.bank[bankName] = newWalletBalance;
+    } else if (targetKey.startsWith('custom:')) {
+      sourceType = 'custom';
+      customName = targetKey.slice(7);
+      const prev = Number(updatedSources.custom[customName] || 0);
+      newWalletBalance = Math.max(0, prev - amount);
+      updatedSources.custom[customName] = newWalletBalance;
+    } else if (
+      targetKey === 'in_hand' ||
+      targetKey === 'easypaisa' ||
+      targetKey === 'jazzcash' ||
+      targetKey === 'other'
+    ) {
+      sourceType = targetKey;
+      const prev = Number(updatedSources[targetKey] || 0);
+      newWalletBalance = Math.max(0, prev - amount);
+      updatedSources[targetKey] = newWalletBalance;
+    }
+
+    const updatedOwnership = applyWalletAllocationDelta(
+      snapshot.sourceOwnership,
+      targetKey,
+      -amount,
+      envelopeId,
+      envelopeName
+    );
+
+    const nextSnapshot: TotalCashSnapshot = {
+      ...snapshot,
+      sources: updatedSources,
+      sourceOwnership: updatedOwnership,
+      totalAmount: computeTotalAmount({
+        ...snapshot,
+        sources: updatedSources,
+        sourceOwnership: updatedOwnership,
+      }),
+      updatedAt: createdAt,
+    };
+
+    const y = createdAt.getFullYear();
+    const m = String(createdAt.getMonth() + 1).padStart(2, '0');
+    const d = String(createdAt.getDate()).padStart(2, '0');
+    const todayISO = `${y}-${m}-${d}`;
+    const optimisticId = `quick_${Date.now()}`;
+
+    // Optimistically update Spendable & Expense Analytics immediately
+    setSnapshot(nextSnapshot);
+    setAnalyticsExpenses((prev) => [
+      {
+        id: optimisticId,
+        title,
+        categoryId: mapExpenseCategoryToId(category),
+        amount,
+        paidAmount: amount,
+        paid: true,
+      },
+      ...prev,
+    ]);
+
+    // Persist to Firestore in parallel
+    await Promise.all([
+      setDoc(doc(db, 'totalCashSnapshots', userId), {
+        ...nextSnapshot,
+        updatedAt: serverTimestamp(),
+      }),
+      addDoc(collection(db, 'plannedExpenses'), {
+        userId,
+        title,
+        category,
+        expectedAmount: amount,
+        actualPaidAmount: amount,
+        dueDate: todayISO,
+        paymentStatus: 'paid',
+        recurrence: 'one_time',
+        frequency: 'one_time',
+        expenseType: 'one_time',
+        walletId: targetKey,
+        walletName: targetLabel,
+        createdAt: serverTimestamp(),
+      }),
+      addDoc(collection(db, 'cashTransactions'), {
+        userId,
+        amount,
+        type: 'deduct',
+        source: sourceType,
+        category: 'expenditure',
+        eventType: 'expense',
+        expenseCategory: category,
+        walletName: targetLabel,
+        BankName: bankName,
+        customPaymentHeadName: customName,
+        note: title,
+        balanceAfter: newWalletBalance,
+        createdAt: serverTimestamp(),
+      }),
+    ]);
+  };
 
   // ── Pre-selected action triggers ───────────────────────────
   const openAddMoneyForWallet = (wId: string) => {
@@ -1815,9 +2052,27 @@ export default function TotalCashSnapshotComponent({
             </h1>
             <p className={`mt-0.5 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               Your financial overview
+              {budgetStartDay !== 1 && (
+                <span className="ml-1.5 text-xs opacity-80">
+                  • {activeBudgetCycle.label} ({activeBudgetCycle.rangeLabel})
+                </span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setOpenBudgetSettings(true)}
+              aria-label="Budget month start settings"
+              title={`Month starts on day ${budgetStartDay}`}
+              className={`rounded-full p-2 transition-all cursor-pointer ${
+                isDark
+                  ? 'text-slate-400 hover:text-white'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Settings size={18} strokeWidth={2} />
+            </button>
             <button
               onClick={triggerRefresh}
               aria-label="Refresh financial data"
@@ -1845,6 +2100,13 @@ export default function TotalCashSnapshotComponent({
         </header>
 
         <main className="flex-1 flex flex-col gap-3.5">
+          {/* ── Quick Paid Expense Bar ── */}
+          <QuickExpense
+            onAdd={handleQuickAddExpense}
+            spendableWallets={spendableWalletsForQuickAdd}
+            isDark={isDark}
+          />
+
           {/* ── Row 1: Financial Overview (Left 50%) + Expense Analytics (Right 50%) ── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-stretch">
             <motion.div
@@ -1893,8 +2155,8 @@ export default function TotalCashSnapshotComponent({
                   receivables: loanMetrics.toReceive,
                 }}
                 balancesVisible={balancesVisible}
-                onPayBackClick={() => setOpenLoan(true)}
-                onGetBackClick={() => setOpenLiability(true)}
+                onPayBackClick={() => setLoanDetailModal('pay')}
+                onGetBackClick={() => setLoanDetailModal('receive')}
                 isDark={isDark}
               />
             </motion.div>
@@ -2217,6 +2479,14 @@ export default function TotalCashSnapshotComponent({
               ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
               isLocked: wData.isLocked,
               isVirtual: wData.isVirtual,
+              fundState:
+                !hasOwnThisMoney || wData.fundClassification === 'amanat'
+                  ? 'amanat'
+                  : wData.fundClassification === 'long_term_saving'
+                  ? 'savings'
+                  : wData.fundClassification === 'reserved' || wData.isReserved
+                  ? 'reserved'
+                  : 'spendable',
               reservedAmount: wData.isReserved
                 ? initAmt
                 : wData.allocations?.reduce((acc, a) => acc + (a.reservedAmount || 0), 0) || 0,
@@ -2234,8 +2504,11 @@ export default function TotalCashSnapshotComponent({
               [key]: ownershipEntry,
             };
 
-            let newTotal = snapshot.totalAmount || 0;
-            if (initAmt > 0 && !wData.isVirtual) newTotal += initAmt;
+            const newTotal = computeTotalAmount({
+              ...snapshot,
+              sources: updatedSources,
+              sourceOwnership: updatedOwnership,
+            });
 
             if (initAmt > 0) {
               await addDoc(collection(db, 'cashTransactions'), {
@@ -2281,6 +2554,16 @@ export default function TotalCashSnapshotComponent({
         }))}
       />
 
+      {/* Budget Month Start Day Settings Modal */}
+      <BudgetStartDayModal
+        open={openBudgetSettings}
+        onClose={() => setOpenBudgetSettings(false)}
+        currentDay={budgetStartDay}
+        onSave={updateBudgetStartDay}
+        saving={savingBudgetStartDay}
+        isDark={isDark}
+      />
+
       {/* Redesigned Wallet Details Modal */}
       <WalletDetailsModal
         open={Boolean(activeWalletModal)}
@@ -2294,6 +2577,257 @@ export default function TotalCashSnapshotComponent({
         onDeleteWallet={handleDeleteWallet}
         userId={userId}
       />
+
+      {/* Loan Details Modal (shown when clicking homepage Loan cards) */}
+      {loanDetailModal && (() => {
+        const isPay = loanDetailModal === 'pay';
+        const partyRows: {
+          id: string;
+          partyName: string;
+          remaining: number;
+          total: number;
+          paid: number;
+          dueDateStr?: string;
+          note?: string;
+        }[] = [];
+
+        loans.forEach((l) => {
+          if (l.isSettled) return;
+          if ((isPay && l.type === 'borrow') || (!isPay && l.type === 'lend')) {
+            const total = Number(l.amount) || 0;
+            const paid = Number(l.paidAmount) || 0;
+            const remaining = Math.max(0, total - paid);
+            if (remaining <= 0) return;
+            const d = l.dueDate
+              ? l.dueDate instanceof Timestamp
+                ? l.dueDate.toDate()
+                : new Date(l.dueDate)
+              : null;
+            partyRows.push({
+              id: `loan_${l.id || partyRows.length}`,
+              partyName: l.counterparty || (isPay ? 'Unnamed Lender' : 'Unnamed Borrower'),
+              remaining,
+              total,
+              paid,
+              dueDateStr:
+                d && !Number.isNaN(d.getTime())
+                  ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : undefined,
+              note: l.note || l.notes,
+            });
+          }
+        });
+
+        liabilities.forEach((l) => {
+          if (l.status === 'settled') return;
+          if ((isPay && l.type === 'borrowed') || (!isPay && l.type === 'lend')) {
+            const remaining = Number(l.amount) || 0;
+            if (remaining <= 0) return;
+            const d = l.dueDate
+              ? l.dueDate instanceof Timestamp
+                ? l.dueDate.toDate()
+                : new Date(l.dueDate)
+              : null;
+            partyRows.push({
+              id: `liab_${l.id || partyRows.length}`,
+              partyName: l.personName || (isPay ? 'Unnamed Lender' : 'Unnamed Borrower'),
+              remaining,
+              total: remaining,
+              paid: 0,
+              dueDateStr:
+                d && !Number.isNaN(d.getTime())
+                  ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : undefined,
+              note: l.description,
+            });
+          }
+        });
+
+        const totalShown = partyRows.reduce((s, r) => s + r.remaining, 0);
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4"
+            onClick={() => setLoanDetailModal(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl border shadow-2xl overflow-hidden flex flex-col max-h-[85vh] ${
+                isDark
+                  ? 'bg-[#181c24] border-white/10 text-white'
+                  : 'bg-white border-slate-200 text-slate-900'
+              }`}
+            >
+              {/* Header */}
+              <div
+                className={`flex items-center justify-between px-4 sm:px-5 py-4 border-b ${
+                  isDark ? 'border-white/10' : 'border-slate-200'
+                }`}
+              >
+                <div>
+                  <h3 className="text-base font-bold tracking-tight">
+                    {isPay ? 'To Pay Back (Borrowed)' : 'To Get Back (Lent)'}
+                  </h3>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {partyRows.length} active {partyRows.length === 1 ? 'party' : 'parties'} • Total{' '}
+                    <span className={isPay ? 'text-red-500 font-semibold' : 'text-blue-500 font-semibold'}>
+                      {balancesVisible
+                        ? `Rs. ${Math.round(totalShown).toLocaleString('en-PK')}`
+                        : 'Rs. •••••'}
+                    </span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLoanDetailModal(null)}
+                  className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+                    isDark ? 'hover:bg-white/10 text-slate-400' : 'hover:bg-slate-100 text-slate-500'
+                  }`}
+                  aria-label="Close loan details"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Switcher Tabs */}
+              <div className="px-4 sm:px-5 pt-3">
+                <div
+                  className={`grid grid-cols-2 gap-1.5 p-1 rounded-2xl ${
+                    isDark ? 'bg-white/5' : 'bg-slate-100'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setLoanDetailModal('pay')}
+                    className={`py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      isPay
+                        ? 'bg-red-500 text-white shadow-sm'
+                        : isDark
+                        ? 'text-slate-300 hover:text-white'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    To Pay Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoanDetailModal('receive')}
+                    className={`py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      !isPay
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : isDark
+                        ? 'text-slate-300 hover:text-white'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    To Get Back
+                  </button>
+                </div>
+              </div>
+
+              {/* Parties List */}
+              <div className="p-4 sm:p-5 overflow-y-auto space-y-2.5 flex-1">
+                {partyRows.length === 0 ? (
+                  <div
+                    className={`rounded-2xl border p-6 text-center text-xs ${
+                      isDark
+                        ? 'bg-white/5 border-white/10 text-slate-400'
+                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    {isPay
+                      ? 'You have no active borrowed loans to pay back.'
+                      : 'No one currently owes you any lent loans.'}
+                  </div>
+                ) : (
+                  partyRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className={`rounded-2xl border p-3.5 flex items-center justify-between gap-3 ${
+                        isDark
+                          ? 'bg-[#1f2430] border-white/10'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold truncate">{row.partyName}</p>
+                        <div
+                          className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] ${
+                            isDark ? 'text-slate-400' : 'text-slate-500'
+                          }`}
+                        >
+                          <span>{isPay ? 'Borrowed from' : 'Lent to'}</span>
+                          {row.dueDateStr && <span>• Due {row.dueDateStr}</span>}
+                          {row.paid > 0 && (
+                            <span>
+                              • Paid Rs. {Math.round(row.paid).toLocaleString('en-PK')} of Rs.{' '}
+                              {Math.round(row.total).toLocaleString('en-PK')}
+                            </span>
+                          )}
+                        </div>
+                        {row.note && (
+                          <p
+                            className={`mt-1 text-xs line-clamp-2 ${
+                              isDark ? 'text-slate-300' : 'text-slate-600'
+                            }`}
+                          >
+                            {row.note}
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`shrink-0 text-sm sm:text-base font-extrabold tabular-nums ${
+                          isPay
+                            ? isDark
+                              ? 'text-red-400'
+                              : 'text-red-600'
+                            : isDark
+                            ? 'text-blue-400'
+                            : 'text-blue-600'
+                        }`}
+                      >
+                        {balancesVisible
+                          ? `Rs. ${Math.round(row.remaining).toLocaleString('en-PK')}`
+                          : 'Rs. •••••'}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div
+                className={`px-4 sm:px-5 py-3.5 border-t flex items-center justify-between gap-2 ${
+                  isDark ? 'border-white/10 bg-[#141820]' : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoanDetailModal(null);
+                    setOpenLoan(true);
+                  }}
+                  className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-white/10 hover:bg-white/15 text-slate-200'
+                      : 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+                  }`}
+                >
+                  + Add Loan
+                </button>
+                <Link
+                  href="/finance/loans"
+                  onClick={() => setLoanDetailModal(null)}
+                  className="inline-flex items-center gap-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 px-4 py-2 text-xs font-semibold text-white transition-colors"
+                >
+                  Manage All Loans
+                  <ChevronRight size={14} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

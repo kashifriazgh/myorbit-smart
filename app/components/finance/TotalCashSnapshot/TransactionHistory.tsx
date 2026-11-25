@@ -8,6 +8,9 @@ import {
   DialogActions,
   Button,
   IconButton,
+  Skeleton,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import {
   X,
@@ -48,6 +51,8 @@ export default function TransactionHistory({
   onClose,
   userId,
 }: TransactionHistoryProps) {
+  const muiTheme = useTheme();
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<CashTransaction[]>([]);
 
@@ -296,14 +301,16 @@ export default function TransactionHistory({
     <Dialog
       open={open}
       onClose={onClose}
+      fullScreen={isMobile}
       fullWidth
       maxWidth="md"
       PaperProps={{
         sx: {
           backgroundColor: '#0a0f1d',
           color: '#f8fafc',
-          borderRadius: 4,
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: isMobile ? 0 : 4,
+          border: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+          ...(isMobile ? { width: '100%', maxWidth: '100%', margin: 0 } : {}),
         },
       }}
     >
@@ -324,7 +331,11 @@ export default function TransactionHistory({
         </IconButton>
       </DialogTitle>
 
-      <DialogContent className="p-4 flex flex-col gap-3 max-h-[80vh] overflow-y-auto">
+      <DialogContent
+        className={`p-3 sm:p-4 flex flex-col gap-3 overflow-y-auto ${
+          isMobile ? 'flex-1' : 'max-h-[80vh]'
+        }`}
+      >
         {/* Search Bar & Quick Filters */}
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
@@ -456,7 +467,16 @@ export default function TransactionHistory({
 
         {/* Transactions Count Bar */}
         <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-          <span>Found {filteredTransactions.length} transactions</span>
+          {loading ? (
+            <Skeleton
+              variant="text"
+              width={140}
+              height={18}
+              sx={{ bgcolor: 'rgba(255,255,255,0.08)' }}
+            />
+          ) : (
+            <span>Found {filteredTransactions.length} transactions</span>
+          )}
           {(searchQuery || categoryFilter !== 'all' || walletFilter !== 'all' || minAmount || maxAmount) && (
             <button
               type="button"
@@ -480,7 +500,51 @@ export default function TransactionHistory({
         {/* Transaction Items List */}
         <div className="flex flex-col gap-2">
           {loading ? (
-            <div className="py-12 text-center text-xs text-slate-400">Loading history…</div>
+            <div className="flex flex-col gap-2" aria-label="Loading transactions">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className="bg-[#121824] border border-white/10 rounded-2xl p-3.5 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <Skeleton
+                      variant="rounded"
+                      width={36}
+                      height={36}
+                      sx={{ bgcolor: 'rgba(255,255,255,0.08)', borderRadius: '12px', flexShrink: 0 }}
+                    />
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <Skeleton
+                        variant="text"
+                        width={`${55 + (idx % 3) * 12}%`}
+                        height={18}
+                        sx={{ bgcolor: 'rgba(255,255,255,0.1)' }}
+                      />
+                      <Skeleton
+                        variant="text"
+                        width={`${35 + (idx % 2) * 15}%`}
+                        height={14}
+                        sx={{ bgcolor: 'rgba(255,255,255,0.06)' }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <Skeleton
+                      variant="text"
+                      width={76}
+                      height={20}
+                      sx={{ bgcolor: 'rgba(255,255,255,0.1)' }}
+                    />
+                    <Skeleton
+                      variant="text"
+                      width={52}
+                      height={12}
+                      sx={{ bgcolor: 'rgba(255,255,255,0.06)' }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : filteredTransactions.length === 0 ? (
             <div className="py-12 text-center text-xs text-slate-500 bg-slate-900/30 rounded-2xl border border-white/5">
               No transactions match your search and filter criteria.

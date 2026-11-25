@@ -70,7 +70,104 @@ export function mapExpenseCategoryToId(category?: string): ExpenseAnalyticsCateg
   return 'other';
 }
 
-const formatRs = (n: number) => `Rs. ${Math.round(Number(n || 0)).toLocaleString('en-US')}`;
+const formatRs = (n: number) => `Rs. ${Math.round(Number(n || 0)).toLocaleString('en-PK')}`;
+const formatCardRs = (n: number) => `Rs ${Math.round(Number(n || 0)).toLocaleString('en-PK')}`;
+
+function CheckCircleIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-7 sm:size-8"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-7 sm:size-8"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function ExpenseStatCard({
+  label,
+  urdu,
+  amountText,
+  icon,
+  tone,
+  isDark,
+}: {
+  label: string;
+  urdu: string;
+  amountText: string;
+  icon: React.ReactNode;
+  tone: string;
+  isDark: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl border p-3.5 sm:p-4 transition-colors ${
+        isDark
+          ? 'border-white/10 bg-[#282e3d]'
+          : 'border-gray-200 bg-white'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <span
+          className={`text-xs sm:text-sm font-medium ${
+            isDark ? 'text-gray-400' : 'text-gray-600'
+          }`}
+        >
+          {label}
+        </span>
+        <span
+          lang="ur"
+          dir="rtl"
+          className={`text-[9px] leading-none ${
+            isDark ? 'text-gray-500' : 'text-gray-400'
+          }`}
+        >
+          {urdu}
+        </span>
+      </div>
+
+      <div className="mt-3 sm:mt-4 flex items-center gap-2.5 sm:gap-3">
+        <div
+          className={`flex size-11 sm:size-14 shrink-0 items-center justify-center rounded-xl ${tone}`}
+        >
+          {icon}
+        </div>
+        <p
+          className={`truncate text-lg sm:text-2xl font-semibold tracking-tight tabular-nums ${
+            isDark ? 'text-gray-50' : 'text-gray-900'
+          }`}
+        >
+          {amountText}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 const FALLBACK_CATEGORY =
   DEFAULT_EXPENSE_ANALYTICS_CATEGORIES[DEFAULT_EXPENSE_ANALYTICS_CATEGORIES.length - 1];
@@ -213,13 +310,31 @@ export default function ExpenseAnalytics({
             <div className={`w-full rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`} />
           )}
         </div>
-        <div className="mt-2 flex justify-between text-xs">
-          <span className={`font-semibold ${isDark ? 'text-green-400' : 'text-green-600'}`}>
-            Paid {displayRs(paidTotal)}
-          </span>
-          <span className={`font-semibold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
-            Pending {displayRs(pendingTotal)}
-          </span>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <ExpenseStatCard
+            label="Paid"
+            urdu="ادا شدہ"
+            amountText={balancesVisible ? formatCardRs(paidTotal) : 'Rs •••••'}
+            icon={<CheckCircleIcon />}
+            tone={
+              isDark
+                ? 'bg-emerald-950/80 text-emerald-400'
+                : 'bg-emerald-50 text-emerald-700'
+            }
+            isDark={isDark}
+          />
+          <ExpenseStatCard
+            label="Pending"
+            urdu="زیر التوا"
+            amountText={balancesVisible ? formatCardRs(pendingTotal) : 'Rs •••••'}
+            icon={<ClockIcon />}
+            tone={
+              isDark
+                ? 'bg-amber-950/80 text-amber-400'
+                : 'bg-amber-50 text-amber-700'
+            }
+            isDark={isDark}
+          />
         </div>
 
         {expenses.length === 0 ? (

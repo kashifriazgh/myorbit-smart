@@ -1155,6 +1155,14 @@ export default function WalletsPage() {
               ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
               isLocked: wData.isLocked,
               isVirtual: wData.isVirtual,
+              fundState:
+                !hasOwnThisMoney || wData.fundClassification === 'amanat'
+                  ? 'amanat'
+                  : wData.fundClassification === 'long_term_saving'
+                  ? 'savings'
+                  : wData.fundClassification === 'reserved' || wData.isReserved
+                  ? 'reserved'
+                  : 'spendable',
               reservedAmount: wData.isReserved
                 ? initAmt
                 : wData.allocations?.reduce((acc, a) => acc + (a.reservedAmount || 0), 0) || 0,
@@ -1172,8 +1180,11 @@ export default function WalletsPage() {
               [key]: ownershipEntry,
             };
 
-            let newTotal = snapshot.totalAmount || 0;
-            if (initAmt > 0 && !wData.isVirtual) newTotal += initAmt;
+            const newTotal = computeTotalAmount({
+              ...snapshot,
+              sources: updatedSources,
+              sourceOwnership: updatedOwnership,
+            });
 
             if (initAmt > 0) {
               await addDoc(collection(db, 'cashTransactions'), {
