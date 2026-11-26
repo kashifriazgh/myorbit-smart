@@ -63,7 +63,8 @@ interface WalletDetailsModalProps {
     allocations: WalletAllocation[],
     reservedAmount: number,
     ownerName: string,
-    hasOwnThisMoney: boolean
+    hasOwnThisMoney: boolean,
+    holderName?: string
   ) => Promise<void>;
   onDeleteWallet: (walletId: string) => Promise<void>;
   userId: string;

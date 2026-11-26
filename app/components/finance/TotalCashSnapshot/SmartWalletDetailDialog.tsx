@@ -123,7 +123,8 @@ interface SmartWalletDetailDialogProps {
     allocations: AppWalletAllocation[],
     reservedAmount: number,
     ownerName: string,
-    hasOwnThisMoney: boolean
+    hasOwnThisMoney: boolean,
+    holderName?: string
   ) => Promise<void>;
   onDeleteWallet: (walletId: string, options: WalletDeleteOptions) => Promise<void>;
 }
@@ -287,6 +288,11 @@ export default function SmartWalletDetailDialog({
   const [quickError, setQuickError] = useState('');
   const [quickSaving, setQuickSaving] = useState(false);
 
+  // Wallet Holder (who physically holds/possesses the money)
+  const [holderKind, setHolderKind] = useState<'me' | 'other'>('me');
+  const [walletHolderName, setWalletHolderName] = useState('');
+  const [savingHolder, setSavingHolder] = useState(false);
+
   // Graceful Wallet Closure / Delete flow state
   const [showDeleteFlow, setShowDeleteFlow] = useState(false);
   const [deleteChoice, setDeleteChoice] = useState<'transfer' | 'adjustment' | null>(null);
@@ -408,6 +414,16 @@ export default function SmartWalletDetailDialog({
     setDeleteTargetWalletId('');
     setDeleteNote('');
     setDeleteError('');
+
+    // Sync holder state
+    const h = wallet.holderName?.trim();
+    if (h && h.toLowerCase() !== 'me') {
+      setHolderKind('other');
+      setWalletHolderName(h);
+    } else {
+      setHolderKind('me');
+      setWalletHolderName('');
+    }
   }, [wallet]);
 
   // Close on Escape
@@ -565,7 +581,8 @@ export default function SmartWalletDetailDialog({
         allAllocs,
         totalReserved,
         primaryOwner,
-        hasOwnedFunds || wallet.hasOwnThisMoney
+        hasOwnedFunds || wallet.hasOwnThisMoney,
+        holderKind === 'other' ? walletHolderName.trim() || undefined : undefined
       );
     } finally {
       setSaving(false);
@@ -981,6 +998,13 @@ export default function SmartWalletDetailDialog({
               <p className={`truncate text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                 {wallet.purpose || wallet.subtitle}
               </p>
+              {wallet.holderName && wallet.holderName.toLowerCase() !== 'me' && (
+                <span className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  📍 Held with: {wallet.holderName}
+                </span>
+              )}
             </div>
           </div>
 
@@ -2050,6 +2074,105 @@ export default function SmartWalletDetailDialog({
             );
           })}
         </ul>
+
+        {/* Held With / Keeper Section */}
+        <div
+          className={`mt-5 rounded-2xl border p-3.5 ${
+            isDark ? 'border-white/10 bg-[#282e3d]' : 'border-slate-200 bg-slate-50'
+          }`}
+        >
+          <p className={`text-xs font-bold uppercase tracking-wide ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+            Held With / Kept At
+          </p>
+          <p className={`mt-0.5 text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Who physically holds this wallet&apos;s money?
+          </p>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setHolderKind('me');
+                setWalletHolderName('');
+              }}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                holderKind === 'me'
+                  ? isDark
+                    ? 'bg-white text-slate-900'
+                    : 'bg-slate-900 text-white'
+                  : isDark
+                  ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              With Me
+            </button>
+            <button
+              type="button"
+              onClick={() => setHolderKind('other')}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                holderKind === 'other'
+                  ? isDark
+                    ? 'bg-white text-slate-900'
+                    : 'bg-slate-900 text-white'
+                  : isDark
+                  ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              Other Person / Place
+            </button>
+          </div>
+
+          {holderKind === 'other' && (
+            <div className="mt-2.5 flex gap-2">
+              <input
+                type="text"
+                value={walletHolderName}
+                onChange={(e) => setWalletHolderName(e.target.value)}
+                placeholder="e.g. Sister, Locker, Office"
+                maxLength={40}
+                className={inputCls}
+              />
+              <button
+                type="button"
+                disabled={savingHolder || !walletHolderName.trim()}
+                onClick={async () => {
+                  setSavingHolder(true);
+                  try {
+                    await persistEnvelopes(envelopes, defaultFundState, defaultOwnerName);
+                  } finally {
+                    setSavingHolder(false);
+                  }
+                }}
+                className="shrink-0 rounded-xl bg-amber-500 hover:bg-amber-400 px-4 text-xs font-bold text-black transition active:scale-95 disabled:opacity-40 cursor-pointer"
+              >
+                {savingHolder ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )}
+
+          {holderKind === 'me' && wallet.holderName && wallet.holderName.toLowerCase() !== 'me' && (
+            <button
+              type="button"
+              disabled={savingHolder}
+              onClick={async () => {
+                setSavingHolder(true);
+                try {
+                  await persistEnvelopes(envelopes, defaultFundState, defaultOwnerName);
+                } finally {
+                  setSavingHolder(false);
+                }
+              }}
+              className={`mt-2 w-full rounded-xl py-2 text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                isDark
+                  ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              {savingHolder ? 'Saving…' : 'Remove holder & mark as "With Me"'}
+            </button>
+          )}
+        </div>
 
         {/* Footer Security Lock & Graceful Delete Wallet Controls */}
         <div

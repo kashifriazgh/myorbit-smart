@@ -134,6 +134,7 @@ export default function WalletsPage() {
       const isLocked = o?.isLocked ?? false;
       const hasOwn = o && typeof o.hasOwnThisMoney === 'boolean' ? o.hasOwnThisMoney : !isCustom;
       const ownerName = hasOwn ? 'You' : o?.ownerName || 'Someone else';
+      const holderName = o?.holderName;
       const reservedAmount = Number(o?.reservedAmount) || 0;
       const purpose = o?.purpose;
       const allocations = o?.allocations;
@@ -142,6 +143,7 @@ export default function WalletsPage() {
       const color = o?.color;
       return {
         owner: ownerName,
+        holderName,
         hasOwnThisMoney: hasOwn,
         isLocked,
         reservedAmount,
@@ -162,6 +164,7 @@ export default function WalletsPage() {
       walletType: 'cash',
       category: 'built-in',
       owner: ihInfo.owner,
+      holderName: ihInfo.holderName,
       hasOwnThisMoney: ihInfo.hasOwnThisMoney,
       isLocked: ihInfo.isLocked,
       reservedAmount: ihInfo.reservedAmount,
@@ -181,6 +184,7 @@ export default function WalletsPage() {
       walletType: 'mobile_wallet',
       category: 'built-in',
       owner: epInfo.owner,
+      holderName: epInfo.holderName,
       hasOwnThisMoney: epInfo.hasOwnThisMoney,
       isLocked: epInfo.isLocked,
       reservedAmount: epInfo.reservedAmount,
@@ -200,6 +204,7 @@ export default function WalletsPage() {
       walletType: 'mobile_wallet',
       category: 'built-in',
       owner: jcInfo.owner,
+      holderName: jcInfo.holderName,
       hasOwnThisMoney: jcInfo.hasOwnThisMoney,
       isLocked: jcInfo.isLocked,
       reservedAmount: jcInfo.reservedAmount,
@@ -219,6 +224,7 @@ export default function WalletsPage() {
       walletType: 'cash',
       category: 'built-in',
       owner: psInfo.owner,
+      holderName: psInfo.holderName,
       hasOwnThisMoney: psInfo.hasOwnThisMoney,
       isLocked: psInfo.isLocked,
       reservedAmount: psInfo.reservedAmount,
@@ -249,6 +255,7 @@ export default function WalletsPage() {
         bankName: bName,
         category: 'bank',
         owner: bInfo.owner,
+        holderName: bInfo.holderName,
         hasOwnThisMoney: bInfo.hasOwnThisMoney,
         isLocked: bInfo.isLocked,
         isVirtual: bInfo.isVirtual,
@@ -284,6 +291,7 @@ export default function WalletsPage() {
         customName: cName,
         category: 'custom',
         owner: cInfo.owner,
+        holderName: cInfo.holderName,
         hasOwnThisMoney: cInfo.hasOwnThisMoney,
         isLocked: cInfo.isLocked,
         isVirtual: cInfo.isVirtual,
@@ -730,16 +738,21 @@ export default function WalletsPage() {
     allocations: WalletAllocation[],
     reservedAmount: number,
     ownerName: string,
-    hasOwnThisMoney: boolean
+    hasOwnThisMoney: boolean,
+    walletHolderName?: string
   ) => {
     if (!snapshot || !user?.uid) return;
     try {
+      const existing = snapshot.sourceOwnership?.[walletId];
+      const nextHolderName =
+        walletHolderName !== undefined ? walletHolderName : existing?.holderName;
       const updatedOwnership = {
         ...(snapshot.sourceOwnership || {}),
         [walletId]: {
-          ...(snapshot.sourceOwnership?.[walletId] || {}),
+          ...(existing || {}),
           hasOwnThisMoney,
           ownerName: hasOwnThisMoney ? '' : ownerName,
+          ...(nextHolderName !== undefined ? { holderName: nextHolderName } : {}),
           reservedAmount,
           allocations,
         },
@@ -1153,6 +1166,7 @@ export default function WalletsPage() {
             const ownershipEntry: NonNullable<TotalCashSnapshot['sourceOwnership']>[string] = {
               hasOwnThisMoney,
               ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
+              ...(wData.holderName ? { holderName: wData.holderName } : {}),
               isLocked: wData.isLocked,
               isVirtual: wData.isVirtual,
               fundState:

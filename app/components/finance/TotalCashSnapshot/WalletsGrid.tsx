@@ -243,6 +243,17 @@ export default function WalletsGrid({
               >
                 {w.purpose || w.subtitle}
               </p>
+              {w.holderName && w.holderName.toLowerCase() !== 'me' && (
+                <p
+                  className={`mt-1 inline-flex w-fit max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    isDark
+                      ? 'bg-amber-500/15 text-amber-300'
+                      : 'bg-amber-50 text-amber-800 border border-amber-200'
+                  }`}
+                >
+                  <span className="truncate">Held: {w.holderName}</span>
+                </p>
+              )}
 
               {/* Amount */}
               <p

@@ -4,7 +4,7 @@ import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
-import TopExpenses, { type TopExpenseItem } from './TopExpenses';
+import { resolveExpenseIconKey } from '../ExpenseCategoryIcon';
 
 export type ExpenseAnalyticsCategoryId =
   | 'house_rent'
@@ -18,6 +18,7 @@ export type ExpenseAnalyticsCategoryId =
   | 'entertainment'
   | 'loans'
   | 'charity'
+  | 'family'
   | 'personal'
   | 'other';
 
@@ -48,6 +49,7 @@ export const DEFAULT_EXPENSE_ANALYTICS_CATEGORIES: CategoryDef[] = [
   { id: 'entertainment', label: 'Entertainment', grad: 'from-purple-400 to-violet-700' },
   { id: 'loans', label: 'Loans and installments', grad: 'from-orange-400 to-red-500' },
   { id: 'charity', label: 'Charity', grad: 'from-teal-300 to-teal-600' },
+  { id: 'family', label: 'Family', grad: 'from-pink-400 to-rose-500' },
   { id: 'personal', label: 'Personal', grad: 'from-amber-300 to-orange-500' },
   { id: 'other', label: 'Other expenses', grad: 'from-zinc-400 to-zinc-600' },
 ];
@@ -66,6 +68,7 @@ export function mapExpenseCategoryToId(category?: string): ExpenseAnalyticsCateg
   if (c.includes('entertain') || c.includes('netflix') || c.includes('subscrip')) return 'entertainment';
   if (c.includes('loan') || c.includes('installment') || c.includes('debt')) return 'loans';
   if (c.includes('charity') || c.includes('sadqa') || c.includes('zakat')) return 'charity';
+  if (c.includes('family')) return 'family';
   if (c.includes('personal')) return 'personal';
   return 'other';
 }
@@ -82,7 +85,7 @@ function CheckCircleIcon() {
       strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="size-7 sm:size-8"
+      className="size-5 sm:size-6"
       aria-hidden="true"
     >
       <circle cx="12" cy="12" r="9" />
@@ -100,7 +103,7 @@ function ClockIcon() {
       strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="size-7 sm:size-8"
+      className="size-5 sm:size-6"
       aria-hidden="true"
     >
       <circle cx="12" cy="12" r="9" />
@@ -126,7 +129,7 @@ function ExpenseStatCard({
 }) {
   return (
     <div
-      className={`rounded-xl border p-3.5 sm:p-4 transition-colors ${
+      className={`min-w-0 rounded-xl border p-3 sm:p-4 transition-colors ${
         isDark
           ? 'border-white/10 bg-[#282e3d]'
           : 'border-gray-200 bg-white'
@@ -151,14 +154,14 @@ function ExpenseStatCard({
         </span>
       </div>
 
-      <div className="mt-3 sm:mt-4 flex items-center gap-2.5 sm:gap-3">
+      <div className="mt-2.5 sm:mt-3.5 flex items-center gap-2 sm:gap-3">
         <div
-          className={`flex size-11 sm:size-14 shrink-0 items-center justify-center rounded-xl ${tone}`}
+          className={`flex size-9 sm:size-11 shrink-0 items-center justify-center rounded-lg sm:rounded-xl ${tone}`}
         >
           {icon}
         </div>
         <p
-          className={`truncate text-lg sm:text-2xl font-semibold tracking-tight tabular-nums ${
+          className={`min-w-0 truncate text-[15px] sm:text-xl font-semibold tracking-tight tabular-nums ${
             isDark ? 'text-gray-50' : 'text-gray-900'
           }`}
         >
@@ -172,8 +175,8 @@ function ExpenseStatCard({
 const FALLBACK_CATEGORY =
   DEFAULT_EXPENSE_ANALYTICS_CATEGORIES[DEFAULT_EXPENSE_ANALYTICS_CATEGORIES.length - 1];
 
-function catOf(id: ExpenseAnalyticsCategoryId): CategoryDef {
-  return DEFAULT_EXPENSE_ANALYTICS_CATEGORIES.find((c) => c.id === id) ?? FALLBACK_CATEGORY;
+function catOfLabel(id: ExpenseAnalyticsCategoryId): string {
+  return DEFAULT_EXPENSE_ANALYTICS_CATEGORIES.find((c) => c.id === id)?.label ?? FALLBACK_CATEGORY.label;
 }
 
 interface ExpenseAnalyticsProps {
@@ -189,45 +192,44 @@ interface ExpenseAnalyticsProps {
 export default function ExpenseAnalytics({
   expenses = [],
   income = 0,
-  topCount = 5,
+  topCount: _topCount = 5,
   balancesVisible = true,
   expensesHref = '/finance/expenses',
   isDark = true,
 }: ExpenseAnalyticsProps) {
   const displayRs = (n: number) => (balancesVisible ? formatRs(n) : 'Rs. •••••');
 
-  const { total, paidTotal, pendingTotal, paidPct, topExpenseItems } = useMemo(() => {
+  const { total, paidTotal, pendingTotal, paidPct, upcomingExpenses } = useMemo(() => {
     let tot = 0;
     let paidSum = 0;
 
-    const mapped: TopExpenseItem[] = [];
+    const upcoming: ExpenseAnalyticsItem[] = [];
 
     expenses.forEach((e) => {
       const amt = Math.max(0, Number(e.amount) || 0);
       if (amt <= 0) return;
       const paidPortion = e.paid ? amt : Math.min(amt, Math.max(0, Number(e.paidAmount) || 0));
-      const pendingPortion = Math.max(0, amt - paidPortion);
 
       tot += amt;
       paidSum += paidPortion;
 
-      mapped.push({
-        id: e.id,
-        title: e.title || catOf(e.categoryId).label,
-        amount: amt,
-        status: pendingPortion <= 0 && paidPortion > 0 ? 'paid' : 'upcoming',
-      });
+      if (!e.paid) {
+        upcoming.push(e);
+      }
     });
 
     const pendingSum = Math.max(0, tot - paidSum);
     const pPct = tot > 0 ? Math.round((paidSum / tot) * 100) : 0;
+
+    // Sort by remaining amount descending so biggest pending shows first
+    upcoming.sort((a, b) => b.amount - a.amount);
 
     return {
       total: Math.round(tot),
       paidTotal: Math.round(paidSum),
       pendingTotal: Math.round(pendingSum),
       paidPct: pPct,
-      topExpenseItems: mapped,
+      upcomingExpenses: upcoming,
     };
   }, [expenses]);
 
@@ -353,15 +355,70 @@ export default function ExpenseAnalytics({
               Add an expense →
             </Link>
           </div>
+        ) : upcomingExpenses.length === 0 ? (
+          <div
+            className={`mt-4 rounded-2xl border p-4 text-center text-xs ${
+              isDark
+                ? 'bg-[#282e3d] border-white/10 text-slate-400'
+                : 'bg-slate-50 border-slate-200 text-slate-500'
+            }`}
+          >
+            🎉 All expenses paid for this month!
+          </div>
         ) : (
-          <TopExpenses
-            expenses={topExpenseItems}
-            maxItems={topCount}
-            currency="Rs."
-            isDark={isDark}
-            balancesVisible={balancesVisible}
-            className="mt-4"
-          />
+          <div className="mt-4 space-y-1.5">
+            <p className={`text-[11px] font-semibold uppercase tracking-wide ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Upcoming — {upcomingExpenses.length} pending
+            </p>
+            <ul className="space-y-1.5">
+              {upcomingExpenses.map((e) => {
+                const remaining = Math.max(0, e.amount - (e.paidAmount || 0));
+                return (
+                  <li
+                    key={e.id}
+                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
+                      isDark ? 'bg-[#282e3d] hover:bg-[#2e3547]' : 'bg-slate-50 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    {(() => {
+                      const iconKey = resolveExpenseIconKey(e.title, e.categoryId);
+                      const DOT_COLORS: Record<string, string> = {
+                        bolt: 'bg-amber-400', flame: 'bg-red-400', droplet: 'bg-cyan-400',
+                        school: 'bg-violet-400', wifi: 'bg-blue-400', home: 'bg-sky-400',
+                        cart: 'bg-emerald-400', pill: 'bg-rose-400', fuel: 'bg-gray-400',
+                        shirt: 'bg-fuchsia-400', film: 'bg-purple-400', landmark: 'bg-orange-400',
+                        heart: 'bg-teal-400', users: 'bg-pink-400', user: 'bg-indigo-400',
+                        receipt: 'bg-slate-400',
+                      };
+                      return (
+                        <span
+                          className={`size-2.5 shrink-0 rounded-full ${DOT_COLORS[iconKey] ?? 'bg-amber-400'}`}
+                        />
+                      );
+                    })()}
+                    <span className={`min-w-0 flex-1 truncate text-sm sm:text-base font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
+                      {e.title || catOfLabel(e.categoryId)}
+                    </span>
+                    <span className={`shrink-0 text-sm sm:text-base font-semibold tabular-nums ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
+                      {balancesVisible
+                        ? `Rs. ${Math.round(remaining).toLocaleString('en-PK')}`
+                        : 'Rs. •••••'}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {upcomingExpenses.length > 5 && (
+              <Link
+                href={expensesHref}
+                className={`block pt-1 text-center text-[11px] font-semibold hover:underline ${
+                  isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                View all {upcomingExpenses.length} pending →
+              </Link>
+            )}
+          </div>
         )}
       </div>
     </div>

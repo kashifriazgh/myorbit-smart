@@ -1,18 +1,22 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
+  ArrowLeft,
   ChevronDown,
+  Fuel,
   GraduationCap,
   HeartPulse,
   Home,
-  Fuel,
   Receipt,
   ShoppingBag,
   ShoppingCart,
   Smartphone,
   User,
+  Users,
+  Wallet,
   Zap,
 } from 'lucide-react';
 
@@ -22,6 +26,7 @@ const CATEGORY_PILLS = [
   { short: 'Bills', full: 'Electricity, gas and water', Icon: Zap },
   { short: 'Mobile', full: 'Mobile and internet', Icon: Smartphone },
   { short: 'Health', full: 'Healthcare and medicines', Icon: HeartPulse },
+  { short: 'Family', full: 'Family', Icon: Users },
   { short: 'Rent', full: 'House rent', Icon: Home },
   { short: 'School', full: "Children's education", Icon: GraduationCap },
   { short: 'Shop', full: 'Clothing and shopping', Icon: ShoppingBag },
@@ -63,6 +68,7 @@ export default function QuickExpense({
   const [amount, setAmount] = useState('');
   const [title, setTitle] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>(CATEGORY_PILLS[0].full);
+  const [browsingWalletKey, setBrowsingWalletKey] = useState<string | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -72,7 +78,35 @@ export default function QuickExpense({
   const numericAmount = Number(amount) || 0;
   const hasSpendableMoney = spendableWallets.length > 0;
 
-  // Auto-select a wallet & envelope that has spendable money
+  // Group spendable options by wallet so user can pick Wallet -> then its Envelopes
+  const walletGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        walletKey: string;
+        label: string;
+        totalSpendable: number;
+        envelopes: QuickExpenseWalletOption[];
+      }
+    >();
+    spendableWallets.forEach((opt) => {
+      const existing = map.get(opt.walletKey);
+      if (existing) {
+        existing.totalSpendable += opt.spendable;
+        existing.envelopes.push(opt);
+      } else {
+        map.set(opt.walletKey, {
+          walletKey: opt.walletKey,
+          label: opt.label,
+          totalSpendable: opt.spendable,
+          envelopes: [opt],
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [spendableWallets]);
+
+  // Auto-select a wallet & envelope that has spendable money if user hasn't explicitly picked one
   const autoOption = useMemo(() => {
     if (spendableWallets.length === 0) return null;
     const sorted = [...spendableWallets].sort((a, b) => b.spendable - a.spendable);
@@ -96,6 +130,18 @@ export default function QuickExpense({
     return autoOption;
   }, [selectedOptionId, spendableWallets, autoOption]);
 
+  const activeWalletGroup = useMemo(
+    () => walletGroups.find((g) => g.walletKey === browsingWalletKey) || null,
+    [walletGroups, browsingWalletKey]
+  );
+
+  // If browsing wallet no longer exists after spend/update, go back to wallet list
+  useEffect(() => {
+    if (browsingWalletKey && !walletGroups.some((g) => g.walletKey === browsingWalletKey)) {
+      setBrowsingWalletKey(null);
+    }
+  }, [browsingWalletKey, walletGroups]);
+
   const insufficientInSelected =
     Boolean(activeOption) && numericAmount > 0 && numericAmount > activeOption!.spendable;
 
@@ -114,6 +160,19 @@ export default function QuickExpense({
     numericAmount > 0 &&
     !insufficientInSelected &&
     effectiveTitle.length > 0;
+
+  const handleSelectWalletGroup = (walletKey: string) => {
+    setBrowsingWalletKey(walletKey);
+    const grp = walletGroups.find((g) => g.walletKey === walletKey);
+    if (grp && grp.envelopes.length > 0) {
+      // Pick best covering envelope in this wallet automatically
+      const best =
+        (numericAmount > 0
+          ? grp.envelopes.find((env) => env.spendable >= numericAmount)
+          : undefined) || grp.envelopes[0];
+      setSelectedOptionId(best.optionId);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -344,40 +403,118 @@ export default function QuickExpense({
             </button>
           </div>
 
-          {/* Selected spendable wallet + envelope selector */}
-          {hasSpendableMoney && activeOption && (
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>From:</span>
-                {spendableWallets.length > 1 ? (
-                  <select
-                    value={activeOption.optionId}
-                    onChange={(e) => setSelectedOptionId(e.target.value)}
-                    aria-label="Deduct from wallet or envelope"
-                    className={`max-w-[200px] truncate rounded-lg border px-2 py-0.5 text-[11px] font-medium outline-none cursor-pointer ${
-                      isDark
-                        ? 'border-white/10 bg-[#282e3d] text-slate-200'
-                        : 'border-slate-200 bg-slate-50 text-slate-700'
-                    }`}
+          {/* Wallet -> Envelopes Selector (below inputs, with slide animation) */}
+          {hasSpendableMoney && (
+            <div className="relative overflow-hidden">
+              <AnimatePresence mode="wait" initial={false}>
+                {!activeWalletGroup ? (
+                  <motion.div
+                    key="wallets"
+                    initial={{ x: -40, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ x: -40, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5"
                   >
-                    {spendableWallets.map((w) => (
-                      <option key={w.optionId} value={w.optionId}>
-                        {w.label}
-                        {w.envelopeName ? ` • ${w.envelopeName}` : ''} (Rs.{' '}
-                        {Math.round(w.spendable).toLocaleString('en-PK')})
-                      </option>
-                    ))}
-                  </select>
+                    <span
+                      className={`shrink-0 text-[11px] font-medium pr-0.5 ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
+                      }`}
+                    >
+                      Wallet:
+                    </span>
+                    {walletGroups.map((grp) => {
+                      const isActiveWallet = activeOption?.walletKey === grp.walletKey;
+                      return (
+                        <button
+                          key={grp.walletKey}
+                          type="button"
+                          onClick={() => handleSelectWalletGroup(grp.walletKey)}
+                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                            isActiveWallet
+                              ? isDark
+                                ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40'
+                                : 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300'
+                              : isDark
+                              ? 'bg-white/5 text-slate-300 hover:bg-white/10'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          <Wallet size={11} />
+                          <span>{grp.label}</span>
+                          <span className="opacity-75 tabular-nums">
+                            ({Math.round(grp.totalSpendable).toLocaleString('en-PK')})
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </motion.div>
                 ) : (
-                  <span className="font-semibold truncate">
-                    {activeOption.label}
-                    {activeOption.envelopeName ? ` • ${activeOption.envelopeName}` : ''}
-                  </span>
+                  <motion.div
+                    key="envelopes"
+                    initial={{ x: 40, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ x: 40, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setBrowsingWalletKey(null)}
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                        isDark
+                          ? 'bg-white/10 text-slate-200 hover:bg-white/15'
+                          : 'bg-slate-200 text-slate-800 hover:bg-slate-300'
+                      }`}
+                    >
+                      <ArrowLeft size={12} />
+                      <span>{activeWalletGroup.label}</span>
+                    </button>
+
+                    {activeWalletGroup.envelopes.map((env) => {
+                      const isSelectedEnv = activeOption?.optionId === env.optionId;
+                      const envLabel = env.envelopeName || `${activeWalletGroup.label} (Main)`;
+                      return (
+                        <button
+                          key={env.optionId}
+                          type="button"
+                          onClick={() => setSelectedOptionId(env.optionId)}
+                          className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                            isSelectedEnv
+                              ? isDark
+                                ? 'bg-emerald-500 text-slate-950 font-semibold'
+                                : 'bg-emerald-600 text-white font-semibold'
+                              : isDark
+                              ? 'bg-white/5 text-slate-300 hover:bg-white/10'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          <span>{envLabel}</span>
+                          <span className="opacity-80 tabular-nums">
+                            ({Math.round(env.spendable).toLocaleString('en-PK')})
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </motion.div>
                 )}
-              </div>
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* Active spendable summary line */}
+          {hasSpendableMoney && activeOption && (
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+              <span className={`truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Using:{' '}
+                <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>
+                  {activeOption.label}
+                  {activeOption.envelopeName ? ` • ${activeOption.envelopeName}` : ''}
+                </strong>
+              </span>
 
               <span
-                className={`tabular-nums font-medium ${
+                className={`shrink-0 tabular-nums font-medium ${
                   insufficientInSelected
                     ? 'text-rose-500'
                     : isDark

@@ -12,6 +12,7 @@ import {
   Landmark,
   HeartHandshake,
   User,
+  Users,
   MoreHorizontal,
 } from 'lucide-react';
 
@@ -87,6 +88,7 @@ export const EXPENSE_CATEGORIES = [
   'Entertainment',
   'Subscriptions',
   'Clothing',
+  'Family',
   'Gifts',
   'Others',
 ];
@@ -211,6 +213,7 @@ export const STANDARD_EXPENSE_CATEGORIES: readonly StandardExpenseCategory[] = [
   { name: 'Entertainment', icon: Film, darkColor: 'text-purple-400', lightColor: 'text-purple-600' },
   { name: 'Loans and installments', icon: Landmark, darkColor: 'text-red-400', lightColor: 'text-red-600' },
   { name: 'Charity', icon: HeartHandshake, darkColor: 'text-green-400', lightColor: 'text-green-600' },
+  { name: 'Family', icon: Users, darkColor: 'text-pink-400', lightColor: 'text-pink-600' },
   { name: 'Personal', icon: User, darkColor: 'text-orange-400', lightColor: 'text-orange-600' },
   { name: 'Other expenses', icon: MoreHorizontal, darkColor: 'text-slate-400', lightColor: 'text-slate-500' },
 ] as const;

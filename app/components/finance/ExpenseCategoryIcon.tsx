@@ -16,6 +16,7 @@ export type ExpenseIconKey =
   | 'film'
   | 'landmark'
   | 'heart'
+  | 'users'
   | 'user'
   | 'receipt';
 
@@ -88,6 +89,14 @@ const ICONS: Record<ExpenseIconKey, React.ReactNode> = {
   heart: (
     <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
   ),
+  users: (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
   user: (
     <>
       <circle cx="12" cy="8" r="4" />
@@ -116,6 +125,7 @@ const CAT_TONES: Record<ExpenseIconKey, { light: string; dark: string }> = {
   film: { light: 'bg-purple-50 text-purple-700', dark: 'bg-purple-950/90 text-purple-400' },
   landmark: { light: 'bg-orange-50 text-orange-700', dark: 'bg-orange-950/90 text-orange-400' },
   heart: { light: 'bg-teal-50 text-teal-700', dark: 'bg-teal-950/90 text-teal-400' },
+  users: { light: 'bg-pink-50 text-pink-700', dark: 'bg-pink-950/90 text-pink-400' },
   user: { light: 'bg-indigo-50 text-indigo-700', dark: 'bg-indigo-950/90 text-indigo-400' },
   receipt: { light: 'bg-slate-100 text-slate-700', dark: 'bg-slate-800 text-slate-300' },
 };
@@ -140,6 +150,7 @@ export function resolveExpenseIconKey(title?: string, category?: string): Expens
   if (/entertain|netflix|subscrip/.test(c) || /netflix|movie|cinema|outing|game/.test(t)) return 'film';
   if (/loan|installment|debt/.test(c) || /loan|installment|qist|committee/.test(t)) return 'landmark';
   if (/charity|sadqa|zakat/.test(c) || /charity|sadqa|zakat|donation/.test(t)) return 'heart';
+  if (/family/.test(c) || /family|wife|kids|parent|sister|brother|mother|father/.test(t)) return 'users';
   if (/personal/.test(c) || /barber|salon|gym/.test(t)) return 'user';
   if (/electric|gas|water|utilit/.test(c)) return 'bolt';
 

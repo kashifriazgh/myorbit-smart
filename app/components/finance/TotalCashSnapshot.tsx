@@ -58,7 +58,6 @@ import ExpenseAnalytics, {
   mapExpenseCategoryToId,
   type ExpenseAnalyticsItem,
 } from './TotalCashSnapshot/ExpenseAnalytics';
-import UpcomingExpenses, { type UpcomingExpenseItem } from './TotalCashSnapshot/UpcomingExpenses';
 import QuickExpense, { type QuickExpensePayload } from './TotalCashSnapshot/QuickExpense';
 import { BudgetStartDayModal } from './BudgetStartDayPicker';
 import { useBudgetStartDay } from '@/app/lib/finance/useBudgetStartDay';
@@ -679,6 +678,7 @@ export interface WalletItem {
   customName?: string;
   category: 'built-in' | 'bank' | 'custom';
   owner: string;
+  holderName?: string;
   hasOwnThisMoney: boolean;
   isLocked: boolean;
   isVirtual?: boolean;
@@ -740,7 +740,6 @@ export default function TotalCashSnapshotComponent({
   // Income & Expenses data
   const [monthlyIncomeTotal, setMonthlyIncomeTotal] = useState(0);
   const [analyticsExpenses, setAnalyticsExpenses] = useState<ExpenseAnalyticsItem[]>([]);
-  const [upcomingExpenses, setUpcomingExpenses] = useState<UpcomingExpenseItem[]>([]);
 
   // Sync state
   const [refreshing, setRefreshing] = useState(false);
@@ -890,27 +889,12 @@ export default function TotalCashSnapshotComponent({
       }
     );
 
-    // ── Fetch all expenses (recurring & one-time for current month + analytics + upcoming list) ──
+    // ── Fetch all expenses (recurring & one-time for current month + analytics) ──
     const fetchExpensesMonthly = async () => {
-      const upcomingList: UpcomingExpenseItem[] = [];
       const analyticsList: ExpenseAnalyticsItem[] = [];
       const now = new Date();
       const curYear = now.getFullYear();
       const curMonth = now.getMonth();
-
-      const toIsoDate = (val: string | Date | Timestamp | undefined): string => {
-        if (!val) return '';
-        if (typeof val === 'string') return val.slice(0, 10);
-        if (val instanceof Timestamp) return val.toDate().toISOString().split('T')[0];
-        if (val instanceof Date && !isNaN(val.getTime())) return val.toISOString().split('T')[0];
-        return '';
-      };
-
-      const mapPriority = (p?: PlannedExpense['priority']): 'high' | 'medium' | 'low' => {
-        if (p === 'essential') return 'high';
-        if (p === 'important') return 'medium';
-        return 'low';
-      };
 
       // 1. From plannedExpenses
       try {
@@ -948,20 +932,6 @@ export default function TotalCashSnapshotComponent({
               paid: p.paymentStatus === 'paid',
             });
           }
-
-          // Collect unpaid expenses for the Upcoming Expenses card
-          if (p.paymentStatus !== 'paid') {
-            const remaining = Math.max(0, baseAmt - (Number(p.actualPaidAmount) || 0));
-            if (remaining > 0) {
-              upcomingList.push({
-                id: d.id,
-                title: p.title,
-                date: toIsoDate(p.dueDate),
-                priority: mapPriority(p.priority),
-                amount: remaining,
-              });
-            }
-          }
         });
       } catch (e) {
         console.warn('Error fetching plannedExpenses for summary:', e);
@@ -995,23 +965,12 @@ export default function TotalCashSnapshotComponent({
               paid: Boolean(e.isPaid),
             });
           }
-
-          if (!e.isPaid && baseAmt > 0) {
-            upcomingList.push({
-              id: `exp_${d.id}`,
-              title: e.title,
-              date: toIsoDate(e.dueDate),
-              priority: 'medium',
-              amount: baseAmt,
-            });
-          }
         });
       } catch (e) {
         console.warn('Error fetching expenditures for summary:', e);
       }
 
       setAnalyticsExpenses(analyticsList);
-      setUpcomingExpenses(upcomingList);
     };
 
     fetchExpensesMonthly();
@@ -1036,6 +995,7 @@ export default function TotalCashSnapshotComponent({
       const isLocked = o?.isLocked ?? false;
       const hasOwn = o && typeof o.hasOwnThisMoney === 'boolean' ? o.hasOwnThisMoney : !isCustom;
       const ownerName = hasOwn ? 'You' : o?.ownerName || 'Someone else';
+      const holderName = o?.holderName;
       const reservedAmount = Number(o?.reservedAmount) || 0;
       const purpose = o?.purpose;
       const allocations = o?.allocations;
@@ -1044,6 +1004,7 @@ export default function TotalCashSnapshotComponent({
       const color = o?.color;
       return {
         owner: ownerName,
+        holderName,
         hasOwnThisMoney: hasOwn,
         isLocked,
         reservedAmount,
@@ -1064,6 +1025,7 @@ export default function TotalCashSnapshotComponent({
       walletType: 'cash',
       category: 'built-in',
       owner: ihInfo.owner,
+      holderName: ihInfo.holderName,
       hasOwnThisMoney: ihInfo.hasOwnThisMoney,
       isLocked: ihInfo.isLocked,
       reservedAmount: ihInfo.reservedAmount,
@@ -1083,6 +1045,7 @@ export default function TotalCashSnapshotComponent({
       walletType: 'mobile_wallet',
       category: 'built-in',
       owner: epInfo.owner,
+      holderName: epInfo.holderName,
       hasOwnThisMoney: epInfo.hasOwnThisMoney,
       isLocked: epInfo.isLocked,
       reservedAmount: epInfo.reservedAmount,
@@ -1102,6 +1065,7 @@ export default function TotalCashSnapshotComponent({
       walletType: 'mobile_wallet',
       category: 'built-in',
       owner: jcInfo.owner,
+      holderName: jcInfo.holderName,
       hasOwnThisMoney: jcInfo.hasOwnThisMoney,
       isLocked: jcInfo.isLocked,
       reservedAmount: jcInfo.reservedAmount,
@@ -1121,6 +1085,7 @@ export default function TotalCashSnapshotComponent({
       walletType: 'cash',
       category: 'built-in',
       owner: psInfo.owner,
+      holderName: psInfo.holderName,
       hasOwnThisMoney: psInfo.hasOwnThisMoney,
       isLocked: psInfo.isLocked,
       reservedAmount: psInfo.reservedAmount,
@@ -1151,6 +1116,7 @@ export default function TotalCashSnapshotComponent({
         bankName: bName,
         category: 'bank',
         owner: bInfo.owner,
+        holderName: bInfo.holderName,
         hasOwnThisMoney: bInfo.hasOwnThisMoney,
         isLocked: bInfo.isLocked,
         isVirtual: bInfo.isVirtual,
@@ -1186,6 +1152,7 @@ export default function TotalCashSnapshotComponent({
         customName: cName,
         category: 'custom',
         owner: cInfo.owner,
+        holderName: cInfo.holderName,
         hasOwnThisMoney: cInfo.hasOwnThisMoney,
         isLocked: cInfo.isLocked,
         isVirtual: cInfo.isVirtual,
@@ -1929,16 +1896,21 @@ export default function TotalCashSnapshotComponent({
     allocations: WalletAllocation[],
     reservedAmount: number,
     ownerName: string,
-    hasOwnThisMoney: boolean
+    hasOwnThisMoney: boolean,
+    walletHolderName?: string
   ) => {
     if (!snapshot || !userId) return;
     try {
+      const existing = snapshot.sourceOwnership?.[walletId];
+      const nextHolderName =
+        walletHolderName !== undefined ? walletHolderName : existing?.holderName;
       const updatedOwnership = {
         ...(snapshot.sourceOwnership || {}),
         [walletId]: {
-          ...(snapshot.sourceOwnership?.[walletId] || {}),
+          ...(existing || {}),
           hasOwnThisMoney,
           ownerName: hasOwnThisMoney ? '' : ownerName,
+          ...(nextHolderName !== undefined ? { holderName: nextHolderName } : {}),
           reservedAmount,
           allocations,
         },
@@ -2167,22 +2139,6 @@ export default function TotalCashSnapshotComponent({
               transition={{ duration: 0.28, delay: 0.18, ease: 'easeOut' }}
               className="flex flex-col gap-3.5"
             >
-              <UpcomingExpenses
-                items={upcomingExpenses}
-                max={4}
-                balancesVisible={balancesVisible}
-                isDark={isDark}
-              />
-
-              {/* Horizontal splitter */}
-              <div
-                className={`h-px w-full ${
-                  isDark
-                    ? 'bg-gradient-to-r from-transparent via-white/15 to-transparent'
-                    : 'bg-gradient-to-r from-transparent via-slate-300/90 to-transparent'
-                }`}
-              />
-
               {/* ── Set Budget / Budget Allocation Creative Card ─── */}
               <Link
                 href="/finance/budget"
@@ -2477,6 +2433,7 @@ export default function TotalCashSnapshotComponent({
             const ownershipEntry: NonNullable<TotalCashSnapshot['sourceOwnership']>[string] = {
               hasOwnThisMoney,
               ownerName: hasOwnThisMoney ? '' : wData.initialOwner,
+              ...(wData.holderName ? { holderName: wData.holderName } : {}),
               isLocked: wData.isLocked,
               isVirtual: wData.isVirtual,
               fundState:

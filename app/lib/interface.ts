@@ -300,6 +300,7 @@ export interface TotalCashSnapshot {
       hasOwnThisMoney: boolean;
       ownerName?: string;
       ownserName?: string;
+      holderName?: string;
       isLocked?: boolean;
       parentWalletKey?: string;
       isVirtual?: boolean;
@@ -346,6 +347,7 @@ export type FundOwnershipState = 'spendable' | 'reserved' | 'savings' | 'amanat'
 export interface WalletAllocation {
   id: string;
   owner: string;
+  holderName?: string;
   amount: number;
   purpose?: string;
   reservedAmount?: number;

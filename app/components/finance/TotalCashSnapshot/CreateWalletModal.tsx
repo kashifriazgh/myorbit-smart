@@ -13,6 +13,7 @@ export interface CreateWalletPayload {
   walletType: WalletType;
   openingBalance: number;
   initialOwner: string;
+  holderName?: string;
   isLocked: boolean;
   isReserved?: boolean;
   fundClassification?: OwnFundClassification | 'amanat';
@@ -249,6 +250,8 @@ export default function CreateWalletModal({
   const [ownershipKind, setOwnershipKind] = useState<WalletOwnershipKind>('own');
   const [fundClassification, setFundClassification] = useState<OwnFundClassification>('spendable');
   const [otherOwnerName, setOtherOwnerName] = useState('');
+  const [holderKind, setHolderKind] = useState<'me' | 'other'>('me');
+  const [holderName, setHolderName] = useState('');
 
   // Collapsible More options (Icons & Colors)
   const [showMoreOptions, setShowMoreOptions] = useState(false);
@@ -317,6 +320,8 @@ export default function CreateWalletModal({
     setOwnershipKind('own');
     setFundClassification('spendable');
     setOtherOwnerName('');
+    setHolderKind('me');
+    setHolderName('');
     setShowMoreOptions(false);
     setIcon('wallet');
     setColorTheme('emerald');
@@ -347,11 +352,15 @@ export default function CreateWalletModal({
         ? 'Reserved for near-term use'
         : activeTypeObj.subtitle);
 
+    const resolvedHolder =
+      holderKind === 'other' && holderName.trim() ? holderName.trim() : 'Me';
+
     const defaultEnvelopeAllocation: WalletAllocation | undefined =
       amountNum > 0
         ? {
             id: `default_${Date.now()}`,
             owner: !iOwnIt ? resolvedOwner : isReserved ? 'You' : 'You',
+            holderName: resolvedHolder,
             amount: amountNum,
             purpose: isLongTermSaving ? `${title} (Long-term Savings)` : title,
             reservedAmount: isReserved ? amountNum : 0,
@@ -365,6 +374,7 @@ export default function CreateWalletModal({
       walletType,
       openingBalance: amountNum,
       initialOwner: resolvedOwner,
+      holderName: resolvedHolder,
       isLocked: !iOwnIt,
       isReserved,
       fundClassification: iOwnIt ? fundClassification : 'amanat',
@@ -392,7 +402,7 @@ export default function CreateWalletModal({
 
   return (
     <div
-      className="fixed inset-0 z-[1300] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[1300] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
       role="dialog"
       aria-modal="true"
@@ -400,7 +410,7 @@ export default function CreateWalletModal({
     >
       <form
         onSubmit={handleSubmit}
-        className={`max-h-[92vh] w-full sm:max-w-lg overflow-y-auto rounded-t-3xl sm:rounded-3xl border p-5 sm:p-6 shadow-2xl transition-colors ${
+        className={`w-full min-w-full sm:min-w-0 max-w-none sm:max-w-lg min-h-[100dvh] sm:min-h-0 max-h-[100dvh] sm:max-h-[92vh] overflow-y-auto overflow-x-hidden rounded-none sm:rounded-3xl border p-4 sm:p-6 shadow-2xl transition-colors ${
           isDark
             ? 'border-white/10 bg-[#1f2430] text-white'
             : 'border-slate-200 bg-white text-slate-900'
@@ -777,6 +787,56 @@ export default function CreateWalletModal({
               />
             </div>
           )}
+
+          {/* Money Held With / Physical Location */}
+          <div className="pt-1">
+            <div className={`mb-2.5 h-px w-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`} />
+            <span className={labelCls}>Held with / Kept at</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setHolderKind('me');
+                  setHolderName('');
+                }}
+                className={`rounded-xl border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  holderKind === 'me'
+                    ? isDark
+                      ? 'border-blue-500 bg-blue-500/15 text-white'
+                      : 'border-blue-500 bg-blue-50 text-slate-900'
+                    : isDark
+                    ? 'border-white/10 bg-[#1f2430] text-slate-300 hover:border-white/25'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                With Me
+              </button>
+              <button
+                type="button"
+                onClick={() => setHolderKind('other')}
+                className={`rounded-xl border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  holderKind === 'other'
+                    ? isDark
+                      ? 'border-amber-500 bg-amber-500/15 text-white'
+                      : 'border-amber-500 bg-amber-50 text-slate-900'
+                    : isDark
+                    ? 'border-white/10 bg-[#1f2430] text-slate-300 hover:border-white/25'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                Other Person / Place
+              </button>
+            </div>
+            {holderKind === 'other' && (
+              <input
+                type="text"
+                value={holderName}
+                onChange={(e) => setHolderName(e.target.value)}
+                placeholder="e.g. Sister, At Home, Locker, Brother"
+                className={`${inputCls} mt-2`}
+              />
+            )}
+          </div>
         </div>
 
         {/* Collapsible More Options (Icons, Colors, Target) */}
